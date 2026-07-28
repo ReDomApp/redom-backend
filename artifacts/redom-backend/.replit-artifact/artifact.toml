@@ -1,0 +1,31 @@
+kind = "api"
+previewPath = "/redom-backend"
+title = "redom-backend"
+version = "1.0.0"
+id = "rBxKmN9pQvA2cLhEyZt7w"
+
+[[services]]
+localPort = 8081
+name = "redom-backend"
+paths = ["/redom-backend"]
+
+[services.development]
+run = "pnpm --filter @workspace/redom-backend run dev"
+
+[services.production]
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/redom-backend", "run", "build"]
+
+[services.production.build.env]
+NODE_ENV = "production"
+
+[services.production.run]
+args = ["node", "--enable-source-maps", "artifacts/redom-backend/dist/index.mjs"]
+
+[services.production.run.env]
+PORT = "8081"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/redom-backend/healthz"
