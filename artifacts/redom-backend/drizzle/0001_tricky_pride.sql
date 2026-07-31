@@ -1,0 +1,31 @@
+CREATE TABLE "user_profiles" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" uuid NOT NULL,
+	"redom_id" varchar(16) NOT NULL,
+	"redom_id_visibility" boolean DEFAULT true NOT NULL,
+	"profile_type" varchar(30) DEFAULT 'personal' NOT NULL,
+	"display_name" varchar(100) NOT NULL,
+	"bio" text,
+	"profile_photo" varchar(500),
+	"cover_photo" varchar(500),
+	"website" varchar(255),
+	"occupation" varchar(150),
+	"education" varchar(150),
+	"hometown" varchar(100),
+	"current_city" varchar(100),
+	"relationship_status" varchar(50),
+	"pronouns" varchar(30),
+	"profile_visibility" varchar(20) DEFAULT 'public' NOT NULL,
+	"verified" boolean DEFAULT false NOT NULL,
+	"display_join_date" boolean DEFAULT true NOT NULL,
+	"profile_completion" integer DEFAULT 0 NOT NULL,
+	"follower_count" integer DEFAULT 0 NOT NULL,
+	"following_count" integer DEFAULT 0 NOT NULL,
+	"friend_count" integer DEFAULT 0 NOT NULL,
+	"post_count" integer DEFAULT 0 NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "user_profiles_redom_id_unique" UNIQUE("redom_id")
+);
+--> statement-breakpoint
+ALTER TABLE "user_profiles" ADD CONSTRAINT "user_profiles_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
