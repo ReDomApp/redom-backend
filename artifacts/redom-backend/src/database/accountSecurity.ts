@@ -26,11 +26,11 @@ export const accountSecurity = pgTable("account_security", {
     .default(false)
     .notNull(),
 
-  // none | authenticator | email | phone
+  // off | authenticator | email | phone
   twoFactorMethod: varchar("two_factor_method", {
     length: 20,
   })
-    .default("none")
+    .default("off")
     .notNull(),
 
   // --------------------------------
