@@ -4,61 +4,65 @@ import { eq } from "drizzle-orm";
 import { db } from "../../database/db";
 import { users } from "../../database/schema";
 
-export class ProfileIdService {
+export class PublicIdService {
   /**
-   * Generate a unique ReDom Profile ID.
+   * Generate a unique ReDom Public ID.
    *
    * Format:
+   *
    * 234 + XXX + XXXXXXXXX
+   *
+   * Example:
+   *
+   * 234583928174521
    */
   async generate(): Promise<string> {
     while (true) {
-      const profileId = this.createCandidate();
+      const publicId =
+        this.createCandidate();
 
       const existing =
         await db.query.users.findFirst({
           where: eq(
-            users.profileId,
-            profileId,
+            users.publicId,
+            publicId,
           ),
         });
 
       if (!existing) {
-        return profileId;
+        return publicId;
       }
     }
   }
 
   /**
-   * Validate a Profile ID.
+   * Validate a ReDom Public ID.
    */
-  validate(profileId: string): boolean {
+  validate(
+    publicId: string,
+  ): boolean {
     return /^234[1-9][0-9]{11}$/.test(
-      profileId,
+      publicId,
     );
   }
 
   /**
-   * Check whether a Profile ID already exists.
+   * Check whether a Public ID exists.
    */
   async exists(
-    profileId: string,
+    publicId: string,
   ): Promise<boolean> {
     const existing =
       await db.query.users.findFirst({
         where: eq(
-          users.profileId,
-          profileId,
+          users.publicId,
+          publicId,
         ),
       });
 
     return !!existing;
   }
 
-  /**
-   * Generate:
-   * 234 + XXX + XXXXXXXXX
-   */
   private createCandidate(): string {
     const middle = randomInt(
       111,
@@ -76,5 +80,5 @@ export class ProfileIdService {
   }
 }
 
-export const profileIdService =
-  new ProfileIdService();
+export const publicIdService =
+  new PublicIdService();
