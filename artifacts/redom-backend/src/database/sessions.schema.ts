@@ -5,61 +5,77 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
-export const sessions = pgTable("sessions", {
-  id: uuid("id")
-    .defaultRandom()
-    .primaryKey(),
+import { users } from "./schema";
 
-  userId: uuid("user_id")
-    .notNull(),
+export const sessions = pgTable(
+  "sessions",
+  {
+    // Internal authentication session ID
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
 
-  refreshTokenHash: varchar(
-    "refresh_token_hash",
-    {
+    // Account that owns the session
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+
+    // Hashed refresh token.
+    // The plaintext refresh token must never be stored.
+    refreshTokenHash: varchar(
+      "refresh_token_hash",
+      {
+        length: 255,
+      },
+    ).notNull(),
+
+    // Client/device information
+    deviceId: varchar("device_id", {
       length: 255,
-    },
-  ).notNull(),
+    }),
 
-  deviceId: varchar("device_id", {
-    length: 255,
-  }),
+    deviceName: varchar("device_name", {
+      length: 255,
+    }),
 
-  deviceName: varchar("device_name", {
-    length: 255,
-  }),
+    platform: varchar("platform", {
+      length: 100,
+    }),
 
-  platform: varchar("platform", {
-    length: 100,
-  }),
+    browser: varchar("browser", {
+      length: 100,
+    }),
 
-  browser: varchar("browser", {
-    length: 100,
-  }),
+    userAgent: varchar("user_agent", {
+      length: 500,
+    }),
 
-  userAgent: varchar("user_agent", {
-    length: 500,
-  }),
+    // Network/location information
+    ipAddress: varchar("ip_address", {
+      length: 45,
+    }),
 
-  ipAddress: varchar("ip_address", {
-    length: 45,
-  }),
+    country: varchar("country", {
+      length: 100,
+    }),
 
-  country: varchar("country", {
-    length: 100,
-  }),
+    // Authentication activity
+    lastActivityAt: timestamp(
+      "last_activity_at",
+    )
+      .defaultNow()
+      .notNull(),
 
-  lastActivityAt: timestamp(
-    "last_activity_at",
-  )
-    .defaultNow()
-    .notNull(),
+    // Absolute session expiration
+    expiresAt: timestamp("expires_at")
+      .notNull(),
 
-  expiresAt: timestamp("expires_at")
-    .notNull(),
+    // Set when the session is revoked
+    revokedAt: timestamp("revoked_at"),
 
-  revokedAt: timestamp("revoked_at"),
-
-  createdAt: timestamp("created_at")
-    .defaultNow()
-    .notNull(),
-});
+    // Record creation time
+    createdAt: timestamp("created_at")
+      .defaultNow()
+      .notNull(),
+  },
+);
