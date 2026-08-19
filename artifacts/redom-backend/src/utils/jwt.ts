@@ -1,9 +1,11 @@
 import jwt from "jsonwebtoken";
+
 import { env } from "../config/env";
 
 export interface AccessTokenPayload {
   userId: string;
   profileId: string;
+  sessionId: string;
 }
 
 export interface RefreshTokenPayload {
@@ -14,17 +16,25 @@ export interface RefreshTokenPayload {
 export function generateAccessToken(
   payload: AccessTokenPayload,
 ): string {
-  return jwt.sign(payload, env.JWT_ACCESS_SECRET, {
-    expiresIn: "15m",
-  });
+  return jwt.sign(
+    payload,
+    env.JWT_ACCESS_SECRET,
+    {
+      expiresIn: "15m",
+    },
+  );
 }
 
 export function generateRefreshToken(
   payload: RefreshTokenPayload,
 ): string {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, {
-    expiresIn: "30d",
-  });
+  return jwt.sign(
+    payload,
+    env.JWT_REFRESH_SECRET,
+    {
+      expiresIn: "30d",
+    },
+  );
 }
 
 export function verifyAccessToken(
