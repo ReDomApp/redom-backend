@@ -7,11 +7,11 @@ import {
   sessionService,
 } from "../services/auth/session.service";
 
+import {
+  loginHistoryService,
+} from "../services/auth/login-history.service";
+
 export class SessionController {
-  /**
-   * Return the authenticated user's
-   * currently active sessions.
-   */
   async list(
     req: Request,
     res: Response,
@@ -44,10 +44,6 @@ export class SessionController {
     }
   }
 
-  /**
-   * Revoke one session owned by
-   * the authenticated account.
-   */
   async revoke(
     req: Request,
     res: Response,
@@ -79,7 +75,7 @@ export class SessionController {
         req.user.userId,
       );
 
-      await this.markHistoryEnded(
+      await loginHistoryService.logout(
         sessionId,
       );
 
@@ -99,10 +95,6 @@ export class SessionController {
     }
   }
 
-  /**
-   * Revoke every session owned by
-   * the authenticated account.
-   */
   async revokeAll(
     req: Request,
     res: Response,
@@ -133,18 +125,6 @@ export class SessionController {
           "Unable to revoke sessions.",
       });
     }
-  }
-
-  private async markHistoryEnded(
-    sessionId: string,
-  ): Promise<void> {
-    // Login-history synchronization is intentionally
-    // kept outside SessionService because SessionService
-    // owns authentication/session state, not history.
-    //
-    // The actual history update is handled by the
-    // existing LoginHistoryService through the import
-    // added below in the final implementation.
   }
 }
 
