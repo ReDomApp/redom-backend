@@ -20,7 +20,7 @@ pool.on("connect", () => {
 
 pool.on("error", (err) => {
   console.error(
-    "Database connection error:",
+    "🔧 Database connection error:",
     err,
   );
 });
