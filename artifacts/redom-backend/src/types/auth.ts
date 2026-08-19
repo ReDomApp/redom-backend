@@ -1,3 +1,5 @@
+import type { AccountStatus } from "./userStatusEnums";
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
@@ -8,23 +10,38 @@ export interface RegisterResult {
   message: string;
 
   userId: string;
+
+  username: string;
+  publicId: string;
   profileId: string;
+
+  email: string | null;
+  phoneNumber: string | null;
 
   emailVerified: boolean;
   phoneVerified: boolean;
+
+  accountStatus: AccountStatus;
 }
 
-export interface LoginResult extends AuthTokens {
+export interface LoginResult
+  extends AuthTokens {
   success: boolean;
   message: string;
 
   userId: string;
+
+  username: string;
+  publicId: string;
   profileId: string;
+
+  email: string | null;
+  phoneNumber: string | null;
 
   emailVerified: boolean;
   phoneVerified: boolean;
 
-  accountStatus: string;
+  accountStatus: AccountStatus;
 }
 
 export interface JwtPayload {
@@ -35,12 +52,16 @@ export interface JwtPayload {
 
 export interface AuthUser {
   userId: string;
+
+  username: string;
+  publicId: string;
   profileId: string;
 
-  email: string;
+  email: string | null;
+  phoneNumber: string | null;
 
   emailVerified: boolean;
   phoneVerified: boolean;
 
-  accountStatus: string;
+  accountStatus: AccountStatus;
 }
