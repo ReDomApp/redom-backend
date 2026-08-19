@@ -22,16 +22,26 @@ export class AuthService {
     password: string;
     dateOfBirth?: string;
     gender?: string;
+
     ipAddress?: string;
     country?: string;
+    region?: string;
+    city?: string;
+
     userAgent?: string;
     platform?: string;
     browser?: string;
+
     deviceName?: string;
     deviceId?: string;
+    deviceType?: string;
+    loginSource?: string;
+    appVersion?: string;
   }) {
     const email =
-      emailService.validate(data.email);
+      emailService.validate(
+        data.email,
+      );
 
     const phoneNumber =
       phoneService.validate(
@@ -44,7 +54,10 @@ export class AuthService {
 
     const existingEmail =
       await db.query.users.findFirst({
-        where: eq(users.email, email),
+        where: eq(
+          users.email,
+          email,
+        ),
       });
 
     if (existingEmail) {
@@ -86,17 +99,22 @@ export class AuthService {
             data.firstName.trim(),
           lastName:
             data.lastName.trim(),
-          username: publicId,
+          username:
+            publicId,
           profileId,
           email,
           phoneNumber,
           passwordHash,
           dateOfBirth:
             data.dateOfBirth,
-          gender: data.gender,
-          emailVerified: false,
-          phoneVerified: false,
-          accountStatus: "pending",
+          gender:
+            data.gender,
+          emailVerified:
+            false,
+          phoneVerified:
+            false,
+          accountStatus:
+            "pending",
           profileIdVisibility:
             "public",
         })
@@ -108,49 +126,89 @@ export class AuthService {
       );
     }
 
-        await verificationService.createEmailVerification({
+    await verificationService.createEmailVerification({
       userId: user.id,
       email: user.email,
-      firstName: user.firstName,
+      firstName:
+        user.firstName,
     });
 
     await verificationService.createPhoneVerification({
       userId: user.id,
-      phoneNumber: user.phoneNumber,
+      phoneNumber:
+        user.phoneNumber,
     });
 
     await fraudService.checkRegistration({
       userId: user.id,
       email: user.email,
-      phoneNumber: user.phoneNumber,
-      ipAddress: data.ipAddress,
-      country: data.country,
-      userAgent: data.userAgent,
+      phoneNumber:
+        user.phoneNumber,
+      ipAddress:
+        data.ipAddress,
+      country:
+        data.country,
+      userAgent:
+        data.userAgent,
     });
 
     const session =
       await sessionService.createSession({
         userId: user.id,
-        profileId: user.profileId,
-        ipAddress: data.ipAddress,
-        country: data.country,
-        userAgent: data.userAgent,
-        platform: data.platform,
-        browser: data.browser,
-        deviceName: data.deviceName,
-        deviceId: data.deviceId,
+        profileId:
+          user.profileId,
+
+        ipAddress:
+          data.ipAddress,
+        country:
+          data.country,
+        region:
+          data.region,
+        city:
+          data.city,
+
+        userAgent:
+          data.userAgent,
+        platform:
+          data.platform,
+        browser:
+          data.browser,
+
+        deviceName:
+          data.deviceName,
+        deviceId:
+          data.deviceId,
+        deviceType:
+          data.deviceType,
+        loginSource:
+          data.loginSource,
+        appVersion:
+          data.appVersion,
       });
 
     await loginHistoryService.create({
       userId: user.id,
-      sessionId: session.sessionId,
-      ipAddress: data.ipAddress,
-      country: data.country,
-      userAgent: data.userAgent,
-      platform: data.platform,
-      browser: data.browser,
-      deviceName: data.deviceName,
-      deviceId: data.deviceId,
+      sessionId:
+        session.sessionId,
+
+      ipAddress:
+        data.ipAddress,
+      country:
+        data.country,
+      region:
+        data.region,
+      city:
+        data.city,
+
+      deviceName:
+        data.deviceName,
+      deviceType:
+        data.deviceType,
+
+      loginSource:
+        data.loginSource,
+      appVersion:
+        data.appVersion,
     });
 
     return {
@@ -159,15 +217,24 @@ export class AuthService {
         "Registration completed successfully. Please verify your email address and phone number.",
       user: {
         id: user.id,
-        publicId: user.username,
-        profileId: user.profileId,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        emailVerified: user.emailVerified,
-        phoneVerified: user.phoneVerified,
-        accountStatus: user.accountStatus,
+        publicId:
+          user.username,
+        profileId:
+          user.profileId,
+        firstName:
+          user.firstName,
+        lastName:
+          user.lastName,
+        email:
+          user.email,
+        phoneNumber:
+          user.phoneNumber,
+        emailVerified:
+          user.emailVerified,
+        phoneVerified:
+          user.phoneVerified,
+        accountStatus:
+          user.accountStatus,
       },
       session,
     };
@@ -176,25 +243,48 @@ export class AuthService {
   async login(data: {
     identifier: string;
     password: string;
+
     ipAddress?: string;
     country?: string;
+    region?: string;
+    city?: string;
+
     userAgent?: string;
     platform?: string;
     browser?: string;
+
     deviceName?: string;
     deviceId?: string;
+    deviceType?: string;
+    loginSource?: string;
+    appVersion?: string;
   }) {
     const identifier =
       data.identifier.trim();
 
-        const user =
+    const user =
       await db.query.users.findFirst({
-        where: (users, { or, eq }) =>
+        where: (
+          users,
+          { or, eq },
+        ) =>
           or(
-            eq(users.email, identifier),
-            eq(users.phoneNumber, identifier),
-            eq(users.username, identifier),
-            eq(users.profileId, identifier),
+            eq(
+              users.email,
+              identifier,
+            ),
+            eq(
+              users.phoneNumber,
+              identifier,
+            ),
+            eq(
+              users.username,
+              identifier,
+            ),
+            eq(
+              users.profileId,
+              identifier,
+            ),
           ),
       });
 
@@ -216,13 +306,19 @@ export class AuthService {
       );
     }
 
-    if (user.accountStatus === "suspended") {
+    if (
+      user.accountStatus ===
+      "suspended"
+    ) {
       throw new Error(
         "Your account has been suspended.",
       );
     }
 
-    if (user.accountStatus === "banned") {
+    if (
+      user.accountStatus ===
+      "banned"
+    ) {
       throw new Error(
         "Your account has been banned.",
       );
@@ -230,56 +326,103 @@ export class AuthService {
 
     await fraudService.checkLogin({
       userId: user.id,
-      ipAddress: data.ipAddress,
-      country: data.country,
-      userAgent: data.userAgent,
+      ipAddress:
+        data.ipAddress,
+      country:
+        data.country,
+      userAgent:
+        data.userAgent,
     });
 
     const session =
       await sessionService.createSession({
         userId: user.id,
-        profileId: user.profileId,
-        ipAddress: data.ipAddress,
-        country: data.country,
-        userAgent: data.userAgent,
-        platform: data.platform,
-        browser: data.browser,
-        deviceName: data.deviceName,
-        deviceId: data.deviceId,
+        profileId:
+          user.profileId,
+
+        ipAddress:
+          data.ipAddress,
+        country:
+          data.country,
+        region:
+          data.region,
+        city:
+          data.city,
+
+        userAgent:
+          data.userAgent,
+        platform:
+          data.platform,
+        browser:
+          data.browser,
+
+        deviceName:
+          data.deviceName,
+        deviceId:
+          data.deviceId,
+        deviceType:
+          data.deviceType,
+        loginSource:
+          data.loginSource,
+        appVersion:
+          data.appVersion,
       });
 
     await loginHistoryService.create({
       userId: user.id,
-      sessionId: session.sessionId,
-      ipAddress: data.ipAddress,
-      country: data.country,
-      userAgent: data.userAgent,
-      platform: data.platform,
-      browser: data.browser,
-      deviceName: data.deviceName,
-      deviceId: data.deviceId,
+      sessionId:
+        session.sessionId,
+
+      ipAddress:
+        data.ipAddress,
+      country:
+        data.country,
+      region:
+        data.region,
+      city:
+        data.city,
+
+      deviceName:
+        data.deviceName,
+      deviceType:
+        data.deviceType,
+
+      loginSource:
+        data.loginSource,
+      appVersion:
+        data.appVersion,
     });
 
     return {
       success: true,
-      message: "Login successful.",
+      message:
+        "Login successful.",
       user: {
         id: user.id,
-        publicId: user.username,
-        profileId: user.profileId,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        emailVerified: user.emailVerified,
-        phoneVerified: user.phoneVerified,
-        accountStatus: user.accountStatus,
+        publicId:
+          user.username,
+        profileId:
+          user.profileId,
+        firstName:
+          user.firstName,
+        lastName:
+          user.lastName,
+        email:
+          user.email,
+        phoneNumber:
+          user.phoneNumber,
+        emailVerified:
+          user.emailVerified,
+        phoneVerified:
+          user.phoneVerified,
+        accountStatus:
+          user.accountStatus,
       },
       session,
     };
   }
 
-    async verifyEmail(data: {
+  async verifyEmail(data: {
     userId: string;
     code: string;
   }) {
@@ -310,9 +453,11 @@ export class AuthService {
     await db
       .update(users)
       .set({
-        emailVerified: true,
+        emailVerified:
+          true,
         accountStatus,
-        updatedAt: new Date(),
+        updatedAt:
+          new Date(),
       })
       .where(
         eq(
@@ -366,9 +511,11 @@ export class AuthService {
     await db
       .update(users)
       .set({
-        phoneVerified: true,
+        phoneVerified:
+          true,
         accountStatus,
-        updatedAt: new Date(),
+        updatedAt:
+          new Date(),
       })
       .where(
         eq(
@@ -410,7 +557,8 @@ export class AuthService {
     await verificationService.createEmailVerification({
       userId: user.id,
       email: user.email,
-      firstName: user.firstName,
+      firstName:
+        user.firstName,
     });
 
     return {
@@ -456,14 +604,16 @@ export class AuthService {
     };
   }
 
-    async forgotPassword(data: {
+  async forgotPassword(data: {
     identifier: string;
     ipAddress?: string;
     country?: string;
   }) {
     await fraudService.checkPasswordReset({
-      ipAddress: data.ipAddress,
-      country: data.country,
+      ipAddress:
+        data.ipAddress,
+      country:
+        data.country,
     });
 
     const identifier =
@@ -471,12 +621,27 @@ export class AuthService {
 
     const user =
       await db.query.users.findFirst({
-        where: (users, { or, eq }) =>
+        where: (
+          users,
+          { or, eq },
+        ) =>
           or(
-            eq(users.email, identifier),
-            eq(users.phoneNumber, identifier),
-            eq(users.username, identifier),
-            eq(users.profileId, identifier),
+            eq(
+              users.email,
+              identifier,
+            ),
+            eq(
+              users.phoneNumber,
+              identifier,
+            ),
+            eq(
+              users.username,
+              identifier,
+            ),
+            eq(
+              users.profileId,
+              identifier,
+            ),
           ),
       });
 
@@ -495,12 +660,14 @@ export class AuthService {
       await verificationService.createEmailVerification({
         userId: user.id,
         email: user.email,
-        firstName: user.firstName,
+        firstName:
+          user.firstName,
       });
     } else {
       await verificationService.createPhoneVerification({
         userId: user.id,
-        phoneNumber: user.phoneNumber,
+        phoneNumber:
+          user.phoneNumber,
       });
     }
 
@@ -515,7 +682,9 @@ export class AuthService {
     userId: string;
     password: string;
     code: string;
-    method: "email" | "phone";
+    method:
+      | "email"
+      | "phone";
   }) {
     const user =
       await db.query.users.findFirst({
@@ -535,7 +704,10 @@ export class AuthService {
       data.password,
     );
 
-    if (data.method === "email") {
+    if (
+      data.method ===
+      "email"
+    ) {
       await verificationService.verifyEmailCode({
         userId: user.id,
         code: data.code,
@@ -543,7 +715,8 @@ export class AuthService {
     } else {
       await verificationService.verifyPhoneCode({
         userId: user.id,
-        phoneNumber: user.phoneNumber,
+        phoneNumber:
+          user.phoneNumber,
         code: data.code,
       });
     }
@@ -557,7 +730,8 @@ export class AuthService {
       .update(users)
       .set({
         passwordHash,
-        updatedAt: new Date(),
+        updatedAt:
+          new Date(),
       })
       .where(
         eq(
@@ -578,10 +752,12 @@ export class AuthService {
   }
 
   async logout(data: {
+    userId: string;
     sessionId: string;
   }) {
     await sessionService.revokeSession(
       data.sessionId,
+      data.userId,
     );
 
     await loginHistoryService.logout(
