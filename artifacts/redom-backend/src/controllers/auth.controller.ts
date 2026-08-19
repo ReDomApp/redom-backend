@@ -1,4 +1,7 @@
-import { Request, Response } from "express";
+import {
+  Request,
+  Response,
+} from "express";
 
 import { authService } from "../services/auth/auth.service";
 
@@ -9,9 +12,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.register(req.body);
+        await authService.register(
+          req.body,
+        );
 
-      res.status(201).json(result);
+      res.status(201).json(
+        result,
+      );
     } catch (error) {
       res.status(400).json({
         success: false,
@@ -29,9 +36,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.login(req.body);
+        await authService.login(
+          req.body,
+        );
 
-      res.status(200).json(result);
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(401).json({
         success: false,
@@ -49,9 +60,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.verifyEmail(req.body);
+        await authService.verifyEmail(
+          req.body,
+        );
 
-      res.status(200).json(result);
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(400).json({
         success: false,
@@ -69,9 +84,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.verifyPhone(req.body);
+        await authService.verifyPhone(
+          req.body,
+        );
 
-      res.status(200).json(result);
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(400).json({
         success: false,
@@ -89,9 +108,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.resendEmailCode(req.body);
+        await authService.resendEmailCode(
+          req.body,
+        );
 
-      res.status(200).json(result);
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(400).json({
         success: false,
@@ -109,9 +132,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.resendPhoneCode(req.body);
+        await authService.resendPhoneCode(
+          req.body,
+        );
 
-      res.status(200).json(result);
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(400).json({
         success: false,
@@ -129,9 +156,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.forgotPassword(req.body);
+        await authService.forgotPassword(
+          req.body,
+        );
 
-      res.status(200).json(result);
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(400).json({
         success: false,
@@ -149,9 +180,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.resetPassword(req.body);
+        await authService.resetPassword(
+          req.body,
+        );
 
-      res.status(200).json(result);
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(400).json({
         success: false,
@@ -168,10 +203,26 @@ export class AuthController {
     res: Response,
   ): Promise<void> {
     try {
-      const result =
-        await authService.logout(req.body);
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          message:
+            "Authentication required.",
+        });
+        return;
+      }
 
-      res.status(200).json(result);
+      const result =
+        await authService.logout({
+          userId:
+            req.user.userId,
+          sessionId:
+            req.user.sessionId,
+        });
+
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(400).json({
         success: false,
@@ -189,9 +240,13 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.refreshSession(req.body);
+        await authService.refreshSession(
+          req.body,
+        );
 
-      res.status(200).json(result);
+      res.status(200).json(
+        result,
+      );
     } catch (error) {
       res.status(401).json({
         success: false,
