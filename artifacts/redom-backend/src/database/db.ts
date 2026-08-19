@@ -1,20 +1,35 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 
+import { users } from "./schema";
+import { sessions } from "./sessions.schema";
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString:
+    process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false,
   },
 });
 
 pool.on("connect", () => {
-  console.log("✅ Connected to Neon PostgreSQL");
+  console.log(
+    "✅ Connected to Neon PostgreSQL",
+  );
 });
 
 pool.on("error", (err) => {
-  console.error("❌ Database connection error:", err);
+  console.error(
+    "Database connection error:",
+    err,
+  );
 });
 
-export const db = drizzle(pool);
+export const db = drizzle(pool, {
+  schema: {
+    users,
+    sessions,
+  },
+});
+
 export { pool };
