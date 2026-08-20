@@ -4,149 +4,180 @@ import {
   varchar,
   boolean,
   timestamp,
+  index,
 } from "drizzle-orm/pg-core";
 
 import { users } from "./schema";
 import { sessions } from "./sessions.schema";
 
-export const loginHistory = pgTable(
-  "login_history",
-  {
-    // Internal Login Record ID
-    id: uuid("id")
-      .defaultRandom()
-      .primaryKey(),
+export const loginHistory =
+  pgTable(
+    "login_history",
+    {
+      // --------------------------------
+      // IDENTITY
+      // --------------------------------
 
-    // User who logged in
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id),
+      id: uuid("id")
+        .defaultRandom()
+        .primaryKey(),
 
-    // Authentication session represented
-    // by this historical record
-    sessionId: uuid("session_id")
-      .notNull()
-      .unique()
-      .references(() => sessions.id, {
-        onDelete: "cascade",
-      }),
+      userId: uuid("user_id")
+        .notNull()
+        .references(
+          () => users.id,
+          {
+            onDelete:
+              "cascade",
+          },
+        ),
 
-    // ----------------------------
-    // DEVICE INFORMATION
-    // ----------------------------
+      sessionId: uuid(
+        "session_id",
+      )
+        .notNull()
+        .unique()
+        .references(
+          () => sessions.id,
+          {
+            onDelete:
+              "cascade",
+          },
+        ),
 
-    deviceName: varchar(
-      "device_name",
-      {
-        length: 150,
-      },
-    ).notNull(),
+      // --------------------------------
+      // DEVICE
+      // --------------------------------
 
-    deviceType: varchar(
-      "device_type",
-      {
-        length: 20,
-      },
-    ).notNull(),
+      deviceName: varchar(
+        "device_name",
+        {
+          length: 150,
+        },
+      ).notNull(),
 
-    loginSource: varchar(
-      "login_source",
-      {
-        length: 20,
-      },
-    ).notNull(),
+      deviceType: varchar(
+        "device_type",
+        {
+          length: 20,
+        },
+      ).notNull(),
 
-    appVersion: varchar(
-      "app_version",
-      {
-        length: 30,
-      },
-    ),
+      loginSource: varchar(
+        "login_source",
+        {
+          length: 20,
+        },
+      ).notNull(),
 
-    // ----------------------------
-    // LOCATION
-    // ----------------------------
+      appVersion: varchar(
+        "app_version",
+        {
+          length: 30,
+        },
+      ),
 
-    ipAddress: varchar(
-      "ip_address",
-      {
-        length: 45,
-      },
-    ).notNull(),
+      // --------------------------------
+      // LOCATION
+      // --------------------------------
 
-    country: varchar(
-      "country",
-      {
-        length: 100,
-      },
-    ),
+      ipAddress: varchar(
+        "ip_address",
+        {
+          length: 45,
+        },
+      ).notNull(),
 
-    region: varchar(
-      "region",
-      {
-        length: 100,
-      },
-    ),
+      country: varchar(
+        "country",
+        {
+          length: 100,
+        },
+      ),
 
-    city: varchar(
-      "city",
-      {
-        length: 100,
-      },
-    ),
+      region: varchar(
+        "region",
+        {
+          length: 100,
+        },
+      ),
 
-    // ----------------------------
-    // SESSION HISTORY
-    // ----------------------------
+      city: varchar(
+        "city",
+        {
+          length: 100,
+        },
+      ),
 
-    loginTime: timestamp(
-      "login_time",
-    )
-      .defaultNow()
-      .notNull(),
+      // --------------------------------
+      // HISTORY
+      // --------------------------------
 
-    logoutTime: timestamp(
-      "logout_time",
-    ),
+      loginTime: timestamp(
+        "login_time",
+      )
+        .defaultNow()
+        .notNull(),
 
-    active: boolean("active")
-      .default(true)
-      .notNull(),
+      logoutTime: timestamp(
+        "logout_time",
+      ),
 
-    // active | ended | revoked | expired
-    sessionStatus: varchar(
-      "session_status",
-      {
-        length: 30,
-      },
-    )
-      .default("active")
-      .notNull(),
+      active: boolean(
+        "active",
+      )
+        .default(true)
+        .notNull(),
 
-    // ----------------------------
-    // USER VIEW
-    // ----------------------------
+      sessionStatus: varchar(
+        "session_status",
+        {
+          length: 30,
+        },
+      )
+        .default("active")
+        .notNull(),
 
-    hiddenByUser: boolean(
-      "hidden_by_user",
-    )
-      .default(false)
-      .notNull(),
+      // --------------------------------
+      // USER VIEW
+      // --------------------------------
 
-    // ----------------------------
-    // SYSTEM
-    // ----------------------------
+      hiddenByUser: boolean(
+        "hidden_by_user",
+      )
+        .default(false)
+        .notNull(),
 
-    createdAt: timestamp(
-      "created_at",
-    )
-      .defaultNow()
-      .notNull(),
+      // --------------------------------
+      // SYSTEM
+      // --------------------------------
 
-    updatedAt: timestamp(
-      "updated_at",
-    )
-      .defaultNow()
-      .notNull(),
-  },
-);
+      createdAt: timestamp(
+        "created_at",
+      )
+        .defaultNow()
+        .notNull(),
+
+      updatedAt: timestamp(
+        "updated_at",
+      )
+        .defaultNow()
+        .notNull(),
+    },
+
+    (table) => ({
+      userIdIndex:
+        index(
+          "login_history_user_id_idx",
+        ).on(
+          table.userId,
+        ),
+
+      loginTimeIndex:
+        index(
+          "login_history_login_time_idx",
+        ).on(
+          table.loginTime,
+        ),
+    }),
+  );
