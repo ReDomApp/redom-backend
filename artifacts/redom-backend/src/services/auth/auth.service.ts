@@ -863,10 +863,10 @@ export class AuthService {
 
   /**
    * ----------------------------------------------------------
-   * RESEND PHONE
+   * TWILIO PHONE
    * ----------------------------------------------------------
    */
-  async resendPhoneCode(data: {
+  async twilioPhoneCode(data: {
     userId: string;
   }) {
     const user =
