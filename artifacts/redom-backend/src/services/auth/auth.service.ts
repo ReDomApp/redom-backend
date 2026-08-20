@@ -1,7 +1,15 @@
-import { eq } from "drizzle-orm";
+import {
+  and,
+  eq,
+  or,
+} from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { users } from "../../database/schema";
+
+import {
+  validateUsername,
+} from "../../utils/usernameGenerator";
 
 import { passwordService } from "./password.service";
 import { publicIdService } from "./public-id.service";
@@ -14,14 +22,25 @@ import { fraudService } from "./fraud.service";
 import { loginHistoryService } from "./login-history.service";
 
 export class AuthService {
+  /**
+   * ----------------------------------------------------------
+   * REGISTER
+   * ----------------------------------------------------------
+   */
   async register(data: {
     firstName: string;
     lastName: string;
-    email: string;
-    phoneNumber: string;
+    username: string;
+
+    email?: string;
+    phoneNumber?: string;
+
     password: string;
     dateOfBirth?: string;
-    gender?: string;
+    gender?:
+      | "male"
+      | "female"
+      | "custom";
 
     ipAddress?: string;
     country?: string;
@@ -38,46 +57,88 @@ export class AuthService {
     loginSource?: string;
     appVersion?: string;
   }) {
-    const email =
-      emailService.validate(
-        data.email,
+    const username =
+      validateUsername(
+        data.username,
       );
 
+    const email =
+      data.email?.trim()
+        ? emailService.validate(
+            data.email,
+          )
+        : null;
+
     const phoneNumber =
-      phoneService.validate(
-        data.phoneNumber,
+      data.phoneNumber?.trim()
+        ? phoneService.validate(
+            data.phoneNumber,
+          )
+        : null;
+
+    if (
+      !email &&
+      !phoneNumber
+    ) {
+      throw new Error(
+        "At least one contact method is required: email or phone number.",
       );
+    }
 
     passwordService.validate(
       data.password,
     );
 
-    const existingEmail =
-      await db.query.users.findFirst({
-        where: eq(
-          users.email,
-          email,
-        ),
-      });
+    const existingUsername =
+      await db.query.users.findFirst(
+        {
+          where: eq(
+            users.username,
+            username,
+          ),
+        },
+      );
 
-    if (existingEmail) {
+    if (existingUsername) {
       throw new Error(
-        "Email address is already registered.",
+        "Username is already registered.",
       );
     }
 
-    const existingPhone =
-      await db.query.users.findFirst({
-        where: eq(
-          users.phoneNumber,
-          phoneNumber,
-        ),
-      });
+    if (email) {
+      const existingEmail =
+        await db.query.users.findFirst(
+          {
+            where: eq(
+              users.email,
+              email,
+            ),
+          },
+        );
 
-    if (existingPhone) {
-      throw new Error(
-        "Phone number is already registered.",
-      );
+      if (existingEmail) {
+        throw new Error(
+          "Email address is already registered.",
+        );
+      }
+    }
+
+    if (phoneNumber) {
+      const existingPhone =
+        await db.query.users.findFirst(
+          {
+            where: eq(
+              users.phoneNumber,
+              phoneNumber,
+            ),
+          },
+        );
+
+      if (existingPhone) {
+        throw new Error(
+          "Phone number is already registered.",
+        );
+      }
     }
 
     const publicId =
@@ -97,24 +158,37 @@ export class AuthService {
         .values({
           firstName:
             data.firstName.trim(),
+
           lastName:
             data.lastName.trim(),
-          username:
-            publicId,
+
+          username,
+
+          publicId,
+
           profileId,
+
           email,
+
           phoneNumber,
+
           passwordHash,
+
           dateOfBirth:
             data.dateOfBirth,
+
           gender:
             data.gender,
+
           emailVerified:
             false,
+
           phoneVerified:
             false,
+
           accountStatus:
             "pending",
+
           profileIdVisibility:
             "public",
         })
@@ -126,120 +200,183 @@ export class AuthService {
       );
     }
 
-    await verificationService.createEmailVerification({
-      userId: user.id,
-      email: user.email,
-      firstName:
-        user.firstName,
-    });
+    if (user.email) {
+      await verificationService
+        .createEmailVerification({
+          userId:
+            user.id,
 
-    await verificationService.createPhoneVerification({
-      userId: user.id,
-      phoneNumber:
-        user.phoneNumber,
-    });
+          email:
+            user.email,
 
-    await fraudService.checkRegistration({
-      userId: user.id,
-      email: user.email,
-      phoneNumber:
-        user.phoneNumber,
-      ipAddress:
-        data.ipAddress,
-      country:
-        data.country,
-      userAgent:
-        data.userAgent,
-    });
+          firstName:
+            user.firstName,
+        });
+    }
 
-    const session =
-      await sessionService.createSession({
-        userId: user.id,
-        profileId:
-          user.profileId,
+    if (
+      user.phoneNumber
+    ) {
+      await verificationService
+        .createPhoneVerification({
+          userId:
+            user.id,
+
+          phoneNumber:
+            user.phoneNumber,
+        });
+    }
+
+    await fraudService
+      .checkRegistration({
+        userId:
+          user.id,
+
+        email:
+          user.email ?? "",
+
+        phoneNumber:
+          user.phoneNumber ?? "",
 
         ipAddress:
           data.ipAddress,
+
         country:
           data.country,
-        region:
-          data.region,
-        city:
-          data.city,
 
         userAgent:
           data.userAgent,
-        platform:
-          data.platform,
-        browser:
-          data.browser,
+      });
+
+    const session =
+      await sessionService
+        .createSession({
+          userId:
+            user.id,
+
+          profileId:
+            user.profileId,
+
+          ipAddress:
+            data.ipAddress,
+
+          country:
+            data.country,
+
+          region:
+            data.region,
+
+          city:
+            data.city,
+
+          userAgent:
+            data.userAgent,
+
+          platform:
+            data.platform,
+
+          browser:
+            data.browser,
+
+          deviceName:
+            data.deviceName,
+
+          deviceId:
+            data.deviceId,
+
+          deviceType:
+            data.deviceType,
+
+          loginSource:
+            data.loginSource,
+
+          appVersion:
+            data.appVersion,
+        });
+
+    await loginHistoryService
+      .create({
+        userId:
+          user.id,
+
+        sessionId:
+          session.sessionId,
+
+        ipAddress:
+          data.ipAddress,
+
+        country:
+          data.country,
+
+        region:
+          data.region,
+
+        city:
+          data.city,
 
         deviceName:
           data.deviceName,
-        deviceId:
-          data.deviceId,
+
         deviceType:
           data.deviceType,
+
         loginSource:
           data.loginSource,
+
         appVersion:
           data.appVersion,
       });
 
-    await loginHistoryService.create({
-      userId: user.id,
-      sessionId:
-        session.sessionId,
-
-      ipAddress:
-        data.ipAddress,
-      country:
-        data.country,
-      region:
-        data.region,
-      city:
-        data.city,
-
-      deviceName:
-        data.deviceName,
-      deviceType:
-        data.deviceType,
-
-      loginSource:
-        data.loginSource,
-      appVersion:
-        data.appVersion,
-    });
-
     return {
       success: true,
+
       message:
-        "Registration completed successfully. Please verify your email address and phone number.",
+        "Registration completed successfully. Please verify your email address or phone number.",
+
       user: {
-        id: user.id,
-        publicId:
+        id:
+          user.id,
+
+        username:
           user.username,
+
+        publicId:
+          user.publicId,
+
         profileId:
           user.profileId,
+
         firstName:
           user.firstName,
+
         lastName:
           user.lastName,
+
         email:
           user.email,
+
         phoneNumber:
           user.phoneNumber,
+
         emailVerified:
           user.emailVerified,
+
         phoneVerified:
           user.phoneVerified,
+
         accountStatus:
           user.accountStatus,
       },
+
       session,
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * LOGIN
+   * ----------------------------------------------------------
+   */
   async login(data: {
     identifier: string;
     password: string;
@@ -262,31 +399,50 @@ export class AuthService {
     const identifier =
       data.identifier.trim();
 
+    if (!identifier) {
+      throw new Error(
+        "Login identifier is required.",
+      );
+    }
+
     const user =
-      await db.query.users.findFirst({
-        where: (
-          users,
-          { or, eq },
-        ) =>
-          or(
-            eq(
-              users.email,
-              identifier,
+      await db.query.users.findFirst(
+        {
+          where: (
+            users,
+            {
+              or,
+              eq,
+            },
+          ) =>
+            or(
+              eq(
+                users.email,
+                identifier,
+              ),
+
+              eq(
+                users.phoneNumber,
+                identifier,
+              ),
+
+              eq(
+                users.username,
+                identifier,
+              ),
+
+              eq(
+                users.publicId,
+                identifier,
+              ),
+
+              eq(
+                users.profileId,
+                identifier,
+              ),
             ),
-            eq(
-              users.phoneNumber,
-              identifier,
-            ),
-            eq(
-              users.username,
-              identifier,
-            ),
-            eq(
-              users.profileId,
-              identifier,
-            ),
-          ),
-      });
+        },
+      );
 
     if (!user) {
       throw new Error(
@@ -324,115 +480,163 @@ export class AuthService {
       );
     }
 
-    await fraudService.checkLogin({
-      userId: user.id,
-      ipAddress:
-        data.ipAddress,
-      country:
-        data.country,
-      userAgent:
-        data.userAgent,
-    });
-
-    const session =
-      await sessionService.createSession({
-        userId: user.id,
-        profileId:
-          user.profileId,
+    await fraudService
+      .checkLogin({
+        userId:
+          user.id,
 
         ipAddress:
           data.ipAddress,
+
         country:
           data.country,
-        region:
-          data.region,
-        city:
-          data.city,
 
         userAgent:
           data.userAgent,
-        platform:
-          data.platform,
-        browser:
-          data.browser,
+      });
+
+    const session =
+      await sessionService
+        .createSession({
+          userId:
+            user.id,
+
+          profileId:
+            user.profileId,
+
+          ipAddress:
+            data.ipAddress,
+
+          country:
+            data.country,
+
+          region:
+            data.region,
+
+          city:
+            data.city,
+
+          userAgent:
+            data.userAgent,
+
+          platform:
+            data.platform,
+
+          browser:
+            data.browser,
+
+          deviceName:
+            data.deviceName,
+
+          deviceId:
+            data.deviceId,
+
+          deviceType:
+            data.deviceType,
+
+          loginSource:
+            data.loginSource,
+
+          appVersion:
+            data.appVersion,
+        });
+
+    await loginHistoryService
+      .create({
+        userId:
+          user.id,
+
+        sessionId:
+          session.sessionId,
+
+        ipAddress:
+          data.ipAddress,
+
+        country:
+          data.country,
+
+        region:
+          data.region,
+
+        city:
+          data.city,
 
         deviceName:
           data.deviceName,
-        deviceId:
-          data.deviceId,
+
         deviceType:
           data.deviceType,
+
         loginSource:
           data.loginSource,
+
         appVersion:
           data.appVersion,
       });
 
-    await loginHistoryService.create({
-      userId: user.id,
-      sessionId:
-        session.sessionId,
-
-      ipAddress:
-        data.ipAddress,
-      country:
-        data.country,
-      region:
-        data.region,
-      city:
-        data.city,
-
-      deviceName:
-        data.deviceName,
-      deviceType:
-        data.deviceType,
-
-      loginSource:
-        data.loginSource,
-      appVersion:
-        data.appVersion,
-    });
-
     return {
       success: true,
+
       message:
         "Login successful.",
+
       user: {
-        id: user.id,
-        publicId:
+        id:
+          user.id,
+
+        username:
           user.username,
+
+        publicId:
+          user.publicId,
+
         profileId:
           user.profileId,
+
         firstName:
           user.firstName,
+
         lastName:
           user.lastName,
+
         email:
           user.email,
+
         phoneNumber:
           user.phoneNumber,
+
         emailVerified:
           user.emailVerified,
+
         phoneVerified:
           user.phoneVerified,
+
         accountStatus:
           user.accountStatus,
       },
+
       session,
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * VERIFY EMAIL
+   * ----------------------------------------------------------
+   */
   async verifyEmail(data: {
     userId: string;
     code: string;
   }) {
     const user =
-      await db.query.users.findFirst({
-        where: eq(
-          users.id,
-          data.userId,
-        ),
-      });
+      await db.query.users.findFirst(
+        {
+          where: eq(
+            users.id,
+            data.userId,
+          ),
+        },
+      );
 
     if (!user) {
       throw new Error(
@@ -440,13 +644,35 @@ export class AuthService {
       );
     }
 
-    await verificationService.verifyEmailCode({
-      userId: user.id,
-      code: data.code,
-    });
+    if (!user.email) {
+      throw new Error(
+        "No email address is associated with this account.",
+      );
+    }
 
-    const accountStatus =
-      user.phoneVerified
+    if (
+      user.emailVerified
+    ) {
+      return {
+        success: true,
+        message:
+          "Email is already verified.",
+      };
+    }
+
+    await verificationService
+      .verifyEmailCode({
+        userId:
+          user.id,
+
+        code:
+          data.code,
+      });
+
+    const nextStatus =
+      user.accountStatus ===
+        "pending" &&
+      !user.phoneNumber
         ? "active"
         : user.accountStatus;
 
@@ -455,7 +681,10 @@ export class AuthService {
       .set({
         emailVerified:
           true,
-        accountStatus,
+
+        accountStatus:
+          nextStatus,
+
         updatedAt:
           new Date(),
       })
@@ -473,23 +702,25 @@ export class AuthService {
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * VERIFY PHONE
+   * ----------------------------------------------------------
+   */
   async verifyPhone(data: {
     userId: string;
     phoneNumber: string;
     code: string;
   }) {
-    const phoneNumber =
-      phoneService.validate(
-        data.phoneNumber,
-      );
-
     const user =
-      await db.query.users.findFirst({
-        where: eq(
-          users.id,
-          data.userId,
-        ),
-      });
+      await db.query.users.findFirst(
+        {
+          where: eq(
+            users.id,
+            data.userId,
+          ),
+        },
+      );
 
     if (!user) {
       throw new Error(
@@ -497,14 +728,52 @@ export class AuthService {
       );
     }
 
-    await verificationService.verifyPhoneCode({
-      userId: user.id,
-      phoneNumber,
-      code: data.code,
-    });
+    if (!user.phoneNumber) {
+      throw new Error(
+        "No phone number is associated with this account.",
+      );
+    }
 
-    const accountStatus =
-      user.emailVerified
+    const phoneNumber =
+      phoneService.validate(
+        data.phoneNumber,
+      );
+
+    if (
+      phoneNumber !==
+      user.phoneNumber
+    ) {
+      throw new Error(
+        "The phone number does not match this account.",
+      );
+    }
+
+    if (
+      user.phoneVerified
+    ) {
+      return {
+        success: true,
+        message:
+          "Phone number is already verified.",
+      };
+    }
+
+    await verificationService
+      .verifyPhoneCode({
+        userId:
+          user.id,
+
+        phoneNumber:
+          user.phoneNumber,
+
+        code:
+          data.code,
+      });
+
+    const nextStatus =
+      user.accountStatus ===
+        "pending" &&
+      !user.email
         ? "active"
         : user.accountStatus;
 
@@ -513,7 +782,10 @@ export class AuthService {
       .set({
         phoneVerified:
           true,
-        accountStatus,
+
+        accountStatus:
+          nextStatus,
+
         updatedAt:
           new Date(),
       })
@@ -531,16 +803,23 @@ export class AuthService {
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * RESEND EMAIL
+   * ----------------------------------------------------------
+   */
   async resendEmailCode(data: {
     userId: string;
   }) {
     const user =
-      await db.query.users.findFirst({
-        where: eq(
-          users.id,
-          data.userId,
-        ),
-      });
+      await db.query.users.findFirst(
+        {
+          where: eq(
+            users.id,
+            data.userId,
+          ),
+        },
+      );
 
     if (!user) {
       throw new Error(
@@ -548,36 +827,57 @@ export class AuthService {
       );
     }
 
-    if (user.emailVerified) {
+    if (!user.email) {
+      throw new Error(
+        "No email address is associated with this account.",
+      );
+    }
+
+    if (
+      user.emailVerified
+    ) {
       throw new Error(
         "Email is already verified.",
       );
     }
 
-    await verificationService.createEmailVerification({
-      userId: user.id,
-      email: user.email,
-      firstName:
-        user.firstName,
-    });
+    await verificationService
+      .createEmailVerification({
+        userId:
+          user.id,
+
+        email:
+          user.email,
+
+        firstName:
+          user.firstName,
+      });
 
     return {
       success: true,
+
       message:
         "A new email verification code has been sent.",
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * RESEND PHONE
+   * ----------------------------------------------------------
+   */
   async resendPhoneCode(data: {
     userId: string;
   }) {
     const user =
-      await db.query.users.findFirst({
-        where: eq(
-          users.id,
-          data.userId,
-        ),
-      });
+      await db.query.users.findFirst(
+        {
+          where: eq(
+            users.id,
+            data.userId,
+          ),
+        },
+      );
 
     if (!user) {
       throw new Error(
@@ -585,114 +885,204 @@ export class AuthService {
       );
     }
 
-    if (user.phoneVerified) {
+    if (!user.phoneNumber) {
+      throw new Error(
+        "No phone number is associated with this account.",
+      );
+    }
+
+    if (
+      user.phoneVerified
+    ) {
       throw new Error(
         "Phone number is already verified.",
       );
     }
 
-    await verificationService.createPhoneVerification({
-      userId: user.id,
-      phoneNumber:
-        user.phoneNumber,
-    });
+    await verificationService
+      .createPhoneVerification({
+        userId:
+          user.id,
+
+        phoneNumber:
+          user.phoneNumber,
+      });
 
     return {
       success: true,
+
       message:
         "A new phone verification code has been sent.",
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * FORGOT PASSWORD
+   * ----------------------------------------------------------
+   */
   async forgotPassword(data: {
     identifier: string;
+
     ipAddress?: string;
     country?: string;
   }) {
-    await fraudService.checkPasswordReset({
-      ipAddress:
-        data.ipAddress,
-      country:
-        data.country,
-    });
+    await fraudService
+      .checkPasswordReset({
+        ipAddress:
+          data.ipAddress,
+
+        country:
+          data.country,
+      });
 
     const identifier =
       data.identifier.trim();
 
+    if (!identifier) {
+      return {
+        success: true,
+
+        message:
+          "If the account exists, a password reset code has been sent.",
+      };
+    }
+
     const user =
-      await db.query.users.findFirst({
-        where: (
-          users,
-          { or, eq },
-        ) =>
-          or(
-            eq(
-              users.email,
-              identifier,
+      await db.query.users.findFirst(
+        {
+          where: (
+            users,
+            {
+              or,
+              eq,
+            },
+          ) =>
+            or(
+              eq(
+                users.email,
+                identifier,
+              ),
+
+              eq(
+                users.phoneNumber,
+                identifier,
+              ),
+
+              eq(
+                users.username,
+                identifier,
+              ),
+
+              eq(
+                users.publicId,
+                identifier,
+              ),
+
+              eq(
+                users.profileId,
+                identifier,
+              ),
             ),
-            eq(
-              users.phoneNumber,
-              identifier,
-            ),
-            eq(
-              users.username,
-              identifier,
-            ),
-            eq(
-              users.profileId,
-              identifier,
-            ),
-          ),
-      });
+        },
+      );
 
     if (!user) {
       return {
         success: true,
+
         message:
           "If the account exists, a password reset code has been sent.",
       };
     }
 
     if (
-      identifier.includes("@") ||
-      identifier === user.email
+      user.email &&
+      identifier.toLowerCase() ===
+        user.email.toLowerCase()
     ) {
-      await verificationService.createEmailVerification({
-        userId: user.id,
-        email: user.email,
-        firstName:
-          user.firstName,
-      });
-    } else {
-      await verificationService.createPhoneVerification({
-        userId: user.id,
-        phoneNumber:
-          user.phoneNumber,
-      });
+      await verificationService
+        .createEmailVerification({
+          userId:
+            user.id,
+
+          email:
+            user.email,
+
+          firstName:
+            user.firstName,
+        });
+    } else if (
+      user.phoneNumber &&
+      identifier ===
+        user.phoneNumber
+    ) {
+      await verificationService
+        .createPhoneVerification({
+          userId:
+            user.id,
+
+          phoneNumber:
+            user.phoneNumber,
+        });
+    } else if (
+      user.email
+    ) {
+      await verificationService
+        .createEmailVerification({
+          userId:
+            user.id,
+
+          email:
+            user.email,
+
+          firstName:
+            user.firstName,
+        });
+    } else if (
+      user.phoneNumber
+    ) {
+      await verificationService
+        .createPhoneVerification({
+          userId:
+            user.id,
+
+          phoneNumber:
+            user.phoneNumber,
+        });
     }
 
     return {
       success: true,
+
       message:
-        "A password reset verification code has been sent.",
+        "If the account exists, a password reset verification code has been sent.",
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * RESET PASSWORD
+   * ----------------------------------------------------------
+   */
   async resetPassword(data: {
     userId: string;
     password: string;
     code: string;
+
     method:
       | "email"
       | "phone";
   }) {
     const user =
-      await db.query.users.findFirst({
-        where: eq(
-          users.id,
-          data.userId,
-        ),
-      });
+      await db.query.users.findFirst(
+        {
+          where: eq(
+            users.id,
+            data.userId,
+          ),
+        },
+      );
 
     if (!user) {
       throw new Error(
@@ -708,17 +1098,38 @@ export class AuthService {
       data.method ===
       "email"
     ) {
-      await verificationService.verifyEmailCode({
-        userId: user.id,
-        code: data.code,
-      });
+      if (!user.email) {
+        throw new Error(
+          "No email address is associated with this account.",
+        );
+      }
+
+      await verificationService
+        .verifyEmailCode({
+          userId:
+            user.id,
+
+          code:
+            data.code,
+        });
     } else {
-      await verificationService.verifyPhoneCode({
-        userId: user.id,
-        phoneNumber:
-          user.phoneNumber,
-        code: data.code,
-      });
+      if (!user.phoneNumber) {
+        throw new Error(
+          "No phone number is associated with this account.",
+        );
+      }
+
+      await verificationService
+        .verifyPhoneCode({
+          userId:
+            user.id,
+
+          phoneNumber:
+            user.phoneNumber,
+
+          code:
+            data.code,
+        });
     }
 
     const passwordHash =
@@ -730,6 +1141,7 @@ export class AuthService {
       .update(users)
       .set({
         passwordHash,
+
         updatedAt:
           new Date(),
       })
@@ -740,49 +1152,67 @@ export class AuthService {
         ),
       );
 
-    await sessionService.revokeAllSessions(
-      user.id,
-    );
+    await sessionService
+      .revokeAllSessions(
+        user.id,
+      );
 
     return {
       success: true,
+
       message:
         "Password changed successfully. Please sign in again.",
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * LOGOUT
+   * ----------------------------------------------------------
+   */
   async logout(data: {
     userId: string;
     sessionId: string;
   }) {
-    await sessionService.revokeSession(
-      data.sessionId,
-      data.userId,
-    );
+    await sessionService
+      .revokeSession(
+        data.sessionId,
+        data.userId,
+      );
 
-    await loginHistoryService.logout(
-      data.sessionId,
-    );
+    await loginHistoryService
+      .logout(
+        data.sessionId,
+      );
 
     return {
       success: true,
+
       message:
         "Logged out successfully.",
     };
   }
 
+  /**
+   * ----------------------------------------------------------
+   * REFRESH
+   * ----------------------------------------------------------
+   */
   async refreshSession(data: {
     refreshToken: string;
   }) {
     const session =
-      await sessionService.refreshSession(
-        data.refreshToken,
-      );
+      await sessionService
+        .refreshSession(
+          data.refreshToken,
+        );
 
     return {
       success: true,
+
       message:
         "Session refreshed successfully.",
+
       session,
     };
   }
