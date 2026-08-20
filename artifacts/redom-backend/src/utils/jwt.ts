@@ -18,7 +18,8 @@ export function generateAccessToken(
 ): string {
   return jwt.sign(
     payload,
-    env.JWT_ACCESS_SECRET,
+    env.authentication
+      .jwtAccessSecret,
     {
       expiresIn: "15m",
     },
@@ -30,7 +31,8 @@ export function generateRefreshToken(
 ): string {
   return jwt.sign(
     payload,
-    env.JWT_REFRESH_SECRET,
+    env.authentication
+      .jwtRefreshSecret,
     {
       expiresIn: "30d",
     },
@@ -42,7 +44,8 @@ export function verifyAccessToken(
 ): AccessTokenPayload {
   return jwt.verify(
     token,
-    env.JWT_ACCESS_SECRET,
+    env.authentication
+      .jwtAccessSecret,
   ) as AccessTokenPayload;
 }
 
@@ -51,6 +54,7 @@ export function verifyRefreshToken(
 ): RefreshTokenPayload {
   return jwt.verify(
     token,
-    env.JWT_REFRESH_SECRET,
+    env.authentication
+      .jwtRefreshSecret,
   ) as RefreshTokenPayload;
 }
