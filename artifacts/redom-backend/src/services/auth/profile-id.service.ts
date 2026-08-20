@@ -1,16 +1,21 @@
-import { randomInt } from "crypto";
-import { eq } from "drizzle-orm";
+import {
+  randomInt,
+} from "crypto";
+
+import {
+  eq,
+} from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { users } from "../../database/schema";
 
-export class PublicIdService {
+export class ProfileIdService {
   /**
-   * Generate a unique ReDom Public ID.
+   * Generate a unique ReDom Profile ID.
    *
    * Format:
    *
-   * 234 + XXX + XXXXXXXXX
+   * 234 + 12 digits
    *
    * Example:
    *
@@ -18,67 +23,76 @@ export class PublicIdService {
    */
   async generate(): Promise<string> {
     while (true) {
-      const publicId =
+      const profileId =
         this.createCandidate();
 
       const existing =
-        await db.query.users.findFirst({
-          where: eq(
-            users.publicId,
-            publicId,
-          ),
-        });
+        await db.query.users
+          .findFirst({
+            where:
+              eq(
+                users.profileId,
+                profileId,
+              ),
+          });
 
       if (!existing) {
-        return publicId;
+        return profileId;
       }
     }
   }
 
   /**
-   * Validate a ReDom Public ID.
+   * Validate a ReDom Profile ID.
    */
   validate(
-    publicId: string,
+    profileId: string,
   ): boolean {
     return /^234[1-9][0-9]{11}$/.test(
-      publicId,
+      profileId,
     );
   }
 
   /**
-   * Check whether a Public ID exists.
+   * Check whether a Profile ID exists.
    */
   async exists(
-    publicId: string,
+    profileId: string,
   ): Promise<boolean> {
     const existing =
-      await db.query.users.findFirst({
-        where: eq(
-          users.publicId,
-          publicId,
-        ),
-      });
+      await db.query.users
+        .findFirst({
+          where:
+            eq(
+              users.profileId,
+              profileId,
+            ),
+        });
 
     return !!existing;
   }
 
   private createCandidate(): string {
-    const middle = randomInt(
-      111,
-      1000,
-    ).toString();
+    const middle =
+      randomInt(
+        111,
+        1000,
+      ).toString();
 
-    const last = randomInt(
-      0,
-      1_000_000_000,
-    )
-      .toString()
-      .padStart(9, "0");
+    const last =
+      randomInt(
+        0,
+        1_000_000_000,
+      )
+        .toString()
+        .padStart(
+          9,
+          "0",
+        );
 
     return `234${middle}${last}`;
   }
 }
 
-export const publicIdService =
-  new PublicIdService();
+export const profileIdService =
+  new ProfileIdService();
