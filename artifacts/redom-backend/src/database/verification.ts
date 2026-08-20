@@ -4,133 +4,220 @@ import {
   varchar,
   boolean,
   timestamp,
+  index,
 } from "drizzle-orm/pg-core";
 
 import { users } from "./schema";
 
-export const verification = pgTable("verification", {
-  // Internal Verification Record ID
-  id: uuid("id").defaultRandom().primaryKey(),
+export const verification =
+  pgTable(
+    "verification",
+    {
+      id: uuid("id")
+        .defaultRandom()
+        .primaryKey(),
 
-  // Account Owner
-  userId: uuid("user_id")
-    .notNull()
-    .unique()
-    .references(() => users.id),
+      userId: uuid("user_id")
+        .notNull()
+        .unique()
+        .references(
+          () => users.id,
+          {
+            onDelete:
+              "cascade",
+          },
+        ),
 
-  // -------------------------------
-  // VERIFICATION STATUS
-  // -------------------------------
+      // -------------------------------------------------------
+      // IDENTITY VERIFICATION STATE
+      // -------------------------------------------------------
 
-  verificationStatus: varchar("verification_status", {
-    length: 30,
-  })
-    .default("not_invited")
-    .notNull(),
+      verificationStatus:
+        varchar(
+          "verification_status",
+          {
+            length: 30,
+          },
+        )
+          .default(
+            "not_started",
+          )
+          .notNull(),
 
-  // not_invited
-  // invited
-  // pending
-  // approved
-  // rejected
-  // suspended
-  // revoked
+      /*
+       * not_started
+       * requested
+       * pending
+       * approved
+       * rejected
+       * suspended
+       * revoked
+       */
 
-  // -------------------------------
-  // VERIFICATION CATEGORY
-  // -------------------------------
+      /*
+       * The backend does NOT assume what kind of identity
+       * verification the frontend will request.
+       *
+       * The selected document/request is represented by
+       * verificationDocuments.
+       */
 
-  verificationType: varchar("verification_type", {
-    length: 20,
-  }).notNull(),
+      // -------------------------------------------------------
+      // REQUEST / REVIEW LIFECYCLE
+      // -------------------------------------------------------
 
-  // individual
-  // business
-  // government
-  // corporate
-  // -------------------------------
-  // REVIEW PROCESS
-  // -------------------------------
+      requestedAt:
+        timestamp(
+          "requested_at",
+        ),
 
-  invitedAt: timestamp("invited_at"),
+      applicationSubmittedAt:
+        timestamp(
+          "application_submitted_at",
+        ),
 
-  applicationSubmittedAt: timestamp(
-    "application_submitted_at"
-  ),
+      reviewStartedAt:
+        timestamp(
+          "review_started_at",
+        ),
 
-  reviewStartedAt: timestamp("review_started_at"),
+      approvedAt:
+        timestamp(
+          "approved_at",
+        ),
 
-  approvedAt: timestamp("approved_at"),
+      rejectedAt:
+        timestamp(
+          "rejected_at",
+        ),
 
-  rejectedAt: timestamp("rejected_at"),
+      suspendedAt:
+        timestamp(
+          "suspended_at",
+        ),
 
-  revokedAt: timestamp("revoked_at"),
+      revokedAt:
+        timestamp(
+          "revoked_at",
+        ),
 
-  suspendedAt: timestamp("suspended_at"),
+      expiresAt:
+        timestamp(
+          "expires_at",
+        ),
 
-  expiresAt: timestamp("expires_at"),
+      // -------------------------------------------------------
+      // REVIEW INFORMATION
+      // -------------------------------------------------------
 
-  // -------------------------------
-  // REVIEW INFORMATION
-  // -------------------------------
+      rejectionReason:
+        varchar(
+          "rejection_reason",
+          {
+            length: 1000,
+          },
+        ),
 
-  rejectionReason: varchar("rejection_reason", {
-    length: 1000,
-  }),
+      revocationReason:
+        varchar(
+          "revocation_reason",
+          {
+            length: 1000,
+          },
+        ),
 
-  revocationReason: varchar("revocation_reason", {
-    length: 1000,
-  }),
+      suspensionReason:
+        varchar(
+          "suspension_reason",
+          {
+            length: 1000,
+          },
+        ),
 
-  suspensionReason: varchar("suspension_reason", {
-    length: 1000,
-  }),
+      reviewNotes:
+        varchar(
+          "review_notes",
+          {
+            length: 3000,
+          },
+        ),
 
-  reviewNotes: varchar("review_notes", {
-    length: 3000,
-  }),
+      reviewedBy:
+        varchar(
+          "reviewed_by",
+          {
+            length: 100,
+          },
+        ),
 
-  // -------------------------------
-  // REVIEW PROVIDER
-  // -------------------------------
+      reviewProvider:
+        varchar(
+          "review_provider",
+          {
+            length: 100,
+          },
+        ),
 
-  reviewedBy: varchar("reviewed_by", {
-    length: 50,
-  }),
+      // -------------------------------------------------------
+      // USER-FACING VERIFICATION STATE
+      // -------------------------------------------------------
 
-  // persona
-  // veriff
-  // moderator
+      badgeVisible:
+        boolean(
+          "badge_visible",
+        )
+          .default(false)
+          .notNull(),
 
-  // -------------------------------
-  // USER EXPERIENCE
-  // -------------------------------
+      canReapply:
+        boolean(
+          "can_reapply",
+        )
+          .default(true)
+          .notNull(),
 
-  badgeVisible: boolean("badge_visible")
-    .default(false)
-    .notNull(),
+      // -------------------------------------------------------
+      // AUDIT
+      // -------------------------------------------------------
 
-  canReapply: boolean("can_reapply")
-    .default(true)
-    .notNull(),
+      applicationAttempts:
+        varchar(
+          "application_attempts",
+          {
+            length: 10,
+          },
+        )
+          .default("0")
+          .notNull(),
 
-  reviewTimeHours: varchar("review_time_hours", {
-    length: 10,
-  }).default("24"),
+      createdAt:
+        timestamp(
+          "created_at",
+        )
+          .defaultNow()
+          .notNull(),
 
-  applicationAttempts: varchar("application_attempts", {
-    length: 10,
-  }).default("0"),
+      updatedAt:
+        timestamp(
+          "updated_at",
+        )
+          .defaultNow()
+          .notNull(),
+    },
 
-  // -------------------------------
-  // RECORD
-  // -------------------------------
+    (table) => ({
+      userIdx:
+        index(
+          "verification_user_idx",
+        ).on(
+          table.userId,
+        ),
 
-  createdAt: timestamp("created_at")
-    .defaultNow()
-    .notNull(),
-
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .notNull(),
-});
+      statusIdx:
+        index(
+          "verification_status_idx",
+        ).on(
+          table.verificationStatus,
+        ),
+    }),
+  );
