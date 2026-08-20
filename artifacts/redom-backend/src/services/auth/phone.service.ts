@@ -1,68 +1,125 @@
-import { twilioClient } from "../../lib/twilio";
+import {
+  twilioSmsProvider,
+} from "../../lib/providers/sms/twilio-sms-provider";
+
+import type {
+  SmsVerificationProvider,
+} from "../../lib/providers/sms/sms-provider";
 
 export class PhoneService {
+  private readonly provider:
+    SmsVerificationProvider;
+
+  constructor(
+    provider: SmsVerificationProvider,
+  ) {
+    this.provider = provider;
+  }
+
   /**
    * Normalize a phone number.
    */
-  normalize(phoneNumber: string): string {
-    return phoneNumber.replace(/\s+/g, "");
+  normalize(
+    phoneNumber: string,
+  ): string {
+    return phoneNumber
+      .trim()
+      .replace(/\s+/g, "");
   }
 
   /**
    * Validate E.164 phone numbers.
    */
-  validate(phoneNumber: string): string {
-    phoneNumber = this.normalize(phoneNumber);
+  validate(
+    phoneNumber: string,
+  ): string {
+    phoneNumber =
+      this.normalize(
+        phoneNumber,
+      );
 
-    const phoneRegex = /^\+[1-9]\d{7,14}$/;
+    const phoneRegex =
+      /^\+[1-9]\d{7,14}$/;
 
-    if (!phoneRegex.test(phoneNumber)) {
-      throw new Error("Invalid phone number.");
+    if (
+      !phoneRegex.test(
+        phoneNumber,
+      )
+    ) {
+      throw new Error(
+        "Invalid phone number.",
+      );
     }
 
     return phoneNumber;
   }
 
   /**
-   * Send a verification code using Twilio Verify.
+   * Send a phone verification code.
+   *
+   * Provider-specific implementation remains
+   * outside the authentication service.
    */
   async sendVerificationCode(
     phoneNumber: string,
   ): Promise<void> {
-    await twilioClient.verify.v2
-      .services(process.env.TWILIO_VERIFY_SERVICE_SID!)
-      .verifications.create({
-        to: phoneNumber,
-        channel: "sms",
-      });
+    const normalized =
+      this.validate(
+        phoneNumber,
+      );
+
+    await this.provider
+      .sendVerificationCode(
+        normalized,
+      );
   }
 
   /**
-   * Verify the code entered by the user.
+   * Verify a phone verification code.
    */
   async verifyCode(
     phoneNumber: string,
     code: string,
   ): Promise<boolean> {
-    const result = await twilioClient.verify.v2
-      .services(process.env.TWILIO_VERIFY_SERVICE_SID!)
-      .verificationChecks.create({
-        to: phoneNumber,
-        code,
-      });
+    const normalized =
+      this.validate(
+        phoneNumber,
+      );
 
-    return result.status === "approved";
+    const verificationCode =
+      code.trim();
+
+    if (
+      !verificationCode
+    ) {
+      throw new Error(
+        "Verification code is required.",
+      );
+    }
+
+    return this.provider
+      .verifyCode(
+        normalized,
+        verificationCode,
+      );
   }
 
   /**
-   * Send a password reset code.
-   * Uses the same Twilio Verify flow.
+   * Send a password-reset verification code.
+   *
+   * Password-reset delivery uses the same
+   * provider abstraction.
    */
   async sendPasswordResetCode(
     phoneNumber: string,
   ): Promise<void> {
-    await this.sendVerificationCode(phoneNumber);
+    await this.sendVerificationCode(
+      phoneNumber,
+    );
   }
 }
 
-export const phoneService = new PhoneService();
+export const phoneService =
+  new PhoneService(
+    twilioSmsProvider,
+  );

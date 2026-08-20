@@ -92,6 +92,13 @@
       "when": 1785459506971,
       "tag": "0012_tiny_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787223692744,
+      "tag": "0013_right_vance_astro",
+      "breakpoints": true
     }
   ]
 }
