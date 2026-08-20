@@ -1,109 +1,161 @@
-import { addMinutes } from "date-fns";
-import { and, eq, gt } from "drizzle-orm";
+import {
+  addMinutes,
+} from "date-fns";
+
+import {
+  and,
+  eq,
+  gt,
+} from "drizzle-orm";
 
 import { db } from "../../database/db";
-import { verifications } from "../../database/verifications.schema";
+import {
+  verifications,
+} from "../../database/verifications.schema";
 
-import { emailService } from "./email.service";
-import { phoneService } from "./phone.service";
-import { passwordService } from "./password.service";
+import {
+  emailService,
+} from "./email.service";
+
+import {
+  phoneService,
+} from "./phone.service";
+
+import {
+  passwordService,
+} from "./password.service";
 
 export class VerificationService {
   /**
-   * Create an email verification.
+   * ----------------------------------------------------------
+   * EMAIL VERIFICATION
+   * ----------------------------------------------------------
    */
-  async createEmailVerification(params: {
-    userId: string;
-    email: string;
-    firstName: string;
-  }): Promise<void> {
+
+  async createEmailVerification(
+    params: {
+      userId: string;
+      email: string;
+      firstName: string;
+    },
+  ): Promise<void> {
     const code =
-      emailService.generateVerificationCode();
+      emailService
+        .generateVerificationCode();
 
     const codeHash =
-      await passwordService.hash(code);
-
-    await db
-      .delete(verifications)
-      .where(
-        and(
-          eq(verifications.userId, params.userId),
-          eq(verifications.type, "email"),
-        ),
+      await passwordService.hash(
+        code,
       );
 
-    await db.insert(verifications).values({
-      userId: params.userId,
-      type: "email",
-      target: params.email,
-      codeHash,
-      expiresAt: addMinutes(new Date(), 10),
-    });
-
-    await emailService.sendVerificationCode(
-      params.email,
-      params.firstName,
-      code,
-    );
-  }
-
-  /**
-   * Create a phone verification.
-   */
-  async createPhoneVerification(params: {
-    userId: string;
-    phoneNumber: string;
-  }): Promise<void> {
-    await db
-      .delete(verifications)
-      .where(
-        and(
-          eq(verifications.userId, params.userId),
-          eq(verifications.type, "phone"),
-        ),
+    const expiresAt =
+      addMinutes(
+        new Date(),
+        10,
       );
 
-    await phoneService.sendVerificationCode(
-      params.phoneNumber,
-    );
+    await db
+      .delete(
+        verifications,
+      )
+      .where(
+        and(
+          eq(
+            verifications.userId,
+            params.userId,
+          ),
 
-    await db.insert(verifications).values({
-      userId: params.userId,
-      type: "phone",
-      target: params.phoneNumber,
-      codeHash: "",
-      expiresAt: addMinutes(new Date(), 10),
-    });
-  }
-
-  /**
-   * Verify an email code.
-   */
-  async verifyEmailCode(params: {
-    userId: string;
-    code: string;
-  }): Promise<boolean> {
-    const verification =
-      await db.query.verifications.findFirst({
-        where: and(
-          eq(verifications.userId, params.userId),
-          eq(verifications.type, "email"),
-          gt(
-            verifications.expiresAt,
-            new Date(),
+          eq(
+            verifications.type,
+            "email",
           ),
         ),
+      );
+
+    await db
+      .insert(
+        verifications,
+      )
+      .values({
+        userId:
+          params.userId,
+
+        type:
+          "email",
+
+        target:
+          params.email,
+
+        codeHash,
+
+        providerReference:
+          null,
+
+        status:
+          "pending",
+
+        expiresAt,
       });
+
+    await emailService
+      .sendVerificationCode(
+        params.email,
+        params.firstName,
+        code,
+      );
+  }
+
+  async verifyEmailCode(
+    params: {
+      userId: string;
+      code: string;
+    },
+  ): Promise<boolean> {
+    const verification =
+      await db.query
+        .verifications
+        .findFirst({
+          where:
+            and(
+              eq(
+                verifications.userId,
+                params.userId,
+              ),
+
+              eq(
+                verifications.type,
+                "email",
+              ),
+
+              eq(
+                verifications.status,
+                "pending",
+              ),
+
+              gt(
+                verifications.expiresAt,
+                new Date(),
+              ),
+            ),
+        });
 
     if (!verification) {
       throw new Error(
-        "Verification code expired.",
+        "Verification code expired or is no longer valid.",
+      );
+    }
+
+    if (
+      !verification.codeHash
+    ) {
+      throw new Error(
+        "Email verification is not configured correctly.",
       );
     }
 
     const valid =
       await passwordService.verify(
-        params.code,
+        params.code.trim(),
         verification.codeHash,
       );
 
@@ -114,43 +166,147 @@ export class VerificationService {
     }
 
     await db
-      .delete(verifications)
-      .where(eq(verifications.id, verification.id));
+      .update(
+        verifications,
+      )
+      .set({
+        status:
+          "verified",
+
+        verifiedAt:
+          new Date(),
+      })
+      .where(
+        eq(
+          verifications.id,
+          verification.id,
+        ),
+      );
 
     return true;
   }
 
   /**
-   * Verify a phone code.
+   * ----------------------------------------------------------
+   * PHONE VERIFICATION
+   * ----------------------------------------------------------
+   *
+   * The verification code belongs to the
+   * configured SMS verification provider.
+   *
+   * PhoneService remains the only service
+   * that knows the provider implementation.
    */
-  async verifyPhoneCode(params: {
-    userId: string;
-    phoneNumber: string;
-    code: string;
-  }): Promise<boolean> {
-    const verification =
-      await db.query.verifications.findFirst({
-        where: and(
-          eq(verifications.userId, params.userId),
-          eq(verifications.type, "phone"),
-          gt(
-            verifications.expiresAt,
-            new Date(),
+
+  async createPhoneVerification(
+    params: {
+      userId: string;
+      phoneNumber: string;
+    },
+  ): Promise<void> {
+    const expiresAt =
+      addMinutes(
+        new Date(),
+        10,
+      );
+
+    await db
+      .delete(
+        verifications,
+      )
+      .where(
+        and(
+          eq(
+            verifications.userId,
+            params.userId,
+          ),
+
+          eq(
+            verifications.type,
+            "phone",
           ),
         ),
+      );
+
+    await phoneService
+      .sendVerificationCode(
+        params.phoneNumber,
+      );
+
+    await db
+      .insert(
+        verifications,
+      )
+      .values({
+        userId:
+          params.userId,
+
+        type:
+          "phone",
+
+        target:
+          params.phoneNumber,
+
+        codeHash:
+          null,
+
+        providerReference:
+          null,
+
+        status:
+          "pending",
+
+        expiresAt,
       });
+  }
+
+  async verifyPhoneCode(
+    params: {
+      userId: string;
+      phoneNumber: string;
+      code: string;
+    },
+  ): Promise<boolean> {
+    const verification =
+      await db.query
+        .verifications
+        .findFirst({
+          where:
+            and(
+              eq(
+                verifications.userId,
+                params.userId,
+              ),
+
+              eq(
+                verifications.type,
+                "phone",
+              ),
+
+              eq(
+                verifications.status,
+                "pending",
+              ),
+
+              gt(
+                verifications.expiresAt,
+                new Date(),
+              ),
+            ),
+        });
 
     if (!verification) {
       throw new Error(
-        "Verification code expired.",
+        "Phone verification expired or is no longer valid.",
       );
     }
 
     const valid =
-      await phoneService.verifyCode(
-        params.phoneNumber,
-        params.code,
-      );
+      await phoneService
+        .verifyCode(
+          params.phoneNumber,
+          params.code,
+        );
 
     if (!valid) {
       throw new Error(
@@ -159,8 +315,22 @@ export class VerificationService {
     }
 
     await db
-      .delete(verifications)
-      .where(eq(verifications.id, verification.id));
+      .update(
+        verifications,
+      )
+      .set({
+        status:
+          "verified",
+
+        verifiedAt:
+          new Date(),
+      })
+      .where(
+        eq(
+          verifications.id,
+          verification.id,
+        ),
+      );
 
     return true;
   }
