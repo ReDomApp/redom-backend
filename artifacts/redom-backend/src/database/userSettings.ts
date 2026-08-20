@@ -4,145 +4,204 @@ import {
   varchar,
   boolean,
   timestamp,
-  integer,
+  unique,
 } from "drizzle-orm/pg-core";
 
 import { users } from "./schema";
 
-export const userSettings = pgTable("user_settings", {
-  // Internal Settings ID
-  id: uuid("id").defaultRandom().primaryKey(),
+export const userSettings =
+  pgTable(
+    "user_settings",
+    {
+      id: uuid("id")
+        .defaultRandom()
+        .primaryKey(),
 
-  // Owner of these settings
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id),
+      userId: uuid("user_id")
+        .notNull()
+        .references(
+          () => users.id,
+          {
+            onDelete:
+              "cascade",
+          },
+        ),
 
-  // ----------------------------
-  // APPEARANCE
-  // ----------------------------
+      // --------------------------------
+      // APPEARANCE
+      // --------------------------------
 
-  // Theme: system, light, dark
-  theme: varchar("theme", {
-    length: 20,
-  })
-    .default("system")
-    .notNull(),
+      theme:
+        varchar(
+          "theme",
+          {
+            length: 20,
+          },
+        )
+          .default("system")
+          .notNull(),
 
-  // App language (system by default)
-  language: varchar("language", {
-    length: 20,
-  })
-    .default("system")
-    .notNull(),
+      language:
+        varchar(
+          "language",
+          {
+            length: 20,
+          },
+        )
+          .default("system")
+          .notNull(),
 
-  // ----------------------------
-  // FEED
-  // ----------------------------
+      // --------------------------------
+      // FEED
+      // --------------------------------
 
-  // Show political content
-  politicalContent: boolean("political_content")
-    .default(true)
-    .notNull(),
+      politicalContent:
+        boolean(
+          "political_content",
+        )
+          .default(true)
+          .notNull(),
 
-  // Show posts from people you follow
-  followingFeed: boolean("following_feed")
-    .default(true)
-    .notNull(),
+      followingFeed:
+        boolean(
+          "following_feed",
+        )
+          .default(true)
+          .notNull(),
 
-  // Snooze following feed
-  // off, 1_day, 7_days, 14_days, 30_days
-  followingFeedSnooze: varchar("following_feed_snooze", {
-    length: 20,
-  })
-    .default("off")
-    .notNull(),
+      followingFeedSnooze:
+        varchar(
+          "following_feed_snooze",
+          {
+            length: 20,
+          },
+        )
+          .default("off")
+          .notNull(),
 
-  // Sensitive content
-  // standard, less, more
-  sensitiveContent: varchar("sensitive_content", {
-    length: 20,
-  })
-    .default("standard")
-    .notNull(),
+      sensitiveContent:
+        varchar(
+          "sensitive_content",
+          {
+            length: 20,
+          },
+        )
+          .default("standard")
+          .notNull(),
 
-  // ----------------------------
-  // VIDEO
-  // ----------------------------
+      // --------------------------------
+      // VIDEO
+      // --------------------------------
 
-  // Autoplay
-  // off, wifi_only, wifi_mobile
-  autoplayVideos: varchar("autoplay_videos", {
-    length: 20,
-  })
-    .default("off")
-    .notNull(),
+      autoplayVideos:
+        varchar(
+          "autoplay_videos",
+          {
+            length: 20,
+          },
+        )
+          .default("off")
+          .notNull(),
 
-  // ----------------------------
-  // TRANSLATION
-  // ----------------------------
+      // --------------------------------
+      // TRANSLATION
+      // --------------------------------
 
-  // Automatically translate posts
-  autoTranslatePosts: boolean("auto_translate_posts")
-    .default(true)
-    .notNull(),
+      autoTranslatePosts:
+        boolean(
+          "auto_translate_posts",
+        )
+          .default(true)
+          .notNull(),
 
-  // Automatically translate comments
-  autoTranslateComments: boolean("auto_translate_comments")
-    .default(true)
-    .notNull(),
+      autoTranslateComments:
+        boolean(
+          "auto_translate_comments",
+        )
+          .default(true)
+          .notNull(),
 
-  // ----------------------------
-  // ACCESSIBILITY
-  // ----------------------------
+      // --------------------------------
+      // ACCESSIBILITY
+      // --------------------------------
 
-  // small, medium, large, extra_large
-  fontSize: varchar("font_size", {
-    length: 20,
-  })
-    .default("medium")
-    .notNull(),
+      fontSize:
+        varchar(
+          "font_size",
+          {
+            length: 20,
+          },
+        )
+          .default("medium")
+          .notNull(),
 
-  // Reduce animations
-  reduceMotion: boolean("reduce_motion")
-    .default(false)
-    .notNull(),
+      reduceMotion:
+        boolean(
+          "reduce_motion",
+        )
+          .default(false)
+          .notNull(),
 
-  // High contrast mode
-  highContrast: boolean("high_contrast")
-    .default(false)
-    .notNull(),
+      highContrast:
+        boolean(
+          "high_contrast",
+        )
+          .default(false)
+          .notNull(),
 
-  // Screen reader mode
-  screenReaderMode: boolean("screen_reader_mode")
-    .default(false)
-    .notNull(),
+      screenReaderMode:
+        boolean(
+          "screen_reader_mode",
+        )
+          .default(false)
+          .notNull(),
 
-  // always, automatic, off
-  captions: varchar("captions", {
-    length: 20,
-  })
-    .default("automatic")
-    .notNull(),
+      captions:
+        varchar(
+          "captions",
+          {
+            length: 20,
+          },
+        )
+          .default("automatic")
+          .notNull(),
 
-  // ----------------------------
-  // PROFILE
-  // ----------------------------
+      // --------------------------------
+      // PROFILE
+      // --------------------------------
 
-  // Show joined date
-  showJoinDate: boolean("show_join_date")
-    .default(true)
-    .notNull(),
+      showJoinDate:
+        boolean(
+          "show_join_date",
+        )
+          .default(true)
+          .notNull(),
 
-  // ----------------------------
-  // SYSTEM
-  // ----------------------------
+      // --------------------------------
+      // SYSTEM
+      // --------------------------------
 
-  createdAt: timestamp("created_at")
-    .defaultNow()
-    .notNull(),
+      createdAt:
+        timestamp(
+          "created_at",
+        )
+          .defaultNow()
+          .notNull(),
 
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .notNull(),
-});
+      updatedAt:
+        timestamp(
+          "updated_at",
+        )
+          .defaultNow()
+          .notNull(),
+    },
+
+    (table) => ({
+      userIdUnique:
+        unique(
+          "user_settings_user_id_unique",
+        ).on(
+          table.userId,
+        ),
+    }),
+  );
