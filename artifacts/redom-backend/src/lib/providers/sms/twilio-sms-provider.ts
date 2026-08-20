@@ -1,5 +1,7 @@
 import { twilioClient } from "../../twilio";
 
+import { env } from "../../../config/env";
+
 import type {
   SmsVerificationProvider,
 } from "./sms-provider";
@@ -7,25 +9,13 @@ import type {
 export class TwilioSmsProvider
   implements SmsVerificationProvider
 {
-  private getVerifyServiceSid(): string {
-    const serviceSid =
-      process.env.TWILIO_VERIFY_SERVICE_SID;
-
-    if (!serviceSid) {
-      throw new Error(
-        "TWILIO_VERIFY_SERVICE_SID is not configured.",
-      );
-    }
-
-    return serviceSid;
-  }
-
   async sendVerificationCode(
     phoneNumber: string,
   ): Promise<void> {
     await twilioClient.verify.v2
       .services(
-        this.getVerifyServiceSid(),
+        env.twilio
+          .verifyServiceSid,
       )
       .verifications.create({
         to: phoneNumber,
@@ -40,14 +30,18 @@ export class TwilioSmsProvider
     const result =
       await twilioClient.verify.v2
         .services(
-          this.getVerifyServiceSid(),
+          env.twilio
+            .verifyServiceSid,
         )
         .verificationChecks.create({
           to: phoneNumber,
           code,
         });
 
-    return result.status === "approved";
+    return (
+      result.status ===
+      "approved"
+    );
   }
 }
 
