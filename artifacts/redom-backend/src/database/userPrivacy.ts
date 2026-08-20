@@ -4,181 +4,229 @@ import {
   varchar,
   boolean,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 
 import { users } from "./schema";
 
-export const userPrivacy = pgTable("user_privacy", {
-  // Internal Privacy ID
-  id: uuid("id").defaultRandom().primaryKey(),
+export const userPrivacy =
+  pgTable(
+    "user_privacy",
+    {
+      id: uuid("id")
+        .defaultRandom()
+        .primaryKey(),
 
-  // User that owns these privacy settings
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id),
+      userId: uuid("user_id")
+        .notNull()
+        .references(
+          () => users.id,
+          {
+            onDelete:
+              "cascade",
+          },
+        ),
 
-  // ----------------------------
-  // PROFILE
-  // ----------------------------
+      // --------------------------------
+      // PROFILE
+      // --------------------------------
 
-  // public | friends | private
-  profileVisibility: varchar("profile_visibility", {
-    length: 20,
-  })
-    .default("public")
-    .notNull(),
+      profileVisibility:
+        varchar(
+          "profile_visibility",
+          {
+            length: 20,
+          },
+        )
+          .default("public")
+          .notNull(),
 
-  // ----------------------------
-  // FRIEND REQUESTS
-  // ----------------------------
+      // --------------------------------
+      // FRIEND REQUESTS
+      // --------------------------------
 
-  // public | friends_of_friends | no_one
-  friendRequests: varchar("friend_requests", {
-    length: 30,
-  })
-    .default("public")
-    .notNull(),
+      friendRequests:
+        varchar(
+          "friend_requests",
+          {
+            length: 30,
+          },
+        )
+          .default("public")
+          .notNull(),
 
-  // ----------------------------
-  // FOLLOW REQUESTS
-  // ----------------------------
+      // --------------------------------
+      // FOLLOW REQUESTS
+      // --------------------------------
 
-  // public | approval_required
-  //
-  // Public accounts:
-  // Anyone follows instantly.
-  //
-  // Private accounts:
-  // Every follow requires approval.
-  followRequests: varchar("follow_requests", {
-    length: 30,
-  })
-    .default("public")
-    .notNull(),
+      followRequests:
+        varchar(
+          "follow_requests",
+          {
+            length: 30,
+          },
+        )
+          .default("public")
+          .notNull(),
 
-  // ----------------------------
-  // MESSAGES
-  // ----------------------------
+      // --------------------------------
+      // MESSAGES
+      // --------------------------------
 
-  // message_requests | friends | no_one |
-  // all_friends_except_selected |
-  // only_selected_friends
-  messages: varchar("messages", {
-    length: 40,
-  })
-    .default("message_requests")
-    .notNull(),
+      messages:
+        varchar(
+          "messages",
+          {
+            length: 40,
+          },
+        )
+          .default(
+            "message_requests",
+          )
+          .notNull(),
 
-  // ----------------------------
-  // COMMENTS
-  // ----------------------------
+      // --------------------------------
+      // COMMENTS
+      // --------------------------------
 
-  // friends | friends_of_friends | no_one |
-  // followers | public
-  comments: varchar("comments", {
-    length: 30,
-  })
-    .default("friends")
-    .notNull(),
+      comments:
+        varchar(
+          "comments",
+          {
+            length: 30,
+          },
+        )
+          .default("friends")
+          .notNull(),
 
-  // ----------------------------
-  // MENTIONS
-  // ----------------------------
+      // --------------------------------
+      // MENTIONS
+      // --------------------------------
 
-  // friends | followers | public | no_one
-  mentions: varchar("mentions", {
-    length: 30,
-  })
-    .default("friends")
-    .notNull(),
+      mentions:
+        varchar(
+          "mentions",
+          {
+            length: 30,
+          },
+        )
+          .default("friends")
+          .notNull(),
 
-  // ----------------------------
-  // TAGS
-  // ----------------------------
+      // --------------------------------
+      // TAGS
+      // --------------------------------
 
-  // friends | followers | public | no_one
-  tags: varchar("tags", {
-    length: 30,
-  })
-    .default("friends")
-    .notNull(),
+      tags:
+        varchar(
+          "tags",
+          {
+            length: 30,
+          },
+        )
+          .default("friends")
+          .notNull(),
 
-  // ----------------------------
-  // FRIENDS LIST
-  // ----------------------------
+      // --------------------------------
+      // FRIENDS LIST
+      // --------------------------------
 
-  // friends | public | no_one
-  friendsListVisibility: varchar("friends_list_visibility", {
-    length: 20,
-  })
-    .default("friends")
-    .notNull(),
+      friendsListVisibility:
+        varchar(
+          "friends_list_visibility",
+          {
+            length: 20,
+          },
+        )
+          .default("friends")
+          .notNull(),
 
-  // ----------------------------
-  // FOLLOWERS LIST
-  // ----------------------------
+      // --------------------------------
+      // FOLLOWERS LIST
+      // --------------------------------
 
-  // friends | public | no_one
-  followersVisibility: varchar("followers_visibility", {
-    length: 20,
-  })
-    .default("friends")
-    .notNull(),
+      followersVisibility:
+        varchar(
+          "followers_visibility",
+          {
+            length: 20,
+          },
+        )
+          .default("friends")
+          .notNull(),
 
-  // ----------------------------
-  // FOLLOWING LIST
-  // ----------------------------
+      // --------------------------------
+      // FOLLOWING LIST
+      // --------------------------------
 
-  // friends | public | no_one
-  followingVisibility: varchar("following_visibility", {
-    length: 20,
-  })
-    .default("friends")
-    .notNull(),
+      followingVisibility:
+        varchar(
+          "following_visibility",
+          {
+            length: 20,
+          },
+        )
+          .default("friends")
+          .notNull(),
 
-  // ----------------------------
-  // REDOM ID
-  // ----------------------------
+      // --------------------------------
+      // REDOM ID
+      // --------------------------------
 
-  // true = public
-  // false = private
-  redomIdPublic: boolean("redom_id_public")
-    .default(true)
-    .notNull(),
+      redomIdPublic:
+        boolean(
+          "redom_id_public",
+        )
+          .default(true)
+          .notNull(),
 
-  // ----------------------------
-  // ACCOUNT DISCOVERABILITY
-  // ----------------------------
+      // --------------------------------
+      // DISCOVERABILITY
+      // --------------------------------
 
-  // Controls whether this account
-  // can appear in:
-  //
-  // • Search
-  // • Suggested People
-  // • Recommendations
-  discoverable: boolean("discoverable")
-    .default(true)
-    .notNull(),
+      discoverable:
+        boolean(
+          "discoverable",
+        )
+          .default(true)
+          .notNull(),
 
-  // ----------------------------
-  // SEARCH ENGINE INDEXING
-  // ----------------------------
+      // --------------------------------
+      // SEARCH ENGINE
+      // --------------------------------
 
-  // Allow public profile to appear
-  // in external search engines.
-  searchEngineIndexing: boolean("search_engine_indexing")
-    .default(true)
-    .notNull(),
+      searchEngineIndexing:
+        boolean(
+          "search_engine_indexing",
+        )
+          .default(true)
+          .notNull(),
 
-  // ----------------------------
-  // SYSTEM
-  // ----------------------------
+      // --------------------------------
+      // SYSTEM
+      // --------------------------------
 
-  createdAt: timestamp("created_at")
-    .defaultNow()
-    .notNull(),
+      createdAt:
+        timestamp(
+          "created_at",
+        )
+          .defaultNow()
+          .notNull(),
 
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .notNull(),
-});
+      updatedAt:
+        timestamp(
+          "updated_at",
+        )
+          .defaultNow()
+          .notNull(),
+    },
+
+    (table) => ({
+      userIdUnique:
+        unique(
+          "user_privacy_user_id_unique",
+        ).on(
+          table.userId,
+        ),
+    }),
+  );
