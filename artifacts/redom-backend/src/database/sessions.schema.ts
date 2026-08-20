@@ -10,18 +10,27 @@ import { users } from "./schema";
 export const sessions = pgTable(
   "sessions",
   {
-    // Internal authentication session ID
+    // --------------------------------
+    // PRIMARY IDENTITY
+    // --------------------------------
+
+    // Server-generated authentication session UUID.
     id: uuid("id")
       .defaultRandom()
       .primaryKey(),
 
-    // Account that owns the session
+    // Account that owns this session.
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.id),
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
 
-    // Hashed refresh token.
-    // The plaintext refresh token must never be stored.
+    // --------------------------------
+    // AUTHENTICATION CREDENTIAL
+    // --------------------------------
+
+    // Only the hashed refresh token is stored.
     refreshTokenHash: varchar(
       "refresh_token_hash",
       {
@@ -29,52 +38,108 @@ export const sessions = pgTable(
       },
     ).notNull(),
 
-    // Client/device information
-    deviceId: varchar("device_id", {
-      length: 255,
-    }),
+    // --------------------------------
+    // DEVICE
+    // --------------------------------
 
-    deviceName: varchar("device_name", {
-      length: 255,
-    }),
+    deviceId: varchar(
+      "device_id",
+      {
+        length: 255,
+      },
+    ),
 
-    platform: varchar("platform", {
-      length: 100,
-    }),
+    deviceName: varchar(
+      "device_name",
+      {
+        length: 255,
+      },
+    ),
 
-    browser: varchar("browser", {
-      length: 100,
-    }),
+    platform: varchar(
+      "platform",
+      {
+        length: 100,
+      },
+    ),
 
-    userAgent: varchar("user_agent", {
-      length: 500,
-    }),
+    browser: varchar(
+      "browser",
+      {
+        length: 100,
+      },
+    ),
 
-    // Network/location information
-    ipAddress: varchar("ip_address", {
-      length: 45,
-    }),
+    userAgent: varchar(
+      "user_agent",
+      {
+        length: 500,
+      },
+    ),
 
-    country: varchar("country", {
-      length: 100,
-    }),
+    // --------------------------------
+    // NETWORK / LOCATION
+    // --------------------------------
 
-    // Authentication activity
+    ipAddress: varchar(
+      "ip_address",
+      {
+        length: 45,
+      },
+    ),
+
+    country: varchar(
+      "country",
+      {
+        length: 100,
+      },
+    ),
+
+    region: varchar(
+      "region",
+      {
+        length: 100,
+      },
+    ),
+
+    city: varchar(
+      "city",
+      {
+        length: 100,
+      },
+    ),
+
+    // --------------------------------
+    // SESSION LIFECYCLE
+    // --------------------------------
+
     lastActivityAt: timestamp(
       "last_activity_at",
     )
       .defaultNow()
       .notNull(),
 
-    // Absolute session expiration
-    expiresAt: timestamp("expires_at")
+    expiresAt: timestamp(
+      "expires_at",
+    ).notNull(),
+
+    revokedAt: timestamp(
+      "revoked_at",
+    ),
+
+    // --------------------------------
+    // SYSTEM
+    // --------------------------------
+
+    createdAt: timestamp(
+      "created_at",
+    )
+      .defaultNow()
       .notNull(),
 
-    // Set when the session is revoked
-    revokedAt: timestamp("revoked_at"),
-
-    // Record creation time
-    createdAt: timestamp("created_at")
+    updatedAt: timestamp(
+      "updated_at",
+    )
       .defaultNow()
       .notNull(),
   },
