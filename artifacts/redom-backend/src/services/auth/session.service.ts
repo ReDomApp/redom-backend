@@ -9,7 +9,9 @@ import {
 
 import { db } from "../../database/db";
 import { users } from "../../database/schema";
-import { sessions } from "../../database/sessions.schema";
+import {
+  sessions,
+} from "../../database/sessions.schema";
 import {
   activeSessions,
 } from "../../database/activeSessions";
@@ -20,12 +22,18 @@ import {
   verifyRefreshToken,
 } from "../../utils/jwt";
 
-import { passwordService } from "./password.service";
+import {
+  passwordService,
+} from "./password.service";
 
 export class SessionService {
   /**
-   * Create a new authentication session
-   * and its corresponding active-session record.
+   * ----------------------------------------------------------
+   * CREATE SESSION
+   * ----------------------------------------------------------
+   *
+   * One server-generated UUID represents the authentication
+   * session everywhere.
    */
   async createSession(params: {
     userId: string;
@@ -46,19 +54,22 @@ export class SessionService {
     loginSource?: string;
     appVersion?: string;
   }) {
-    // Session IDs are generated exclusively by the server.
-    const sessionId = randomUUID();
+    const sessionId =
+      randomUUID();
 
     const accessToken =
       generateAccessToken({
-        userId: params.userId,
-        profileId: params.profileId,
+        userId:
+          params.userId,
+        profileId:
+          params.profileId,
         sessionId,
       });
 
     const refreshToken =
       generateRefreshToken({
-        userId: params.userId,
+        userId:
+          params.userId,
         sessionId,
       });
 
@@ -67,107 +78,148 @@ export class SessionService {
         refreshToken,
       );
 
-    const now = new Date();
+    const now =
+      new Date();
 
-    await db.transaction(async (tx) => {
-      // --------------------------------
-      // PRIMARY AUTHENTICATION SESSION
-      // --------------------------------
+    const expiresAt =
+      addDays(
+        now,
+        30,
+      );
 
-      await tx
-        .insert(sessions)
-        .values({
-          id: sessionId,
-          userId: params.userId,
-          refreshTokenHash,
+    await db.transaction(
+      async (tx) => {
+        await tx
+          .insert(sessions)
+          .values({
+            id:
+              sessionId,
 
-          ipAddress:
-            params.ipAddress,
-          country:
-            params.country,
+            userId:
+              params.userId,
 
-          userAgent:
-            params.userAgent,
-          platform:
-            params.platform,
-          browser:
-            params.browser,
+            refreshTokenHash,
 
-          deviceName:
-            params.deviceName,
+            deviceId:
+              params.deviceId ??
+              null,
 
-          deviceId:
-            params.deviceId,
+            deviceName:
+              params.deviceName ??
+              null,
 
-          lastActivityAt: now,
+            platform:
+              params.platform ??
+              null,
 
-          expiresAt: addDays(
-            now,
-            30,
-          ),
+            browser:
+              params.browser ??
+              null,
 
-          createdAt: now,
-        });
+            userAgent:
+              params.userAgent ??
+              null,
 
-      // --------------------------------
-      // CURRENT ACTIVE SESSION
-      // --------------------------------
+            ipAddress:
+              params.ipAddress ??
+              null,
 
-      await tx
-        .insert(activeSessions)
-        .values({
-          userId: params.userId,
-          sessionId,
+            country:
+              params.country ??
+              null,
 
-          deviceName:
-            params.deviceName ??
-            "Unknown Device",
+            region:
+              params.region ??
+              null,
 
-          deviceType:
-            params.deviceType ??
-            "unknown",
+            city:
+              params.city ??
+              null,
 
-          loginSource:
-            params.loginSource ??
-            "web",
+            lastActivityAt:
+              now,
 
-          appVersion:
-            params.appVersion ??
-            null,
+            expiresAt,
 
-          ipAddress:
-            params.ipAddress ??
-            "Unknown",
+            revokedAt:
+              null,
 
-          country:
-            params.country ??
-            null,
+            createdAt:
+              now,
 
-          region:
-            params.region ??
-            null,
+            updatedAt:
+              now,
+          });
 
-          city:
-            params.city ??
-            null,
+        await tx
+          .insert(
+            activeSessions,
+          )
+          .values({
+            userId:
+              params.userId,
 
-          loginTime: now,
-          lastActivity: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-    });
+            sessionId,
+
+            deviceName:
+              params.deviceName ??
+              "Unknown Device",
+
+            deviceType:
+              params.deviceType ??
+              "unknown",
+
+            loginSource:
+              params.loginSource ??
+              "web",
+
+            appVersion:
+              params.appVersion ??
+              null,
+
+            ipAddress:
+              params.ipAddress ??
+              "Unknown",
+
+            country:
+              params.country ??
+              null,
+
+            region:
+              params.region ??
+              null,
+
+            city:
+              params.city ??
+              null,
+
+            loginTime:
+              now,
+
+            lastActivity:
+              now,
+
+            createdAt:
+              now,
+
+            updatedAt:
+              now,
+          });
+      },
+    );
 
     return {
       sessionId,
       accessToken,
       refreshToken,
+      expiresAt,
     };
   }
 
   /**
-   * Verify a refresh token against
-   * the authoritative sessions table.
+   * ----------------------------------------------------------
+   * VERIFY REFRESH SESSION
+   * ----------------------------------------------------------
    */
   async verifyRefreshSession(
     refreshToken: string,
@@ -178,25 +230,30 @@ export class SessionService {
       );
 
     const session =
-      await db.query.sessions.findFirst({
-        where: and(
-          eq(
-            sessions.id,
-            payload.sessionId,
-          ),
-          eq(
-            sessions.userId,
-            payload.userId,
-          ),
-          isNull(
-            sessions.revokedAt,
-          ),
-          gt(
-            sessions.expiresAt,
-            new Date(),
-          ),
-        ),
-      });
+      await db.query.sessions
+        .findFirst({
+          where:
+            and(
+              eq(
+                sessions.id,
+                payload.sessionId,
+              ),
+
+              eq(
+                sessions.userId,
+                payload.userId,
+              ),
+
+              isNull(
+                sessions.revokedAt,
+              ),
+
+              gt(
+                sessions.expiresAt,
+                new Date(),
+              ),
+            ),
+        });
 
     if (!session) {
       throw new Error(
@@ -223,7 +280,9 @@ export class SessionService {
   }
 
   /**
-   * Refresh an existing session.
+   * ----------------------------------------------------------
+   * REFRESH
+   * ----------------------------------------------------------
    */
   async refreshSession(
     refreshToken: string,
@@ -237,12 +296,14 @@ export class SessionService {
       );
 
     const user =
-      await db.query.users.findFirst({
-        where: eq(
-          users.id,
-          payload.userId,
-        ),
-      });
+      await db.query.users
+        .findFirst({
+          where:
+            eq(
+              users.id,
+              payload.userId,
+            ),
+        });
 
     if (!user) {
       throw new Error(
@@ -250,11 +311,19 @@ export class SessionService {
       );
     }
 
+    const now =
+      new Date();
+
     const accessToken =
       generateAccessToken({
-        userId: user.id,
-        profileId: user.profileId,
-        sessionId: session.id,
+        userId:
+          user.id,
+
+        profileId:
+          user.profileId,
+
+        sessionId:
+          session.id,
       });
 
     await this.touch(
@@ -262,14 +331,22 @@ export class SessionService {
     );
 
     return {
-      sessionId: session.id,
+      sessionId:
+        session.id,
+
       accessToken,
+
       refreshToken,
+
+      expiresAt:
+        session.expiresAt,
     };
   }
 
   /**
-   * Revoke one session owned by a user.
+   * ----------------------------------------------------------
+   * REVOKE ONE
+   * ----------------------------------------------------------
    */
   async revokeSession(
     sessionId: string,
@@ -278,56 +355,71 @@ export class SessionService {
     const revokedAt =
       new Date();
 
-    const revoked =
-      await db
-        .update(sessions)
-        .set({
-          revokedAt,
-        })
-        .where(
-          and(
-            eq(
-              sessions.id,
-              sessionId,
-            ),
-            eq(
-              sessions.userId,
-              userId,
-            ),
-            isNull(
-              sessions.revokedAt,
-            ),
-          ),
-        )
-        .returning({
-          id: sessions.id,
-        });
+    await db.transaction(
+      async (tx) => {
+        const revoked =
+          await tx
+            .update(sessions)
+            .set({
+              revokedAt,
+              updatedAt:
+                revokedAt,
+            })
+            .where(
+              and(
+                eq(
+                  sessions.id,
+                  sessionId,
+                ),
 
-    if (revoked.length === 0) {
-      throw new Error(
-        "Session not found or does not belong to this account.",
-      );
-    }
+                eq(
+                  sessions.userId,
+                  userId,
+                ),
 
-    await db
-      .delete(activeSessions)
-      .where(
-        and(
-          eq(
-            activeSessions.sessionId,
-            sessionId,
-          ),
-          eq(
-            activeSessions.userId,
-            userId,
-          ),
-        ),
-      );
+                isNull(
+                  sessions.revokedAt,
+                ),
+              ),
+            )
+            .returning({
+              id:
+                sessions.id,
+            });
+
+        if (
+          revoked.length === 0
+        ) {
+          throw new Error(
+            "Session not found or does not belong to this account.",
+          );
+        }
+
+        await tx
+          .delete(
+            activeSessions,
+          )
+          .where(
+            and(
+              eq(
+                activeSessions.sessionId,
+                sessionId,
+              ),
+
+              eq(
+                activeSessions.userId,
+                userId,
+              ),
+            ),
+          );
+      },
+    );
   }
 
   /**
-   * Revoke every authentication session
-   * belonging to a user.
+   * ----------------------------------------------------------
+   * REVOKE ALL
+   * ----------------------------------------------------------
    */
   async revokeAllSessions(
     userId: string,
@@ -341,6 +433,8 @@ export class SessionService {
           .update(sessions)
           .set({
             revokedAt,
+            updatedAt:
+              revokedAt,
           })
           .where(
             and(
@@ -348,6 +442,7 @@ export class SessionService {
                 sessions.userId,
                 userId,
               ),
+
               isNull(
                 sessions.revokedAt,
               ),
@@ -355,7 +450,9 @@ export class SessionService {
           );
 
         await tx
-          .delete(activeSessions)
+          .delete(
+            activeSessions,
+          )
           .where(
             eq(
               activeSessions.userId,
@@ -367,8 +464,9 @@ export class SessionService {
   }
 
   /**
-   * Update activity for the authoritative
-   * session and its active-session record.
+   * ----------------------------------------------------------
+   * TOUCH
+   * ----------------------------------------------------------
    */
   async touch(
     sessionId: string,
@@ -378,32 +476,54 @@ export class SessionService {
 
     await db.transaction(
       async (tx) => {
-        await tx
-          .update(sessions)
-          .set({
-            lastActivityAt: now,
-          })
-          .where(
-            and(
-              eq(
-                sessions.id,
-                sessionId,
-              ),
-              isNull(
-                sessions.revokedAt,
-              ),
-              gt(
-                sessions.expiresAt,
+        const updated =
+          await tx
+            .update(sessions)
+            .set({
+              lastActivityAt:
                 now,
+
+              updatedAt:
+                now,
+            })
+            .where(
+              and(
+                eq(
+                  sessions.id,
+                  sessionId,
+                ),
+
+                isNull(
+                  sessions.revokedAt,
+                ),
+
+                gt(
+                  sessions.expiresAt,
+                  now,
+                ),
               ),
-            ),
-          );
+            )
+            .returning({
+              id:
+                sessions.id,
+            });
+
+        if (
+          updated.length === 0
+        ) {
+          return;
+        }
 
         await tx
-          .update(activeSessions)
+          .update(
+            activeSessions,
+          )
           .set({
-            lastActivity: now,
-            updatedAt: now,
+            lastActivity:
+              now,
+
+            updatedAt:
+              now,
           })
           .where(
             eq(
@@ -416,43 +536,60 @@ export class SessionService {
   }
 
   /**
-   * Return only currently valid active sessions
-   * belonging to the authenticated user.
+   * ----------------------------------------------------------
+   * GET ACTIVE SESSIONS
+   * ----------------------------------------------------------
    */
   async getActiveSessions(
     userId: string,
   ) {
     return db
       .select({
-        id: activeSessions.id,
+        id:
+          activeSessions.id,
+
         sessionId:
           activeSessions.sessionId,
+
         deviceName:
           activeSessions.deviceName,
+
         deviceType:
           activeSessions.deviceType,
+
         loginSource:
           activeSessions.loginSource,
+
         appVersion:
           activeSessions.appVersion,
+
         ipAddress:
           activeSessions.ipAddress,
+
         country:
           activeSessions.country,
+
         region:
           activeSessions.region,
+
         city:
           activeSessions.city,
+
         loginTime:
           activeSessions.loginTime,
+
         lastActivity:
           activeSessions.lastActivity,
+
         createdAt:
           activeSessions.createdAt,
+
         updatedAt:
           activeSessions.updatedAt,
       })
-      .from(activeSessions)
+      .from(
+        activeSessions,
+      )
       .innerJoin(
         sessions,
         eq(
@@ -466,9 +603,16 @@ export class SessionService {
             activeSessions.userId,
             userId,
           ),
+
+          eq(
+            sessions.userId,
+            userId,
+          ),
+
           isNull(
             sessions.revokedAt,
           ),
+
           gt(
             sessions.expiresAt,
             new Date(),
