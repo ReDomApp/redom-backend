@@ -1,13 +1,18 @@
-import { eq } from "drizzle-orm";
+import {
+  and,
+  eq,
+} from "drizzle-orm";
 
 import { db } from "../../database/db";
-import { loginHistory } from "../../database/loginHistory";
+import {
+  loginHistory,
+} from "../../database/loginHistory";
 
 export class LoginHistoryService {
   /**
    * Create a historical login record.
    *
-   * This does not create or manage authentication sessions.
+   * This service does not create authentication sessions.
    */
   async create(data: {
     userId: string;
@@ -28,8 +33,11 @@ export class LoginHistoryService {
       await db
         .insert(loginHistory)
         .values({
-          userId: data.userId,
-          sessionId: data.sessionId,
+          userId:
+            data.userId,
+
+          sessionId:
+            data.sessionId,
 
           deviceName:
             data.deviceName ??
@@ -63,11 +71,20 @@ export class LoginHistoryService {
             data.city ??
             null,
 
-          loginTime: new Date(),
-          active: true,
-          sessionStatus: "active",
-          hiddenByUser: false,
-          updatedAt: new Date(),
+          loginTime:
+            new Date(),
+
+          active:
+            true,
+
+          sessionStatus:
+            "active",
+
+          hiddenByUser:
+            false,
+
+          updatedAt:
+            new Date(),
         })
         .returning();
 
@@ -75,7 +92,7 @@ export class LoginHistoryService {
   }
 
   /**
-   * Mark a historical session as ended.
+   * Mark a historical login as ended.
    */
   async logout(
     sessionId: string,
@@ -85,9 +102,13 @@ export class LoginHistoryService {
       .set({
         logoutTime:
           new Date(),
-        active: false,
+
+        active:
+          false,
+
         sessionStatus:
           "ended",
+
         updatedAt:
           new Date(),
       })
@@ -100,32 +121,53 @@ export class LoginHistoryService {
   }
 
   /**
-   * Hide a historical login record
-   * from the user's history view.
+   * Hide one historical record belonging
+   * to the authenticated account.
    */
   async hide(
+    userId: string,
     id: string,
   ) {
-    await db
-      .update(loginHistory)
-      .set({
-        hiddenByUser: true,
-        updatedAt:
-          new Date(),
-      })
-      .where(
-        eq(
-          loginHistory.id,
-          id,
-        ),
+    const [record] =
+      await db
+        .update(loginHistory)
+        .set({
+          hiddenByUser:
+            true,
+
+          updatedAt:
+            new Date(),
+        })
+        .where(
+          and(
+            eq(
+              loginHistory.id,
+              id,
+            ),
+
+            eq(
+              loginHistory.userId,
+              userId,
+            ),
+          ),
+        )
+        .returning();
+
+    if (!record) {
+      throw new Error(
+        "Login history record not found.",
       );
+    }
+
+    return record;
   }
 
   /**
-   * Retrieve one historical login record
-   * by authentication session ID.
+   * Retrieve one historical login belonging
+   * to the authenticated account.
    */
   async getBySessionId(
+    userId: string,
     sessionId: string,
   ) {
     const [record] =
@@ -133,21 +175,27 @@ export class LoginHistoryService {
         .select()
         .from(loginHistory)
         .where(
-          eq(
-            loginHistory.sessionId,
-            sessionId,
+          and(
+            eq(
+              loginHistory.sessionId,
+              sessionId,
+            ),
+
+            eq(
+              loginHistory.userId,
+              userId,
+            ),
           ),
         )
         .limit(1);
 
-    return record ?? null;
+    return record ??
+      null;
   }
 
   /**
-   * Historical login records.
-   *
-   * This method intentionally does NOT represent
-   * the current active-session source of truth.
+   * Retrieve historical login records
+   * belonging to the authenticated account.
    */
   async getHistory(
     userId: string,
