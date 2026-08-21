@@ -1,7 +1,10 @@
-import { randomInt } from "crypto";
+import {
+  resend,
+} from "../../lib/resend";
 
-import { resend } from "../../lib/resend";
-import { env } from "../../config/env";
+import {
+  env,
+} from "../../config/env";
 
 export class EmailService {
   normalize(
@@ -15,112 +18,191 @@ export class EmailService {
   validate(
     email: string,
   ): string {
-    email =
-      this.normalize(email);
+    const normalized =
+      this.normalize(
+        email,
+      );
 
     const emailRegex =
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (
-      !emailRegex.test(email)
+      !emailRegex.test(
+        normalized,
+      )
     ) {
       throw new Error(
         "Invalid email address.",
       );
     }
 
-    return email;
+    return normalized;
   }
 
-  generateVerificationCode(): string {
-    return randomInt(
-      100000,
-      1000000,
-    ).toString();
+  async sendOtp(
+    params: {
+      email: string;
+      firstName?: string;
+      code: string;
+      purpose: string;
+      expiresAt: Date;
+    },
+  ): Promise<{
+    provider: string;
+    providerReference?: string;
+  }> {
+    const email =
+      this.validate(
+        params.email,
+      );
+
+    const subject =
+      this.getSubject(
+        params.purpose,
+      );
+
+    const expiresAtText =
+      params.expiresAt.toLocaleString(
+        "en-US",
+        {
+          dateStyle:
+            "medium",
+          timeStyle:
+            "short",
+        },
+      );
+
+    const result =
+      await resend.emails.send({
+        from:
+          env.email.resend
+            .fromEmail,
+
+        to: email,
+
+        subject,
+
+        html: `
+          <div
+            style="
+              font-family:Arial,sans-serif;
+              max-width:600px;
+              margin:auto;
+            "
+          >
+            <h2>
+              ${
+                params.firstName
+                  ? `Hello ${this.escapeHtml(
+                      params.firstName,
+                    )},`
+                  : "Hello,"
+              }
+            </h2>
+
+            <p>
+              Your ReDom verification code is:
+            </p>
+
+            <div
+              style="
+                font-size:40px;
+                font-weight:bold;
+                letter-spacing:10px;
+                text-align:center;
+                margin:30px 0;
+              "
+            >
+              ${this.escapeHtml(
+                params.code,
+              )}
+            </div>
+
+            <p>
+              This code expires at
+              <strong>
+                ${this.escapeHtml(
+                  expiresAtText,
+                )}
+              </strong>.
+            </p>
+
+            <p>
+              Never share this code with anyone.
+            </p>
+
+            <p>
+              If you did not request this,
+              you can safely ignore this message.
+            </p>
+          </div>
+        `,
+      });
+
+    if (
+      result.error
+    ) {
+      throw new Error(
+        `Resend failed to deliver the verification email: ${result.error.message}`,
+      );
+    }
+
+    return {
+      provider:
+        "resend",
+
+      providerReference:
+        result.data?.id,
+    };
   }
 
-  async sendVerificationCode(
-    email: string,
-    firstName: string,
-    code: string,
-  ): Promise<void> {
-    await resend.emails.send({
-      from:
-        env.email.resend
-          .fromEmail,
+  private getSubject(
+    purpose: string,
+  ): string {
+    switch (
+      purpose
+    ) {
+      case "EMAIL_VERIFICATION":
+        return "Verify your ReDom account";
 
-      to: email,
+      case "PASSWORD_RESET":
+        return "Reset your ReDom password";
 
-      subject:
-        "Verify your ReDom account",
+      case "CHANGE_EMAIL":
+        return "Confirm your ReDom email change";
 
-      html: `
-        <h2>Welcome to ReDom, ${firstName}!</h2>
+      case "CHANGE_PASSWORD":
+        return "Confirm your ReDom password change";
 
-        <p>Your verification code is:</p>
-
-        <h1
-          style="
-            font-size:40px;
-            letter-spacing:8px;
-            text-align:center;
-          "
-        >
-          ${code}
-        </h1>
-
-        <p>
-          This code expires in <strong>10 minutes</strong>.
-        </p>
-
-        <p>
-          If you didn't create this account,
-          you can safely ignore this email.
-        </p>
-      `,
-    });
+      default:
+        return "Your ReDom verification code";
+    }
   }
 
-  async sendPasswordResetCode(
-    email: string,
-    firstName: string,
-    code: string,
-  ): Promise<void> {
-    await resend.emails.send({
-      from:
-        env.email.resend
-          .fromEmail,
-
-      to: email,
-
-      subject:
-        "Reset your ReDom password",
-
-      html: `
-        <h2>Hello ${firstName},</h2>
-
-        <p>Your password reset code is:</p>
-
-        <h1
-          style="
-            font-size:40px;
-            letter-spacing:8px;
-            text-align:center;
-          "
-        >
-          ${code}
-        </h1>
-
-        <p>
-          This code expires in <strong>10 minutes</strong>.
-        </p>
-
-        <p>
-          If you didn't request this password reset,
-          you can safely ignore this email.
-        </p>
-      `,
-    });
+  private escapeHtml(
+    value: string,
+  ): string {
+    return value
+      .replace(
+        /&/g,
+        "&amp;",
+      )
+      .replace(
+        /</g,
+        "&lt;",
+      )
+      .replace(
+        />/g,
+        "&gt;",
+      )
+      .replace(
+        /"/g,
+        "&quot;",
+      )
+      .replace(
+        /'/g,
+        "&#039;",
+      );
   }
 }
 
