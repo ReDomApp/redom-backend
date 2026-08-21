@@ -3,37 +3,26 @@ import {
 } from "../../lib/providers/sms/twilio-sms-provider";
 
 import type {
-  SmsVerificationProvider,
+  SmsDeliveryRequest,
+  SmsDeliveryResult,
 } from "../../lib/providers/sms/sms-provider";
 
 export class PhoneService {
-  private readonly provider:
-    SmsVerificationProvider;
-
-  constructor(
-    provider: SmsVerificationProvider,
-  ) {
-    this.provider = provider;
-  }
-
-  /**
-   * Normalize a phone number.
-   */
   normalize(
     phoneNumber: string,
   ): string {
     return phoneNumber
       .trim()
-      .replace(/\s+/g, "");
+      .replace(
+        /\s+/g,
+        "",
+      );
   }
 
-  /**
-   * Validate E.164 phone numbers.
-   */
   validate(
     phoneNumber: string,
   ): string {
-    phoneNumber =
+    const normalized =
       this.normalize(
         phoneNumber,
       );
@@ -43,7 +32,7 @@ export class PhoneService {
 
     if (
       !phoneRegex.test(
-        phoneNumber,
+        normalized,
       )
     ) {
       throw new Error(
@@ -51,75 +40,59 @@ export class PhoneService {
       );
     }
 
-    return phoneNumber;
+    return normalized;
   }
 
-  /**
-   * Send a phone verification code.
-   *
-   * Provider-specific implementation remains
-   * outside the authentication service.
-   */
-  async sendVerificationCode(
-    phoneNumber: string,
-  ): Promise<void> {
-    const normalized =
+  async sendOtp(
+    params: {
+      phoneNumber: string;
+      code: string;
+      channel:
+        | "sms"
+        | "whatsapp";
+      purpose: string;
+      expiresAt: Date;
+    },
+  ): Promise<SmsDeliveryResult> {
+    const phoneNumber =
       this.validate(
-        phoneNumber,
+        params.phoneNumber,
       );
 
-    await this.provider
-      .sendVerificationCode(
-        normalized,
-      );
-  }
+    const request:
+      SmsDeliveryRequest = {
+      to: phoneNumber,
 
-  /**
-   * Verify a phone verification code.
-   */
-  async verifyCode(
-    phoneNumber: string,
-    code: string,
-  ): Promise<boolean> {
-    const normalized =
-      this.validate(
-        phoneNumber,
-      );
+      code:
+        params.code,
 
-    const verificationCode =
-      code.trim();
+      channel:
+        params.channel,
 
-    if (
-      !verificationCode
-    ) {
-      throw new Error(
-        "Verification code is required.",
-      );
-    }
+      purpose:
+        params.purpose,
 
-    return this.provider
-      .verifyCode(
-        normalized,
-        verificationCode,
+      expiresAt:
+        params.expiresAt,
+    };
+
+    return twilioSmsProvider
+      .sendOtp(
+        request,
       );
   }
 
-  /**
-   * Send a password-reset verification code.
-   *
-   * Password-reset delivery uses the same
-   * provider abstraction.
-   */
-  async sendPasswordResetCode(
-    phoneNumber: string,
-  ): Promise<void> {
-    await this.sendVerificationCode(
-      phoneNumber,
-    );
+  supportsChannel(
+    channel:
+      | "sms"
+      | "whatsapp",
+  ): boolean {
+    return twilioSmsProvider
+      .supportsChannel(
+        channel,
+      );
   }
 }
 
 export const phoneService =
-  new PhoneService(
-    twilioSmsProvider,
-  );
+  new PhoneService();
