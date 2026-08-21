@@ -1,13 +1,32 @@
 import {
+  index,
   pgTable,
+  timestamp,
   uuid,
   varchar,
-  timestamp,
-  index,
 } from "drizzle-orm/pg-core";
 
 import { users } from "./schema";
 
+/**
+ * ReDom Verification Challenges
+ *
+ * This table is the authoritative database record
+ * for OTP/security verification challenges.
+ *
+ * IMPORTANT:
+ *
+ * userId is nullable.
+ *
+ * This is intentional because:
+ *
+ * signup
+ * password recovery
+ * account recovery
+ *
+ * can begin before a users.id exists or before the
+ * user is authenticated.
+ */
 export const verifications =
   pgTable(
     "verifications",
@@ -16,8 +35,16 @@ export const verifications =
         .defaultRandom()
         .primaryKey(),
 
+      /**
+       * Existing account when known.
+       *
+       * NULL is valid for:
+       *
+       * - new registration
+       * - unauthenticated recovery
+       * - pre-account verification
+       */
       userId: uuid("user_id")
-        .notNull()
         .references(
           () => users.id,
           {
@@ -26,13 +53,38 @@ export const verifications =
           },
         ),
 
+      /**
+       * Broad verification type.
+       *
+       * email
+       * phone
+       * security
+       */
       type: varchar(
         "type",
         {
-          length: 20,
+          length: 30,
         },
       ).notNull(),
 
+      /**
+       * Exact backend-controlled purpose.
+       */
+      purpose: varchar(
+        "purpose",
+        {
+          length: 50,
+        },
+      ).notNull(),
+
+      /**
+       * Exact target supplied for this challenge.
+       *
+       * Example:
+       *
+       * +2348000000000
+       * person@example.com
+       */
       target: varchar(
         "target",
         {
@@ -41,23 +93,129 @@ export const verifications =
       ).notNull(),
 
       /**
-       * Email verification:
-       * locally generated code hash.
+       * Canonical target used internally for matching.
        *
-       * Phone verification:
-       * provider-owned code,
-       * therefore nullable.
+       * For email:
+       * lowercase normalized email.
+       *
+       * For phone:
+       * normalized E.164 number.
+       */
+      normalizedTarget: varchar(
+        "normalized_target",
+        {
+          length: 255,
+        },
+      ).notNull(),
+
+      /**
+       * Delivery channel.
+       *
+       * email
+       * sms
+       * whatsapp
+       */
+      channel: varchar(
+        "channel",
+        {
+          length: 20,
+        },
+      ).notNull(),
+
+      /**
+       * Requested OTP length from frontend.
+       */
+      requestedLength: varchar(
+        "requested_length",
+        {
+          length: 2,
+        },
+      ).notNull(),
+
+      /**
+       * Actual generated OTP length.
+       *
+       * Kept separately so backend remains
+       * authoritative even if request metadata changes.
+       */
+      codeLength: varchar(
+        "code_length",
+        {
+          length: 2,
+        },
+      ).notNull(),
+
+      /**
+       * SHA-256 OTP digest.
+       *
+       * Plaintext OTP is NEVER stored.
        */
       codeHash: varchar(
         "code_hash",
         {
-          length: 255,
+          length: 64,
+        },
+      ).notNull(),
+
+      /**
+       * Challenge lifecycle status.
+       */
+      status: varchar(
+        "status",
+        {
+          length: 30,
+        },
+      )
+        .default(
+          "pending",
+        )
+        .notNull(),
+
+      /**
+       * Failed verification attempts.
+       */
+      attemptCount: varchar(
+        "attempt_count",
+        {
+          length: 10,
+        },
+      )
+        .default("0")
+        .notNull(),
+
+      /**
+       * Maximum failed attempts permitted.
+       */
+      maxAttempts: varchar(
+        "max_attempts",
+        {
+          length: 10,
+        },
+      )
+        .default("5")
+        .notNull(),
+
+      /**
+       * Provider actually used for delivery.
+       *
+       * Example:
+       *
+       * twilio
+       * infobip
+       * msg91
+       * termii
+       * messagebird
+       * resend
+       */
+      provider: varchar(
+        "provider",
+        {
+          length: 50,
         },
       ),
 
       /**
-       * Provider-owned verification
-       * identifier where applicable.
+       * Provider-side message/reference ID.
        */
       providerReference:
         varchar(
@@ -67,17 +225,40 @@ export const verifications =
           },
         ),
 
-      status: varchar(
-        "status",
+      /**
+       * Request source metadata.
+       */
+      requestIp: varchar(
+        "request_ip",
         {
-          length: 20,
+          length: 100,
         },
-      )
-        .default(
-          "pending",
-        )
-        .notNull(),
+      ),
 
+      userAgent: varchar(
+        "user_agent",
+        {
+          length: 1000,
+        },
+      ),
+
+      deviceId: varchar(
+        "device_id",
+        {
+          length: 255,
+        },
+      ),
+
+      /**
+       * Existing authenticated session when available.
+       */
+      sessionId: uuid(
+        "session_id",
+      ),
+
+      /**
+       * Challenge expiration.
+       */
       expiresAt:
         timestamp(
           "expires_at",
@@ -85,9 +266,11 @@ export const verifications =
             withTimezone:
               true,
           },
-        )
-          .notNull(),
+        ).notNull(),
 
+      /**
+       * Successful verification time.
+       */
       verifiedAt:
         timestamp(
           "verified_at",
@@ -97,6 +280,21 @@ export const verifications =
           },
         ),
 
+      /**
+       * Challenge consumption time.
+       */
+      consumedAt:
+        timestamp(
+          "consumed_at",
+          {
+            withTimezone:
+              true,
+          },
+        ),
+
+      /**
+       * Creation timestamp.
+       */
       createdAt:
         timestamp(
           "created_at",
@@ -107,37 +305,66 @@ export const verifications =
         )
           .defaultNow()
           .notNull(),
+
+      /**
+       * Modification timestamp.
+       */
+      updatedAt:
+        timestamp(
+          "updated_at",
+          {
+            withTimezone:
+              true,
+          },
+        )
+          .defaultNow()
+          .notNull(),
     },
 
     (table) => ({
-      userIdx: index(
-        "verifications_user_idx",
-      ).on(
-        table.userId,
-      ),
+      userIdx:
+        index(
+          "verifications_user_idx",
+        ).on(
+          table.userId,
+        ),
 
-      typeIdx: index(
-        "verifications_type_idx",
-      ).on(
-        table.type,
-      ),
+      purposeIdx:
+        index(
+          "verifications_purpose_idx",
+        ).on(
+          table.purpose,
+        ),
 
-      targetIdx: index(
-        "verifications_target_idx",
-      ).on(
-        table.target,
-      ),
+      targetIdx:
+        index(
+          "verifications_target_idx",
+        ).on(
+          table.normalizedTarget,
+        ),
 
-      statusIdx: index(
-        "verifications_status_idx",
-      ).on(
-        table.status,
-      ),
+      statusIdx:
+        index(
+          "verifications_status_idx",
+        ).on(
+          table.status,
+        ),
 
-      expiresIdx: index(
-        "verifications_expires_idx",
-      ).on(
-        table.expiresAt,
-      ),
+      expiresIdx:
+        index(
+          "verifications_expires_idx",
+        ).on(
+          table.expiresAt,
+        ),
+
+      challengeLookupIdx:
+        index(
+          "verifications_challenge_lookup_idx",
+        ).on(
+          table.userId,
+          table.purpose,
+          table.normalizedTarget,
+          table.status,
+        ),
     }),
   );
