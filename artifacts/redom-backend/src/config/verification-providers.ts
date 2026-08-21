@@ -7,10 +7,9 @@ export type VerificationRegion =
   | "australia";
 
 export type SmsProviderName =
+  | "infobip"
   | "termii"
-  | "africa_talking"
-  | "twilio_verify"
-  | "vonage"
+  | "twilio"
   | "msg91"
   | "messagebird";
 
@@ -18,34 +17,44 @@ export type EmailProviderName =
   | "resend";
 
 export type KycProviderName =
-  | "smile_identity"
-  | "onfido"
-  | "veriff";
+  | "veriff"
+  | "persona";
 
 export interface RegionalVerificationProviders {
   sms: {
-    primary: SmsProviderName;
-    fallback?: SmsProviderName;
+    primary:
+      SmsProviderName;
+
+    fallback?:
+      SmsProviderName;
   };
 
   email: {
-    primary: EmailProviderName;
-    fallback?: EmailProviderName;
+    primary:
+      EmailProviderName;
+
+    fallback?:
+      EmailProviderName;
   };
 
   kyc: {
-    primary: KycProviderName;
-    fallback?: KycProviderName;
+    primary:
+      KycProviderName;
+
+    fallback?:
+      KycProviderName;
   };
 }
 
 /**
- * ReDom v7 provider routing.
+ * Provider routing.
  *
- * This is routing configuration, not business logic.
+ * This is configuration.
  *
- * Adding a new provider should not require changing
- * AuthService.
+ * It is NOT OTP business logic.
+ *
+ * The VerificationService does not care which
+ * provider is selected.
  */
 export const verificationProviders: Record<
   VerificationRegion,
@@ -53,103 +62,139 @@ export const verificationProviders: Record<
 > = {
   africa: {
     sms: {
-      primary: "termii",
+      primary:
+        "infobip",
+
       fallback:
-        "africa_talking",
+        "termii",
     },
 
     email: {
-      primary: "resend",
+      primary:
+        "resend",
     },
 
     kyc: {
       primary:
-        "smile_identity",
+        "veriff",
+
+      fallback:
+        "persona",
     },
   },
 
   europe: {
     sms: {
       primary:
-        "twilio_verify",
+        "twilio",
+
       fallback:
-        "vonage",
+        "messagebird",
     },
 
     email: {
-      primary: "resend",
-      fallback: "resend",
+      primary:
+        "resend",
     },
 
     kyc: {
-      primary: "onfido",
+      primary:
+        "veriff",
+
+      fallback:
+        "persona",
     },
   },
 
   north_america: {
     sms: {
       primary:
-        "twilio_verify",
-      fallback:
-        "vonage",
-    },
+        "twilio",
 
-    email: {
-      primary: "resend",
-    },
-
-    kyc: {
-      primary: "onfido",
-    },
-  },
-
-  asia: {
-    sms: {
-      primary: "msg91",
       fallback:
         "messagebird",
     },
 
     email: {
-      primary: "resend",
+      primary:
+        "resend",
     },
 
     kyc: {
-      primary: "veriff",
+      primary:
+        "veriff",
+
+      fallback:
+        "persona",
+    },
+  },
+
+  asia: {
+    sms: {
+      primary:
+        "msg91",
+
+      fallback:
+        "messagebird",
+    },
+
+    email: {
+      primary:
+        "resend",
+    },
+
+    kyc: {
+      primary:
+        "veriff",
+
+      fallback:
+        "persona",
     },
   },
 
   south_america: {
     sms: {
       primary:
-        "twilio_verify",
+        "twilio",
+
       fallback:
         "messagebird",
     },
 
     email: {
-      primary: "resend",
+      primary:
+        "resend",
     },
 
     kyc: {
-      primary: "veriff",
+      primary:
+        "veriff",
+
+      fallback:
+        "persona",
     },
   },
 
   australia: {
     sms: {
       primary:
-        "twilio_verify",
+        "twilio",
+
       fallback:
         "messagebird",
     },
 
     email: {
-      primary: "resend",
+      primary:
+        "resend",
     },
 
     kyc: {
-      primary: "onfido",
+      primary:
+        "persona",
+
+      fallback:
+        "veriff",
     },
   },
 };
