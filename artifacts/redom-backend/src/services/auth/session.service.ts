@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto";
+
 import { addDays } from "date-fns";
+
 import {
   and,
   eq,
@@ -8,10 +10,13 @@ import {
 } from "drizzle-orm";
 
 import { db } from "../../database/db";
+
 import { users } from "../../database/schema";
+
 import {
   sessions,
 } from "../../database/sessions.schema";
+
 import {
   activeSessions,
 } from "../../database/activeSessions";
@@ -27,17 +32,8 @@ import {
 } from "./password.service";
 
 export class SessionService {
-  /**
-   * ----------------------------------------------------------
-   * CREATE SESSION
-   * ----------------------------------------------------------
-   *
-   * One server-generated UUID represents the authentication
-   * session everywhere.
-   */
   async createSession(params: {
     userId: string;
-    profileId: string;
 
     ipAddress?: string;
     country?: string;
@@ -54,22 +50,63 @@ export class SessionService {
     loginSource?: string;
     appVersion?: string;
   }) {
+    /*
+     * The database account is authoritative.
+     *
+     * profileId is deliberately NOT accepted from
+     * the caller anymore.
+     */
+    const user =
+      await db.query.users.findFirst({
+        where: eq(
+          users.id,
+          params.userId,
+        ),
+      });
+
+    if (!user) {
+      throw new Error(
+        "Unable to create session for an unknown user.",
+      );
+    }
+
+    if (
+      user.accountStatus ===
+      "suspended"
+    ) {
+      throw new Error(
+        "Cannot create a session for a suspended account.",
+      );
+    }
+
+    if (
+      user.accountStatus ===
+      "banned"
+    ) {
+      throw new Error(
+        "Cannot create a session for a banned account.",
+      );
+    }
+
     const sessionId =
       randomUUID();
 
     const accessToken =
       generateAccessToken({
         userId:
-          params.userId,
+          user.id,
+
         profileId:
-          params.profileId,
+          user.profileId,
+
         sessionId,
       });
 
     const refreshToken =
       generateRefreshToken({
         userId:
-          params.userId,
+          user.id,
+
         sessionId,
       });
 
@@ -96,7 +133,7 @@ export class SessionService {
               sessionId,
 
             userId:
-              params.userId,
+              user.id,
 
             refreshTokenHash,
 
@@ -151,13 +188,17 @@ export class SessionService {
               now,
           });
 
+        /*
+         * The same authoritative user.id and
+         * session.id are used for activeSessions.
+         */
         await tx
           .insert(
             activeSessions,
           )
           .values({
             userId:
-              params.userId,
+              user.id,
 
             sessionId,
 
@@ -210,17 +251,15 @@ export class SessionService {
 
     return {
       sessionId,
+
       accessToken,
+
       refreshToken,
+
       expiresAt,
     };
   }
 
-  /**
-   * ----------------------------------------------------------
-   * VERIFY REFRESH SESSION
-   * ----------------------------------------------------------
-   */
   async verifyRefreshSession(
     refreshToken: string,
   ) {
@@ -232,27 +271,26 @@ export class SessionService {
     const session =
       await db.query.sessions
         .findFirst({
-          where:
-            and(
-              eq(
-                sessions.id,
-                payload.sessionId,
-              ),
-
-              eq(
-                sessions.userId,
-                payload.userId,
-              ),
-
-              isNull(
-                sessions.revokedAt,
-              ),
-
-              gt(
-                sessions.expiresAt,
-                new Date(),
-              ),
+          where: and(
+            eq(
+              sessions.id,
+              payload.sessionId,
             ),
+
+            eq(
+              sessions.userId,
+              payload.userId,
+            ),
+
+            isNull(
+              sessions.revokedAt,
+            ),
+
+            gt(
+              sessions.expiresAt,
+              new Date(),
+            ),
+          ),
         });
 
     if (!session) {
@@ -279,11 +317,6 @@ export class SessionService {
     };
   }
 
-  /**
-   * ----------------------------------------------------------
-   * REFRESH
-   * ----------------------------------------------------------
-   */
   async refreshSession(
     refreshToken: string,
   ) {
@@ -296,14 +329,12 @@ export class SessionService {
       );
 
     const user =
-      await db.query.users
-        .findFirst({
-          where:
-            eq(
-              users.id,
-              payload.userId,
-            ),
-        });
+      await db.query.users.findFirst({
+        where: eq(
+          users.id,
+          payload.userId,
+        ),
+      });
 
     if (!user) {
       throw new Error(
@@ -311,9 +342,28 @@ export class SessionService {
       );
     }
 
-    const now =
-      new Date();
+    if (
+      user.accountStatus ===
+      "suspended"
+    ) {
+      throw new Error(
+        "Account is suspended.",
+      );
+    }
 
+    if (
+      user.accountStatus ===
+      "banned"
+    ) {
+      throw new Error(
+        "Account is banned.",
+      );
+    }
+
+    /*
+     * profileId is re-read from the database.
+     * A stale JWT claim is never propagated.
+     */
     const accessToken =
       generateAccessToken({
         userId:
@@ -343,11 +393,6 @@ export class SessionService {
     };
   }
 
-  /**
-   * ----------------------------------------------------------
-   * REVOKE ONE
-   * ----------------------------------------------------------
-   */
   async revokeSession(
     sessionId: string,
     userId: string,
@@ -362,6 +407,7 @@ export class SessionService {
             .update(sessions)
             .set({
               revokedAt,
+
               updatedAt:
                 revokedAt,
             })
@@ -388,7 +434,8 @@ export class SessionService {
             });
 
         if (
-          revoked.length === 0
+          revoked.length ===
+          0
         ) {
           throw new Error(
             "Session not found or does not belong to this account.",
@@ -416,11 +463,6 @@ export class SessionService {
     );
   }
 
-  /**
-   * ----------------------------------------------------------
-   * REVOKE ALL
-   * ----------------------------------------------------------
-   */
   async revokeAllSessions(
     userId: string,
   ): Promise<void> {
@@ -433,6 +475,7 @@ export class SessionService {
           .update(sessions)
           .set({
             revokedAt,
+
             updatedAt:
               revokedAt,
           })
@@ -463,11 +506,6 @@ export class SessionService {
     );
   }
 
-  /**
-   * ----------------------------------------------------------
-   * TOUCH
-   * ----------------------------------------------------------
-   */
   async touch(
     sessionId: string,
   ): Promise<void> {
@@ -506,14 +544,26 @@ export class SessionService {
             .returning({
               id:
                 sessions.id,
+
+              userId:
+                sessions.userId,
             });
 
         if (
-          updated.length === 0
+          updated.length ===
+          0
         ) {
           return;
         }
 
+        const session =
+          updated[0];
+
+        /*
+         * The session row determines the account.
+         * activeSessions cannot be allowed to drift
+         * to another user.
+         */
         await tx
           .update(
             activeSessions,
@@ -526,20 +576,22 @@ export class SessionService {
               now,
           })
           .where(
-            eq(
-              activeSessions.sessionId,
-              sessionId,
+            and(
+              eq(
+                activeSessions.sessionId,
+                session.id,
+              ),
+
+              eq(
+                activeSessions.userId,
+                session.userId,
+              ),
             ),
           );
       },
     );
   }
 
-  /**
-   * ----------------------------------------------------------
-   * GET ACTIVE SESSIONS
-   * ----------------------------------------------------------
-   */
   async getActiveSessions(
     userId: string,
   ) {
