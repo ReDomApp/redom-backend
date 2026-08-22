@@ -3,15 +3,25 @@ import {
   Request,
   Response,
 } from "express";
-import { eq, and, isNull, gt } from "drizzle-orm";
+
+import {
+  and,
+  eq,
+  gt,
+  isNull,
+} from "drizzle-orm";
 
 import { db } from "../database/db";
 import { users } from "../database/schema";
 import { sessions } from "../database/sessions.schema";
 
-import { verifyAccessToken } from "../utils/jwt";
+import {
+  verifyAccessToken,
+} from "../utils/jwt";
 
-import { sessionService } from "../services/auth/session.service";
+import {
+  sessionService,
+} from "../services/auth/session.service";
 
 declare global {
   namespace Express {
@@ -45,14 +55,39 @@ export async function authMiddleware(
         message:
           "Authentication required.",
       });
+
       return;
     }
 
     const token =
-      authorization.substring(7);
+      authorization.slice(7).trim();
+
+    if (!token) {
+      res.status(401).json({
+        success: false,
+        message:
+          "Authentication required.",
+      });
+
+      return;
+    }
 
     const payload =
       verifyAccessToken(token);
+
+    if (
+      !payload.userId ||
+      !payload.profileId ||
+      !payload.sessionId
+    ) {
+      res.status(401).json({
+        success: false,
+        message:
+          "Invalid authentication session.",
+      });
+
+      return;
+    }
 
     const user =
       await db.query.users.findFirst({
@@ -68,11 +103,64 @@ export async function authMiddleware(
         message:
           "User not found.",
       });
+
       return;
     }
 
-    // The access token must identify the
-    // exact server-created session.
+    /*
+     * The JWT profileId is a claim.
+     *
+     * The database remains authoritative.
+     *
+     * Never allow a stale or manipulated claim
+     * to become the active profile identity.
+     */
+    if (
+      user.profileId !==
+      payload.profileId
+    ) {
+      res.status(401).json({
+        success: false,
+        message:
+          "Authentication identity is no longer valid.",
+      });
+
+      return;
+    }
+
+    /*
+     * Authentication must respect account lifecycle.
+     */
+    if (
+      user.accountStatus ===
+      "suspended"
+    ) {
+      res.status(403).json({
+        success: false,
+        message:
+          "This account has been suspended.",
+      });
+
+      return;
+    }
+
+    if (
+      user.accountStatus ===
+      "banned"
+    ) {
+      res.status(403).json({
+        success: false,
+        message:
+          "This account has been banned.",
+      });
+
+      return;
+    }
+
+    /*
+     * The access token is only valid when the exact
+     * server-created session remains active.
+     */
     const session =
       await db.query.sessions.findFirst({
         where: and(
@@ -80,13 +168,16 @@ export async function authMiddleware(
             sessions.id,
             payload.sessionId,
           ),
+
           eq(
             sessions.userId,
             payload.userId,
           ),
+
           isNull(
             sessions.revokedAt,
           ),
+
           gt(
             sessions.expiresAt,
             new Date(),
@@ -100,20 +191,26 @@ export async function authMiddleware(
         message:
           "Session is invalid, revoked, or expired.",
       });
+
       return;
     }
 
+    /*
+     * Keep active-session state synchronized.
+     */
     await sessionService.touch(
       session.id,
     );
 
     req.user = {
       userId:
-        payload.userId,
+        user.id,
+
       profileId:
-        payload.profileId,
+        user.profileId,
+
       sessionId:
-        payload.sessionId,
+        session.id,
     };
 
     next();
