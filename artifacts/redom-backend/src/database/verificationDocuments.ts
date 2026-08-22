@@ -27,10 +27,6 @@ export const verificationDocuments =
           },
         ),
 
-      // -------------------------------------------------------
-      // VERIFICATION REQUEST
-      // -------------------------------------------------------
-
       verificationOrderNumber:
         varchar(
           "verification_order_number",
@@ -41,35 +37,13 @@ export const verificationDocuments =
           .notNull()
           .unique(),
 
-      // -------------------------------------------------------
-      // DOCUMENT TYPE
-      // -------------------------------------------------------
-
       documentType:
         varchar(
           "document_type",
           {
             length: 50,
           },
-        )
-          .notNull(),
-
-      /*
-       * Examples:
-       *
-       * passport
-       * national_id
-       * drivers_license
-       * residence_permit
-       *
-       * Future frontend flows may introduce additional
-       * document types without changing the account identity
-       * model.
-       */
-
-      // -------------------------------------------------------
-      // LOCATION CONTEXT
-      // -------------------------------------------------------
+        ).notNull(),
 
       countryCode:
         varchar(
@@ -78,10 +52,6 @@ export const verificationDocuments =
             length: 2,
           },
         ),
-
-      // -------------------------------------------------------
-      // SECURE DOCUMENT REFERENCES
-      // -------------------------------------------------------
 
       frontCapture:
         varchar(
@@ -114,10 +84,6 @@ export const verificationDocuments =
             length: 2000,
           },
         ),
-
-      // -------------------------------------------------------
-      // VALIDATION RESULTS
-      // -------------------------------------------------------
 
       liveCaptureVerified:
         boolean(
@@ -175,10 +141,6 @@ export const verificationDocuments =
           .default(false)
           .notNull(),
 
-      // -------------------------------------------------------
-      // REVIEW RESULT
-      // -------------------------------------------------------
-
       verificationResult:
         varchar(
           "verification_result",
@@ -213,9 +175,34 @@ export const verificationDocuments =
           },
         ),
 
-      // -------------------------------------------------------
-      // FRAUD / SECURITY
-      // -------------------------------------------------------
+      providerReference:
+        varchar(
+          "provider_reference",
+          {
+            length: 255,
+          },
+        ),
+
+      providerSessionId:
+        varchar(
+          "provider_session_id",
+          {
+            length: 255,
+          },
+        ),
+
+      providerStatus:
+        varchar(
+          "provider_status",
+          {
+            length: 100,
+          },
+        ),
+
+      providerUpdatedAt:
+        timestamp(
+          "provider_updated_at",
+        ),
 
       fraudDetected:
         boolean(
@@ -243,10 +230,6 @@ export const verificationDocuments =
         timestamp(
           "block_lift_date",
         ),
-
-      // -------------------------------------------------------
-      // RECORD
-      // -------------------------------------------------------
 
       capturedAt:
         timestamp(
@@ -290,6 +273,13 @@ export const verificationDocuments =
           "verification_documents_type_idx",
         ).on(
           table.documentType,
+        ),
+
+      providerReferenceIdx:
+        index(
+          "verification_documents_provider_reference_idx",
+        ).on(
+          table.providerReference,
         ),
     }),
   );
