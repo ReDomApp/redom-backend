@@ -2,11 +2,10 @@ import {
   resend,
 } from "../../lib/resend";
 
-import {
-  env,
-} from "../../config/env";
-
 export class EmailService {
+  private readonly sender =
+    "ReDom <onboarding@resend.dev>";
+
   normalize(
     email: string,
   ): string {
@@ -67,6 +66,7 @@ export class EmailService {
         {
           dateStyle:
             "medium",
+
           timeStyle:
             "short",
         },
@@ -75,10 +75,10 @@ export class EmailService {
     const result =
       await resend.emails.send({
         from:
-          env.email.resend
-            .fromEmail,
+          this.sender,
 
-        to: email,
+        to:
+          email,
 
         subject,
 
