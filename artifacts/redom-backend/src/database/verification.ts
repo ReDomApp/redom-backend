@@ -28,10 +28,6 @@ export const verification =
           },
         ),
 
-      // -------------------------------------------------------
-      // IDENTITY VERIFICATION STATE
-      // -------------------------------------------------------
-
       verificationStatus:
         varchar(
           "verification_status",
@@ -43,28 +39,6 @@ export const verification =
             "not_started",
           )
           .notNull(),
-
-      /*
-       * not_started
-       * requested
-       * pending
-       * approved
-       * rejected
-       * suspended
-       * revoked
-       */
-
-      /*
-       * The backend does NOT assume what kind of identity
-       * verification the frontend will request.
-       *
-       * The selected document/request is represented by
-       * verificationDocuments.
-       */
-
-      // -------------------------------------------------------
-      // REQUEST / REVIEW LIFECYCLE
-      // -------------------------------------------------------
 
       requestedAt:
         timestamp(
@@ -106,10 +80,6 @@ export const verification =
           "expires_at",
         ),
 
-      // -------------------------------------------------------
-      // REVIEW INFORMATION
-      // -------------------------------------------------------
-
       rejectionReason:
         varchar(
           "rejection_reason",
@@ -150,6 +120,13 @@ export const verification =
           },
         ),
 
+      /*
+       * ReDom-selected KYC provider.
+       *
+       * Examples:
+       * veriff
+       * persona
+       */
       reviewProvider:
         varchar(
           "review_provider",
@@ -158,9 +135,42 @@ export const verification =
           },
         ),
 
-      // -------------------------------------------------------
-      // USER-FACING VERIFICATION STATE
-      // -------------------------------------------------------
+      /*
+       * Provider-side verification/session
+       * identifiers.
+       *
+       * These are correlation values only.
+       * The provider remains authoritative for
+       * the identity-verification result.
+       */
+      providerReference:
+        varchar(
+          "provider_reference",
+          {
+            length: 255,
+          },
+        ),
+
+      providerSessionId:
+        varchar(
+          "provider_session_id",
+          {
+            length: 255,
+          },
+        ),
+
+      providerStatus:
+        varchar(
+          "provider_status",
+          {
+            length: 100,
+          },
+        ),
+
+      providerUpdatedAt:
+        timestamp(
+          "provider_updated_at",
+        ),
 
       badgeVisible:
         boolean(
@@ -175,10 +185,6 @@ export const verification =
         )
           .default(true)
           .notNull(),
-
-      // -------------------------------------------------------
-      // AUDIT
-      // -------------------------------------------------------
 
       applicationAttempts:
         varchar(
@@ -218,6 +224,13 @@ export const verification =
           "verification_status_idx",
         ).on(
           table.verificationStatus,
+        ),
+
+      providerReferenceIdx:
+        index(
+          "verification_provider_reference_idx",
+        ).on(
+          table.providerReference,
         ),
     }),
   );
