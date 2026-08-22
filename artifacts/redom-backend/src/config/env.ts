@@ -91,11 +91,6 @@ export const env = {
         required(
           "RESEND_API_KEY",
         ),
-
-      fromEmail:
-        required(
-          "RESEND_FROM_EMAIL",
-        ),
     },
   },
 
