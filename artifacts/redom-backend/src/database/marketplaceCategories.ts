@@ -6,148 +6,147 @@ import {
   integer,
   boolean,
   timestamp,
+  index,
 } from "drizzle-orm/pg-core";
 
-export const marketplaceCategories = pgTable(
-  "marketplace_categories",
-  {
+export const marketplaceCategories =
+  pgTable(
+    "marketplace_categories",
+    {
+      id: uuid("id")
+        .defaultRandom()
+        .primaryKey(),
 
-    // ==================================================
-    // INTERNAL ID
-    // ==================================================
+      name: varchar(
+        "name",
+        {
+          length: 100,
+        },
+      )
+        .notNull()
+        .unique(),
 
-    id: uuid("id")
-      .defaultRandom()
-      .primaryKey(),
+      slug: varchar(
+        "slug",
+        {
+          length: 120,
+        },
+      )
+        .notNull()
+        .unique(),
 
-    // ==================================================
-    // CATEGORY
-    // ==================================================
+      description:
+        text("description"),
 
-    name: varchar("name", {
-      length: 100,
-    })
-      .notNull()
-      .unique(),
+      icon: text("icon"),
 
-    slug: varchar("slug", {
-      length: 120,
-    })
-      .notNull()
-      .unique(),
+      bannerImageUrl:
+        text("banner_image_url"),
 
-    description: text("description"),
+      parentCategoryId:
+        uuid(
+          "parent_category_id",
+        ).references(
+          () =>
+            marketplaceCategories.id,
+          {
+            onDelete:
+              "set null",
+            onUpdate:
+              "cascade",
+          },
+        ),
 
-    icon: text("icon"),
+      level:
+        integer("level")
+          .default(1)
+          .notNull(),
 
-    bannerImageUrl: text(
-      "banner_image_url",
-    ),
+      allowOffers:
+        boolean("allow_offers")
+          .default(true)
+          .notNull(),
 
-    // ==================================================
-    // HIERARCHY
-    // ==================================================
+      allowShipping:
+        boolean("allow_shipping")
+          .default(true)
+          .notNull(),
 
-    parentCategoryId: uuid(
-      "parent_category_id",
-    ),
+      allowPickup:
+        boolean("allow_pickup")
+          .default(true)
+          .notNull(),
 
-    level: integer("level")
-      .default(1)
-      .notNull(),
+      allowReturns:
+        boolean("allow_returns")
+          .default(false)
+          .notNull(),
 
-    // ==================================================
-    // DEFAULT MARKETPLACE SETTINGS
-    // ==================================================
+      moderationRequired:
+        boolean(
+          "moderation_required",
+        )
+          .default(true)
+          .notNull(),
 
-    allowOffers: boolean(
-      "allow_offers",
-    )
-      .default(true)
-      .notNull(),
+      status:
+        varchar(
+          "status",
+          {
+            length: 20,
+          },
+        )
+          .default("active")
+          .notNull(),
 
-    allowShipping: boolean(
-      "allow_shipping",
-    )
-      .default(true)
-      .notNull(),
+      totalListings:
+        integer(
+          "total_listings",
+        )
+          .default(0)
+          .notNull(),
 
-    allowPickup: boolean(
-      "allow_pickup",
-    )
-      .default(true)
-      .notNull(),
+      totalSales:
+        integer(
+          "total_sales",
+        )
+          .default(0)
+          .notNull(),
 
-    allowReturns: boolean(
-      "allow_returns",
-    )
-      .default(false)
-      .notNull(),
+      displayOrder:
+        integer(
+          "display_order",
+        )
+          .default(0)
+          .notNull(),
 
-    moderationRequired: boolean(
-      "moderation_required",
-    )
-      .default(true)
-      .notNull(),
+      createdAt:
+        timestamp(
+          "created_at",
+          {
+            withTimezone: true,
+          },
+        )
+          .defaultNow()
+          .notNull(),
 
-    // ==================================================
-    // STATUS
-    // ==================================================
+      updatedAt:
+        timestamp(
+          "updated_at",
+          {
+            withTimezone: true,
+          },
+        )
+          .defaultNow()
+          .notNull(),
+    },
 
-    /**
-     * active
-     * hidden
-     * archived
-     */
-    status: varchar("status", {
-      length: 20,
-    })
-      .default("active")
-      .notNull(),
-
-    // ==================================================
-    // ANALYTICS
-    // ==================================================
-
-    totalListings: integer(
-      "total_listings",
-    )
-      .default(0)
-      .notNull(),
-
-    totalSales: integer(
-      "total_sales",
-    )
-      .default(0)
-      .notNull(),
-
-    displayOrder: integer(
-      "display_order",
-    )
-      .default(0)
-      .notNull(),
-
-    // ==================================================
-    // SYSTEM
-    // ==================================================
-
-    createdAt: timestamp(
-      "created_at",
-      {
-        withTimezone: true,
-      },
-    )
-      .defaultNow()
-      .notNull(),
-
-    updatedAt: timestamp(
-      "updated_at",
-      {
-        withTimezone: true,
-      },
-    )
-      .defaultNow()
-      .notNull(),
-
-  },
-);
+    (table) => ({
+      parentCategoryIdx:
+        index(
+          "marketplace_categories_parent_category_idx",
+        ).on(
+          table.parentCategoryId,
+        ),
+    }),
+  );
