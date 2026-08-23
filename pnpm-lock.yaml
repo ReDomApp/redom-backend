@@ -284,7 +284,7 @@ importers:
         specifier: ^7.3.17
         version: 7.3.17(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       '@react-navigation/native-stack':
-        specifier: ^7.18.9
+        specifier: ^7.3.16
         version: 7.18.9(@react-navigation/native@7.3.17(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(react-native-safe-area-context@5.6.2(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(react-native-screens@4.16.0(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       expo:
         specifier: ^54.0.0
@@ -295,6 +295,9 @@ importers:
       expo-secure-store:
         specifier: ^15.0.0
         version: 15.0.8(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)(typescript@5.9.3))
+      expo-status-bar:
+        specifier: ^57.0.1
+        version: 57.0.1(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)(typescript@5.9.3))(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       react:
         specifier: ^19.1.0
         version: 19.2.8
@@ -302,10 +305,10 @@ importers:
         specifier: ^0.81.0
         version: 0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8)
       react-native-safe-area-context:
-        specifier: ~5.6.2
+        specifier: ^5.6.2
         version: 5.6.2(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       react-native-screens:
-        specifier: ~4.16.0
+        specifier: ^4.16.0
         version: 4.16.0(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       zod:
         specifier: ^3.25.76
@@ -2483,6 +2486,13 @@ packages:
   expo-server@1.0.7:
     resolution: {integrity: sha512-mcmyML3oXcqFUXUxtdtCL1O00ztNI2v76d+MdniXRUgHNxIcHZ05zo+DqBaOOT6LQnPk4vA4YHqQl7iGUfRb3g==}
     engines: {node: '>=20.16.0'}
+
+  expo-status-bar@57.0.1:
+    resolution: {integrity: sha512-Xwaq1gAoVRWx5dPG5VhT5RSbnI9OilhZnO5qoPBnUaBAa5VzRzfdS8q0/bsPt0jR2DKLtGuP0bQ6efMJ4RIMDg==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
 
   expo@54.0.37:
     resolution: {integrity: sha512-afzbtO4i/K9ZCrzyLgEOaXW56w/yuAK61JkCOMrw/S/VFCAp6YwKWA494X5mIcrVmRAmclv/ec7ga8ndTkzhxw==}
@@ -7212,6 +7222,12 @@ snapshots:
       expo: 54.0.37(@babel/core@7.29.7)(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)(typescript@5.9.3)
 
   expo-server@1.0.7: {}
+
+  expo-status-bar@57.0.1(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)(typescript@5.9.3))(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8):
+    dependencies:
+      expo: 54.0.37(@babel/core@7.29.7)(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)(typescript@5.9.3)
+      react: 19.2.8
+      react-native: 0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8)
 
   expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.6(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)(typescript@5.9.3):
     dependencies:
