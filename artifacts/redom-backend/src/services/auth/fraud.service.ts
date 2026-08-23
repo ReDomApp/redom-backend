@@ -13,9 +13,6 @@ export interface FraudCheckResult {
 }
 
 export class FraudService {
-  /**
-   * Verify Cloudflare Turnstile token.
-   */
   async verifyTurnstile(
     token: string,
   ): Promise<void> {
@@ -29,23 +26,17 @@ export class FraudService {
     }
   }
 
-  /**
-   * Detect country from IP.
-   */
   async detectCountry(
-  ipAddress: string,
-): Promise<string | undefined> {
-  const result = lookup(ipAddress);
+    ipAddress: string,
+  ): Promise<string | undefined> {
+    const result = lookup(ipAddress);
 
-  return (
-    (result as any)?.country?.iso_code ??
-    undefined
-  );
+    return (
+      (result as any)?.country?.iso_code ??
+      undefined
+    );
   }
 
-  /**
-   * Check IP reputation.
-   */
   async checkIp(
     ipAddress: string,
   ): Promise<FraudCheckResult> {
@@ -54,28 +45,36 @@ export class FraudService {
 
     return {
       success: result.success,
-      country: await this.detectCountry(
-        ipAddress,
-      ),
-      isVpn: result.vpn ?? false,
-      isProxy: result.proxy ?? false,
-      isTor: result.tor ?? false,
+
+      country:
+        await this.detectCountry(
+          ipAddress,
+        ),
+
+      isVpn:
+        result.vpn ?? false,
+
+      isProxy:
+        result.proxy ?? false,
+
+      isTor:
+        result.tor ?? false,
+
       fraudScore:
         result.fraud_score ?? 0,
     };
   }
 
-  /**
-   * Registration fraud check.
-   */
-  async checkRegistration(params: {
-    userId: string;
-    email: string;
-    phoneNumber: string;
-    ipAddress?: string;
-    country?: string;
-    userAgent?: string;
-  }): Promise<FraudCheckResult> {
+  async checkRegistration(
+    params: {
+      userId: string;
+      email: string;
+      phoneNumber: string;
+      ipAddress?: string;
+      country?: string;
+      userAgent?: string;
+    },
+  ): Promise<FraudCheckResult> {
     if (!params.ipAddress) {
       return {
         success: true,
@@ -101,15 +100,14 @@ export class FraudService {
     return result;
   }
 
-  /**
-   * Login fraud check.
-   */
-  async checkLogin(params: {
-    userId: string;
-    ipAddress?: string;
-    country?: string;
-    userAgent?: string;
-  }): Promise<FraudCheckResult> {
+  async checkLogin(
+    params: {
+      userId: string;
+      ipAddress?: string;
+      country?: string;
+      userAgent?: string;
+    },
+  ): Promise<FraudCheckResult> {
     if (!params.ipAddress) {
       return {
         success: true,
@@ -126,7 +124,12 @@ export class FraudService {
         params.ipAddress,
       );
 
-    if (result.fraudScore >= 95) {
+    /*
+     * ReDom login fraud threshold.
+     *
+     * 50+ = block login.
+     */
+    if (result.fraudScore >= 50) {
       throw new Error(
         "Login blocked because of a high fraud score.",
       );
@@ -135,13 +138,12 @@ export class FraudService {
     return result;
   }
 
-  /**
-   * Password reset fraud check.
-   */
-  async checkPasswordReset(params: {
-    ipAddress?: string;
-    country?: string;
-  }): Promise<FraudCheckResult> {
+  async checkPasswordReset(
+    params: {
+      ipAddress?: string;
+      country?: string;
+    },
+  ): Promise<FraudCheckResult> {
     if (!params.ipAddress) {
       return {
         success: true,
