@@ -1,3 +1,4 @@
+import { getStoredSession } from "../auth/storage";
 import { env } from "../config/env";
 
 export class ApiError extends Error {
@@ -21,10 +22,19 @@ export class ApiError extends Error {
 }
 
 export interface ApiRequestOptions {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method?:
+    | "GET"
+    | "POST"
+    | "PUT"
+    | "PATCH"
+    | "DELETE";
+
   body?: unknown;
+
   headers?: Record<string, string>;
+
   accessToken?: string;
+
   signal?: AbortSignal;
 }
 
@@ -33,7 +43,9 @@ function buildUrl(path: string): string {
     return path;
   }
 
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const normalizedPath = path.startsWith("/")
+    ? path
+    : `/${path}`;
 
   return `${env.apiBaseUrl}${normalizedPath}`;
 }
@@ -62,28 +74,44 @@ export async function apiRequest<T>(
   headers.set("Accept", "application/json");
 
   if (options.body !== undefined) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  if (options.accessToken) {
     headers.set(
-      "Authorization",
-      `Bearer ${options.accessToken}`,
+      "Content-Type",
+      "application/json",
     );
   }
 
-  const response = await fetch(buildUrl(path), {
-    method: options.method ?? "GET",
-    headers,
-    credentials: "include",
-    signal: options.signal,
-    body:
-      options.body === undefined
-        ? undefined
-        : JSON.stringify(options.body),
-  });
+  let accessToken = options.accessToken;
 
-  const payload = await parseResponse(response);
+  if (!accessToken) {
+    const storedSession =
+      await getStoredSession();
+
+    accessToken =
+      storedSession?.accessToken;
+  }
+
+  if (accessToken) {
+    headers.set(
+      "Authorization",
+      `Bearer ${accessToken}`,
+    );
+  }
+
+  const response = await fetch(
+    buildUrl(path),
+    {
+      method: options.method ?? "GET",
+      headers,
+      signal: options.signal,
+      body:
+        options.body === undefined
+          ? undefined
+          : JSON.stringify(options.body),
+    },
+  );
+
+  const payload =
+    await parseResponse(response);
 
   if (!response.ok) {
     const body =
