@@ -6,8 +6,11 @@ export const VERIFICATION_ENDPOINTS = {
 } as const;
 
 export const VERIFICATION_PURPOSES = {
-  EMAIL_VERIFICATION: "EMAIL_VERIFICATION",
-  PHONE_VERIFICATION: "PHONE_VERIFICATION",
+  EMAIL_VERIFICATION:
+    "EMAIL_VERIFICATION",
+
+  PHONE_VERIFICATION:
+    "PHONE_VERIFICATION",
 } as const;
 
 export type VerificationPurpose =
@@ -22,17 +25,11 @@ export const VERIFICATION_CHANNELS = {
 export type VerificationChannel =
   (typeof VERIFICATION_CHANNELS)[keyof typeof VERIFICATION_CHANNELS];
 
-export const EMAIL_VERIFICATION_LENGTHS = [
-  4,
-  5,
-  6,
-] as const;
+export const EMAIL_VERIFICATION_LENGTHS =
+  [4, 5, 6] as const;
 
-export const PHONE_VERIFICATION_LENGTHS = [
-  4,
-  5,
-  6,
-] as const;
+export const PHONE_VERIFICATION_LENGTHS =
+  [4, 5, 6] as const;
 
 export const DEFAULT_EMAIL_VERIFICATION_LENGTH = 6;
 
