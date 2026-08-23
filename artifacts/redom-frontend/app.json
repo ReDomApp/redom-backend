@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "ReDom",
+    "slug": "redom",
+    "version": "7.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "redom",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.redom.app"
+    },
+    "android": {
+      "package": "com.redom.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#1877F2"
+      }
+    }
+  }
+}
