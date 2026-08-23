@@ -25,9 +25,11 @@ export function classifyLoginIdentifier(
   }
 
   /*
-   * ReDom does not allow public ID,
-   * profile ID, or any 15-digit numeric
-   * identifier as a frontend login method.
+   * ReDom mobile login intentionally does NOT
+   * expose username, public ID, or profile ID login.
+   *
+   * Any numeric-only identifier is rejected locally.
+   * This includes 15-digit public IDs.
    */
   if (
     FIFTEEN_DIGIT_PATTERN.test(identifier) ||
@@ -56,10 +58,10 @@ export function validateLoginIdentifier(
     return "Enter your email address or phone number.";
   }
 
-  const type =
-    classifyLoginIdentifier(identifier);
-
-  if (type === "invalid") {
+  if (
+    classifyLoginIdentifier(identifier) ===
+    "invalid"
+  ) {
     return "Enter a valid email address or phone number.";
   }
 
