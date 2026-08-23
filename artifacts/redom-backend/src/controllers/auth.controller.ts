@@ -3,7 +3,56 @@ import {
   Response,
 } from "express";
 
-import { authService } from "../services/auth/auth.service";
+import {
+  authService,
+} from "../services/auth/auth.service";
+
+import {
+  loginFlowService,
+} from "../services/auth/login-flow.service";
+
+function requestContext(
+  req: Request,
+) {
+  return {
+    ipAddress:
+      req.ip,
+
+    userAgent:
+      req.get("user-agent") ??
+      undefined,
+
+    platform:
+      req.body?.platform,
+
+    browser:
+      req.body?.browser,
+
+    deviceName:
+      req.body?.deviceName,
+
+    deviceId:
+      req.body?.deviceId,
+
+    deviceType:
+      req.body?.deviceType,
+
+    loginSource:
+      req.body?.loginSource,
+
+    appVersion:
+      req.body?.appVersion,
+
+    country:
+      req.body?.country,
+
+    region:
+      req.body?.region,
+
+    city:
+      req.body?.city,
+  };
+}
 
 export class AuthController {
   async register(
@@ -13,7 +62,14 @@ export class AuthController {
     try {
       const result =
         await authService.register(
-          req.body,
+          {
+            ...req.body,
+            ipAddress:
+              req.ip,
+            userAgent:
+              req.get("user-agent") ??
+              req.body.userAgent,
+          },
         );
 
       res.status(201).json(
@@ -36,9 +92,19 @@ export class AuthController {
   ): Promise<void> {
     try {
       const result =
-        await authService.login(
-          req.body,
-        );
+        await loginFlowService.login({
+          ...req.body,
+
+          /*
+           * Never trust frontend-supplied IP.
+           */
+          ipAddress:
+            req.ip,
+
+          userAgent:
+            req.get("user-agent") ??
+            req.body.userAgent,
+        });
 
       res.status(200).json(
         result,
@@ -50,6 +116,37 @@ export class AuthController {
           error instanceof Error
             ? error.message
             : "Login failed.",
+      });
+    }
+  }
+
+  async verifyLoginDevice(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    try {
+      const result =
+        await loginFlowService.verifyNewDevice({
+          ...req.body,
+
+          ipAddress:
+            req.ip,
+
+          userAgent:
+            req.get("user-agent") ??
+            req.body.userAgent,
+        });
+
+      res.status(200).json(
+        result,
+      );
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Device verification failed.",
       });
     }
   }
@@ -209,6 +306,7 @@ export class AuthController {
           message:
             "Authentication required.",
         });
+
         return;
       }
 
@@ -216,6 +314,7 @@ export class AuthController {
         await authService.logout({
           userId:
             req.user.userId,
+
           sessionId:
             req.user.sessionId,
         });
