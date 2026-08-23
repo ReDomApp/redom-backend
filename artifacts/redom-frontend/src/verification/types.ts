@@ -24,19 +24,28 @@ export interface ResendPhoneCodeInput {
 
 export interface VerificationResponse {
   success: boolean;
+
   message: string;
 
   challengeId?: string;
 
-  purpose?: VerificationPurpose | string;
+  purpose?:
+    | VerificationPurpose
+    | string;
 
-  type?: "email" | "phone" | "security" | string;
+  type?:
+    | "email"
+    | "phone"
+    | "security"
+    | string;
 
   target?: string;
 
   normalizedTarget?: string;
 
-  channel?: VerificationChannel | string;
+  channel?:
+    | VerificationChannel
+    | string;
 
   codeLength?: number;
 
