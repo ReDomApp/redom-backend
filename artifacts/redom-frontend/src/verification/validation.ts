@@ -5,7 +5,9 @@ import {
   MAX_LOCAL_OTP_LENGTH,
 } from "./constants";
 
-function isNumeric(value: string): boolean {
+function isNumeric(
+  value: string,
+): boolean {
   return /^\d+$/.test(value);
 }
 
@@ -18,15 +20,16 @@ export function normalizeOtp(
 export function validateOtp(
   value: string,
   allowedLengths:
-    | readonly number[]
-    = [
+    | readonly number[] =
+    [
       ...new Set([
         ...EMAIL_VERIFICATION_LENGTHS,
         ...PHONE_VERIFICATION_LENGTHS,
       ]),
     ],
 ): string | null {
-  const code = normalizeOtp(value);
+  const code =
+    normalizeOtp(value);
 
   if (!code) {
     return "Enter your verification code.";
@@ -37,13 +40,19 @@ export function validateOtp(
   }
 
   if (
-    code.length < MIN_LOCAL_OTP_LENGTH ||
-    code.length > MAX_LOCAL_OTP_LENGTH
+    code.length <
+      MIN_LOCAL_OTP_LENGTH ||
+    code.length >
+      MAX_LOCAL_OTP_LENGTH
   ) {
     return "Enter a valid verification code.";
   }
 
-  if (!allowedLengths.includes(code.length)) {
+  if (
+    !allowedLengths.includes(
+      code.length,
+    )
+  ) {
     return "The verification code has an invalid length.";
   }
 
@@ -71,9 +80,7 @@ export function validatePhoneOtp(
 export function validateUserId(
   value: string,
 ): string | null {
-  const userId = value.trim();
-
-  if (!userId) {
+  if (!value.trim()) {
     return "User ID is required.";
   }
 
@@ -83,7 +90,8 @@ export function validateUserId(
 export function validatePhoneNumber(
   value: string,
 ): string | null {
-  const phoneNumber = value.trim();
+  const phoneNumber =
+    value.trim();
 
   if (!phoneNumber) {
     return "Phone number is required.";
