@@ -2,14 +2,16 @@ import {
   createNativeStackNavigator,
 } from "@react-navigation/native-stack";
 
+import { FoundationScreen } from "../screens/FoundationScreen";
+
 import type {
   RootStackParamList,
 } from "./types";
 
-import { FoundationScreen } from "../screens/FoundationScreen";
-
 const Stack =
-  createNativeStackNavigator<RootStackParamList>();
+  createNativeStackNavigator<
+    RootStackParamList
+  >();
 
 export function AppNavigator() {
   return (
