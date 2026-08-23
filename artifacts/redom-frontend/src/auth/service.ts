@@ -12,18 +12,10 @@ import type {
   RegisterInput,
   ResendVerificationInput,
   ResetPasswordInput,
+  VerifyLoginDeviceInput,
 } from "./types";
 
 export const authService = {
-  async register(
-    input: RegisterInput,
-  ): Promise<AuthResult> {
-    return api.post<AuthResult>(
-      "/auth/register",
-      input,
-    );
-  },
-
   async login(
     input: LoginInput,
   ): Promise<AuthResult> {
@@ -45,8 +37,27 @@ export const authService = {
       "/auth/login",
       {
         ...input,
+
         identifier,
       },
+    );
+  },
+
+  async verifyLoginDevice(
+    input: VerifyLoginDeviceInput,
+  ): Promise<AuthResult> {
+    return api.post<AuthResult>(
+      "/auth/verify-login-device",
+      input,
+    );
+  },
+
+  async register(
+    input: RegisterInput,
+  ): Promise<AuthResult> {
+    return api.post<AuthResult>(
+      "/auth/register",
+      input,
     );
   },
 
