@@ -16,9 +16,6 @@ import {
 const router =
   Router();
 
-/**
- * Register
- */
 router.post(
   "/register",
   authRateLimit,
@@ -27,9 +24,6 @@ router.post(
   ),
 );
 
-/**
- * Login
- */
 router.post(
   "/login",
   authRateLimit,
@@ -38,9 +32,21 @@ router.post(
   ),
 );
 
-/**
- * Verify Email
+/*
+ * New-device login verification.
+ *
+ * The user is NOT authenticated yet.
+ * The challenge ID proves which login attempt
+ * is being completed.
  */
+router.post(
+  "/verify-login-device",
+  verificationRateLimit,
+  authController.verifyLoginDevice.bind(
+    authController,
+  ),
+);
+
 router.post(
   "/verify-email",
   verificationRateLimit,
@@ -49,9 +55,6 @@ router.post(
   ),
 );
 
-/**
- * Verify Phone
- */
 router.post(
   "/verify-phone",
   verificationRateLimit,
@@ -60,9 +63,6 @@ router.post(
   ),
 );
 
-/**
- * Resend Email Verification
- */
 router.post(
   "/resend-email-code",
   verificationRateLimit,
@@ -71,9 +71,6 @@ router.post(
   ),
 );
 
-/**
- * Resend Phone Verification
- */
 router.post(
   "/resend-phone-code",
   verificationRateLimit,
@@ -82,9 +79,6 @@ router.post(
   ),
 );
 
-/**
- * Forgot Password
- */
 router.post(
   "/forgot-password",
   authRateLimit,
@@ -93,9 +87,6 @@ router.post(
   ),
 );
 
-/**
- * Reset Password
- */
 router.post(
   "/reset-password",
   authRateLimit,
@@ -104,9 +95,6 @@ router.post(
   ),
 );
 
-/**
- * Logout current authenticated session
- */
 router.post(
   "/logout",
   authMiddleware,
@@ -115,9 +103,6 @@ router.post(
   ),
 );
 
-/**
- * Refresh authentication session
- */
 router.post(
   "/refresh",
   authRateLimit,
