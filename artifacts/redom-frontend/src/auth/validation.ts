@@ -1,78 +1,53 @@
-export type LoginIdentifierType =
-  | "email"
-  | "phone"
-  | "invalid";
+export function validateLoginIdentifier(
+  identifier: string,
+): string | null {
+  const value =
+    identifier.trim();
 
-const EMAIL_PATTERN =
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const PHONE_PATTERN =
-  /^\+?[1-9]\d{7,14}$/;
-
-const NUMERIC_PATTERN =
-  /^\d+$/;
-
-const FIFTEEN_DIGIT_PATTERN =
-  /^\d{15}$/;
-
-export function classifyLoginIdentifier(
-  value: string,
-): LoginIdentifierType {
-  const identifier = value.trim();
-
-  if (!identifier) {
-    return "invalid";
+  if (!value) {
+    return "Enter your mobile number or email.";
   }
 
   /*
-   * ReDom mobile login intentionally does NOT
-   * expose username, public ID, or profile ID login.
+   * ReDom does not allow Public ID login.
    *
-   * Any numeric-only identifier is rejected locally.
-   * This includes 15-digit public IDs.
+   * Any exactly 15-digit numeric value is
+   * rejected before it reaches the backend.
    */
-  if (
-    FIFTEEN_DIGIT_PATTERN.test(identifier) ||
-    NUMERIC_PATTERN.test(identifier)
-  ) {
-    return "invalid";
-  }
-
-  if (EMAIL_PATTERN.test(identifier)) {
-    return "email";
-  }
-
-  if (PHONE_PATTERN.test(identifier)) {
-    return "phone";
-  }
-
-  return "invalid";
-}
-
-export function validateLoginIdentifier(
-  value: string,
-): string | null {
-  const identifier = value.trim();
-
-  if (!identifier) {
-    return "Enter your email address or phone number.";
+  if (/^\d{15}$/.test(value)) {
+    return "Please use your mobile number or email address to log in.";
   }
 
   if (
-    classifyLoginIdentifier(identifier) ===
-    "invalid"
+    /^\d+$/.test(value)
   ) {
-    return "Enter a valid email address or phone number.";
+    if (
+      value.length < 7 ||
+      value.length > 20
+    ) {
+      return "Enter a valid mobile number.";
+    }
+
+    return null;
+  }
+
+  if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+      value,
+    )
+  ) {
+    return "Enter a valid mobile number or email address.";
   }
 
   return null;
 }
 
-export function isValidLoginIdentifier(
-  value: string,
-): boolean {
-  return (
-    classifyLoginIdentifier(value) !==
-    "invalid"
-  );
+export function validatePassword(
+  password: string,
+): string | null {
+  if (!password) {
+    return "Enter your password.";
+  }
+
+  return null;
 }
