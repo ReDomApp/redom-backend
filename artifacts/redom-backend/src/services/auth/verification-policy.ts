@@ -14,6 +14,7 @@ export const VERIFICATION_PURPOSES = [
   "TWO_FACTOR_AUTHENTICATION",
   "ACCOUNT_RECOVERY",
   "SENSITIVE_ACCOUNT_ACTION",
+  "LOGIN_DEVICE_VERIFICATION",
 ] as const;
 
 export type VerificationPurpose =
@@ -41,66 +42,31 @@ export const VERIFICATION_STATUSES = [
 export type VerificationStatus =
   (typeof VERIFICATION_STATUSES)[number];
 
-/**
- * Backend-controlled OTP security policy.
- *
- * Frontend may request a length.
- *
- * Backend decides whether that length is allowed
- * for the requested purpose.
- */
 const PURPOSE_LENGTHS: Record<
   VerificationPurpose,
   readonly OtpLength[]
 > = {
-  EMAIL_VERIFICATION: [
-    4,
-    5,
-    6,
-  ],
+  EMAIL_VERIFICATION: [4, 5, 6],
 
-  PHONE_VERIFICATION: [
-    4,
-    5,
-    6,
-  ],
+  PHONE_VERIFICATION: [4, 5, 6],
 
-  PASSWORD_RESET: [
-    6,
-    9,
-  ],
+  PASSWORD_RESET: [6, 9],
 
-  CHANGE_EMAIL: [
-    6,
-    9,
-  ],
+  CHANGE_EMAIL: [6, 9],
 
-  CHANGE_PHONE: [
-    6,
-    9,
-  ],
+  CHANGE_PHONE: [6, 9],
 
-  CHANGE_PASSWORD: [
-    6,
-    9,
-  ],
+  CHANGE_PASSWORD: [6, 9],
 
-  SECURITY_SETTING_CHANGE: [
-    9,
-  ],
+  SECURITY_SETTING_CHANGE: [9],
 
-  TWO_FACTOR_AUTHENTICATION: [
-    6,
-    9,
-  ],
+  TWO_FACTOR_AUTHENTICATION: [6, 9],
 
-  ACCOUNT_RECOVERY: [
-    9,
-  ],
+  ACCOUNT_RECOVERY: [9],
 
-  SENSITIVE_ACCOUNT_ACTION: [
-    9,
-  ],
+  SENSITIVE_ACCOUNT_ACTION: [9],
+
+  LOGIN_DEVICE_VERIFICATION: [6],
 };
 
 const PURPOSE_TYPES: Record<
@@ -108,15 +74,26 @@ const PURPOSE_TYPES: Record<
   VerificationType
 > = {
   EMAIL_VERIFICATION: "email",
+
   PHONE_VERIFICATION: "phone",
+
   PASSWORD_RESET: "security",
+
   CHANGE_EMAIL: "email",
+
   CHANGE_PHONE: "phone",
+
   CHANGE_PASSWORD: "security",
+
   SECURITY_SETTING_CHANGE: "security",
+
   TWO_FACTOR_AUTHENTICATION: "security",
+
   ACCOUNT_RECOVERY: "security",
+
   SENSITIVE_ACCOUNT_ACTION: "security",
+
+  LOGIN_DEVICE_VERIFICATION: "security",
 };
 
 const PURPOSE_CHANNELS: Record<
@@ -172,6 +149,11 @@ const PURPOSE_CHANNELS: Record<
     "email",
     "sms",
   ],
+
+  LOGIN_DEVICE_VERIFICATION: [
+    "sms",
+    "email",
+  ],
 };
 
 export const DEFAULT_MAX_ATTEMPTS = 5;
@@ -209,9 +191,7 @@ export class VerificationPolicyService {
   getAllowedChannels(
     purpose: VerificationPurpose,
   ): readonly OtpChannel[] {
-    return PURPOSE_CHANNELS[
-      purpose
-    ];
+    return PURPOSE_CHANNELS[purpose];
   }
 
   isChannelAllowed(
