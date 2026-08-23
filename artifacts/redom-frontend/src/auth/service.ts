@@ -12,12 +12,10 @@ import type {
   RegisterInput,
   ResendVerificationInput,
   ResetPasswordInput,
-  VerifyEmailInput,
-  VerifyPhoneInput,
 } from "./types";
 
 export const authService = {
-  register(
+  async register(
     input: RegisterInput,
   ): Promise<AuthResult> {
     return api.post<AuthResult>(
@@ -52,8 +50,11 @@ export const authService = {
     );
   },
 
-  verifyEmail(
-    input: VerifyEmailInput,
+  async verifyEmail(
+    input: {
+      userId: string;
+      code: string;
+    },
   ): Promise<AuthResult> {
     return api.post<AuthResult>(
       "/auth/verify-email",
@@ -61,8 +62,12 @@ export const authService = {
     );
   },
 
-  verifyPhone(
-    input: VerifyPhoneInput,
+  async verifyPhone(
+    input: {
+      userId: string;
+      phoneNumber: string;
+      code: string;
+    },
   ): Promise<AuthResult> {
     return api.post<AuthResult>(
       "/auth/verify-phone",
@@ -70,7 +75,7 @@ export const authService = {
     );
   },
 
-  resendEmailCode(
+  async resendEmailCode(
     input: ResendVerificationInput,
   ): Promise<AuthResult> {
     return api.post<AuthResult>(
@@ -79,7 +84,7 @@ export const authService = {
     );
   },
 
-  resendPhoneCode(
+  async resendPhoneCode(
     input: ResendVerificationInput,
   ): Promise<AuthResult> {
     return api.post<AuthResult>(
@@ -88,7 +93,7 @@ export const authService = {
     );
   },
 
-  forgotPassword(
+  async forgotPassword(
     input: ForgotPasswordInput,
   ): Promise<AuthResult> {
     return api.post<AuthResult>(
@@ -97,7 +102,7 @@ export const authService = {
     );
   },
 
-  resetPassword(
+  async resetPassword(
     input: ResetPasswordInput,
   ): Promise<AuthResult> {
     return api.post<AuthResult>(
@@ -106,13 +111,13 @@ export const authService = {
     );
   },
 
-  logout(): Promise<AuthResult> {
+  async logout(): Promise<AuthResult> {
     return api.post<AuthResult>(
       "/auth/logout",
     );
   },
 
-  refreshSession(
+  async refreshSession(
     input: RefreshSessionInput,
   ): Promise<AuthResult> {
     return api.post<AuthResult>(
