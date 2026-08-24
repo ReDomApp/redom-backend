@@ -16,7 +16,7 @@ const Stack =
 export function AppNavigator() {
   return (
     <Stack.Navigator
-      initialRouteName="Foundation"
+      initialRouteName="Login"
       screenOptions={{
         headerShown: false,
       }}
