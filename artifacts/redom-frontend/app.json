@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "scheme": "redom",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.redom.app"
@@ -16,6 +15,9 @@
       "adaptiveIcon": {
         "backgroundColor": "#1877F2"
       }
-    }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }
