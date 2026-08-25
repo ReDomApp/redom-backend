@@ -18,9 +18,7 @@ import {
 
 import type {
   AuthResult,
-  AuthSession,
   AuthState,
-  AuthUser,
   LoginInput,
   RegisterInput,
 } from "./types";
@@ -45,6 +43,13 @@ const AuthContext =
     null,
   );
 
+const unauthenticatedState: AuthState =
+  {
+    status: "unauthenticated",
+    user: null,
+    session: null,
+  };
+
 export function AuthProvider({
   children,
 }: PropsWithChildren) {
@@ -61,23 +66,19 @@ export function AuthProvider({
         await getStoredSession();
 
       if (!stored) {
-        setState({
-          status: "unauthenticated",
-          user: null,
-          session: null,
-        });
+        setState(
+          unauthenticatedState,
+        );
 
         return;
       }
 
       try {
         const response =
-          await authService.refreshSession(
-            {
-              refreshToken:
-                stored.refreshToken,
-            },
-          );
+          await authService.refreshSession({
+            refreshToken:
+              stored.refreshToken,
+          });
 
         if (
           !response.success ||
@@ -96,16 +97,15 @@ export function AuthProvider({
         setState({
           status: "authenticated",
           user: response.user,
-          session: response.session,
+          session:
+            response.session,
         });
       } catch {
         await clearStoredSession();
 
-        setState({
-          status: "unauthenticated",
-          user: null,
-          session: null,
-        });
+        setState(
+          unauthenticatedState,
+        );
       }
     },
     [],
@@ -123,6 +123,20 @@ export function AuthProvider({
         await authService.login(
           input,
         );
+
+      /*
+       * A new-device login may legitimately
+       * return a verification challenge instead
+       * of a session.
+       *
+       * Do NOT treat that response as a failed
+       * authentication attempt.
+       */
+      if (
+        response.requiresVerification
+      ) {
+        return response;
+      }
 
       if (
         !response.success ||
@@ -142,7 +156,8 @@ export function AuthProvider({
       setState({
         status: "authenticated",
         user: response.user,
-        session: response.session,
+        session:
+          response.session,
       });
 
       return response;
@@ -159,6 +174,12 @@ export function AuthProvider({
           input,
         );
 
+      /*
+       * Registration does not necessarily
+       * produce a session. Only establish an
+       * authenticated state when the backend
+       * actually returns both values.
+       */
       if (
         response.session &&
         response.user
@@ -170,7 +191,8 @@ export function AuthProvider({
         setState({
           status: "authenticated",
           user: response.user,
-          session: response.session,
+          session:
+            response.session,
         });
       }
 
@@ -186,11 +208,9 @@ export function AuthProvider({
       } finally {
         await clearStoredSession();
 
-        setState({
-          status: "unauthenticated",
-          user: null,
-          session: null,
-        });
+        setState(
+          unauthenticatedState,
+        );
       }
     },
     [],
