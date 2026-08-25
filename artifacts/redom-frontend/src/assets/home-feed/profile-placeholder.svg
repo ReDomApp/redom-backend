@@ -1,0 +1,36 @@
+<svg width="44" height="44" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Original Black outer profile -->
+  <circle cx="22" cy="22" r="21" fill="#000000"/>
+
+  <!-- ReDom Blue inner field -->
+  <circle cx="22" cy="22" r="17.5" fill="#1877F2"/>
+
+  <!-- Person silhouette / blue cut-out -->
+  <path
+    d="M22 10.5
+       C17.9 10.5 14.8 13.6 14.8 17.7
+       C14.8 21.8 17.9 24.9 22 24.9
+       C26.1 24.9 29.2 21.8 29.2 17.7
+       C29.2 13.6 26.1 10.5 22 10.5Z"
+    fill="#000000"
+  />
+
+  <path
+    d="M9.8 36.5
+       C11.4 28.7 15.6 25.3 22 25.3
+       C28.4 25.3 32.6 28.7 34.2 36.5
+       C30.8 38.5 26.6 39.5 22 39.5
+       C17.4 39.5 13.2 38.5 9.8 36.5Z"
+    fill="#000000"
+  />
+
+  <!-- Blue facial/neck negative space -->
+  <path
+    d="M18.2 24.2
+       C19.3 24.8 20.6 25.1 22 25.1
+       C23.4 25.1 24.7 24.8 25.8 24.2
+       C24.8 26.2 23.5 27.1 22 27.1
+       C20.5 27.1 19.2 26.2 18.2 24.2Z"
+    fill="#1877F2"
+  />
+</svg>
