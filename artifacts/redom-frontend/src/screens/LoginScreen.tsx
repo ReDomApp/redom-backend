@@ -26,12 +26,13 @@ import {
 } from "../auth/validation";
 
 import {
+  getNetworkProvider,
+} from "../auth/networkProvider";
+
+import {
   getDeviceId,
 } from "../utils/device";
 
-/*
- * ReDom SVG assets
- */
 import ReDomLogo from "../assets/brand/redom-logo.svg";
 import PasswordVisible from "../assets/auth/password-visible.svg";
 import PasswordHidden from "../assets/auth/password-hidden.svg";
@@ -77,10 +78,30 @@ export function LoginScreen() {
     null,
   );
 
-  /*
-   * Get the real device identifier before
-   * allowing authentication to be submitted.
-   */
+  const [
+    networkProvider,
+    setNetworkProvider,
+  ] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    const provider =
+      getNetworkProvider();
+
+    if (mounted) {
+      setNetworkProvider(
+        provider,
+      );
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
@@ -115,13 +136,6 @@ export function LoginScreen() {
         const normalizedIdentifier =
           identifier.trim();
 
-        /*
-         * Local validation happens before
-         * anything reaches the backend.
-         *
-         * This includes rejecting a 15-digit
-         * numeric/public-ID-style identifier.
-         */
         const identifierError =
           validateLoginIdentifier(
             normalizedIdentifier,
@@ -159,10 +173,6 @@ export function LoginScreen() {
         setLoading(true);
 
         try {
-          /*
-           * AuthContext → authService →
-           * POST /auth/login
-           */
           const result =
             await login({
               identifier:
@@ -179,7 +189,8 @@ export function LoginScreen() {
                 "mobile",
 
               deviceName:
-                Platform.OS === "ios"
+                Platform.OS ===
+                "ios"
                   ? "iPhone"
                   : "Android Device",
 
@@ -190,13 +201,6 @@ export function LoginScreen() {
                 "1.0.0",
             });
 
-          /*
-           * The backend may require additional
-           * verification for a new device.
-           *
-           * We deliberately do not invent or
-           * navigate to a verification screen yet.
-           */
           if (
             result.requiresVerification
           ) {
@@ -208,15 +212,6 @@ export function LoginScreen() {
             return;
           }
 
-          /*
-           * AuthContext has already stored the
-           * session and changed the authentication
-           * state when login succeeds.
-           *
-           * No manual navigation is performed here.
-           * The authenticated destination will be
-           * connected after its screen is defined.
-           */
           if (
             result.success &&
             result.session &&
@@ -248,6 +243,11 @@ export function LoginScreen() {
       ],
     );
 
+  const networkTerms =
+    networkProvider
+      ? `${networkProvider} Terms and Conditions`
+      : "Your Network Provider Terms";
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -267,10 +267,10 @@ export function LoginScreen() {
         }
       >
         <View style={styles.card}>
-
-          {/* ReDom official brand SVG */}
           <View
-            style={styles.logoContainer}
+            style={
+              styles.logoContainer
+            }
           >
             <ReDomLogo
               width={190}
@@ -281,15 +281,16 @@ export function LoginScreen() {
           <Text style={styles.notice}>
             By proceeding you agree to{" "}
             <Text style={styles.link}>
-              Your Network Provider Terms
+              {networkTerms}
             </Text>{" "}
-            which includes letting
-            ReDom request and receive your
-            phone number.
+            which includes letting ReDom
+            request and receive your phone
+            number.
           </Text>
 
-          {/* Identifier */}
-          <View style={styles.inputBox}>
+          <View
+            style={styles.inputBox}
+          >
             <TextInput
               value={identifier}
               onChangeText={(value) => {
@@ -312,8 +313,9 @@ export function LoginScreen() {
             />
           </View>
 
-          {/* Password */}
-          <View style={styles.inputBox}>
+          <View
+            style={styles.inputBox}
+          >
             <TextInput
               value={password}
               onChangeText={(value) => {
@@ -369,7 +371,6 @@ export function LoginScreen() {
             </Pressable>
           </View>
 
-          {/* Error */}
           {error ? (
             <Text
               accessibilityRole="alert"
@@ -379,7 +380,6 @@ export function LoginScreen() {
             </Text>
           ) : null}
 
-          {/* Login */}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Login"
@@ -407,37 +407,21 @@ export function LoginScreen() {
             )}
           </Pressable>
 
-          {/* Forgot Password */}
           <Pressable
             disabled={loading}
-            onPress={() => {
-              /*
-               * Not connected yet.
-               *
-               * The Forgot Password screen and
-               * its exact behavior will be defined
-               * before implementation.
-               */
-            }}
-            style={styles.forgotButton}
+            onPress={() => {}}
+            style={
+              styles.forgotButton
+            }
           >
             <Text style={styles.link}>
               Forgot Password?
             </Text>
           </Pressable>
 
-          {/* Create Account */}
           <Pressable
             disabled={loading}
-            onPress={() => {
-              /*
-               * Not connected yet.
-               *
-               * The Create Account screen and
-               * its exact behavior will be defined
-               * before implementation.
-               */
-            }}
+            onPress={() => {}}
             style={[
               styles.signupButton,
               loading &&
@@ -472,7 +456,8 @@ const styles =
 
     scroll: {
       flexGrow: 1,
-      justifyContent: "center",
+      justifyContent:
+        "center",
       padding: 20,
     },
 
@@ -486,8 +471,7 @@ const styles =
       paddingVertical: 35,
       paddingHorizontal: 30,
 
-      shadowColor:
-        "#000000",
+      shadowColor: "#000000",
 
       shadowOffset: {
         width: 0,
