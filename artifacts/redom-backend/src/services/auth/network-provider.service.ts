@@ -1,6 +1,6 @@
 import {
   lookup,
-} from "../lib/maxmind";
+} from "../../lib/maxmind";
 
 export interface NetworkProviderResult {
   success: boolean;
@@ -28,10 +28,10 @@ export async function getNetworkProvider(
   }
 
   /*
-   * Prefer the actual ISP.
+   * Prefer the actual ISP when MaxMind
+   * supplies one.
    *
-   * If MaxMind does not provide ISP,
-   * fall back to ASN organization.
+   * Otherwise use the ASN organization.
    */
   const networkProvider =
     result.isp ??
