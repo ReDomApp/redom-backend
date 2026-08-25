@@ -22,16 +22,8 @@ import Svg, {
 } from "react-native-svg";
 
 import {
-  useNavigation,
-} from "@react-navigation/native";
-
-import type {
-  NativeStackNavigationProp,
-} from "@react-navigation/native-stack";
-
-import {
-  authService,
-} from "../auth/service";
+  useAuthContext,
+} from "../auth/context";
 
 import {
   validateLoginIdentifier,
@@ -41,16 +33,6 @@ import {
 import {
   getDeviceId,
 } from "../utils/device";
-
-import type {
-  RootStackParamList,
-} from "../routing/types";
-
-type Navigation =
-  NativeStackNavigationProp<
-    RootStackParamList,
-    "Login"
-  >;
 
 const BLUE = "#1877F2";
 
@@ -93,8 +75,9 @@ function EyeIcon({
 }
 
 export function LoginScreen() {
-  const navigation =
-    useNavigation<Navigation>();
+  const {
+    login,
+  } = useAuthContext();
 
   const [
     identifier,
@@ -202,7 +185,7 @@ export function LoginScreen() {
 
         try {
           const result =
-            await authService.login({
+            await login({
               identifier:
                 normalizedIdentifier,
 
@@ -217,8 +200,7 @@ export function LoginScreen() {
                 "mobile",
 
               deviceName:
-                Platform.OS ===
-                "ios"
+                Platform.OS === "ios"
                   ? "iPhone"
                   : "Android Device",
 
@@ -229,33 +211,21 @@ export function LoginScreen() {
                 "1.0.0",
             });
 
+          /*
+           * The backend may require a
+           * new-device verification challenge.
+           *
+           * We deliberately do not navigate
+           * anywhere yet because you have not
+           * specified the Login Verification
+           * screen.
+           */
           if (
-            result.requiresVerification &&
-            result.verification
+            result.requiresVerification
           ) {
-            navigation.navigate(
-              "LoginVerification",
-              {
-                challengeId:
-                  result.verification
-                    .challengeId,
-
-                maskedTarget:
-                  result.verification
-                    .maskedTarget,
-
-                channel:
-                  result.verification
-                    .channel,
-
-                codeLength:
-                  result.verification
-                    .codeLength,
-
-                expiresAt:
-                  result.verification
-                    .expiresAt,
-              },
+            setError(
+              result.message ||
+                "Additional login verification is required.",
             );
 
             return;
@@ -267,13 +237,16 @@ export function LoginScreen() {
             result.user
           ) {
             /*
-             * AuthContext/session storage will consume
-             * this in the next integration step.
+             * AuthProvider has already stored the
+             * session and changed authentication
+             * state.
+             *
+             * There is intentionally no
+             * navigation.replace("Home") here.
+             *
+             * The Home Feed has not yet been
+             * created or specified.
              */
-            navigation.replace(
-              "Home",
-            );
-
             return;
           }
 
@@ -295,7 +268,7 @@ export function LoginScreen() {
         deviceId,
         identifier,
         loading,
-        navigation,
+        login,
         password,
       ],
     );
@@ -325,17 +298,10 @@ export function LoginScreen() {
 
           <Text style={styles.notice}>
             By proceeding you agree to{" "}
-            <Text
-              style={styles.link}
-              onPress={() =>
-                navigation.navigate(
-                  "NetworkTerms",
-                )
-              }
-            >
+            <Text style={styles.link}>
               Your Network Provider Terms
-            </Text>
-            {" "}which includes letting
+            </Text>{" "}
+            which includes letting
             ReDom request and receive your
             phone number.
           </Text>
@@ -344,9 +310,7 @@ export function LoginScreen() {
             <TextInput
               value={identifier}
               onChangeText={(value) => {
-                setIdentifier(
-                  value,
-                );
+                setIdentifier(value);
 
                 if (error) {
                   setError(null);
@@ -369,9 +333,7 @@ export function LoginScreen() {
             <TextInput
               value={password}
               onChangeText={(value) => {
-                setPassword(
-                  value,
-                );
+                setPassword(value);
 
                 if (error) {
                   setError(null);
@@ -454,35 +416,32 @@ export function LoginScreen() {
 
           <Pressable
             disabled={loading}
-            onPress={() =>
-              navigation.navigate(
-                "ForgotPassword",
-              )
-            }
+            onPress={() => {
+              /*
+               * Intentionally not connected yet.
+               *
+               * Forgot Password screen and its
+               * behavior will be defined by the
+               * user before implementation.
+               */
+            }}
             style={styles.forgotButton}
           >
-            {loading ? (
-              <Text
-                style={styles.link}
-              >
-                Forgot Password?
-              </Text>
-            ) : (
-              <Text
-                style={styles.link}
-              >
-                Forgot Password?
-              </Text>
-            )}
+            <Text style={styles.link}>
+              Forgot Password?
+            </Text>
           </Pressable>
 
           <Pressable
             disabled={loading}
-            onPress={() =>
-              navigation.navigate(
-                "Signup1",
-              )
-            }
+            onPress={() => {
+              /*
+               * Intentionally not connected yet.
+               *
+               * Signup screen and its behavior
+               * will be defined before creation.
+               */
+            }}
             style={[
               styles.signupButton,
               loading &&
