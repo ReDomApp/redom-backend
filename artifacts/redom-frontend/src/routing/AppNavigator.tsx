@@ -2,9 +2,17 @@ import {
   createNativeStackNavigator,
 } from "@react-navigation/native-stack";
 
-import { LoginScreen } from "../screens/LoginScreen";
+import {
+  LoginScreen,
+} from "../screens/LoginScreen";
 
-import { useAuthContext } from "../auth/context";
+import {
+  StartupScreen,
+} from "../screens/StartupScreen";
+
+import {
+  useAuthContext,
+} from "../auth/context";
 
 import type {
   RootStackParamList,
@@ -16,23 +24,51 @@ const Stack =
   >();
 
 export function AppNavigator() {
-  const { status } =
-    useAuthContext();
+  const {
+    status,
+  } = useAuthContext();
 
   /*
-   * Authentication is resolved by AuthProvider
-   * before the unauthenticated/authenticated
-   * application state is decided.
+   * FIRST APP STATE
    *
-   * We deliberately do not create or redirect to
-   * an authenticated screen here yet because the
-   * ReDom Home Feed has not been specified/created.
+   * AuthProvider starts with:
+   *
+   * status = loading
+   *
+   * and performs the real persisted-session
+   * lookup / backend refresh.
+   *
+   * While that is happening, ReDom displays
+   * the startup artwork.
    */
-
   if (status === "loading") {
+    return (
+      <StartupScreen />
+    );
+  }
+
+  /*
+   * AUTHENTICATED
+   *
+   * We intentionally do NOT create a Home
+   * screen here yet.
+   *
+   * You will define the Home Feed before
+   * we implement it.
+   */
+  if (
+    status ===
+    "authenticated"
+  ) {
     return null;
   }
 
+  /*
+   * UNAUTHENTICATED
+   *
+   * Login is the first defined
+   * unauthenticated screen.
+   */
   return (
     <Stack.Navigator
       initialRouteName="Login"
@@ -43,7 +79,9 @@ export function AppNavigator() {
     >
       <Stack.Screen
         name="Login"
-        component={LoginScreen}
+        component={
+          LoginScreen
+        }
       />
     </Stack.Navigator>
   );
