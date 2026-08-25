@@ -1,8 +1,14 @@
-import { Router } from "express";
+import {
+  Router,
+} from "express";
 
 import {
   authController,
 } from "../controllers/auth.controller";
+
+import {
+  networkProviderController,
+} from "../controllers/network-provider.controller";
 
 import {
   authMiddleware,
@@ -15,6 +21,32 @@ import {
 
 const router =
   Router();
+
+/*
+ * ----------------------------------------------------------
+ * NETWORK PROVIDER
+ * ----------------------------------------------------------
+ *
+ * Public endpoint.
+ *
+ * Login has not happened yet, so this cannot
+ * require authentication.
+ *
+ * The server determines the IP from req.ip.
+ */
+router.get(
+  "/network-provider",
+  authRateLimit,
+  networkProviderController.get.bind(
+    networkProviderController,
+  ),
+);
+
+/*
+ * ----------------------------------------------------------
+ * AUTHENTICATION
+ * ----------------------------------------------------------
+ */
 
 router.post(
   "/register",
@@ -34,10 +66,6 @@ router.post(
 
 /*
  * New-device login verification.
- *
- * The user is NOT authenticated yet.
- * The challenge ID proves which login attempt
- * is being completed.
  */
 router.post(
   "/verify-login-device",
@@ -47,6 +75,9 @@ router.post(
   ),
 );
 
+/*
+ * Account verification.
+ */
 router.post(
   "/verify-email",
   verificationRateLimit,
@@ -79,6 +110,9 @@ router.post(
   ),
 );
 
+/*
+ * Password recovery.
+ */
 router.post(
   "/forgot-password",
   authRateLimit,
@@ -95,6 +129,9 @@ router.post(
   ),
 );
 
+/*
+ * Authenticated session operations.
+ */
 router.post(
   "/logout",
   authMiddleware,
