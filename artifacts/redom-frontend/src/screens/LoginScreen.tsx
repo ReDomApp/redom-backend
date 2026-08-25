@@ -16,11 +16,6 @@ import {
   View,
 } from "react-native";
 
-import Svg, {
-  Circle,
-  Path,
-} from "react-native-svg";
-
 import {
   useAuthContext,
 } from "../auth/context";
@@ -34,45 +29,14 @@ import {
   getDeviceId,
 } from "../utils/device";
 
+/*
+ * ReDom SVG assets
+ */
+import ReDomLogo from "../assets/brand/redom-logo.svg";
+import PasswordVisible from "../assets/auth/password-visible.svg";
+import PasswordHidden from "../assets/auth/password-hidden.svg";
+
 const BLUE = "#1877F2";
-
-function EyeIcon({
-  visible,
-}: {
-  visible: boolean;
-}) {
-  return (
-    <Svg
-      width={23}
-      height={23}
-      viewBox="0 0 24 24"
-      fill="none"
-    >
-      <Path
-        d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"
-        stroke="#65676B"
-        strokeWidth={1.8}
-      />
-
-      <Circle
-        cx="12"
-        cy="12"
-        r="3"
-        stroke="#65676B"
-        strokeWidth={1.8}
-      />
-
-      {!visible && (
-        <Path
-          d="M4 4l16 16"
-          stroke="#65676B"
-          strokeWidth={1.8}
-          strokeLinecap="round"
-        />
-      )}
-    </Svg>
-  );
-}
 
 export function LoginScreen() {
   const {
@@ -113,6 +77,10 @@ export function LoginScreen() {
     null,
   );
 
+  /*
+   * Get the real device identifier before
+   * allowing authentication to be submitted.
+   */
   useEffect(() => {
     let mounted = true;
 
@@ -147,6 +115,13 @@ export function LoginScreen() {
         const normalizedIdentifier =
           identifier.trim();
 
+        /*
+         * Local validation happens before
+         * anything reaches the backend.
+         *
+         * This includes rejecting a 15-digit
+         * numeric/public-ID-style identifier.
+         */
         const identifierError =
           validateLoginIdentifier(
             normalizedIdentifier,
@@ -184,6 +159,10 @@ export function LoginScreen() {
         setLoading(true);
 
         try {
+          /*
+           * AuthContext → authService →
+           * POST /auth/login
+           */
           const result =
             await login({
               identifier:
@@ -212,13 +191,11 @@ export function LoginScreen() {
             });
 
           /*
-           * The backend may require a
-           * new-device verification challenge.
+           * The backend may require additional
+           * verification for a new device.
            *
-           * We deliberately do not navigate
-           * anywhere yet because you have not
-           * specified the Login Verification
-           * screen.
+           * We deliberately do not invent or
+           * navigate to a verification screen yet.
            */
           if (
             result.requiresVerification
@@ -231,22 +208,20 @@ export function LoginScreen() {
             return;
           }
 
+          /*
+           * AuthContext has already stored the
+           * session and changed the authentication
+           * state when login succeeds.
+           *
+           * No manual navigation is performed here.
+           * The authenticated destination will be
+           * connected after its screen is defined.
+           */
           if (
             result.success &&
             result.session &&
             result.user
           ) {
-            /*
-             * AuthProvider has already stored the
-             * session and changed authentication
-             * state.
-             *
-             * There is intentionally no
-             * navigation.replace("Home") here.
-             *
-             * The Home Feed has not yet been
-             * created or specified.
-             */
             return;
           }
 
@@ -292,9 +267,16 @@ export function LoginScreen() {
         }
       >
         <View style={styles.card}>
-          <Text style={styles.logo}>
-            ReDom
-          </Text>
+
+          {/* ReDom official brand SVG */}
+          <View
+            style={styles.logoContainer}
+          >
+            <ReDomLogo
+              width={190}
+              height={53}
+            />
+          </View>
 
           <Text style={styles.notice}>
             By proceeding you agree to{" "}
@@ -306,6 +288,7 @@ export function LoginScreen() {
             phone number.
           </Text>
 
+          {/* Identifier */}
           <View style={styles.inputBox}>
             <TextInput
               value={identifier}
@@ -329,6 +312,7 @@ export function LoginScreen() {
             />
           </View>
 
+          {/* Password */}
           <View style={styles.inputBox}>
             <TextInput
               value={password}
@@ -362,6 +346,7 @@ export function LoginScreen() {
                   ? "Hide password"
                   : "Show password"
               }
+              disabled={loading}
               onPress={() =>
                 setPasswordVisible(
                   (current) =>
@@ -370,14 +355,21 @@ export function LoginScreen() {
               }
               style={styles.eye}
             >
-              <EyeIcon
-                visible={
-                  passwordVisible
-                }
-              />
+              {passwordVisible ? (
+                <PasswordVisible
+                  width={23}
+                  height={23}
+                />
+              ) : (
+                <PasswordHidden
+                  width={23}
+                  height={23}
+                />
+              )}
             </Pressable>
           </View>
 
+          {/* Error */}
           {error ? (
             <Text
               accessibilityRole="alert"
@@ -387,6 +379,7 @@ export function LoginScreen() {
             </Text>
           ) : null}
 
+          {/* Login */}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Login"
@@ -414,15 +407,16 @@ export function LoginScreen() {
             )}
           </Pressable>
 
+          {/* Forgot Password */}
           <Pressable
             disabled={loading}
             onPress={() => {
               /*
-               * Intentionally not connected yet.
+               * Not connected yet.
                *
-               * Forgot Password screen and its
-               * behavior will be defined by the
-               * user before implementation.
+               * The Forgot Password screen and
+               * its exact behavior will be defined
+               * before implementation.
                */
             }}
             style={styles.forgotButton}
@@ -432,14 +426,16 @@ export function LoginScreen() {
             </Text>
           </Pressable>
 
+          {/* Create Account */}
           <Pressable
             disabled={loading}
             onPress={() => {
               /*
-               * Intentionally not connected yet.
+               * Not connected yet.
                *
-               * Signup screen and its behavior
-               * will be defined before creation.
+               * The Create Account screen and
+               * its exact behavior will be defined
+               * before implementation.
                */
             }}
             style={[
@@ -448,20 +444,13 @@ export function LoginScreen() {
                 styles.buttonDisabled,
             ]}
           >
-            {loading ? (
-              <ActivityIndicator
-                size="small"
-                color={BLUE}
-              />
-            ) : (
-              <Text
-                style={
-                  styles.signupButtonText
-                }
-              >
-                Create New Account
-              </Text>
-            )}
+            <Text
+              style={
+                styles.signupButtonText
+              }
+            >
+              Create New Account
+            </Text>
           </Pressable>
 
           <Text style={styles.footer}>
@@ -499,23 +488,22 @@ const styles =
 
       shadowColor:
         "#000000",
+
       shadowOffset: {
         width: 0,
         height: 15,
       },
+
       shadowOpacity: 0.08,
       shadowRadius: 35,
 
       elevation: 6,
     },
 
-    logo: {
-      fontSize: 54,
-      lineHeight: 62,
-      fontWeight: "800",
-      textAlign: "center",
-      color: BLUE,
-      letterSpacing: -2,
+    logoContainer: {
+      alignItems: "center",
+      justifyContent:
+        "center",
       marginBottom: 25,
     },
 
