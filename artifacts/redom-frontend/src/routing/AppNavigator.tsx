@@ -1,6 +1,21 @@
 import {
+  useEffect,
+  useState,
+} from "react";
+
+import {
   createNativeStackNavigator,
 } from "@react-navigation/native-stack";
+
+import {
+  useAuthContext,
+} from "../auth/context";
+
+import {
+  getNetworkProvider,
+  fetchNetworkProvider,
+  hasLoadedNetworkProvider,
+} from "../auth/networkProvider";
 
 import {
   LoginScreen,
@@ -9,10 +24,6 @@ import {
 import {
   StartupScreen,
 } from "../screens/StartupScreen";
-
-import {
-  useAuthContext,
-} from "../auth/context";
 
 import type {
   RootStackParamList,
@@ -28,33 +39,94 @@ export function AppNavigator() {
     status,
   } = useAuthContext();
 
+  const [
+    startupReady,
+    setStartupReady,
+  ] = useState(false);
+
+  const [
+    networkProviderReady,
+    setNetworkProviderReady,
+  ] = useState(
+    hasLoadedNetworkProvider(),
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (
+      hasLoadedNetworkProvider()
+    ) {
+      setNetworkProviderReady(
+        true,
+      );
+
+      return () => {
+        mounted = false;
+      };
+    }
+
+    fetchNetworkProvider()
+      .then(() => {
+        if (mounted) {
+          setNetworkProviderReady(
+            true,
+          );
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setNetworkProviderReady(
+            true,
+          );
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   /*
-   * FIRST APP STATE
+   * Startup is complete only after:
    *
-   * AuthProvider starts with:
+   * 1. AuthProvider has resolved the
+   *    persisted session state.
    *
-   * status = loading
-   *
-   * and performs the real persisted-session
-   * lookup / backend refresh.
-   *
-   * While that is happening, ReDom displays
-   * the startup artwork.
+   * 2. Network-provider preload has
+   *    completed or safely failed.
    */
-  if (status === "loading") {
+  useEffect(() => {
+    if (
+      status !== "loading" &&
+      networkProviderReady
+    ) {
+      setStartupReady(true);
+    }
+  }, [
+    status,
+    networkProviderReady,
+  ]);
+
+  /*
+   * Keep the startup artwork visible
+   * until all required pre-entry work
+   * has completed.
+   */
+  if (
+    !startupReady ||
+    status === "loading"
+  ) {
     return (
       <StartupScreen />
     );
   }
 
   /*
-   * AUTHENTICATED
+   * The authenticated Home Feed is not
+   * implemented yet.
    *
-   * We intentionally do NOT create a Home
-   * screen here yet.
-   *
-   * You will define the Home Feed before
-   * we implement it.
+   * Do not invent it.
    */
   if (
     status ===
@@ -63,12 +135,6 @@ export function AppNavigator() {
     return null;
   }
 
-  /*
-   * UNAUTHENTICATED
-   *
-   * Login is the first defined
-   * unauthenticated screen.
-   */
   return (
     <Stack.Navigator
       initialRouteName="Login"
