@@ -12,23 +12,19 @@ import {
 
 import StartupArtwork from "../assets/brand/startup.svg";
 
-const BLUE = "#1877F2";
+import {
+  fetchNetworkProvider,
+} from "../auth/networkProvider";
 
-export function StartupScreen() {
-  /*
-   * The artwork itself contains the complete
-   * startup branding.
-   *
-   * This component controls ONLY:
-   *
-   * - screen size
-   * - artwork size
-   * - artwork position
-   * - loading animation
-   *
-   * It does not determine authentication.
-   */
-
+export function StartupScreen({
+  onReady,
+}: {
+  onReady?: (
+    networkProvider:
+      | string
+      | null,
+  ) => void;
+}) {
   const rotation =
     useRef(
       new Animated.Value(0),
@@ -42,7 +38,8 @@ export function StartupScreen() {
           {
             toValue: 1,
             duration: 950,
-            easing: Easing.linear,
+            easing:
+              Easing.linear,
             useNativeDriver: true,
           },
         ),
@@ -55,6 +52,30 @@ export function StartupScreen() {
     };
   }, [rotation]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function preload() {
+      const networkProvider =
+        await fetchNetworkProvider();
+
+      if (
+        mounted &&
+        onReady
+      ) {
+        onReady(
+          networkProvider,
+        );
+      }
+    }
+
+    void preload();
+
+    return () => {
+      mounted = false;
+    };
+  }, [onReady]);
+
   const rotate =
     rotation.interpolate({
       inputRange: [0, 1],
@@ -65,20 +86,21 @@ export function StartupScreen() {
     });
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.artworkContainer}>
+    <View
+      style={
+        styles.screen
+      }
+    >
+      <View
+        style={
+          styles.artworkContainer
+        }
+      >
         <StartupArtwork
           width={343}
           height={768}
         />
 
-        {/*
-         * Loading spinner.
-         *
-         * Positioned at the heart/center of
-         * the blue ReDom mark in the startup
-         * artwork.
-         */}
         <Animated.View
           pointerEvents="none"
           style={[
@@ -90,13 +112,18 @@ export function StartupScreen() {
                 },
               ],
             },
-          ]}
+          ],
+        }
         >
           <View
-            style={styles.spinnerTrack}
+            style={
+              styles.spinnerTrack
+            }
           >
             <View
-              style={styles.spinnerArc}
+              style={
+                styles.spinnerArc
+              }
             />
           </View>
         </Animated.View>
@@ -131,13 +158,6 @@ const styles =
     spinner: {
       position: "absolute",
 
-      /*
-       * Center of the upper ReDom
-       * Platforms mark.
-       *
-       * This is deliberately controlled
-       * independently of the SVG.
-       */
       top: 277,
       left: 0,
       right: 0,
