@@ -9,18 +9,35 @@ export function validateLoginIdentifier(
   }
 
   /*
-   * ReDom does not allow Public ID login.
+   * ReDom does not allow Public ID-style
+   * login identifiers.
    *
-   * Any exactly 15-digit numeric value is
-   * rejected before it reaches the backend.
+   * Only reject a numeric identifier when:
+   *
+   *   1. It contains exactly 15 digits
+   *   2. It starts with 234
+   *
+   * Therefore:
+   *
+   * 234XXXXXXXXXXXX
+   * ^^^^^^^^^^^^^^^
+   *      15 digits
+   *
+   * Other phone numbers are NOT rejected
+   * by this Public-ID check.
    */
-  if (/^\d{15}$/.test(value)) {
+  if (/^234\d{12}$/.test(value)) {
     return "Please use your mobile number or email address to log in.";
   }
 
-  if (
-    /^\d+$/.test(value)
-  ) {
+  /*
+   * Numeric identifiers are otherwise allowed
+   * to reach the backend.
+   *
+   * We only perform basic local length
+   * validation here.
+   */
+  if (/^\d+$/.test(value)) {
     if (
       value.length < 7 ||
       value.length > 20
@@ -31,6 +48,9 @@ export function validateLoginIdentifier(
     return null;
   }
 
+  /*
+   * Email validation.
+   */
   if (
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
       value,
