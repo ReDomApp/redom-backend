@@ -1,7 +1,4 @@
-import {
-  useEffect,
-  useRef,
-} from "react";
+import { useEffect, useRef } from "react";
 
 import {
   Animated,
@@ -14,17 +11,10 @@ import StartupArtwork from "../assets/brand/startup.svg";
 
 import {
   fetchNetworkProvider,
+  setNetworkProvider,
 } from "../auth/networkProvider";
 
-export function StartupScreen({
-  onReady,
-}: {
-  onReady?: (
-    networkProvider:
-      | string
-      | null,
-  ) => void;
-}) {
+export function StartupScreen() {
   const rotation =
     useRef(
       new Animated.Value(0),
@@ -38,8 +28,7 @@ export function StartupScreen({
           {
             toValue: 1,
             duration: 950,
-            easing:
-              Easing.linear,
+            easing: Easing.linear,
             useNativeDriver: true,
           },
         ),
@@ -55,26 +44,24 @@ export function StartupScreen({
   useEffect(() => {
     let mounted = true;
 
-    async function preload() {
-      const networkProvider =
-        await fetchNetworkProvider();
+    const preload =
+      async () => {
+        const provider =
+          await fetchNetworkProvider();
 
-      if (
-        mounted &&
-        onReady
-      ) {
-        onReady(
-          networkProvider,
-        );
-      }
-    }
+        if (mounted) {
+          setNetworkProvider(
+            provider,
+          );
+        }
+      };
 
     void preload();
 
     return () => {
       mounted = false;
     };
-  }, [onReady]);
+  }, []);
 
   const rotate =
     rotation.interpolate({
@@ -86,11 +73,7 @@ export function StartupScreen({
     });
 
   return (
-    <View
-      style={
-        styles.screen
-      }
-    >
+    <View style={styles.screen}>
       <View
         style={
           styles.artworkContainer
@@ -112,8 +95,7 @@ export function StartupScreen({
                 },
               ],
             },
-          ],
-        }
+          ]}
         >
           <View
             style={
@@ -138,7 +120,6 @@ const styles =
       flex: 1,
       backgroundColor:
         "#FFFFFF",
-
       alignItems: "center",
       justifyContent:
         "center",
@@ -147,23 +128,18 @@ const styles =
     artworkContainer: {
       width: 343,
       height: 768,
-
       alignItems: "center",
       justifyContent:
         "center",
-
       position: "relative",
     },
 
     spinner: {
       position: "absolute",
-
       top: 277,
       left: 0,
       right: 0,
-
       height: 24,
-
       alignItems: "center",
       justifyContent:
         "center",
@@ -172,14 +148,10 @@ const styles =
     spinnerTrack: {
       width: 18,
       height: 18,
-
       borderRadius: 9,
-
       borderWidth: 2,
-
       borderColor:
         "rgba(255,255,255,0.35)",
-
       alignItems: "center",
       justifyContent:
         "center",
@@ -188,23 +160,16 @@ const styles =
     spinnerArc: {
       width: 18,
       height: 18,
-
       borderRadius: 9,
-
       borderWidth: 2,
-
       borderTopColor:
         "#FFFFFF",
-
       borderRightColor:
         "transparent",
-
       borderBottomColor:
         "transparent",
-
       borderLeftColor:
         "transparent",
-
       position: "absolute",
     },
   });
