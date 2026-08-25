@@ -13,11 +13,6 @@ export class NetworkProviderController {
     res: Response,
   ): Promise<void> {
     try {
-      /*
-       * req.ip comes from the server-side
-       * Express request. The mobile client
-       * cannot choose the IP used here.
-       */
       const result =
         await getNetworkProvider(
           req.ip,
@@ -27,10 +22,6 @@ export class NetworkProviderController {
         result,
       );
     } catch {
-      /*
-       * Network-provider detection must never
-       * prevent the Login screen from loading.
-       */
       res.status(200).json({
         success: false,
         networkProvider: null,
