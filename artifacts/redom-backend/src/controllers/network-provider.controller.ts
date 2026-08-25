@@ -5,7 +5,7 @@ import {
 
 import {
   getNetworkProvider,
-} from "../services/network-provider.service";
+} from "../services/auth/network-provider.service";
 
 export class NetworkProviderController {
   async get(
