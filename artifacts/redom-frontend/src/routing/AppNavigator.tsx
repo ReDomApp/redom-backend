@@ -12,10 +12,13 @@ import {
 } from "../auth/context";
 
 import {
-  getNetworkProvider,
   fetchNetworkProvider,
   hasLoadedNetworkProvider,
 } from "../auth/networkProvider";
+
+import {
+  FoundationScreen,
+} from "../screens/FoundationScreen";
 
 import {
   LoginScreen,
@@ -57,10 +60,7 @@ export function AppNavigator() {
     if (
       hasLoadedNetworkProvider()
     ) {
-      setNetworkProviderReady(
-        true,
-      );
-
+      setNetworkProviderReady(true);
       return () => {
         mounted = false;
       };
@@ -69,16 +69,12 @@ export function AppNavigator() {
     fetchNetworkProvider()
       .then(() => {
         if (mounted) {
-          setNetworkProviderReady(
-            true,
-          );
+          setNetworkProviderReady(true);
         }
       })
       .catch(() => {
         if (mounted) {
-          setNetworkProviderReady(
-            true,
-          );
+          setNetworkProviderReady(true);
         }
       });
 
@@ -87,15 +83,6 @@ export function AppNavigator() {
     };
   }, []);
 
-  /*
-   * Startup is complete only after:
-   *
-   * 1. AuthProvider has resolved the
-   *    persisted session state.
-   *
-   * 2. Network-provider preload has
-   *    completed or safely failed.
-   */
   useEffect(() => {
     if (
       status !== "loading" &&
@@ -108,47 +95,36 @@ export function AppNavigator() {
     networkProviderReady,
   ]);
 
-  /*
-   * Keep the startup artwork visible
-   * until all required pre-entry work
-   * has completed.
-   */
   if (
     !startupReady ||
     status === "loading"
   ) {
-    return (
-      <StartupScreen />
-    );
-  }
-
-  /*
-   * The authenticated Home Feed is not
-   * implemented yet.
-   *
-   * Do not invent it.
-   */
-  if (
-    status ===
-    "authenticated"
-  ) {
-    return null;
+    return <StartupScreen />;
   }
 
   return (
     <Stack.Navigator
-      initialRouteName="Login"
+      initialRouteName={
+        status === "authenticated"
+          ? "Foundation"
+          : "Login"
+      }
       screenOptions={{
         headerShown: false,
         animation: "fade",
       }}
     >
-      <Stack.Screen
-        name="Login"
-        component={
-          LoginScreen
-        }
-      />
+      {status === "authenticated" ? (
+        <Stack.Screen
+          name="Foundation"
+          component={FoundationScreen}
+        />
+      ) : (
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+        />
+      )}
     </Stack.Navigator>
   );
 }
