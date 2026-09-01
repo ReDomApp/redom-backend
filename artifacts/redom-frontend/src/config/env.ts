@@ -17,7 +17,7 @@ const rawEnvironment = {
     process.env
       .EXPO_PUBLIC_API_BASE_URL ??
     extra.EXPO_PUBLIC_API_BASE_URL ??
-    "https://redom-backend.onrender.com",
+    "https://redom-backend.onrender.com/redom-backend",
 };
 
 const parsed =
