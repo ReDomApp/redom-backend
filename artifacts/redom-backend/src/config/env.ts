@@ -83,11 +83,6 @@ export const env = {
       required(
         "SESSION_SECRET",
       ),
-
-    bcryptRounds:
-      requiredNumber(
-        "BCRYPT_ROUNDS",
-      ),
   },
 
   email: {
