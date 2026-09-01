@@ -1,0 +1,47 @@
+name: ReDom Backend CI
+
+on:
+  push:
+    paths:
+      - "artifacts/redom-backend/**"
+      - "lib/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.base.json"
+      - ".github/workflows/redom-backend.yml"
+  pull_request:
+    paths:
+      - "artifacts/redom-backend/**"
+      - "lib/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.base.json"
+      - ".github/workflows/redom-backend.yml"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck backend
+        run: pnpm --filter @workspace/redom-backend run typecheck
+
+      - name: Build backend
+        run: pnpm --filter @workspace/redom-backend run build

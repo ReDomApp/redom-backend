@@ -4,7 +4,10 @@ import { env } from "../config/env";
 export async function hashPassword(
   password: string,
 ): Promise<string> {
-  return bcrypt.hash(password, env.BCRYPT_ROUNDS);
+  return bcrypt.hash(
+    password,
+    env.authentication.bcryptRounds,
+  );
 }
 
 export async function verifyPassword(

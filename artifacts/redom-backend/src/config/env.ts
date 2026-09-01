@@ -83,6 +83,11 @@ export const env = {
       required(
         "SESSION_SECRET",
       ),
+
+    bcryptRounds:
+      requiredNumber(
+        "BCRYPT_ROUNDS",
+      ),
   },
 
   email: {
@@ -113,6 +118,11 @@ export const env = {
     phoneNumber:
       required(
         "TWILIO_PHONE_NUMBER",
+      ),
+
+    whatsappFrom:
+      optional(
+        "TWILIO_WHATSAPP_FROM",
       ),
   },
 

@@ -7,6 +7,7 @@ import {
 import { db } from "../../database/db";
 import { users } from "../../database/schema";
 import { sessions } from "../../database/sessions.schema";
+import { verifications } from "../../database/verifications.schema";
 
 import {
   passwordService,
@@ -252,50 +253,28 @@ export class LoginFlowService {
       );
     }
 
-    /*
-     * The server-supplied IP is authoritative.
-     * The frontend does not get to choose the IP.
-     */
     await fraudService.checkLogin({
       userId: user.id,
-
-      ipAddress:
-        data.ipAddress,
-
-      country:
-        data.country,
-
-      userAgent:
-        data.userAgent,
+      ipAddress: data.ipAddress,
+      country: data.country,
+      userAgent: data.userAgent,
     });
 
     const deviceId =
       data.deviceId?.trim();
 
-    /*
-     * A device without a persistent device ID
-     * cannot be treated as a known device.
-     */
     const knownDevice =
       Boolean(deviceId) &&
       Boolean(
         await db.query.sessions.findFirst({
           where: and(
-            eq(
-              sessions.userId,
-              user.id,
-            ),
-            eq(
-              sessions.deviceId,
-              deviceId!,
-            ),
+            eq(sessions.userId, user.id),
+            eq(sessions.deviceId, deviceId!),
           ),
         }),
       );
 
-    if (
-      !knownDevice
-    ) {
+    if (!knownDevice) {
       const channel =
         user.phoneNumber
           ? "sms"
@@ -307,31 +286,16 @@ export class LoginFlowService {
 
       const challenge =
         await verificationService.createVerification({
-          userId:
-            user.id,
-
-          purpose:
-            "LOGIN_DEVICE_VERIFICATION",
-
+          userId: user.id,
+          purpose: "LOGIN_DEVICE_VERIFICATION",
           target,
-
           channel,
-
           requestedLength: 6,
-
-          firstName:
-            user.firstName,
-
-          requestIp:
-            data.ipAddress,
-
-          userAgent:
-            data.userAgent,
-
+          firstName: user.firstName,
+          requestIp: data.ipAddress,
+          userAgent: data.userAgent,
           deviceId,
-
-          sessionId:
-            undefined,
+          sessionId: undefined,
         });
 
       const maskedTarget =
@@ -341,28 +305,16 @@ export class LoginFlowService {
 
       return {
         success: true,
-
         message:
           "New device detected. Verification is required.",
-
-        requiresVerification:
-          true,
-
+        requiresVerification: true,
         verification: {
-          challengeId:
-            challenge.challengeId,
-
+          challengeId: challenge.challengeId,
           channel,
-
           target,
-
           maskedTarget,
-
-          codeLength:
-            challenge.codeLength,
-
-          expiresAt:
-            challenge.expiresAt,
+          codeLength: challenge.codeLength,
+          expiresAt: challenge.expiresAt,
         },
       };
     }
@@ -370,56 +322,25 @@ export class LoginFlowService {
     const session =
       await sessionService.createSession({
         userId: user.id,
-
-        ipAddress:
-          data.ipAddress,
-
-        country:
-          data.country,
-
-        region:
-          data.region,
-
-        city:
-          data.city,
-
-        userAgent:
-          data.userAgent,
-
-        platform:
-          data.platform,
-
-        browser:
-          data.browser,
-
-        deviceName:
-          data.deviceName,
-
+        ipAddress: data.ipAddress,
+        country: data.country,
+        region: data.region,
+        city: data.city,
+        userAgent: data.userAgent,
+        platform: data.platform,
+        browser: data.browser,
+        deviceName: data.deviceName,
         deviceId,
-
-        deviceType:
-          data.deviceType,
-
-        loginSource:
-          data.loginSource ??
-          "mobile",
-
-        appVersion:
-          data.appVersion,
+        deviceType: data.deviceType,
+        loginSource: data.loginSource ?? "mobile",
+        appVersion: data.appVersion,
       });
 
     return {
       success: true,
-
-      message:
-        "Login successful.",
-
-      requiresVerification:
-        false,
-
-      user:
-        publicUser(user),
-
+      message: "Login successful.",
+      requiresVerification: false,
+      user: publicUser(user),
       session,
     };
   }
@@ -428,23 +349,16 @@ export class LoginFlowService {
     params: {
       challengeId: string;
       code: string;
-
       ipAddress?: string;
-
       deviceId: string;
-
       deviceName?: string;
       deviceType?: string;
-
       platform?: string;
       browser?: string;
-
       userAgent?: string;
-
       country?: string;
       region?: string;
       city?: string;
-
       loginSource?: string;
       appVersion?: string;
     },
@@ -452,12 +366,7 @@ export class LoginFlowService {
     const challenge =
       await db.query.verifications.findFirst({
         where: eq(
-          // @ts-expect-error
-          // Drizzle relation is available
-          // through the verification table.
-          // Runtime query is validated below.
-          (require("../../database/verifications.schema")
-            .verifications).id,
+          verifications.id,
           params.challengeId,
         ),
       });
@@ -479,8 +388,7 @@ export class LoginFlowService {
 
     if (
       challenge.deviceId &&
-      challenge.deviceId !==
-        params.deviceId
+      challenge.deviceId !== params.deviceId
     ) {
       throw new Error(
         "This verification belongs to another device.",
@@ -490,8 +398,7 @@ export class LoginFlowService {
     if (
       challenge.requestIp &&
       params.ipAddress &&
-      challenge.requestIp !==
-        params.ipAddress
+      challenge.requestIp !== params.ipAddress
     ) {
       throw new Error(
         "The verification request originated from a different network address.",
@@ -500,14 +407,9 @@ export class LoginFlowService {
 
     const verification =
       await verificationService.verifyVerification({
-        challengeId:
-          params.challengeId,
-
-        code:
-          params.code,
-
-        purpose:
-          "LOGIN_DEVICE_VERIFICATION",
+        challengeId: params.challengeId,
+        code: params.code,
+        purpose: "LOGIN_DEVICE_VERIFICATION",
       });
 
     if (!verification.userId) {
@@ -548,79 +450,36 @@ export class LoginFlowService {
       );
     }
 
-    /*
-     * Run fraud verification again at the
-     * point where the device becomes trusted.
-     */
     await fraudService.checkLogin({
-      userId:
-        user.id,
-
-      ipAddress:
-        params.ipAddress,
-
-      country:
-        params.country,
-
-      userAgent:
-        params.userAgent,
+      userId: user.id,
+      ipAddress: params.ipAddress,
+      country: params.country,
+      userAgent: params.userAgent,
     });
 
     const session =
       await sessionService.createSession({
-        userId:
-          user.id,
-
-        ipAddress:
-          params.ipAddress,
-
-        country:
-          params.country,
-
-        region:
-          params.region,
-
-        city:
-          params.city,
-
-        userAgent:
-          params.userAgent,
-
-        platform:
-          params.platform,
-
-        browser:
-          params.browser,
-
-        deviceName:
-          params.deviceName,
-
-        deviceId:
-          params.deviceId,
-
-        deviceType:
-          params.deviceType,
-
-        loginSource:
-          params.loginSource ??
-          "mobile",
-
-        appVersion:
-          params.appVersion,
+        userId: user.id,
+        ipAddress: params.ipAddress,
+        country: params.country,
+        region: params.region,
+        city: params.city,
+        userAgent: params.userAgent,
+        platform: params.platform,
+        browser: params.browser,
+        deviceName: params.deviceName,
+        deviceId: params.deviceId,
+        deviceType: params.deviceType,
+        loginSource: params.loginSource ?? "mobile",
+        appVersion: params.appVersion,
       });
 
     return {
       success: true,
-
       message:
         "Device verified and login successful.",
-
-      requiresVerification:
-        false,
-
-      user:
-        publicUser(user),
-
+      requiresVerification: false,
+      user: publicUser(user),
       session,
     };
   }
