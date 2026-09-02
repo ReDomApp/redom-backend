@@ -2,17 +2,6 @@ import { NextFunction, Request, Response } from "express";
 
 import { verifyAccessToken } from "../utils/jwt";
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        userId: string;
-        profileId: string;
-      };
-    }
-  }
-}
-
 export function optionalAuthMiddleware(
   req: Request,
   _res: Response,

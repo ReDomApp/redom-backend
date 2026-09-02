@@ -58,10 +58,12 @@ export class SessionController {
         return;
       }
 
-      const sessionId =
-        req.params.sessionId;
+      const { sessionId } = req.params;
 
-      if (!sessionId) {
+      if (
+        typeof sessionId !== "string" ||
+        sessionId.length === 0
+      ) {
         res.status(400).json({
           success: false,
           message:

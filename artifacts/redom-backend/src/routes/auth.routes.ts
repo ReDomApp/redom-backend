@@ -16,6 +16,7 @@ import {
 
 import {
   authRateLimit,
+  passwordResetRateLimit,
   verificationRateLimit,
 } from "../middleware/rate-limit.middleware";
 
@@ -115,7 +116,7 @@ router.post(
  */
 router.post(
   "/forgot-password",
-  authRateLimit,
+  passwordResetRateLimit,
   authController.forgotPassword.bind(
     authController,
   ),
@@ -123,7 +124,7 @@ router.post(
 
 router.post(
   "/reset-password",
-  authRateLimit,
+  passwordResetRateLimit,
   authController.resetPassword.bind(
     authController,
   ),
