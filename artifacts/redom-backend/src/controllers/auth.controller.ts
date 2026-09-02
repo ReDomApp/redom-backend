@@ -11,6 +11,11 @@ import {
   loginFlowService,
 } from "../services/auth/login-flow.service";
 
+import {
+  loginSchema,
+  registerSchema,
+} from "../validators/auth.validator";
+
 function requestContext(
   req: Request,
 ) {
@@ -63,12 +68,8 @@ export class AuthController {
       const result =
         await authService.register(
           {
-            ...req.body,
-            ipAddress:
-              req.ip,
-            userAgent:
-              req.get("user-agent") ??
-              req.body.userAgent,
+            ...registerSchema.parse(req.body),
+            ...requestContext(req),
           },
         );
 
@@ -93,17 +94,8 @@ export class AuthController {
     try {
       const result =
         await loginFlowService.login({
-          ...req.body,
-
-          /*
-           * Never trust frontend-supplied IP.
-           */
-          ipAddress:
-            req.ip,
-
-          userAgent:
-            req.get("user-agent") ??
-            req.body.userAgent,
+          ...loginSchema.parse(req.body),
+          ...requestContext(req),
         });
 
       res.status(200).json(
@@ -307,6 +299,14 @@ export class AuthController {
             "Authentication required.",
         });
 
+        return;
+      }
+
+      if (!req.user.sessionId) {
+        res.status(401).json({
+          success: false,
+          message: "Authentication session is invalid.",
+        });
         return;
       }
 

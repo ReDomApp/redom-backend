@@ -230,7 +230,6 @@ export class AuthService {
 
     const session = await sessionService.createSession({
       userId: user.id,
-      profileId: user.profileId,
       ipAddress: data.ipAddress,
       country: data.country,
       region: data.region,

@@ -7,6 +7,7 @@ import {
   boolean,
   timestamp,
   index,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 export const marketplaceCategories =
@@ -47,7 +48,7 @@ export const marketplaceCategories =
         uuid(
           "parent_category_id",
         ).references(
-          () =>
+          (): AnyPgColumn =>
             marketplaceCategories.id,
           {
             onDelete:

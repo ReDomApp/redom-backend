@@ -1,12 +1,13 @@
 import bcrypt from "bcrypt";
-import { env } from "../config/env";
+
+const BCRYPT_ROUNDS = 12;
 
 export async function hashPassword(
   password: string,
 ): Promise<string> {
   return bcrypt.hash(
     password,
-    env.authentication.bcryptRounds,
+    BCRYPT_ROUNDS,
   );
 }
 

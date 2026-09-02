@@ -102,7 +102,7 @@ export const registerSchema =
           "custom",
         ],
         {
-          error:
+          required_error:
             "Please select a valid gender.",
         },
       ),
