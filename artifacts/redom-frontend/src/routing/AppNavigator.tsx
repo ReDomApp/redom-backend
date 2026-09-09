@@ -6,6 +6,7 @@ import { DeviceVerificationScreen } from "../screens/DeviceVerificationScreen";
 import { FoundationScreen } from "../screens/FoundationScreen";
 import { LoginScreen } from "../screens/LoginScreen";
 import { StartupScreen } from "../screens/StartupScreen";
+import { RegistrationWelcomeScreen } from "../screens/registration/RegistrationWelcomeScreen";
 import { RegistrationContactScreen } from "../screens/registration/RegistrationContactScreen";
 import { RegistrationIdentityScreen } from "../screens/registration/RegistrationIdentityScreen";
 import { RegistrationUsernameScreen } from "../screens/registration/RegistrationUsernameScreen";
@@ -29,16 +30,14 @@ export function AppNavigator() {
     return () => { mounted = false; };
   }, []);
 
-  useEffect(() => {
-    if (status !== "loading" && networkProviderReady) setStartupReady(true);
-  }, [status, networkProviderReady]);
-
+  useEffect(() => { if (status !== "loading" && networkProviderReady) setStartupReady(true); }, [status, networkProviderReady]);
   if (!startupReady || status === "loading") return <StartupScreen />;
 
   return <Stack.Navigator initialRouteName={status === "authenticated" ? "Foundation" : "Login"} screenOptions={{ headerShown: false, animation: "fade" }}>
     {status === "authenticated" ? <Stack.Screen name="Foundation" component={FoundationScreen} /> : <>
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="DeviceVerification" component={DeviceVerificationScreen} />
+      <Stack.Screen name="RegistrationWelcome" component={RegistrationWelcomeScreen} />
       <Stack.Screen name="RegistrationContact" component={RegistrationContactScreen} />
       <Stack.Screen name="RegistrationIdentity" component={RegistrationIdentityScreen} />
       <Stack.Screen name="RegistrationUsername" component={RegistrationUsernameScreen} />
