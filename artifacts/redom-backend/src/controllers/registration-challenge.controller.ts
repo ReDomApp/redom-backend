@@ -16,6 +16,12 @@ function requestContext(req: Request) {
   };
 }
 
+function routeParam(value: string | string[] | undefined, name: string): string {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (Array.isArray(value) && value.length === 1 && value[0]) return value[0];
+  throw new Error(`${name} is required.`);
+}
+
 export class RegistrationChallengeController {
   async start(req: Request, res: Response) {
     try {
@@ -35,7 +41,7 @@ export class RegistrationChallengeController {
   async saveStep(req: Request, res: Response) {
     try {
       const result = await registrationChallengeService.saveStep({
-        challengeId: req.params.challengeId,
+        challengeId: routeParam(req.params.challengeId, "challengeId"),
         ...saveRegistrationStepSchema.parse(req.body),
       });
       res.status(200).json(result);
@@ -50,7 +56,7 @@ export class RegistrationChallengeController {
   async complete(req: Request, res: Response) {
     try {
       const result = await registrationChallengeService.complete({
-        challengeId: req.params.challengeId,
+        challengeId: routeParam(req.params.challengeId, "challengeId"),
         ...completeRegistrationChallengeSchema.parse(req.body),
       });
       res.status(201).json(result);
@@ -66,7 +72,7 @@ export class RegistrationChallengeController {
     try {
       const { code } = verifyRegistrationChallengeSchema.parse(req.body);
       const result = await registrationChallengeService.verify({
-        verificationChallengeId: req.params.verificationChallengeId,
+        verificationChallengeId: routeParam(req.params.verificationChallengeId, "verificationChallengeId"),
         code,
       });
       res.status(200).json(result);
@@ -80,7 +86,9 @@ export class RegistrationChallengeController {
 
   async getFlow(req: Request, res: Response) {
     try {
-      const result = await registrationChallengeService.getFlow(req.params.challengeId);
+      const result = await registrationChallengeService.getFlow(
+        routeParam(req.params.challengeId, "challengeId"),
+      );
       res.status(200).json(result);
     } catch (error) {
       res.status(400).json({
