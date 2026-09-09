@@ -17,7 +17,17 @@
       }
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "expo-localization",
+        {
+          "supportedLocales": {
+            "ios": ["en", "es", "fr", "de", "pt", "it", "nl", "ar", "zh", "ja", "ko", "hi", "ru", "tr"],
+            "android": ["en", "es", "fr", "de", "pt", "it", "nl", "ar", "zh", "ja", "ko", "hi", "ru", "tr"]
+          }
+        }
+      ]
     ]
   }
 }
