@@ -5,6 +5,13 @@ export interface AiLocalizationResponse {
   translations: string[];
 }
 
+export interface AiModerationResponse {
+  flagged: boolean;
+  decision: "allow" | "block";
+  categories: Record<string, boolean>;
+  categoryScores: Record<string, number>;
+}
+
 /**
  * Sends only visible UI strings to ReDom's backend localization boundary.
  * The OpenAI credential never enters the mobile application.
@@ -19,7 +26,10 @@ export async function localizeUiTexts(
     { language, texts, context },
   );
 
-  if (!Array.isArray(response.translations) || response.translations.length !== texts.length) {
+  if (
+    !Array.isArray(response.translations) ||
+    response.translations.length !== texts.length
+  ) {
     throw new Error("The localization service returned an invalid response.");
   }
 
@@ -30,11 +40,8 @@ export async function localizeUiTexts(
  * Moderates user-generated text through the backend before publication.
  * The client does not call OpenAI directly.
  */
-export async function moderateText(text: string): Promise<{
-  flagged: boolean;
-  decision: "allow" | "block";
-  categories: Record<string, boolean>;
-  categoryScores: Record<string, number>;
-}> {
-  return api.post("/ai/moderate", { text });
+export async function moderateText(
+  text: string,
+): Promise<AiModerationResponse> {
+  return api.post<AiModerationResponse>("/ai/moderate", { text });
 }
