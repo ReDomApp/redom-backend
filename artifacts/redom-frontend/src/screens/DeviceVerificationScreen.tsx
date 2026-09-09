@@ -11,14 +11,12 @@ import {
   TextInput,
   View,
 } from "react-native";
-
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { useAuthContext } from "../auth/context";
-import { authService } from "../auth/service";
 import { getDeviceId } from "../utils/device";
-import type { RootStackParamList } from "../routing/types";
 import SecurityShield from "../assets/auth/security-shield.svg";
+import type { RootStackParamList } from "../routing/types";
 
 const BLUE = "#1877F2";
 const CODE_LENGTH = 6;
@@ -30,25 +28,17 @@ export function DeviceVerificationScreen({ route, navigation }: Props) {
   const { challengeId, maskedTarget, channel, expiresAt } = route.params;
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState(() => {
-    const remaining = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000);
-    return Math.max(0, remaining);
-  });
+  const [secondsLeft, setSecondsLeft] = useState(() => Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000)));
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsLeft((current) => Math.max(0, current - 1));
-    }, 1000);
-
+    const timer = setInterval(() => setSecondsLeft((current) => Math.max(0, current - 1)), 1000);
     return () => clearInterval(timer);
   }, []);
 
   const submit = async () => {
     if (loading || code.length !== CODE_LENGTH) return;
-
     setError(null);
     setLoading(true);
 
@@ -65,32 +55,11 @@ export function DeviceVerificationScreen({ route, navigation }: Props) {
         appVersion: "1.0.0",
       });
 
-      if (!result.success) {
-        setError(result.message || "The verification code is incorrect.");
-      }
+      if (!result.success) setError(result.message || "The verification code is incorrect.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed. Please try again.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const resend = async () => {
-    if (resending) return;
-    setError(null);
-    setResending(true);
-
-    try {
-      const result = await authService.resendLoginVerification({ challengeId });
-      if (!result.success || !result.verification) {
-        setError(result.message || "We could not send a new code.");
-        return;
-      }
-      setSecondsLeft(Math.max(0, Math.ceil((new Date(result.verification.expiresAt).getTime() - Date.now()) / 1000)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "We could not send a new code.");
-    } finally {
-      setResending(false);
     }
   };
 
@@ -102,14 +71,9 @@ export function DeviceVerificationScreen({ route, navigation }: Props) {
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
-          <View style={styles.iconCircle}>
-            <SecurityShield width={34} height={34} />
-          </View>
-
+          <View style={styles.iconCircle}><SecurityShield width={34} height={34} /></View>
           <Text style={styles.title}>Verify this device</Text>
-          <Text style={styles.subtitle}>
-            We sent a {channelLabel} to {maskedTarget}. Enter the verification code to finish signing in.
-          </Text>
+          <Text style={styles.subtitle}>We sent a {channelLabel} to {maskedTarget}. Enter the verification code to finish signing in.</Text>
 
           <Pressable onPress={() => inputRef.current?.focus()} disabled={loading} style={styles.codeRow}>
             {Array.from({ length: CODE_LENGTH }).map((_, index) => (
@@ -137,21 +101,11 @@ export function DeviceVerificationScreen({ route, navigation }: Props) {
 
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
-          <Pressable
-            onPress={submit}
-            disabled={loading || code.length !== CODE_LENGTH}
-            style={[styles.primaryButton, (loading || code.length !== CODE_LENGTH) && styles.disabled]}
-          >
+          <Pressable onPress={() => void submit()} disabled={loading || code.length !== CODE_LENGTH} style={[styles.primaryButton, (loading || code.length !== CODE_LENGTH) && styles.disabled]}>
             {loading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.primaryText}>Verify device</Text>}
           </Pressable>
 
-          <Text style={styles.expiry}>
-            {secondsLeft > 0 ? `Code expires in ${minutes}:${seconds}` : "This code has expired."}
-          </Text>
-
-          <Pressable onPress={resend} disabled={resending} style={styles.secondaryButton}>
-            {resending ? <ActivityIndicator size="small" color={BLUE} /> : <Text style={styles.secondaryText}>Send a new code</Text>}
-          </Pressable>
+          <Text style={styles.expiry}>{secondsLeft > 0 ? `Code expires in ${minutes}:${seconds}` : "This code has expired."}</Text>
 
           <Pressable onPress={() => navigation.goBack()} disabled={loading} style={styles.backButton}>
             <Text style={styles.backText}>Back to Login</Text>
@@ -179,8 +133,6 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.55 },
   primaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
   expiry: { textAlign: "center", color: "#65676B", fontSize: 13, marginTop: 16 },
-  secondaryButton: { height: 50, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  secondaryText: { color: BLUE, fontSize: 15, fontWeight: "700" },
-  backButton: { alignItems: "center", justifyContent: "center", marginTop: 10 },
+  backButton: { alignItems: "center", justifyContent: "center", marginTop: 18 },
   backText: { color: "#65676B", fontSize: 14, fontWeight: "600" },
 });
