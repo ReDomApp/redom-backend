@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import ReDomLogo from "../../assets/brand/redom-logo.svg";
-import World from "../../assets/auth/world.svg";
 import { ReDomScreen } from "../../layout/ReDomScreen";
 import { authService } from "../../auth/service";
 import { getDeviceId } from "../../utils/device";
@@ -61,11 +60,7 @@ export function RegistrationWelcomeScreen({ navigation }: Props) {
       <View style={styles.content}>
         <View style={styles.logo}><ReDomLogo width={176} height={49} /></View>
         <Text style={styles.heading}>Join ReDom Today</Text>
-        <View style={styles.descriptionRow}>
-          <Text style={styles.description}>Create an account to connect with friends, family and communities of people who share your interests around the globe </Text>
-          <World width={22} height={22} />
-          <Text style={styles.description}>.</Text>
-        </View>
+        <Text style={styles.description}>Create an account to connect with friends, family and communities of people who share your interests around the globe.</Text>
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <Pressable accessibilityRole="button" disabled={loading} onPress={() => void createAccount()} style={[styles.primaryButton, loading && styles.disabled]}>
           {loading ? <Animated.View style={{ transform: [{ rotate: rotation }] }}><ActivityIndicator size="small" color="#FFFFFF" /></Animated.View> : <Text style={styles.primaryText}>Create New Account</Text>}
@@ -85,8 +80,7 @@ const styles = StyleSheet.create({
   content: { flex: 1, width: "100%", justifyContent: "center", paddingVertical: 8 },
   logo: { alignItems: "center", marginBottom: 24 },
   heading: { textAlign: "center", color: TEXT, fontSize: 25, lineHeight: 31, fontWeight: "800", marginBottom: 13 },
-  descriptionRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", marginBottom: 30 },
-  description: { maxWidth: 520, textAlign: "center", color: MUTED, fontSize: 15, lineHeight: 23 },
+  description: { width: "100%", maxWidth: 520, alignSelf: "center", textAlign: "center", color: MUTED, fontSize: 15, lineHeight: 23, marginBottom: 30 },
   error: { color: "#E41E3F", textAlign: "center", fontSize: 13, lineHeight: 20, fontWeight: "600", marginBottom: 12 },
   primaryButton: { width: "100%", height: 54, borderRadius: 13, backgroundColor: BLUE, alignItems: "center", justifyContent: "center" },
   primaryText: { color: "#FFFFFF", fontSize: 17, fontWeight: "800" },
