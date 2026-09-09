@@ -1,4 +1,3 @@
-
 export interface AuthUser {
   id: string;
   username: string;
@@ -22,78 +21,49 @@ export interface AuthSession {
 
 export interface LoginVerification {
   challengeId: string;
-
-  channel:
-    | "sms"
-    | "email"
-    | "whatsapp";
-
+  channel: "sms" | "email" | "whatsapp";
   target: string;
-
   maskedTarget: string;
-
   codeLength: number;
-
   expiresAt: string;
 }
 
 export interface AuthResult {
   success: boolean;
-
   message: string;
-
   requiresVerification?: boolean;
-
   user?: AuthUser;
-
   session?: AuthSession;
-
   verification?: LoginVerification;
 }
 
 export interface AuthState {
-  status:
-    | "loading"
-    | "authenticated"
-    | "unauthenticated";
-
+  status: "loading" | "authenticated" | "unauthenticated";
   user: AuthUser | null;
-
   session: AuthSession | null;
 }
 
 export interface LoginInput {
   identifier: string;
   password: string;
-
   platform?: string;
   browser?: string;
-
   deviceName?: string;
   deviceId?: string;
   deviceType?: string;
-
   loginSource?: string;
   appVersion?: string;
 }
 
 export interface VerifyLoginDeviceInput {
   challengeId: string;
-
   code: string;
-
   deviceId: string;
-
   deviceName?: string;
-
   deviceType?: string;
-
   platform?: string;
-
   browser?: string;
-
   loginSource?: string;
-
   appVersion?: string;
 }
 
@@ -101,34 +71,63 @@ export interface RegisterInput {
   firstName: string;
   lastName: string;
   username: string;
-
   email?: string;
   phoneNumber?: string;
-
   password: string;
-
   dateOfBirth?: string;
-
-  gender?:
-    | "male"
-    | "female"
-    | "custom";
-
+  gender?: "male" | "female" | "custom";
   userAgent?: string;
-
   platform?: string;
-
   browser?: string;
-
   deviceName?: string;
-
   deviceId?: string;
-
   deviceType?: string;
-
   loginSource?: string;
-
   appVersion?: string;
+}
+
+export interface RegistrationChallengeStart {
+  contactType: "phone" | "email";
+  target: string;
+  deviceId?: string;
+}
+
+export interface RegistrationChallengeResult {
+  success: boolean;
+  challengeId: string;
+  flowId: string;
+  contactType: "phone" | "email";
+  maskedTarget: string;
+  expiresAt: string;
+  currentStep: "contact" | "identity" | "username" | "profile" | "password" | "review";
+}
+
+export interface RegistrationChallengeSaveResult {
+  success: boolean;
+  challengeId: string;
+  flowId: string;
+  maskedTarget: string;
+  expiresAt: string;
+  currentStep: RegistrationChallengeResult["currentStep"];
+}
+
+export interface RegistrationCompletionResult {
+  success: boolean;
+  challengeId: string;
+  flowId: string;
+  user: AuthUser;
+  verification: LoginVerification;
+}
+
+export interface RegistrationStepData {
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  email?: string;
+  phoneNumber?: string;
+  dateOfBirth?: string;
+  gender?: "male" | "female" | "custom";
+  password?: string;
 }
 
 export interface ResendVerificationInput {
