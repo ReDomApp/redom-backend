@@ -1,3 +1,5 @@
+import { randomBytes, randomInt } from "node:crypto";
+
 import { and, eq, gt, or } from "drizzle-orm";
 
 import { db } from "../../database/db";
@@ -22,9 +24,26 @@ export type RegistrationStep =
   | "review";
 
 const CHALLENGE_TTL_MS = 30 * 60 * 1000;
+const FLOW_ID_MIN_LENGTH = 6;
+const FLOW_ID_MAX_LENGTH = 16;
+const FLOW_ID_GENERATION_ATTEMPTS = 12;
 
-function maskChallengeId(id: string) {
-  return `${id.slice(0, 4).toUpperCase()}••••••••✓`;
+function maskFlowId(flowId: string) {
+  return flowId.length > 4 ? `${flowId.slice(0, 4)}••••••••✓` : `${flowId}✓`;
+}
+
+function generateNumericFlowId(): string {
+  const length = randomInt(FLOW_ID_MIN_LENGTH, FLOW_ID_MAX_LENGTH + 1);
+  const bytes = randomBytes(length);
+  let flowId = "";
+
+  for (let index = 0; index < length; index += 1) {
+    let byte = bytes[index];
+    while (byte >= 250) byte = randomBytes(1)[0]!;
+    flowId += String(byte % 10);
+  }
+
+  return flowId;
 }
 
 function maskTarget(target: string, type: "phone" | "email") {
@@ -41,7 +60,17 @@ function maskTarget(target: string, type: "phone" | "email") {
 }
 
 export class RegistrationChallengeService {
+  private async deleteExpired(challengeId?: string) {
+    const now = new Date();
+    await db.delete(registrationChallenges).where(
+      challengeId
+        ? and(eq(registrationChallenges.id, challengeId), gt(now, registrationChallenges.expiresAt))
+        : gt(now, registrationChallenges.expiresAt),
+    );
+  }
+
   private async getActive(challengeId: string) {
+    await this.deleteExpired(challengeId);
     const challenge = await db.query.registrationChallenges.findFirst({
       where: and(
         eq(registrationChallenges.id, challengeId),
@@ -54,6 +83,7 @@ export class RegistrationChallengeService {
   }
 
   private async getCompleted(challengeId: string) {
+    await this.deleteExpired(challengeId);
     const challenge = await db.query.registrationChallenges.findFirst({
       where: and(
         eq(registrationChallenges.id, challengeId),
@@ -65,6 +95,22 @@ export class RegistrationChallengeService {
     return challenge;
   }
 
+  private async generateFlowId() {
+    for (let attempt = 0; attempt < FLOW_ID_GENERATION_ATTEMPTS; attempt += 1) {
+      const flowId = generateNumericFlowId();
+      const active = await db.query.registrationChallenges.findFirst({
+        where: and(
+          eq(registrationChallenges.flowId, flowId),
+          eq(registrationChallenges.status, "pending"),
+          gt(registrationChallenges.expiresAt, new Date()),
+        ),
+      });
+      if (!active) return flowId;
+    }
+
+    throw new Error("Unable to allocate a unique registration Flow ID.");
+  }
+
   async start(params: {
     contactType: "phone" | "email";
     target: string;
@@ -72,6 +118,8 @@ export class RegistrationChallengeService {
     userAgent?: string;
     deviceId?: string;
   }) {
+    await this.deleteExpired();
+
     const normalizedTarget = params.contactType === "phone"
       ? phoneService.validate(params.target)
       : emailService.validate(params.target);
@@ -91,7 +139,9 @@ export class RegistrationChallengeService {
     }
 
     const now = new Date();
+    const flowId = await this.generateFlowId();
     const [challenge] = await db.insert(registrationChallenges).values({
+      flowId,
       contactType: params.contactType,
       target: normalizedTarget,
       normalizedTarget,
@@ -110,7 +160,7 @@ export class RegistrationChallengeService {
     return {
       success: true,
       challengeId: challenge.id,
-      flowId: maskChallengeId(challenge.id),
+      flowId: maskFlowId(challenge.flowId),
       contactType: challenge.contactType as "phone" | "email",
       maskedTarget: maskTarget(normalizedTarget, params.contactType),
       expiresAt: challenge.expiresAt.toISOString(),
@@ -173,7 +223,7 @@ export class RegistrationChallengeService {
     return {
       success: true,
       challengeId: updated.id,
-      flowId: maskChallengeId(updated.id),
+      flowId: maskFlowId(updated.flowId),
       maskedTarget: maskTarget(updated.normalizedTarget, updated.contactType as "phone" | "email"),
       expiresAt: updated.expiresAt.toISOString(),
       currentStep: updated.currentStep as RegistrationStep,
@@ -277,7 +327,7 @@ export class RegistrationChallengeService {
     return {
       success: true,
       challengeId: challenge.id,
-      flowId: maskChallengeId(challenge.id),
+      flowId: maskFlowId(challenge.flowId),
       user: {
         id: user.id,
         username: user.username,
@@ -345,7 +395,7 @@ export class RegistrationChallengeService {
     return {
       success: true,
       challengeId: challenge.id,
-      flowId: maskChallengeId(challenge.id),
+      flowId: maskFlowId(challenge.flowId),
       contactType: challenge.contactType,
       maskedTarget: maskTarget(challenge.normalizedTarget, challenge.contactType as "phone" | "email"),
       currentStep: challenge.currentStep as RegistrationStep,
