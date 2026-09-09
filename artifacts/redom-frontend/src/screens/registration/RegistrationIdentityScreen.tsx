@@ -6,6 +6,7 @@ import LockedKey from "../../assets/auth/locked-key.svg";
 import { ReDomScreen } from "../../layout/ReDomScreen";
 import { authService } from "../../auth/service";
 import { getDeviceId } from "../../utils/device";
+import { useLanguage } from "../../i18n/LanguageProvider";
 import type { RootStackParamList } from "../../routing/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "RegistrationIdentity">;
@@ -34,6 +35,7 @@ function maskedFlowId(flowId: string) {
 }
 
 export function RegistrationIdentityScreen({ navigation, route }: Props) {
+  const { t } = useLanguage();
   const { reservationId, flowId, expiresAt } = route.params;
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -45,8 +47,8 @@ export function RegistrationIdentityScreen({ navigation, route }: Props) {
 
   async function continueRegistration() {
     if (loading) return;
-    const firstError = validateName(firstName, "First name");
-    const lastError = validateName(lastName, "Last name");
+    const firstError = validateName(firstName, t("firstName"));
+    const lastError = validateName(lastName, t("lastName"));
     if (firstError || lastError) { setError(firstError ?? lastError); return; }
     setLoading(true); setError(null); setSaved(false);
     try {
@@ -60,10 +62,10 @@ export function RegistrationIdentityScreen({ navigation, route }: Props) {
   const footer = (
     <View style={styles.footerContent}>
       <View style={styles.loginRow}>
-        <Text style={styles.muted}>Already have an account? </Text>
-        <Pressable onPress={() => navigation.navigate("Login")} disabled={loading}><Text style={styles.link}>Login</Text></Pressable>
+        <Text style={styles.muted}>{t("alreadyAccount")} </Text>
+        <Pressable onPress={() => navigation.navigate("Login")} disabled={loading}><Text style={styles.link}>{t("login")}</Text></Pressable>
       </View>
-      <View style={styles.companyRow}><ReDomLogo width={72} height={20} /><Text style={styles.company}>ReDom Platforms, Inc.</Text></View>
+      <View style={styles.companyRow}><ReDomLogo width={72} height={20} /><Text style={styles.company}>{t("company")}</Text></View>
     </View>
   );
 
@@ -72,26 +74,26 @@ export function RegistrationIdentityScreen({ navigation, route }: Props) {
       <View style={styles.content}>
         <View style={styles.logo}><ReDomLogo width={150} height={42} /></View>
         <View style={styles.flowHeader}>
-          <View style={styles.flowRow}><LockedKey width={20} height={20} /><Text style={styles.flowText}>Flow ID: {maskedFlowId(flowId)}</Text></View>
-          <Text style={styles.expiry}>Secure registration flow · {remainingMinutes} min remaining</Text>
+          <View style={styles.flowRow}><LockedKey width={20} height={20} /><Text style={styles.flowText}>{t("flowId", { flowId: maskedFlowId(flowId) })}</Text></View>
+          <Text style={styles.expiry}>{t("flowId", { flowId: maskedFlowId(flowId) }).split(".")[0]} · {remainingMinutes} min</Text>
         </View>
-        <Text style={styles.title}>What's Your Name?</Text>
-        <Text style={styles.description}>Enter the name you use in real life.</Text>
-        <Text style={styles.helper}>Please write the name you use in everyday life.</Text>
+        <Text style={styles.title}>{t("whatsName")}</Text>
+        <Text style={styles.description}>{t("realName")}</Text>
+        <Text style={styles.helper}>{t("everydayName")}</Text>
         <View style={styles.nameRow}>
           <View style={styles.fieldWrap}>
-            <TextInput value={firstName} onChangeText={(value) => { setFirstName(sanitizeName(value)); setError(null); setSaved(false); }} onFocus={() => setFocused("first")} onBlur={() => setFocused(null)} style={[styles.input, focused === "first" && styles.inputFocused]} textContentType="givenName" autoComplete="name-given" autoCapitalize="words" autoCorrect={false} spellCheck={false} keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"} editable={!loading} maxLength={100} accessibilityLabel="First Name" />
-            <Text style={[styles.floatingLabel, (focused === "first" || firstName.length > 0) && styles.floatingLabelActive]}>First Name</Text>
+            <TextInput value={firstName} onChangeText={(value) => { setFirstName(sanitizeName(value)); setError(null); setSaved(false); }} onFocus={() => setFocused("first")} onBlur={() => setFocused(null)} style={[styles.input, focused === "first" && styles.inputFocused]} textContentType="givenName" autoComplete="name-given" autoCapitalize="words" autoCorrect={false} spellCheck={false} keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"} editable={!loading} maxLength={100} accessibilityLabel={t("firstName")} />
+            <Text style={[styles.floatingLabel, (focused === "first" || firstName.length > 0) && styles.floatingLabelActive]}>{t("firstName")}</Text>
           </View>
           <View style={styles.fieldWrap}>
-            <TextInput value={lastName} onChangeText={(value) => { setLastName(sanitizeName(value)); setError(null); setSaved(false); }} onFocus={() => setFocused("last")} onBlur={() => setFocused(null)} style={[styles.input, focused === "last" && styles.inputFocused]} textContentType="familyName" autoComplete="name-family" autoCapitalize="words" autoCorrect={false} spellCheck={false} keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"} editable={!loading} maxLength={100} accessibilityLabel="Last Name" />
-            <Text style={[styles.floatingLabel, (focused === "last" || lastName.length > 0) && styles.floatingLabelActive]}>Last Name</Text>
+            <TextInput value={lastName} onChangeText={(value) => { setLastName(sanitizeName(value)); setError(null); setSaved(false); }} onFocus={() => setFocused("last")} onBlur={() => setFocused(null)} style={[styles.input, focused === "last" && styles.inputFocused]} textContentType="familyName" autoComplete="name-family" autoCapitalize="words" autoCorrect={false} spellCheck={false} keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"} editable={!loading} maxLength={100} accessibilityLabel={t("lastName")} />
+            <Text style={[styles.floatingLabel, (focused === "last" || lastName.length > 0) && styles.floatingLabelActive]}>{t("lastName")}</Text>
           </View>
         </View>
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {saved ? <Text style={styles.saved}>Your name is securely saved to this registration flow.</Text> : null}
         <Pressable accessibilityRole="button" onPress={() => void continueRegistration()} disabled={loading} style={[styles.button, loading && styles.disabled]}>
-          {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Continue</Text>}
+          {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t("continue")}</Text>}
         </Pressable>
         <View style={styles.progress} accessibilityLabel="Account creation progress, step 2 of 6">
           {[0, 1, 2, 3, 4, 5].map((step) => <View key={step} style={[styles.dot, step <= 1 && styles.dotActive]} />)}
