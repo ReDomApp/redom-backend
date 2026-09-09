@@ -8,6 +8,8 @@ import { registrationFlowReservations } from "../../database/registration-flow-r
 const TTL_MS = 30 * 60 * 1000;
 const MIN_LENGTH = 6;
 const MAX_LENGTH = 16;
+const MAX_NAME_LENGTH = 100;
+const NAME_PATTERN = /^[\p{L}][\p{L}\s.'-]*$/u;
 
 function generateNumericFlowId() {
   const length = randomInt(MIN_LENGTH, MAX_LENGTH + 1);
@@ -19,6 +21,17 @@ function generateNumericFlowId() {
     value += String(byte % 10);
   }
   return value;
+}
+
+function validateName(value: string, field: "First name" | "Last name") {
+  const normalized = value.normalize("NFC").trim().replace(/\s+/g, " ");
+  if (normalized.length < 3) throw new Error(`${field} must be at least 3 characters.`);
+  if (normalized.length > MAX_NAME_LENGTH) throw new Error(`${field} is too long.`);
+  if (!NAME_PATTERN.test(normalized)) {
+    throw new Error(`${field} can contain letters, spaces, periods, commas, apostrophes, and hyphens only.`);
+  }
+  if (!/\p{L}/u.test(normalized)) throw new Error(`${field} must contain letters.`);
+  return normalized;
 }
 
 export class RegistrationFlowReservationService {
@@ -62,6 +75,47 @@ export class RegistrationFlowReservationService {
     throw new Error("Unable to allocate a unique registration Flow ID.");
   }
 
+  async saveName(params: {
+    reservationId: string;
+    flowId: string;
+    deviceId?: string;
+    firstName: string;
+    lastName: string;
+  }) {
+    await this.purgeExpired();
+    const reservation = await db.query.registrationFlowReservations.findFirst({
+      where: and(
+        eq(registrationFlowReservations.id, params.reservationId),
+        eq(registrationFlowReservations.flowId, params.flowId),
+        gt(registrationFlowReservations.expiresAt, new Date()),
+      ),
+    });
+    if (!reservation) throw new Error("Registration Flow ID is invalid or expired.");
+    if (reservation.deviceId && reservation.deviceId !== params.deviceId) {
+      throw new Error("Registration Flow ID is not valid for this device.");
+    }
+
+    const firstName = validateName(params.firstName, "First name");
+    const lastName = validateName(params.lastName, "Last name");
+
+    const [updated] = await db.update(registrationFlowReservations)
+      .set({ firstName, lastName })
+      .where(and(
+        eq(registrationFlowReservations.id, reservation.id),
+        eq(registrationFlowReservations.flowId, params.flowId),
+        gt(registrationFlowReservations.expiresAt, new Date()),
+      ))
+      .returning();
+    if (!updated) throw new Error("Unable to save your name to this registration flow.");
+
+    return {
+      success: true,
+      reservationId: updated.id,
+      flowId: updated.flowId,
+      expiresAt: updated.expiresAt.toISOString(),
+    };
+  }
+
   async consume(reservationId: string, flowId: string, deviceId?: string) {
     await this.purgeExpired();
     const reservation = await db.query.registrationFlowReservations.findFirst({
@@ -76,7 +130,7 @@ export class RegistrationFlowReservationService {
       throw new Error("Registration Flow ID is not valid for this device.");
     }
     await db.delete(registrationFlowReservations).where(eq(registrationFlowReservations.id, reservation.id));
-    return reservation.flowId;
+    return reservation;
   }
 }
 
