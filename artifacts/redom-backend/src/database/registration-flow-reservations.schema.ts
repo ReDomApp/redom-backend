@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   check,
   index,
@@ -19,7 +20,7 @@ export const registrationFlowReservations = pgTable(
   (table) => ({
     flowIdFormat: check(
       "registration_flow_reservations_flow_id_format_chk",
-      table.flowId.op("~")("^[0-9]{6,16}$"),
+      sql`${table.flowId} ~ '^[0-9]{6,16}$'`,
     ),
     expiresIdx: index("registration_flow_reservations_expires_idx").on(table.expiresAt),
   }),
