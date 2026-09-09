@@ -12,6 +12,9 @@ import authRoutes
 import sessionRoutes
   from "./session.routes";
 
+import aiRoutes
+  from "./ai.routes";
+
 const router: IRouter =
   Router();
 
@@ -27,6 +30,11 @@ router.use(
 router.use(
   "/sessions",
   sessionRoutes,
+);
+
+router.use(
+  "/ai",
+  aiRoutes,
 );
 
 export default router;
