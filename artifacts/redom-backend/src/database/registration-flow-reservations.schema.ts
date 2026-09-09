@@ -14,6 +14,8 @@ export const registrationFlowReservations = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     flowId: varchar("flow_id", { length: 16 }).notNull().unique(),
     deviceId: varchar("device_id", { length: 255 }),
+    firstName: varchar("first_name", { length: 100 }),
+    lastName: varchar("last_name", { length: 100 }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
