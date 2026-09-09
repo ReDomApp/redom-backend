@@ -1,4 +1,5 @@
 import {
+  check,
   index,
   pgTable,
   timestamp,
@@ -45,6 +46,10 @@ export const registrationChallenges = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    flowIdFormat: check(
+      "registration_challenges_flow_id_format_chk",
+      table.flowId.op("~")("^[0-9]{6,16}$"),
+    ),
     flowIdIdx: index("registration_challenges_flow_id_idx").on(table.flowId),
     activeFlowIdIdx: index("registration_challenges_active_flow_id_idx").on(
       table.flowId,
