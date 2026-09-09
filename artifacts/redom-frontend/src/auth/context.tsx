@@ -21,143 +21,110 @@ import type {
   AuthState,
   LoginInput,
   RegisterInput,
+  VerifyLoginDeviceInput,
 } from "./types";
 
-interface AuthContextValue
-  extends AuthState {
-  login(
-    input: LoginInput,
+interface AuthContextValue extends AuthState {
+  login(input: LoginInput): Promise<AuthResult>;
+  verifyLoginDevice(
+    input: VerifyLoginDeviceInput,
   ): Promise<AuthResult>;
-
-  register(
-    input: RegisterInput,
-  ): Promise<AuthResult>;
-
+  register(input: RegisterInput): Promise<AuthResult>;
   logout(): Promise<void>;
-
   refresh(): Promise<void>;
 }
 
-const AuthContext =
-  createContext<AuthContextValue | null>(
-    null,
-  );
+const AuthContext = createContext<AuthContextValue | null>(null);
 
-const unauthenticatedState: AuthState =
-  {
-    status: "unauthenticated",
+const unauthenticatedState: AuthState = {
+  status: "unauthenticated",
+  user: null,
+  session: null,
+};
+
+export function AuthProvider({ children }: PropsWithChildren) {
+  const [state, setState] = useState<AuthState>({
+    status: "loading",
     user: null,
     session: null,
-  };
+  });
 
-export function AuthProvider({
-  children,
-}: PropsWithChildren) {
-  const [state, setState] =
-    useState<AuthState>({
-      status: "loading",
-      user: null,
-      session: null,
-    });
+  const refresh = useCallback(async () => {
+    const stored = await getStoredSession();
 
-  const refresh = useCallback(
-    async () => {
-      const stored =
-        await getStoredSession();
+    if (!stored) {
+      setState(unauthenticatedState);
+      return;
+    }
 
-      if (!stored) {
-        setState(
-          unauthenticatedState,
-        );
+    try {
+      const response = await authService.refreshSession({
+        refreshToken: stored.refreshToken,
+      });
 
-        return;
+      if (!response.success || !response.session || !response.user) {
+        throw new Error("Session refresh returned an invalid response.");
       }
 
-      try {
-        const response =
-          await authService.refreshSession({
-            refreshToken:
-              stored.refreshToken,
-          });
+      await storeSession(response.session);
 
-        if (
-          !response.success ||
-          !response.session ||
-          !response.user
-        ) {
-          throw new Error(
-            "Session refresh returned an invalid response.",
-          );
-        }
-
-        await storeSession(
-          response.session,
-        );
-
-        setState({
-          status: "authenticated",
-          user: response.user,
-          session:
-            response.session,
-        });
-      } catch {
-        await clearStoredSession();
-
-        setState(
-          unauthenticatedState,
-        );
-      }
-    },
-    [],
-  );
+      setState({
+        status: "authenticated",
+        user: response.user,
+        session: response.session,
+      });
+    } catch {
+      await clearStoredSession();
+      setState(unauthenticatedState);
+    }
+  }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const login = useCallback(
-    async (
-      input: LoginInput,
-    ): Promise<AuthResult> => {
-      const response =
-        await authService.login(
-          input,
-        );
+  const login = useCallback(async (input: LoginInput): Promise<AuthResult> => {
+    const response = await authService.login(input);
 
-      /*
-       * A new-device login may legitimately
-       * return a verification challenge instead
-       * of a session.
-       *
-       * Do NOT treat that response as a failed
-       * authentication attempt.
-       */
-      if (
-        response.requiresVerification
-      ) {
-        return response;
-      }
+    if (response.requiresVerification) {
+      return response;
+    }
 
-      if (
-        !response.success ||
-        !response.user ||
-        !response.session
-      ) {
+    if (!response.success || !response.user || !response.session) {
+      throw new Error(
+        response.message ||
+          "Authentication did not return a valid session.",
+      );
+    }
+
+    await storeSession(response.session);
+
+    setState({
+      status: "authenticated",
+      user: response.user,
+      session: response.session,
+    });
+
+    return response;
+  }, []);
+
+  const verifyLoginDevice = useCallback(
+    async (input: VerifyLoginDeviceInput): Promise<AuthResult> => {
+      const response = await authService.verifyLoginDevice(input);
+
+      if (!response.success || !response.user || !response.session) {
         throw new Error(
           response.message ||
-            "Authentication did not return a valid session.",
+            "Device verification did not return a valid session.",
         );
       }
 
-      await storeSession(
-        response.session,
-      );
+      await storeSession(response.session);
 
       setState({
         status: "authenticated",
         user: response.user,
-        session:
-          response.session,
+        session: response.session,
       });
 
       return response;
@@ -166,33 +133,16 @@ export function AuthProvider({
   );
 
   const register = useCallback(
-    async (
-      input: RegisterInput,
-    ): Promise<AuthResult> => {
-      const response =
-        await authService.register(
-          input,
-        );
+    async (input: RegisterInput): Promise<AuthResult> => {
+      const response = await authService.register(input);
 
-      /*
-       * Registration does not necessarily
-       * produce a session. Only establish an
-       * authenticated state when the backend
-       * actually returns both values.
-       */
-      if (
-        response.session &&
-        response.user
-      ) {
-        await storeSession(
-          response.session,
-        );
+      if (response.session && response.user) {
+        await storeSession(response.session);
 
         setState({
           status: "authenticated",
           user: response.user,
-          session:
-            response.session,
+          session: response.session,
         });
       }
 
@@ -201,56 +151,35 @@ export function AuthProvider({
     [],
   );
 
-  const logout = useCallback(
-    async () => {
-      try {
-        await authService.logout();
-      } finally {
-        await clearStoredSession();
+  const logout = useCallback(async () => {
+    try {
+      await authService.logout();
+    } finally {
+      await clearStoredSession();
+      setState(unauthenticatedState);
+    }
+  }, []);
 
-        setState(
-          unauthenticatedState,
-        );
-      }
-    },
-    [],
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      ...state,
+      login,
+      verifyLoginDevice,
+      register,
+      logout,
+      refresh,
+    }),
+    [state, login, verifyLoginDevice, register, logout, refresh],
   );
 
-  const value =
-    useMemo<AuthContextValue>(
-      () => ({
-        ...state,
-        login,
-        register,
-        logout,
-        refresh,
-      }),
-      [
-        state,
-        login,
-        register,
-        logout,
-        refresh,
-      ],
-    );
-
-  return (
-    <AuthContext.Provider
-      value={value}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuthContext() {
-  const context =
-    useContext(AuthContext);
+  const context = useContext(AuthContext);
 
   if (!context) {
-    throw new Error(
-      "useAuthContext must be used inside AuthProvider.",
-    );
+    throw new Error("useAuthContext must be used inside AuthProvider.");
   }
 
   return context;
