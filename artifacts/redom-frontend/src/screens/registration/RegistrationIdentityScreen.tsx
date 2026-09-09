@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import ReDomLogo from "../../assets/brand/redom-logo.svg";
 import LockedKey from "../../assets/auth/locked-key.svg";
@@ -76,9 +77,13 @@ export function RegistrationIdentityScreen({ navigation, route }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
+    <SafeAreaView style={styles.screen} edges={["top", "bottom", "left", "right"]}>
+      <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.logo}><ReDomLogo width={150} height={42} /></View>
 
           <View style={styles.flowHeader}>
@@ -152,16 +157,16 @@ export function RegistrationIdentityScreen({ navigation, route }: Props) {
           </View>
 
           <Text style={styles.company}>ReDom Platforms, Inc.</Text>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F0F2F5" },
-  content: { flexGrow: 1, justifyContent: "center", padding: 20 },
-  card: { width: "100%", maxWidth: 430, alignSelf: "center", backgroundColor: "#FFFFFF", borderRadius: 22, paddingHorizontal: 28, paddingVertical: 32, shadowColor: "#000000", shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.08, shadowRadius: 32, elevation: 6 },
+  screen: { flex: 1, backgroundColor: "#FFFFFF" },
+  keyboard: { flex: 1 },
+  content: { flexGrow: 1, width: "100%", justifyContent: "center", paddingHorizontal: 24, paddingVertical: 28 },
   logo: { alignItems: "center", marginBottom: 16 },
   flowHeader: { marginBottom: 24 },
   flowRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
