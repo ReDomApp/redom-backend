@@ -1,8 +1,19 @@
 import { AppState, type AppStateStatus } from "react-native";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { LanguageCode, LANGUAGES, detectDeviceLanguage, languageName, loadLanguage, saveLanguage, t, LANGUAGE_EXPLICIT_KEY } from "./language";
-import { uiMessage } from "./uiMessages";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import {
+  LanguageCode,
+  LANGUAGES,
+  detectDeviceLanguage,
+  languageName,
+  loadLanguage,
+  saveLanguage,
+  t,
+  LANGUAGE_EXPLICIT_KEY,
+} from "./language";
+import { uiMessage } from "./uiMessages";
+import { localizeUiTexts } from "./aiLocalization";
 import { notifyLanguageUpdated } from "../notifications/notificationService";
 
 type LanguageContextValue = {
@@ -11,10 +22,12 @@ type LanguageContextValue = {
   setLanguage: (language: LanguageCode) => Promise<void>;
   t: (key: string, vars?: Record<string, string>) => string;
   uiMessage: (key: string, vars?: Record<string, string>) => string;
+  localizeText: (text: string, context?: string) => Promise<string>;
   ready: boolean;
 };
 
 const Context = createContext<LanguageContextValue | null>(null);
+const runtimeTextCache = new Map<string, string>();
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setCurrentLanguage] = useState<LanguageCode>("en");
@@ -23,9 +36,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     loadLanguage().then((value) => {
-      if (mounted) { setCurrentLanguage(value); setReady(true); }
-    }).catch(() => { if (mounted) setReady(true); });
-    return () => { mounted = false; };
+      if (mounted) {
+        setCurrentLanguage(value);
+        setReady(true);
+      }
+    }).catch(() => {
+      if (mounted) setReady(true);
+    });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -35,6 +55,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       if (explicit === "1") return;
       setCurrentLanguage(detectDeviceLanguage());
     };
+
     const subscription = AppState.addEventListener("change", handleAppState);
     return () => subscription.remove();
   }, []);
@@ -42,7 +63,22 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const setLanguage = async (value: LanguageCode) => {
     await saveLanguage(value);
     setCurrentLanguage(value);
-    void notifyLanguageUpdated(t(value, "languageUpdated"), t(value, "languageUpdatedBody", { language: languageName(value) }));
+    void notifyLanguageUpdated(
+      t(value, "languageUpdated"),
+      t(value, "languageUpdatedBody", { language: languageName(value) }),
+    );
+  };
+
+  const localizeText = async (text: string, context?: string) => {
+    if (language === "en") return text;
+
+    const key = `${language}\u0000${context ?? "ReDom UI"}\u0000${text}`;
+    const cached = runtimeTextCache.get(key);
+    if (cached) return cached;
+
+    const [translated] = await localizeUiTexts(language, [text], context);
+    runtimeTextCache.set(key, translated);
+    return translated;
   };
 
   const value = useMemo(() => ({
@@ -51,6 +87,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     setLanguage,
     t: (key: string, vars?: Record<string, string>) => t(language, key, vars),
     uiMessage: (key: string, vars?: Record<string, string>) => uiMessage(language, key, vars),
+    localizeText,
     ready,
   }), [language, ready]);
 
