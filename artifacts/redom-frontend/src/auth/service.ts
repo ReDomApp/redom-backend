@@ -1,12 +1,13 @@
 import { api } from "../api/client";
 import { validateLoginIdentifier } from "./validation";
-import type { AuthResult, ForgotPasswordInput, LoginInput, RefreshSessionInput, RegisterInput, RegistrationChallengeResult, RegistrationChallengeSaveResult, RegistrationChallengeStart, RegistrationCompletionResult, RegistrationFlowReservation, RegistrationStepData, ResendVerificationInput, ResetPasswordInput, VerifyLoginDeviceInput } from "./types";
+import type { AuthResult, ForgotPasswordInput, LoginInput, RefreshSessionInput, RegisterInput, RegistrationChallengeResult, RegistrationChallengeSaveResult, RegistrationChallengeStart, RegistrationCompletionResult, RegistrationFlowNameSaveResult, RegistrationFlowReservation, RegistrationStepData, ResendVerificationInput, ResetPasswordInput, VerifyLoginDeviceInput } from "./types";
 
 export const authService = {
   async login(input: LoginInput): Promise<AuthResult> { const identifier = input.identifier.trim(); const validationError = validateLoginIdentifier(identifier); if (validationError) throw new Error(validationError); return api.post<AuthResult>("/auth/login", { ...input, identifier }); },
   async verifyLoginDevice(input: VerifyLoginDeviceInput): Promise<AuthResult> { return api.post<AuthResult>("/auth/verify-login-device", input); },
   async register(input: RegisterInput): Promise<AuthResult> { return api.post<AuthResult>("/auth/register", input); },
   async reserveRegistrationFlow(deviceId?: string): Promise<RegistrationFlowReservation> { return api.post<RegistrationFlowReservation>("/auth/register/flow", { deviceId }); },
+  async saveRegistrationFlowName(input: { reservationId: string; flowId: string; deviceId?: string; firstName: string; lastName: string }): Promise<RegistrationFlowNameSaveResult> { return api.patch<RegistrationFlowNameSaveResult>(`/auth/register/flow/${input.reservationId}/name`, { flowId: input.flowId, deviceId: input.deviceId, firstName: input.firstName, lastName: input.lastName }); },
   async startRegistrationChallenge(input: RegistrationChallengeStart): Promise<RegistrationChallengeResult> { return api.post<RegistrationChallengeResult>("/auth/register/challenge", input); },
   async saveRegistrationStep(challengeId: string, step: RegistrationChallengeResult["currentStep"], data: RegistrationStepData): Promise<RegistrationChallengeSaveResult> { return api.patch<RegistrationChallengeSaveResult>(`/auth/register/challenge/${challengeId}`, { step, data }); },
   async completeRegistrationChallenge(challengeId: string, submitted?: { email?: string; phoneNumber?: string }): Promise<RegistrationCompletionResult> { return api.post<RegistrationCompletionResult>(`/auth/register/challenge/${challengeId}/complete`, { submitted }); },
