@@ -5,6 +5,10 @@ import app from "./app";
 import "./database/db";
 import { pool } from "./database/db";
 import { logger } from "./lib/logger";
+import {
+  startRegistrationChallengeCleanup,
+  stopRegistrationChallengeCleanup,
+} from "./services/auth/registration-challenge-cleanup.service";
 
 const rawPort = process.env["PORT"];
 
@@ -26,11 +30,13 @@ const server = app.listen(port, (err) => {
     process.exit(1);
   }
 
+  startRegistrationChallengeCleanup();
   logger.info({ port }, "Server listening");
 });
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutdown requested");
+  stopRegistrationChallengeCleanup();
 
   server.close(async (error) => {
     if (error) {
