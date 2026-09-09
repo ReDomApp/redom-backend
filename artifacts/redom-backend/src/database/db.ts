@@ -59,6 +59,7 @@ import { videoCaptions } from "./videoCaptions";
 import { videoComments } from "./videoComments";
 import { videoQuality } from "./videoQuality";
 import { videoViews } from "./videoViews";
+import { registrationChallenges } from "./registration-challenges.schema";
 import { registrationFlowReservations } from "./registration-flow-reservations.schema";
 
 const pool = new Pool({ connectionString: env.database.url });
@@ -80,6 +81,7 @@ export const db = drizzle(pool, {
     marketplaceCategories, marketplaceListings, marketplaceInteractions, marketplaceReviews,
     marketplaceTransactions,
     videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
+    registrationChallenges,
     registrationFlowReservations,
   },
 });
