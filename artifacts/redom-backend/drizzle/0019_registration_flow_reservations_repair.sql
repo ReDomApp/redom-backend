@@ -1,3 +1,10 @@
+-- Repair migration for databases where the registration reservation table
+-- exists only partially (for example, from an older journal state).
+-- Keep this migration idempotent so startup can safely reconcile the schema.
+CREATE TABLE IF NOT EXISTS "registration_flow_reservations" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "registration_flow_reservations"
   ADD COLUMN IF NOT EXISTS "flow_id" varchar(16);
 --> statement-breakpoint
