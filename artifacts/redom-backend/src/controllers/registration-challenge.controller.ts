@@ -64,9 +64,10 @@ export class RegistrationChallengeController {
 
   async verify(req: Request, res: Response) {
     try {
+      const { code } = verifyRegistrationChallengeSchema.parse(req.body);
       const result = await registrationChallengeService.verify({
-        registrationChallengeId: req.params.challengeId,
-        ...verifyRegistrationChallengeSchema.parse(req.body),
+        verificationChallengeId: req.params.verificationChallengeId,
+        code,
       });
       res.status(200).json(result);
     } catch (error) {

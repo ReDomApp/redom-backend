@@ -46,7 +46,7 @@ router.post(
   registrationChallengeController.complete.bind(registrationChallengeController),
 );
 router.post(
-  "/register/challenge/:challengeId/verify",
+  "/register/verification/:verificationChallengeId/verify",
   verificationRateLimit,
   registrationChallengeController.verify.bind(registrationChallengeController),
 );
