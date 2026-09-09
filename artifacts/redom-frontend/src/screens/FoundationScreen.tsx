@@ -2,23 +2,18 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useAuthContext } from "../auth/context";
 import ReDomLogo from "../assets/brand/redom-logo.svg";
 import { ReDomScreen } from "../layout/ReDomScreen";
+import { useLanguage } from "../i18n/LanguageProvider";
 
 export function FoundationScreen() {
   const { user, logout } = useAuthContext();
-  const footer = <View style={styles.footer}><ReDomLogo width={72} height={20} /><Text style={styles.company}>ReDom Platforms, Inc.</Text></View>;
-
-  return (
-    <ReDomScreen footer={footer}>
-      <View style={styles.content}>
-        <ReDomLogo width={176} height={49} />
-        <Text style={styles.title}>Welcome{user?.firstName ? `, ${user.firstName}` : ""}</Text>
-        <Text style={styles.subtitle}>Your authenticated ReDom app shell is ready.</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Log out" onPress={() => void logout()} style={styles.logoutButton}>
-          <Text style={styles.logoutText}>Log out</Text>
-        </Pressable>
-      </View>
-    </ReDomScreen>
-  );
+  const { t, uiMessage } = useLanguage();
+  const footer = <View style={styles.footer}><ReDomLogo width={72} height={20} /><Text style={styles.company}>{t("company")}</Text></View>;
+  return <ReDomScreen footer={footer}><View style={styles.content}>
+    <ReDomLogo width={176} height={49} />
+    <Text style={styles.title}>{uiMessage("welcome")}{user?.firstName ? `, ${user.firstName}` : ""}</Text>
+    <Text style={styles.subtitle}>{uiMessage("foundationSubtitle")}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={uiMessage("logout")} onPress={() => void logout()} style={styles.logoutButton}><Text style={styles.logoutText}>{uiMessage("logout")}</Text></Pressable>
+  </View></ReDomScreen>;
 }
 
 const styles = StyleSheet.create({
