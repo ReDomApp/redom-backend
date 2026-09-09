@@ -14,6 +14,7 @@ router.post("/register", authRateLimit, authController.register.bind(authControl
 
 /* Reserve the server-owned numeric Flow ID as soon as Create New Account is pressed. */
 router.post("/register/flow", authRateLimit, registrationFlowController.reserve.bind(registrationFlowController));
+router.patch("/register/flow/:reservationId/name", authRateLimit, registrationFlowController.saveName.bind(registrationFlowController));
 
 /* Multi-screen, server-owned registration flow. */
 router.post("/register/challenge", authRateLimit, registrationChallengeController.start.bind(registrationChallengeController));
