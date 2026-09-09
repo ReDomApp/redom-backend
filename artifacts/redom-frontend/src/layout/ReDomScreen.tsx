@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -14,13 +14,7 @@ export function ReDomScreen({ children, footer, keyboardAvoiding = true, scroll 
   const horizontalPadding = Math.min(28, Math.max(16, Math.round(width * 0.055)));
 
   const body = scroll ? (
-    <ScrollView
-      style={styles.body}
-      contentContainerStyle={[styles.bodyContent, { paddingHorizontal: horizontalPadding }]}
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-      showsVerticalScrollIndicator={false}
-    >
+    <ScrollView style={styles.body} contentContainerStyle={[styles.bodyContent, { paddingHorizontal: horizontalPadding }]} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} showsVerticalScrollIndicator={false}>
       {children}
     </ScrollView>
   ) : (
@@ -34,11 +28,7 @@ export function ReDomScreen({ children, footer, keyboardAvoiding = true, scroll 
     </SafeAreaView>
   );
 
-  return keyboardAvoiding ? (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      {screen}
-    </KeyboardAvoidingView>
-  ) : screen;
+  return keyboardAvoiding ? <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>{screen}</KeyboardAvoidingView> : screen;
 }
 
 const styles = StyleSheet.create({
