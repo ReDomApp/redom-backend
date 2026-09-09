@@ -4,6 +4,7 @@ import { and, eq, gt, lte } from "drizzle-orm";
 import { db } from "../../database/db";
 import { registrationChallenges } from "../../database/registration-challenges.schema";
 import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
+import { logger } from "../../lib/logger";
 
 const TTL_MS = 30 * 60 * 1000;
 const MIN_LENGTH = 6;
@@ -36,9 +37,15 @@ function validateName(value: string, field: "First name" | "Last name") {
 
 export class RegistrationFlowReservationService {
   private async purgeExpired() {
-    await db.delete(registrationFlowReservations).where(
-      lte(registrationFlowReservations.expiresAt, new Date()),
-    );
+    try {
+      await db.delete(registrationFlowReservations).where(
+        lte(registrationFlowReservations.expiresAt, new Date()),
+      );
+    } catch (error) {
+      // Expired-row cleanup is maintenance, not a prerequisite for allocating
+      // a new Flow ID. Never turn a cleanup failure into a broken signup screen.
+      logger.warn({ error }, "Unable to purge expired registration Flow reservations; continuing");
+    }
   }
 
   async reserve(deviceId?: string) {
