@@ -16,6 +16,8 @@
     "@react-navigation/native-stack": "^7.3.16",
     "expo": "^54.0.37",
     "expo-constants": "^18.0.14",
+    "expo-localization": "~17.0.9",
+    "expo-notifications": "~0.32.17",
     "expo-secure-store": "^15.0.8",
     "expo-status-bar": "^3.0.9",
     "metro-runtime": "0.83.1",
