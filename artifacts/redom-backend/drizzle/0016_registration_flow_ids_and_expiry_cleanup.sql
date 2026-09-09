@@ -1,16 +1,30 @@
 ALTER TABLE "registration_challenges"
   ADD COLUMN "flow_id" varchar(16);
 --> statement-breakpoint
-UPDATE "registration_challenges"
-SET "flow_id" = lpad(
-  mod(
-    abs((('x' || encode(gen_random_bytes(8), 'hex'))::bit(64)::bigint)),
-    10000000000000000
-  )::text,
-  16,
-  '0'
-)
-WHERE "flow_id" IS NULL;
+DO $$
+DECLARE
+  challenge_record RECORD;
+  candidate text;
+BEGIN
+  FOR challenge_record IN
+    SELECT "id"
+    FROM "registration_challenges"
+    WHERE "flow_id" IS NULL
+  LOOP
+    LOOP
+      candidate := substr(translate(md5(challenge_record."id"::text || clock_timestamp()::text || random()::text), 'abcdef', '012345'), 1, 16);
+      EXIT WHEN NOT EXISTS (
+        SELECT 1
+        FROM "registration_challenges" AS existing
+        WHERE existing."flow_id" = candidate
+      );
+    END LOOP;
+
+    UPDATE "registration_challenges"
+    SET "flow_id" = candidate
+    WHERE "id" = challenge_record."id";
+  END LOOP;
+END $$;
 --> statement-breakpoint
 ALTER TABLE "registration_challenges"
   ALTER COLUMN "flow_id" SET NOT NULL;
