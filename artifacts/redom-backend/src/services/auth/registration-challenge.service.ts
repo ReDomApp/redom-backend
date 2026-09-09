@@ -1,6 +1,6 @@
 import { randomBytes, randomInt } from "node:crypto";
 
-import { and, eq, gt, or } from "drizzle-orm";
+import { and, eq, gt, lte } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { registrationChallenges } from "../../database/registration-challenges.schema";
@@ -38,7 +38,7 @@ function generateNumericFlowId(): string {
   let flowId = "";
 
   for (let index = 0; index < length; index += 1) {
-    let byte = bytes[index];
+    let byte = bytes[index]!;
     while (byte >= 250) byte = randomBytes(1)[0]!;
     flowId += String(byte % 10);
   }
@@ -64,9 +64,13 @@ export class RegistrationChallengeService {
     const now = new Date();
     await db.delete(registrationChallenges).where(
       challengeId
-        ? and(eq(registrationChallenges.id, challengeId), gt(now, registrationChallenges.expiresAt))
-        : gt(now, registrationChallenges.expiresAt),
+        ? and(eq(registrationChallenges.id, challengeId), lte(registrationChallenges.expiresAt, now))
+        : lte(registrationChallenges.expiresAt, now),
     );
+  }
+
+  async purgeExpired() {
+    await this.deleteExpired();
   }
 
   private async getActive(challengeId: string) {
@@ -101,7 +105,6 @@ export class RegistrationChallengeService {
       const active = await db.query.registrationChallenges.findFirst({
         where: and(
           eq(registrationChallenges.flowId, flowId),
-          eq(registrationChallenges.status, "pending"),
           gt(registrationChallenges.expiresAt, new Date()),
         ),
       });
