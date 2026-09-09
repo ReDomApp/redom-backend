@@ -3,6 +3,7 @@ import { and, eq, gt, or } from "drizzle-orm";
 import { db } from "../../database/db";
 import { registrationChallenges } from "../../database/registration-challenges.schema";
 import { users } from "../../database/schema";
+import { verifications } from "../../database/verifications.schema";
 
 import { fraudService } from "./fraud.service";
 import { passwordService } from "./password.service";
@@ -48,11 +49,19 @@ export class RegistrationChallengeService {
         gt(registrationChallenges.expiresAt, new Date()),
       ),
     });
+    if (!challenge) throw new Error("Registration flow not found or expired.");
+    return challenge;
+  }
 
-    if (!challenge) {
-      throw new Error("Registration flow not found or expired.");
-    }
-
+  private async getCompleted(challengeId: string) {
+    const challenge = await db.query.registrationChallenges.findFirst({
+      where: and(
+        eq(registrationChallenges.id, challengeId),
+        eq(registrationChallenges.status, "completed"),
+        gt(registrationChallenges.expiresAt, new Date()),
+      ),
+    });
+    if (!challenge) throw new Error("Registration flow not found or expired.");
     return challenge;
   }
 
@@ -63,16 +72,14 @@ export class RegistrationChallengeService {
     userAgent?: string;
     deviceId?: string;
   }) {
-    const normalizedTarget =
-      params.contactType === "phone"
-        ? phoneService.validate(params.target)
-        : emailService.validate(params.target);
+    const normalizedTarget = params.contactType === "phone"
+      ? phoneService.validate(params.target)
+      : emailService.validate(params.target);
 
     const existing = await db.query.users.findFirst({
-      where:
-        params.contactType === "phone"
-          ? eq(users.phoneNumber, normalizedTarget)
-          : eq(users.email, normalizedTarget),
+      where: params.contactType === "phone"
+        ? eq(users.phoneNumber, normalizedTarget)
+        : eq(users.email, normalizedTarget),
     });
 
     if (existing) {
@@ -84,24 +91,19 @@ export class RegistrationChallengeService {
     }
 
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + CHALLENGE_TTL_MS);
-
-    const [challenge] = await db
-      .insert(registrationChallenges)
-      .values({
-        contactType: params.contactType,
-        target: normalizedTarget,
-        normalizedTarget,
-        currentStep: "contact",
-        status: "pending",
-        requestIp: params.requestIp,
-        userAgent: params.userAgent,
-        deviceId: params.deviceId,
-        expiresAt,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
+    const [challenge] = await db.insert(registrationChallenges).values({
+      contactType: params.contactType,
+      target: normalizedTarget,
+      normalizedTarget,
+      currentStep: "contact",
+      status: "pending",
+      requestIp: params.requestIp,
+      userAgent: params.userAgent,
+      deviceId: params.deviceId,
+      expiresAt: new Date(now.getTime() + CHALLENGE_TTL_MS),
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
 
     if (!challenge) throw new Error("Unable to start registration flow.");
 
@@ -163,18 +165,11 @@ export class RegistrationChallengeService {
       patch.passwordHash = await passwordService.hash(params.data.password);
     }
 
-    await db
-      .update(registrationChallenges)
-      .set(patch)
-      .where(
-        and(
-          eq(registrationChallenges.id, challenge.id),
-          eq(registrationChallenges.status, "pending"),
-        ),
-      );
+    await db.update(registrationChallenges).set(patch).where(
+      and(eq(registrationChallenges.id, challenge.id), eq(registrationChallenges.status, "pending")),
+    );
 
     const updated = await this.getActive(challenge.id);
-
     return {
       success: true,
       challengeId: updated.id,
@@ -187,23 +182,26 @@ export class RegistrationChallengeService {
 
   async complete(params: {
     challengeId: string;
-    submitted?: {
-      email?: string;
-      phoneNumber?: string;
-    };
+    submitted?: { email?: string; phoneNumber?: string };
   }) {
     const challenge = await this.getActive(params.challengeId);
 
     if (params.submitted?.email !== undefined) {
       const submittedEmail = emailService.validate(params.submitted.email);
-      if (challenge.email !== submittedEmail) {
+      if (challenge.contactType === "email" && submittedEmail !== challenge.normalizedTarget) {
+        throw new Error("The email address does not match this registration flow.");
+      }
+      if (challenge.contactType !== "email" && challenge.email !== submittedEmail) {
         throw new Error("The email address does not match this registration flow.");
       }
     }
 
     if (params.submitted?.phoneNumber !== undefined) {
       const submittedPhone = phoneService.validate(params.submitted.phoneNumber);
-      if (challenge.phoneNumber !== submittedPhone) {
+      if (challenge.contactType === "phone" && submittedPhone !== challenge.normalizedTarget) {
+        throw new Error("The phone number does not match this registration flow.");
+      }
+      if (challenge.contactType !== "phone" && challenge.phoneNumber !== submittedPhone) {
         throw new Error("The phone number does not match this registration flow.");
       }
     }
@@ -217,54 +215,45 @@ export class RegistrationChallengeService {
 
     const email = challenge.email ?? (challenge.contactType === "email" ? challenge.normalizedTarget : null);
     const phoneNumber = challenge.phoneNumber ?? (challenge.contactType === "phone" ? challenge.normalizedTarget : null);
+    if (!email && !phoneNumber) throw new Error("A contact method is required.");
 
-    if (!email && !phoneNumber) {
-      throw new Error("A contact method is required.");
-    }
-
-    const usernameExists = await db.query.users.findFirst({
-      where: eq(users.username, challenge.username),
-    });
+    const usernameExists = await db.query.users.findFirst({ where: eq(users.username, challenge.username) });
     if (usernameExists) throw new Error("Username is already registered.");
 
-    const existingContact = await db.query.users.findFirst({
-      where: or(
-        email ? eq(users.email, email) : undefined,
-        phoneNumber ? eq(users.phoneNumber, phoneNumber) : undefined,
-      ),
-    });
-    if (existingContact) throw new Error("One of the contact methods is already registered.");
+    if (email) {
+      const emailExists = await db.query.users.findFirst({ where: eq(users.email, email) });
+      if (emailExists) throw new Error("Email address is already registered.");
+    }
+    if (phoneNumber) {
+      const phoneExists = await db.query.users.findFirst({ where: eq(users.phoneNumber, phoneNumber) });
+      if (phoneExists) throw new Error("Phone number is already registered.");
+    }
 
     const publicId = await publicIdService.generate();
     const profileId = await profileIdService.generate();
-
-    const [user] = await db
-      .insert(users)
-      .values({
-        firstName: challenge.firstName,
-        lastName: challenge.lastName,
-        username: challenge.username,
-        publicId,
-        profileId,
-        email,
-        phoneNumber,
-        passwordHash: challenge.passwordHash,
-        dateOfBirth: challenge.dateOfBirth,
-        gender: challenge.gender as "male" | "female" | "custom",
-        emailVerified: false,
-        phoneVerified: false,
-        accountStatus: "pending",
-        profileIdVisibility: "public",
-      })
-      .returning();
+    const [user] = await db.insert(users).values({
+      firstName: challenge.firstName,
+      lastName: challenge.lastName,
+      username: challenge.username,
+      publicId,
+      profileId,
+      email,
+      phoneNumber,
+      passwordHash: challenge.passwordHash,
+      dateOfBirth: challenge.dateOfBirth,
+      gender: challenge.gender as "male" | "female" | "custom",
+      emailVerified: false,
+      phoneVerified: false,
+      accountStatus: "pending",
+      profileIdVisibility: "public",
+    }).returning();
 
     if (!user) throw new Error("Unable to create account.");
 
-    const verificationTarget = challenge.normalizedTarget;
     const verification = await verificationService.createVerification({
       userId: user.id,
       purpose: challenge.contactType === "phone" ? "PHONE_VERIFICATION" : "EMAIL_VERIFICATION",
-      target: verificationTarget,
+      target: challenge.normalizedTarget,
       channel: challenge.contactType === "phone" ? "sms" : "email",
       requestedLength: 6,
       firstName: user.firstName,
@@ -281,10 +270,9 @@ export class RegistrationChallengeService {
       userAgent: challenge.userAgent ?? undefined,
     });
 
-    await db
-      .update(registrationChallenges)
-      .set({ status: "completed", updatedAt: new Date() })
-      .where(eq(registrationChallenges.id, challenge.id));
+    await db.update(registrationChallenges).set({ status: "completed", updatedAt: new Date() }).where(
+      eq(registrationChallenges.id, challenge.id),
+    );
 
     return {
       success: true,
@@ -312,6 +300,44 @@ export class RegistrationChallengeService {
         expiresAt: verification.expiresAt,
       },
     };
+  }
+
+  async verify(params: {
+    registrationChallengeId: string;
+    verificationChallengeId: string;
+    code: string;
+  }) {
+    const challenge = await this.getCompleted(params.registrationChallengeId);
+    const verification = await db.query.verifications.findFirst({
+      where: eq(verifications.id, params.verificationChallengeId),
+    });
+
+    if (!verification || !verification.userId) throw new Error("Verification challenge not found.");
+    if (
+      verification.normalizedTarget !== challenge.normalizedTarget ||
+      verification.purpose !== (challenge.contactType === "phone" ? "PHONE_VERIFICATION" : "EMAIL_VERIFICATION")
+    ) {
+      throw new Error("Verification challenge does not match this registration flow.");
+    }
+
+    await verificationService.verifyVerification({
+      challengeId: verification.id,
+      code: params.code,
+      purpose: verification.purpose as "PHONE_VERIFICATION" | "EMAIL_VERIFICATION",
+    });
+
+    const verifiedAt = new Date();
+    await db.update(users).set({
+      ...(challenge.contactType === "phone" ? { phoneVerified: true } : { emailVerified: true }),
+      accountStatus: "active",
+      updatedAt: verifiedAt,
+    }).where(eq(users.id, verification.userId));
+
+    await db.update(registrationChallenges).set({ status: "verified", updatedAt: verifiedAt }).where(
+      eq(registrationChallenges.id, challenge.id),
+    );
+
+    return { success: true, message: "Account verified successfully." };
   }
 
   async getFlow(challengeId: string) {
