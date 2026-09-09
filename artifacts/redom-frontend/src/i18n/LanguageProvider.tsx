@@ -1,5 +1,5 @@
 import { AppState, type AppStateStatus } from "react-native";
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
@@ -60,16 +60,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     return () => subscription.remove();
   }, []);
 
-  const setLanguage = async (value: LanguageCode) => {
+  const setLanguage = useCallback(async (value: LanguageCode) => {
     await saveLanguage(value);
     setCurrentLanguage(value);
     void notifyLanguageUpdated(
       t(value, "languageUpdated"),
       t(value, "languageUpdatedBody", { language: languageName(value) }),
     );
-  };
+  }, []);
 
-  const localizeText = async (text: string, context?: string) => {
+  const localizeText = useCallback(async (text: string, context?: string) => {
     if (language === "en") return text;
 
     const key = `${language}\u0000${context ?? "ReDom UI"}\u0000${text}`;
@@ -79,7 +79,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     const [translated] = await localizeUiTexts(language, [text], context);
     runtimeTextCache.set(key, translated);
     return translated;
-  };
+  }, [language]);
 
   const value = useMemo(() => ({
     language,
@@ -89,7 +89,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     uiMessage: (key: string, vars?: Record<string, string>) => uiMessage(language, key, vars),
     localizeText,
     ready,
-  }), [language, ready]);
+  }), [language, localizeText, ready, setLanguage]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
