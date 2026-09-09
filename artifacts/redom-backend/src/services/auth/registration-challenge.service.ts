@@ -19,6 +19,8 @@ const FLOW_ID_MIN_LENGTH = 6;
 const FLOW_ID_MAX_LENGTH = 16;
 const FLOW_ID_GENERATION_ATTEMPTS = 12;
 
+type RegistrationContactType = "phone" | "email";
+
 function maskFlowId(flowId: string) { return flowId.length > 4 ? `${flowId.slice(0, 4)}••••••••✓` : `${flowId}✓`; }
 function generateNumericFlowId(): string {
   const length = randomInt(FLOW_ID_MIN_LENGTH, FLOW_ID_MAX_LENGTH + 1);
@@ -31,7 +33,7 @@ function generateNumericFlowId(): string {
   }
   return flowId;
 }
-function maskTarget(target: string, type: "phone" | "email") {
+function maskTarget(target: string, type: RegistrationContactType) {
   if (type === "phone") { const digits = target.replace(/\s/g, ""); return digits.length > 7 ? `${digits.slice(0, 5)}•••${digits.slice(-4)}` : `${digits.slice(0, 2)}••••`; }
   const [local, domain] = target.split("@");
   if (!local || !domain) return "••••";
@@ -58,7 +60,7 @@ export class RegistrationChallengeService {
     }
     throw new Error("Unable to allocate a unique registration Flow ID.");
   }
-  async start(params: { contactType: "phone" | "email"; target: string; requestIp?: string; userAgent?: string; deviceId?: string; reservationId?: string; flowId?: string; }) {
+  async start(params: { contactType: RegistrationContactType; target: string; requestIp?: string; userAgent?: string; deviceId?: string; reservationId?: string; flowId?: string; }) {
     await this.deleteExpired();
     const normalizedTarget = params.contactType === "phone" ? phoneService.validate(params.target) : emailService.validate(params.target);
     const existing = await db.query.users.findFirst({ where: params.contactType === "phone" ? eq(users.phoneNumber, normalizedTarget) : eq(users.email, normalizedTarget) });
@@ -75,7 +77,7 @@ export class RegistrationChallengeService {
     const now = new Date();
     const [challenge] = await db.insert(registrationChallenges).values({ flowId, contactType: params.contactType, target: normalizedTarget, normalizedTarget, currentStep: "contact", status: "pending", requestIp: params.requestIp, userAgent: params.userAgent, deviceId: params.deviceId, expiresAt: new Date(now.getTime() + CHALLENGE_TTL_MS), createdAt: now, updatedAt: now }).returning();
     if (!challenge) throw new Error("Unable to start registration flow.");
-    return { success: true, challengeId: challenge.id, flowId: maskFlowId(challenge.flowId), contactType: challenge.contactType as "phone" | "email", maskedTarget: maskTarget(normalizedTarget, params.contactType), expiresAt: challenge.expiresAt.toISOString(), currentStep: challenge.currentStep as RegistrationStep };
+    return { success: true, challengeId: challenge.id, flowId: maskFlowId(challenge.flowId), contactType: challenge.contactType as RegistrationContactType, maskedTarget: maskTarget(normalizedTarget, params.contactType), expiresAt: challenge.expiresAt.toISOString(), currentStep: challenge.currentStep as RegistrationStep };
   }
   async saveStep(params: { challengeId: string; step: RegistrationStep; data: { firstName?: string; lastName?: string; username?: string; email?: string; phoneNumber?: string; dateOfBirth?: string; gender?: "male" | "female" | "custom"; password?: string; }; }) {
     const challenge = await this.getActive(params.challengeId);
@@ -90,7 +92,7 @@ export class RegistrationChallengeService {
     if (params.data.password !== undefined) { passwordService.validate(params.data.password); patch.passwordHash = await passwordService.hash(params.data.password); }
     await db.update(registrationChallenges).set(patch).where(and(eq(registrationChallenges.id, challenge.id), eq(registrationChallenges.status, "pending")));
     const updated = await this.getActive(challenge.id);
-    return { success: true, challengeId: updated.id, flowId: maskFlowId(updated.flowId), maskedTarget: maskTarget(updated.normalizedTarget, updated.contactType as "phone" | "email"), expiresAt: updated.expiresAt.toISOString(), currentStep: updated.currentStep as RegistrationStep };
+    return { success: true, challengeId: updated.id, flowId: maskFlowId(updated.flowId), maskedTarget: maskTarget(updated.normalizedTarget, updated.contactType as RegistrationContactType), expiresAt: updated.expiresAt.toISOString(), currentStep: updated.currentStep as RegistrationStep };
   }
   async complete(params: { challengeId: string; submitted?: { email?: string; phoneNumber?: string } }) {
     const challenge = await this.getActive(params.challengeId);
@@ -111,7 +113,8 @@ export class RegistrationChallengeService {
     const verification = await verificationService.createVerification({ userId: user.id, purpose: challenge.contactType === "phone" ? "PHONE_VERIFICATION" : "EMAIL_VERIFICATION", target: challenge.normalizedTarget, channel: challenge.contactType === "phone" ? "sms" : "email", requestedLength: 6, firstName: user.firstName, requestIp: challenge.requestIp ?? undefined, userAgent: challenge.userAgent ?? undefined, deviceId: challenge.deviceId ?? undefined });
     await fraudService.checkRegistration({ userId: user.id, email: user.email ?? "", phoneNumber: user.phoneNumber ?? "", ipAddress: challenge.requestIp ?? undefined, userAgent: challenge.userAgent ?? undefined });
     const flowId = maskFlowId(challenge.flowId);
-    const verificationResponse = { challengeId: verification.challengeId, channel: verification.channel, target: verification.target, maskedTarget: maskTarget(verification.normalizedTarget, challenge.contactType), codeLength: verification.codeLength, expiresAt: verification.expiresAt };
+    const contactType = challenge.contactType as RegistrationContactType;
+    const verificationResponse = { challengeId: verification.challengeId, channel: verification.channel, target: verification.target, maskedTarget: maskTarget(verification.normalizedTarget, contactType), codeLength: verification.codeLength, expiresAt: verification.expiresAt };
     await db.delete(registrationChallenges).where(eq(registrationChallenges.id, challenge.id));
     return { success: true, flowId, user: { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email, phoneNumber: user.phoneNumber, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus }, verification: verificationResponse };
   }
@@ -130,7 +133,7 @@ export class RegistrationChallengeService {
   }
   async getFlow(challengeId: string) {
     const challenge = await this.getActive(challengeId);
-    return { success: true, challengeId: challenge.id, flowId: maskFlowId(challenge.flowId), contactType: challenge.contactType, maskedTarget: maskTarget(challenge.normalizedTarget, challenge.contactType as "phone" | "email"), currentStep: challenge.currentStep as RegistrationStep, expiresAt: challenge.expiresAt.toISOString() };
+    return { success: true, challengeId: challenge.id, flowId: maskFlowId(challenge.flowId), contactType: challenge.contactType as RegistrationContactType, maskedTarget: maskTarget(challenge.normalizedTarget, challenge.contactType as RegistrationContactType), currentStep: challenge.currentStep as RegistrationStep, expiresAt: challenge.expiresAt.toISOString() };
   }
 }
 
