@@ -1,6 +1,7 @@
 import { AppState, type AppStateStatus } from "react-native";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { LanguageCode, LANGUAGES, detectDeviceLanguage, languageName, loadLanguage, saveLanguage, t, LANGUAGE_EXPLICIT_KEY } from "./language";
+import { uiMessage } from "./uiMessages";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { notifyLanguageUpdated } from "../notifications/notificationService";
 
@@ -9,6 +10,7 @@ type LanguageContextValue = {
   languageName: string;
   setLanguage: (language: LanguageCode) => Promise<void>;
   t: (key: string, vars?: Record<string, string>) => string;
+  uiMessage: (key: string, vars?: Record<string, string>) => string;
   ready: boolean;
 };
 
@@ -20,19 +22,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    loadLanguage()
-      .then((value) => {
-        if (mounted) {
-          setCurrentLanguage(value);
-          setReady(true);
-        }
-      })
-      .catch(() => {
-        if (mounted) setReady(true);
-      });
-    return () => {
-      mounted = false;
-    };
+    loadLanguage().then((value) => {
+      if (mounted) { setCurrentLanguage(value); setReady(true); }
+    }).catch(() => { if (mounted) setReady(true); });
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
@@ -49,22 +42,17 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const setLanguage = async (value: LanguageCode) => {
     await saveLanguage(value);
     setCurrentLanguage(value);
-    void notifyLanguageUpdated(
-      t(value, "languageUpdated"),
-      t(value, "languageUpdatedBody", { language: languageName(value) }),
-    );
+    void notifyLanguageUpdated(t(value, "languageUpdated"), t(value, "languageUpdatedBody", { language: languageName(value) }));
   };
 
-  const value = useMemo(
-    () => ({
-      language,
-      languageName: languageName(language),
-      setLanguage,
-      t: (key: string, vars?: Record<string, string>) => t(language, key, vars),
-      ready,
-    }),
-    [language, ready],
-  );
+  const value = useMemo(() => ({
+    language,
+    languageName: languageName(language),
+    setLanguage,
+    t: (key: string, vars?: Record<string, string>) => t(language, key, vars),
+    uiMessage: (key: string, vars?: Record<string, string>) => uiMessage(language, key, vars),
+    ready,
+  }), [language, ready]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
