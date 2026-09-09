@@ -1,28 +1,191 @@
-import { useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import ReDomLogo from "../../assets/brand/redom-logo.svg";
+import LockedKey from "../../assets/auth/locked-key.svg";
 import { authService } from "../../auth/service";
+import { getDeviceId } from "../../utils/device";
 import type { RootStackParamList } from "../../routing/types";
-import { RegistrationFlowHeader } from "./RegistrationFlowHeader";
-import { registrationStyles as s } from "./registrationStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "RegistrationIdentity">;
 
-export function RegistrationIdentityScreen({ navigation, route }: Props) {
-  const { challengeId, flowId, maskedTarget, expiresAt } = route.params;
-  const [firstName, setFirstName] = useState(""); const [lastName, setLastName] = useState(""); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
-  async function next() {
-    if (firstName.trim().length < 2 || lastName.trim().length < 2) return setError("Enter your first and last name.");
-    setLoading(true); setError(null);
-    try { const result = await authService.saveRegistrationStep(challengeId, "identity", { firstName, lastName }); navigation.replace("RegistrationUsername", { challengeId, flowId: result.flowId, maskedTarget, expiresAt: result.expiresAt }); }
-    catch (e) { setError(e instanceof Error ? e.message : "Unable to save your name."); } finally { setLoading(false); }
-  }
-  return <ScrollView contentContainerStyle={s.scroll} style={s.screen}><View style={s.card}>
-    <RegistrationFlowHeader flowId={flowId} expiresAt={expiresAt} />
-    <Text style={s.title}>What should we call you?</Text><Text style={s.subtitle}>Your name is saved to this registration flow.</Text>
-    <Text style={s.label}>First name</Text><TextInput value={firstName} onChangeText={setFirstName} style={s.input} autoCapitalize="words" editable={!loading} />
-    <Text style={s.label}>Last name</Text><TextInput value={lastName} onChangeText={setLastName} style={s.input} autoCapitalize="words" editable={!loading} />
-    {error ? <Text style={s.error}>{error}</Text> : null}
-    <Pressable onPress={() => void next()} disabled={loading} style={s.button}>{loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.buttonText}>Continue</Text>}</Pressable>
-  </View></ScrollView>;
+const BLUE = "#1877F2";
+const TEXT = "#1C1E21";
+const MUTED = "#65676B";
+const BORDER = "#CCD0D5";
+const NAME_PATTERN = /^[\p{L}][\p{L}\s.,'-]*$/u;
+const JUNK_NAMES = new Set(["test", "testing", "asdf", "qwerty", "admin", "name", "firstname", "lastname", "unknown", "none", "null"]);
+
+function sanitizeName(value: string) {
+  return value.normalize("NFC").replace(/[^\p{L}\s.,'-]/gu, "").replace(/\s+/g, " ");
 }
+
+function validateName(value: string, label: string) {
+  const name = value.normalize("NFC").trim().replace(/\s+/g, " ");
+  if (name.length < 3) return `${label} must be at least 3 characters.`;
+  if (!NAME_PATTERN.test(name)) return `${label} contains unsupported characters.`;
+  if (!/\p{L}/u.test(name)) return `${label} must contain letters.`;
+  if (/^[.,'-]|[.,'-]$/.test(name) || /[.,'-]{2,}/.test(name)) return `${label} has invalid punctuation.`;
+  if (JUNK_NAMES.has(name.toLocaleLowerCase())) return `Enter the ${label.toLocaleLowerCase()} you use in real life.`;
+  return null;
+}
+
+function maskedFlowId(flowId: string) {
+  const visible = flowId.slice(0, 4);
+  const hiddenCount = Math.max(0, flowId.length - visible.length);
+  return `${visible}${"•".repeat(hiddenCount)}√`;
+}
+
+export function RegistrationIdentityScreen({ navigation, route }: Props) {
+  const { reservationId, flowId, expiresAt } = route.params;
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [focused, setFocused] = useState<"first" | "last" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const remainingMinutes = useMemo(() => Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 60000)), [expiresAt]);
+
+  async function continueRegistration() {
+    if (loading) return;
+    const firstError = validateName(firstName, "First name");
+    const lastError = validateName(lastName, "Last name");
+    if (firstError || lastError) {
+      setError(firstError ?? lastError);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await authService.saveRegistrationFlowName({
+        reservationId,
+        flowId,
+        deviceId: await getDeviceId(),
+        firstName: firstName.trim().replace(/\s+/g, " "),
+        lastName: lastName.trim().replace(/\s+/g, " "),
+      });
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to save your name. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={styles.card}>
+          <View style={styles.logo}><ReDomLogo width={150} height={42} /></View>
+
+          <View style={styles.flowHeader}>
+            <View style={styles.flowRow}>
+              <LockedKey width={20} height={20} />
+              <Text style={styles.flowText}>Flow ID: {maskedFlowId(flowId)}</Text>
+            </View>
+            <Text style={styles.expiry}>Secure registration flow · {remainingMinutes} min remaining</Text>
+          </View>
+
+          <Text style={styles.title}>What's Your Name?</Text>
+          <Text style={styles.description}>Enter the name you use in real life.</Text>
+          <Text style={styles.helper}>Please write the name you use in everyday life.</Text>
+
+          <View style={styles.nameRow}>
+            <View style={styles.fieldWrap}>
+              <TextInput
+                value={firstName}
+                onChangeText={(value) => { setFirstName(sanitizeName(value)); setError(null); setSaved(false); }}
+                onFocus={() => setFocused("first")}
+                onBlur={() => setFocused(null)}
+                style={[styles.input, focused === "first" && styles.inputFocused]}
+                textContentType="givenName"
+                autoComplete="name-given"
+                autoCapitalize="words"
+                autoCorrect={false}
+                spellCheck={false}
+                keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"}
+                editable={!loading}
+                maxLength={100}
+                accessibilityLabel="First Name"
+              />
+              <Text style={[styles.floatingLabel, (focused === "first" || firstName.length > 0) && styles.floatingLabelActive]}>First Name</Text>
+            </View>
+
+            <View style={styles.fieldWrap}>
+              <TextInput
+                value={lastName}
+                onChangeText={(value) => { setLastName(sanitizeName(value)); setError(null); setSaved(false); }}
+                onFocus={() => setFocused("last")}
+                onBlur={() => setFocused(null)}
+                style={[styles.input, focused === "last" && styles.inputFocused]}
+                textContentType="familyName"
+                autoComplete="name-family"
+                autoCapitalize="words"
+                autoCorrect={false}
+                spellCheck={false}
+                keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"}
+                editable={!loading}
+                maxLength={100}
+                accessibilityLabel="Last Name"
+              />
+              <Text style={[styles.floatingLabel, (focused === "last" || lastName.length > 0) && styles.floatingLabelActive]}>Last Name</Text>
+            </View>
+          </View>
+
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          {saved ? <Text style={styles.saved}>Your name is securely saved to this registration flow.</Text> : null}
+
+          <Pressable accessibilityRole="button" onPress={() => void continueRegistration()} disabled={loading} style={[styles.button, loading && styles.disabled]}>
+            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Continue</Text>}
+          </Pressable>
+
+          <View style={styles.progress} accessibilityLabel="Account creation progress, step 2 of 6">
+            {[0, 1, 2, 3, 4, 5].map((step) => <View key={step} style={[styles.dot, step <= 1 && styles.dotActive]} />)}
+          </View>
+
+          <View style={styles.loginRow}>
+            <Text style={styles.muted}>Already have an account? </Text>
+            <Pressable onPress={() => navigation.navigate("Login")} disabled={loading}><Text style={styles.link}>Login</Text></Pressable>
+          </View>
+
+          <Text style={styles.company}>ReDom Platforms, Inc.</Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: "#F0F2F5" },
+  content: { flexGrow: 1, justifyContent: "center", padding: 20 },
+  card: { width: "100%", maxWidth: 430, alignSelf: "center", backgroundColor: "#FFFFFF", borderRadius: 22, paddingHorizontal: 28, paddingVertical: 32, shadowColor: "#000000", shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.08, shadowRadius: 32, elevation: 6 },
+  logo: { alignItems: "center", marginBottom: 16 },
+  flowHeader: { marginBottom: 24 },
+  flowRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
+  flowText: { color: BLUE, fontSize: 13, fontWeight: "800", letterSpacing: 0.3 },
+  expiry: { color: MUTED, fontSize: 11.5, textAlign: "center", marginTop: 6 },
+  title: { color: TEXT, fontSize: 27, lineHeight: 33, fontWeight: "800", textAlign: "center", marginBottom: 8 },
+  description: { color: TEXT, fontSize: 15, lineHeight: 22, textAlign: "center" },
+  helper: { color: MUTED, fontSize: 13, lineHeight: 19, textAlign: "center", marginTop: 5, marginBottom: 25 },
+  nameRow: { flexDirection: "row", gap: 10 },
+  fieldWrap: { flex: 1, position: "relative" },
+  input: { height: 58, borderWidth: 1, borderColor: BORDER, borderRadius: 12, paddingHorizontal: 14, paddingTop: 7, color: TEXT, fontSize: 16, backgroundColor: "#FFFFFF" },
+  inputFocused: { borderColor: BLUE, borderWidth: 1.5 },
+  floatingLabel: { position: "absolute", left: 11, top: 19, paddingHorizontal: 4, color: MUTED, fontSize: 15, backgroundColor: "#FFFFFF" },
+  floatingLabelActive: { top: -8, color: BLUE, fontSize: 11.5, fontWeight: "700" },
+  error: { color: "#E41E3F", fontSize: 13, lineHeight: 19, fontWeight: "600", marginTop: 12 },
+  saved: { color: "#18794E", fontSize: 13, lineHeight: 19, fontWeight: "600", marginTop: 12 },
+  button: { height: 54, borderRadius: 13, backgroundColor: BLUE, alignItems: "center", justifyContent: "center", marginTop: 20 },
+  buttonText: { color: "#FFFFFF", fontSize: 17, fontWeight: "800" },
+  disabled: { opacity: 0.7 },
+  progress: { flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 27, marginBottom: 21 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#D8DCE1" },
+  dotActive: { width: 24, backgroundColor: BLUE },
+  loginRow: { flexDirection: "row", justifyContent: "center", alignItems: "center" },
+  muted: { color: MUTED, fontSize: 14 },
+  link: { color: BLUE, fontSize: 14, fontWeight: "800" },
+  company: { textAlign: "center", color: MUTED, fontSize: 12, marginTop: 18 },
+});
