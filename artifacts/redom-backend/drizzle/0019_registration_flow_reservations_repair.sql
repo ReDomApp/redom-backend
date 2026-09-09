@@ -1,12 +1,37 @@
-CREATE TABLE IF NOT EXISTS "registration_flow_reservations" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "flow_id" varchar(16),
-  "device_id" varchar(255),
-  "first_name" varchar(100),
-  "last_name" varchar(100),
-  "expires_at" timestamp with time zone NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
+ALTER TABLE "registration_flow_reservations"
+  ADD COLUMN IF NOT EXISTS "flow_id" varchar(16);
+--> statement-breakpoint
+ALTER TABLE "registration_flow_reservations"
+  ADD COLUMN IF NOT EXISTS "device_id" varchar(255);
+--> statement-breakpoint
+ALTER TABLE "registration_flow_reservations"
+  ADD COLUMN IF NOT EXISTS "first_name" varchar(100);
+--> statement-breakpoint
+ALTER TABLE "registration_flow_reservations"
+  ADD COLUMN IF NOT EXISTS "last_name" varchar(100);
+--> statement-breakpoint
+ALTER TABLE "registration_flow_reservations"
+  ADD COLUMN IF NOT EXISTS "expires_at" timestamp with time zone;
+--> statement-breakpoint
+ALTER TABLE "registration_flow_reservations"
+  ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone DEFAULT now();
+--> statement-breakpoint
+UPDATE "registration_flow_reservations"
+SET "expires_at" = now() + interval '15 minutes'
+WHERE "expires_at" IS NULL;
+--> statement-breakpoint
+ALTER TABLE "registration_flow_reservations"
+  ALTER COLUMN "expires_at" SET NOT NULL;
+--> statement-breakpoint
+UPDATE "registration_flow_reservations"
+SET "created_at" = now()
+WHERE "created_at" IS NULL;
+--> statement-breakpoint
+ALTER TABLE "registration_flow_reservations"
+  ALTER COLUMN "created_at" SET DEFAULT now();
+--> statement-breakpoint
+ALTER TABLE "registration_flow_reservations"
+  ALTER COLUMN "created_at" SET NOT NULL;
 --> statement-breakpoint
 DO $$
 DECLARE
