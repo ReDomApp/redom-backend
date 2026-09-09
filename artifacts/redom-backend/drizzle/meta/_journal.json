@@ -20,6 +20,7 @@
     {"idx": 15, "version": "7", "when": 1788950000000, "tag": "0015_registration_challenges", "breakpoints": true},
     {"idx": 16, "version": "7", "when": 1788951000000, "tag": "0016_registration_flow_reservations", "breakpoints": true},
     {"idx": 17, "version": "7", "when": 1788952000000, "tag": "0017_registration_challenge_flow_ids", "breakpoints": true},
-    {"idx": 18, "version": "7", "when": 1788953000000, "tag": "0018_registration_flow_reservation_names", "breakpoints": true}
+    {"idx": 18, "version": "7", "when": 1788953000000, "tag": "0018_registration_flow_reservation_names", "breakpoints": true},
+    {"idx": 19, "version": "7", "when": 1788954000000, "tag": "0019_registration_flow_reservations_repair", "breakpoints": true}
   ]
 }
