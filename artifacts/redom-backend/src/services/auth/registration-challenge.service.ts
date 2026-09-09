@@ -64,7 +64,10 @@ export class RegistrationChallengeService {
     const now = new Date();
     await db.delete(registrationChallenges).where(
       challengeId
-        ? and(eq(registrationChallenges.id, challengeId), lte(registrationChallenges.expiresAt, now))
+        ? and(
+            eq(registrationChallenges.id, challengeId),
+            lte(registrationChallenges.expiresAt, now),
+          )
         : lte(registrationChallenges.expiresAt, now),
     );
   }
@@ -79,19 +82,6 @@ export class RegistrationChallengeService {
       where: and(
         eq(registrationChallenges.id, challengeId),
         eq(registrationChallenges.status, "pending"),
-        gt(registrationChallenges.expiresAt, new Date()),
-      ),
-    });
-    if (!challenge) throw new Error("Registration flow not found or expired.");
-    return challenge;
-  }
-
-  private async getCompleted(challengeId: string) {
-    await this.deleteExpired(challengeId);
-    const challenge = await db.query.registrationChallenges.findFirst({
-      where: and(
-        eq(registrationChallenges.id, challengeId),
-        eq(registrationChallenges.status, "completed"),
         gt(registrationChallenges.expiresAt, new Date()),
       ),
     });
@@ -323,14 +313,21 @@ export class RegistrationChallengeService {
       userAgent: challenge.userAgent ?? undefined,
     });
 
-    await db.update(registrationChallenges).set({ status: "completed", updatedAt: new Date() }).where(
-      eq(registrationChallenges.id, challenge.id),
-    );
+    const flowId = maskFlowId(challenge.flowId);
+    const verificationResponse = {
+      challengeId: verification.challengeId,
+      channel: verification.channel,
+      target: verification.target,
+      maskedTarget: maskTarget(verification.normalizedTarget, challenge.contactType),
+      codeLength: verification.codeLength,
+      expiresAt: verification.expiresAt,
+    };
+
+    await db.delete(registrationChallenges).where(eq(registrationChallenges.id, challenge.id));
 
     return {
       success: true,
-      challengeId: challenge.id,
-      flowId: maskFlowId(challenge.flowId),
+      flowId,
       user: {
         id: user.id,
         username: user.username,
@@ -344,33 +341,32 @@ export class RegistrationChallengeService {
         phoneVerified: user.phoneVerified,
         accountStatus: user.accountStatus,
       },
-      verification: {
-        challengeId: verification.challengeId,
-        channel: verification.channel,
-        target: verification.target,
-        maskedTarget: maskTarget(verification.normalizedTarget, challenge.contactType),
-        codeLength: verification.codeLength,
-        expiresAt: verification.expiresAt,
-      },
+      verification: verificationResponse,
     };
   }
 
   async verify(params: {
-    registrationChallengeId: string;
     verificationChallengeId: string;
     code: string;
   }) {
-    const challenge = await this.getCompleted(params.registrationChallengeId);
     const verification = await db.query.verifications.findFirst({
       where: eq(verifications.id, params.verificationChallengeId),
     });
 
     if (!verification || !verification.userId) throw new Error("Verification challenge not found.");
-    if (
-      verification.normalizedTarget !== challenge.normalizedTarget ||
-      verification.purpose !== (challenge.contactType === "phone" ? "PHONE_VERIFICATION" : "EMAIL_VERIFICATION")
-    ) {
-      throw new Error("Verification challenge does not match this registration flow.");
+    if (!["PHONE_VERIFICATION", "EMAIL_VERIFICATION"].includes(verification.purpose)) {
+      throw new Error("Verification challenge is invalid for registration.");
+    }
+
+    const user = await db.query.users.findFirst({ where: eq(users.id, verification.userId) });
+    if (!user) throw new Error("Registration account not found.");
+
+    const expectedTarget = verification.purpose === "PHONE_VERIFICATION"
+      ? user.phoneNumber
+      : user.email;
+
+    if (!expectedTarget || expectedTarget !== verification.normalizedTarget) {
+      throw new Error("Verification target does not match the registered account.");
     }
 
     await verificationService.verifyVerification({
@@ -381,14 +377,10 @@ export class RegistrationChallengeService {
 
     const verifiedAt = new Date();
     await db.update(users).set({
-      ...(challenge.contactType === "phone" ? { phoneVerified: true } : { emailVerified: true }),
+      ...(verification.purpose === "PHONE_VERIFICATION" ? { phoneVerified: true } : { emailVerified: true }),
       accountStatus: "active",
       updatedAt: verifiedAt,
     }).where(eq(users.id, verification.userId));
-
-    await db.update(registrationChallenges).set({ status: "verified", updatedAt: verifiedAt }).where(
-      eq(registrationChallenges.id, challenge.id),
-    );
 
     return { success: true, message: "Account verified successfully." };
   }
