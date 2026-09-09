@@ -5,6 +5,8 @@ import ReDomLogo from "../../assets/brand/redom-logo.svg";
 import { ReDomScreen } from "../../layout/ReDomScreen";
 import { authService } from "../../auth/service";
 import { getDeviceId } from "../../utils/device";
+import { useLanguage } from "../../i18n/LanguageProvider";
+import { notifyRegistrationFlow } from "../../notifications/notificationService";
 import type { RootStackParamList } from "../../routing/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "RegistrationWelcome">;
@@ -13,6 +15,7 @@ const TEXT = "#1C1E21";
 const MUTED = "#65676B";
 
 export function RegistrationWelcomeScreen({ navigation }: Props) {
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const spin = useRef(new Animated.Value(0)).current;
@@ -26,6 +29,7 @@ export function RegistrationWelcomeScreen({ navigation }: Props) {
     animation.start();
     try {
       const reservation = await authService.reserveRegistrationFlow(await getDeviceId());
+      await notifyRegistrationFlow(reservation.flowId, t("flowId", { flowId: "{flowId}" }));
       animation.stop();
       navigation.replace("RegistrationIdentity", reservation);
     } catch (e) {
@@ -34,24 +38,24 @@ export function RegistrationWelcomeScreen({ navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [loading, navigation, spin]);
+  }, [loading, navigation, spin, t]);
 
   const rotation = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
 
   const footer = (
     <View style={styles.footerContent}>
       <View style={styles.loginRow}>
-        <Text style={styles.muted}>Already have an account? </Text>
-        <Pressable onPress={() => navigation.navigate("Login")}><Text style={styles.link}>Login</Text></Pressable>
+        <Text style={styles.muted}>{t("alreadyAccount")} </Text>
+        <Pressable onPress={() => navigation.navigate("Login")}><Text style={styles.link}>{t("login")}</Text></Pressable>
       </View>
       <View style={styles.legalRow}>
-        <Pressable onPress={() => setError("Terms & Conditions will be available in the ReDom legal center.")}><Text style={styles.legal}>Terms & Conditions</Text></Pressable>
+        <Pressable onPress={() => setError("Terms & Conditions will be available in the ReDom legal center.")}><Text style={styles.legal}>{t("terms")}</Text></Pressable>
         <Text style={styles.separator}>•</Text>
-        <Pressable onPress={() => setError("Privacy Policy will be available in the ReDom legal center.")}><Text style={styles.legal}>Privacy Policy</Text></Pressable>
+        <Pressable onPress={() => setError("Privacy Policy will be available in the ReDom legal center.")}><Text style={styles.legal}>{t("privacy")}</Text></Pressable>
         <Text style={styles.separator}>•</Text>
-        <Pressable onPress={() => setError("Community Guidelines will be available in the ReDom legal center.")}><Text style={styles.legal}>Community Guidelines</Text></Pressable>
+        <Pressable onPress={() => setError("Community Guidelines will be available in the ReDom legal center.")}><Text style={styles.legal}>{t("guidelines")}</Text></Pressable>
       </View>
-      <View style={styles.companyRow}><ReDomLogo width={72} height={20} /><Text style={styles.company}>ReDom Platforms, Inc.</Text></View>
+      <View style={styles.companyRow}><ReDomLogo width={72} height={20} /><Text style={styles.company}>{t("company")}</Text></View>
     </View>
   );
 
@@ -59,14 +63,14 @@ export function RegistrationWelcomeScreen({ navigation }: Props) {
     <ReDomScreen footer={footer}>
       <View style={styles.content}>
         <View style={styles.logo}><ReDomLogo width={176} height={49} /></View>
-        <Text style={styles.heading}>Join ReDom Today</Text>
-        <Text style={styles.description}>Create an account to connect with friends, family and communities of people who share your interests around the globe.</Text>
+        <Text style={styles.heading}>{t("joinToday")}</Text>
+        <Text style={styles.description}>{t("createDescription")}</Text>
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <Pressable accessibilityRole="button" disabled={loading} onPress={() => void createAccount()} style={[styles.primaryButton, loading && styles.disabled]}>
-          {loading ? <Animated.View style={{ transform: [{ rotate: rotation }] }}><ActivityIndicator size="small" color="#FFFFFF" /></Animated.View> : <Text style={styles.primaryText}>Create New Account</Text>}
+          {loading ? <Animated.View style={{ transform: [{ rotate: rotation }] }}><ActivityIndicator size="small" color="#FFFFFF" /></Animated.View> : <Text style={styles.primaryText}>{t("createAccount")}</Text>}
         </Pressable>
         <Pressable disabled={loading} onPress={() => navigation.navigate("FindAccount")} style={styles.secondaryButton}>
-          <Text style={styles.secondaryText}>Find Your Account</Text>
+          <Text style={styles.secondaryText}>{t("findAccount")}</Text>
         </Pressable>
         <View style={styles.progress} accessibilityLabel="Account creation progress, step 1 of 6">
           {[0, 1, 2, 3, 4, 5].map((step) => <View key={step} style={[styles.dot, step === 0 && styles.dotActive]} />)}
