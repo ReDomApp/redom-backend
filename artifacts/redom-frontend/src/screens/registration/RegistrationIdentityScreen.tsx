@@ -20,7 +20,7 @@ function validateName(value: string, label: string, uiMessage: (key: string, var
   if (!NAME_PATTERN.test(name)) return uiMessage("nameUnsupported", { name: label });
   if (!/\p{L}/u.test(name)) return uiMessage("nameLetters", { name: label });
   if (/^[.,'-]|[.,'-]$/.test(name) || /[.,'-]{2,}/.test(name)) return uiMessage("namePunctuation", { name: label });
-  if (JUNK_NAMES.has(name.toLocaleLowerCase())) return uiMessage("nameReal", { name: label.toLocaleLowerCase() });
+  if (JUNK_NAMES.has(name.toLocaleLowerCase())) return uiMessage("nameReal", { name: name.toLocaleLowerCase() });
   return null;
 }
 function maskedFlowId(flowId: string) { const visible = flowId.slice(0, 4); return `${visible}${"•".repeat(Math.max(0, flowId.length - visible.length))}√`; }
@@ -34,8 +34,11 @@ export function RegistrationIdentityScreen({ navigation, route }: Props) {
     const firstError = validateName(firstName, t("firstName"), uiMessage); const lastError = validateName(lastName, t("lastName"), uiMessage);
     if (firstError || lastError) { setError(firstError ?? lastError); return; }
     setLoading(true); setError(null); setSaved(false);
-    try { await authService.saveRegistrationFlowName({ reservationId, flowId, deviceId: await getDeviceId(), firstName: firstName.trim().replace(/\s+/g, " "), lastName: lastName.trim().replace(/\s+/g, " ") }); setSaved(true); }
-    catch (e) { setError(e instanceof Error ? e.message : uiMessage("nameSaveFailed")); }
+    try {
+      await authService.saveRegistrationFlowName({ reservationId, flowId, deviceId: await getDeviceId(), firstName: firstName.trim().replace(/\s+/g, " "), lastName: lastName.trim().replace(/\s+/g, " ") });
+      setSaved(true);
+      navigation.replace("RegistrationBirthday", { reservationId, flowId, expiresAt });
+    } catch (e) { setError(e instanceof Error ? e.message : uiMessage("nameSaveFailed")); }
     finally { setLoading(false); }
   }
   const footer = <View style={styles.footerContent}><View style={styles.loginRow}><Text style={styles.muted}>{t("alreadyAccount")} </Text><Pressable onPress={() => navigation.navigate("Login")} disabled={loading}><Text style={styles.link}>{t("login")}</Text></Pressable></View><View style={styles.companyRow}><ReDomLogo width={72} height={20} /><Text style={styles.company}>{t("company")}</Text></View></View>;
