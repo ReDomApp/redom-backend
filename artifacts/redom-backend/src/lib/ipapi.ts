@@ -109,7 +109,16 @@ export interface IPAPIResult {
   active_tor?: boolean;
 }
 
-const IPAPI_URL = "https://api.ipapi.is/";
+// IPAPI documents api.ipapi.is as the normal endpoint. The regional hosts are
+// transport-only fallbacks for an infrastructure edge that refuses a connection
+// from a particular server network. Normal traffic always starts at api.ipapi.is.
+const IPAPI_ENDPOINTS = [
+  "https://api.ipapi.is/",
+  "https://us.ipapi.is/",
+  "https://de.ipapi.is/",
+  "https://sg.ipapi.is/",
+] as const;
+
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_TRANSIENT_ATTEMPTS = 2;
 
@@ -148,6 +157,10 @@ function isTransientHttpStatus(status: number): boolean {
   return status >= 500 && status <= 599;
 }
 
+function isTransportFailure(error: unknown): boolean {
+  return axios.isAxiosError(error) && !error.response;
+}
+
 /**
  * Look up the handset-discovered public IP using IPAPI's documented GET
  * endpoint. The API key remains server-side and is never shipped to Expo.
@@ -156,68 +169,85 @@ export async function checkIP(ip: string): Promise<IPAPIResult> {
   const normalizedIp = normalizeIp(ip);
   let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await axios.get<IPAPIResult>(IPAPI_URL, {
-        params: {
-          q: normalizedIp,
-          key: env.ipApi.apiKey,
-        },
-        headers: { Accept: "application/json" },
-        timeout: REQUEST_TIMEOUT_MS,
-        validateStatus: () => true,
-      });
+  // Try the documented global endpoint first. If that server network refuses
+  // the TCP connection, move through IPAPI's own regional endpoints rather
+  // than making the user retry a network check that cannot leave Render.
+  for (const endpoint of IPAPI_ENDPOINTS) {
+    for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await axios.get<IPAPIResult>(endpoint, {
+          params: {
+            q: normalizedIp,
+            key: env.ipApi.apiKey,
+          },
+          headers: { Accept: "application/json" },
+          timeout: REQUEST_TIMEOUT_MS,
+          validateStatus: () => true,
+        });
 
-      if (response.status < 200 || response.status >= 300) {
-        const retryAfter = typeof response.headers["retry-after"] === "string"
-          ? response.headers["retry-after"]
-          : undefined;
+        if (response.status < 200 || response.status >= 300) {
+          const retryAfter = typeof response.headers["retry-after"] === "string"
+            ? response.headers["retry-after"]
+            : undefined;
 
-        if (isTransientHttpStatus(response.status) && attempt < MAX_TRANSIENT_ATTEMPTS) {
-          lastError = responseError(response.data, response.status, retryAfter);
+          if (isTransientHttpStatus(response.status) && attempt < MAX_TRANSIENT_ATTEMPTS) {
+            lastError = responseError(response.data, response.status, retryAfter);
+            continue;
+          }
+
+          // HTTP errors are real IPAPI responses. Do not hide quota/auth/data
+          // errors by jumping to another endpoint.
+          throw responseError(response.data, response.status, retryAfter);
+        }
+
+        const data = response.data;
+        if (!data || typeof data !== "object" || Array.isArray(data)) {
+          throw new Error("IPAPI returned an invalid JSON response.");
+        }
+
+        const errorCode = (data as unknown as { error_code?: unknown }).error_code;
+        const errorMessage = (data as unknown as { error?: unknown }).error;
+        if (typeof errorCode === "string" || typeof errorMessage === "string") {
+          throw responseError(data, response.status);
+        }
+
+        const companyScore = parseAbuserScore(data.company?.abuser_score);
+        const asnScore = parseAbuserScore(data.asn?.abuser_score);
+        const fraudScore = Math.max(companyScore, asnScore);
+        const crawler = Boolean(data.is_crawler);
+
+        return {
+          ...data,
+          success: true,
+          fraud_score: fraudScore,
+          proxy: data.is_proxy === true,
+          vpn: data.is_vpn === true,
+          tor: data.is_tor === true,
+          bot_status: crawler,
+          hosting: data.is_datacenter === true,
+          ISP: data.company?.name ?? undefined,
+          organization: data.company?.name ?? data.asn?.org ?? undefined,
+          ASN: data.asn?.asn ?? undefined,
+          country_code: data.location?.country_code?.toUpperCase() || undefined,
+          recent_abuse: data.is_abuser === true,
+          active_vpn: data.is_vpn === true,
+          active_tor: data.is_tor === true,
+        };
+      } catch (error) {
+        lastError = error;
+
+        // Only transport failures trigger another IPAPI endpoint. This keeps
+        // authentication/quota/validation errors visible and deterministic.
+        if (!isTransportFailure(error)) {
+          throw error;
+        }
+
+        if (attempt < MAX_TRANSIENT_ATTEMPTS) {
           continue;
         }
 
-        throw responseError(response.data, response.status, retryAfter);
-      }
-
-      const data = response.data;
-      if (!data || typeof data !== "object" || Array.isArray(data)) {
-        throw new Error("IPAPI returned an invalid JSON response.");
-      }
-
-      const errorCode = (data as unknown as { error_code?: unknown }).error_code;
-      const errorMessage = (data as unknown as { error?: unknown }).error;
-      if (typeof errorCode === "string" || typeof errorMessage === "string") {
-        throw responseError(data, response.status);
-      }
-
-      const companyScore = parseAbuserScore(data.company?.abuser_score);
-      const asnScore = parseAbuserScore(data.asn?.abuser_score);
-      const fraudScore = Math.max(companyScore, asnScore);
-      const crawler = Boolean(data.is_crawler);
-
-      return {
-        ...data,
-        success: true,
-        fraud_score: fraudScore,
-        proxy: data.is_proxy === true,
-        vpn: data.is_vpn === true,
-        tor: data.is_tor === true,
-        bot_status: crawler,
-        hosting: data.is_datacenter === true,
-        ISP: data.company?.name ?? undefined,
-        organization: data.company?.name ?? data.asn?.org ?? undefined,
-        ASN: data.asn?.asn ?? undefined,
-        country_code: data.location?.country_code?.toUpperCase() || undefined,
-        recent_abuse: data.is_abuser === true,
-        active_vpn: data.is_vpn === true,
-        active_tor: data.is_tor === true,
-      };
-    } catch (error) {
-      lastError = error;
-      if (attempt >= MAX_TRANSIENT_ATTEMPTS || !isTransientAxiosError(error)) {
-        throw error;
+        // Move to the next IPAPI edge after the second transport failure.
+        break;
       }
     }
   }
