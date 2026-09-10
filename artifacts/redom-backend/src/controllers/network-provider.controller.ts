@@ -14,22 +14,17 @@ function normalizeIp(value: unknown): string | undefined {
  * The mobile app first asks api.ipapi.is for the public IP visible from the
  * handset's current Wi-Fi/mobile connection, then sends that IP here.
  *
- * Keep the server-observed address as a consistency check. If the proxy's
- * client address and the handset-discovered public address agree, use it.
- * When they disagree, prefer the server-observed address rather than blindly
- * trusting a client-supplied value.
+ * The handset-discovered public IP is authoritative for network intelligence.
+ * Render sits behind managed proxies, so req.ip is useful as an observation
+ * but must not replace the public IP discovered directly from the handset.
+ * Otherwise the backend can accidentally send a Render/proxy address to
+ * IPAPI instead of the user's real public network address.
  */
 function requestAddress(req: Request): string | undefined {
-  const serverObservedIp = normalizeIp(req.ip);
   const discoveredPublicIp = normalizeIp(req.query.ip);
+  if (discoveredPublicIp) return discoveredPublicIp;
 
-  if (serverObservedIp && discoveredPublicIp) {
-    return serverObservedIp === discoveredPublicIp
-      ? discoveredPublicIp
-      : serverObservedIp;
-  }
-
-  return discoveredPublicIp ?? serverObservedIp;
+  return normalizeIp(req.ip);
 }
 
 export class NetworkProviderController {
@@ -37,12 +32,14 @@ export class NetworkProviderController {
     const ip = requestAddress(req);
 
     if (!ip) {
+      const warning = "Unable to determine the public IP address of the current network.";
       res.status(503).json({
         success: false,
         networkProvider: null,
         termsUrl: null,
         security: null,
-        warning: "Unable to determine the address of the current network request.",
+        warning,
+        message: warning,
       });
       return;
     }
@@ -50,13 +47,14 @@ export class NetworkProviderController {
     try {
       res.status(200).json(await getNetworkProvider(ip));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "IPAPI network lookup failed.";
+      const warning = error instanceof Error ? error.message : "IPAPI network lookup failed.";
       res.status(503).json({
         success: false,
         networkProvider: null,
         termsUrl: null,
         security: null,
-        warning: message,
+        warning,
+        message: warning,
       });
     }
   }
