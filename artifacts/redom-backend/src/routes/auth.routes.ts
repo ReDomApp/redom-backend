@@ -5,11 +5,11 @@ import { networkProviderController } from "../controllers/network-provider.contr
 import { registrationChallengeController } from "../controllers/registration-challenge.controller";
 import { registrationFlowController } from "../controllers/registration-flow.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { authRateLimit, passwordResetRateLimit, verificationRateLimit } from "../middleware/rate-limit.middleware";
+import { authRateLimit, networkProviderRateLimit, passwordResetRateLimit, verificationRateLimit } from "../middleware/rate-limit.middleware";
 
 const router = Router();
 
-router.get("/network-provider", authRateLimit, networkProviderController.get.bind(networkProviderController));
+router.get("/network-provider", networkProviderRateLimit, networkProviderController.get.bind(networkProviderController));
 router.post("/register", authRateLimit, authController.register.bind(authController));
 
 /* Reserve the server-owned numeric Flow ID as soon as Create New Account is pressed. */
