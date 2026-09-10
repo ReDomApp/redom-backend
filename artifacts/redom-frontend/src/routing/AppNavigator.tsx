@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAuthContext } from "../auth/context";
-import { fetchNetworkProvider, hasLoadedNetworkProvider } from "../auth/networkProvider";
 import { DeviceVerificationScreen } from "../screens/DeviceVerificationScreen";
 import { FindAccountScreen } from "../screens/FindAccountScreen";
 import { FoundationScreen } from "../screens/FoundationScreen";
@@ -19,18 +18,14 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export function AppNavigator() {
   const { status } = useAuthContext();
   const [startupReady, setStartupReady] = useState(false);
-  const [networkProviderReady, setNetworkProviderReady] = useState(hasLoadedNetworkProvider());
 
   useEffect(() => {
-    let mounted = true;
-    if (hasLoadedNetworkProvider()) { setNetworkProviderReady(true); return () => { mounted = false; }; }
-    fetchNetworkProvider().then(() => { if (mounted) setNetworkProviderReady(true); }).catch(() => { if (mounted) setNetworkProviderReady(true); });
-    return () => { mounted = false; };
-  }, []);
+    if (status === "loading") setStartupReady(false);
+  }, [status]);
 
-  useEffect(() => { if (status !== "loading" && networkProviderReady) setStartupReady(true); }, [status, networkProviderReady]);
-
-  if (!startupReady || status === "loading") return <StartupScreen />;
+  if (!startupReady || status === "loading") {
+    return <StartupScreen onComplete={() => setStartupReady(true)} />;
+  }
 
   return (
     <Stack.Navigator initialRouteName={status === "authenticated" ? "Foundation" : "Login"} screenOptions={{ headerShown: false, animation: "fade", contentStyle: { backgroundColor: "#FFFFFF" } }}>
