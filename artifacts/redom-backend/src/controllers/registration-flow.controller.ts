@@ -17,8 +17,7 @@ function reservationIdFrom(req: Request) {
 }
 
 function requestIp(req: Request) {
-  const forwarded = req.header("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || req.ip || "0.0.0.0";
+  return req.ip?.trim() || "0.0.0.0";
 }
 
 export class RegistrationFlowController {
@@ -54,8 +53,14 @@ export class RegistrationFlowController {
   }
 
   async savePhone(req: Request, res: Response) {
-    try { const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required."); const input = saveRegistrationFlowPhoneSchema.parse(req.body); res.status(200).json(await registrationFlowReservationService.savePhone({ reservationId, ...input })); }
-    catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to verify your phone number." }); }
+    try {
+      const reservationId = reservationIdFrom(req);
+      if (!reservationId) throw new Error("reservationId is required.");
+      const input = saveRegistrationFlowPhoneSchema.parse(req.body);
+      res.status(200).json(await registrationFlowReservationService.savePhone({ reservationId, ...input, ip: requestIp(req) }));
+    } catch (error) {
+      res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to verify your phone number." });
+    }
   }
 }
 
