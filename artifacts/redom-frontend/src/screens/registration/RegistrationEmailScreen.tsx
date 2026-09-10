@@ -7,6 +7,7 @@ import EmailIcon from "../../assets/auth/email.svg";
 import { useLanguage } from "../../i18n/LanguageProvider";
 import { authService } from "../../auth/service";
 import { REGISTRATION_EMAIL_PROVIDERS, getRegistrationEmailProvider, normalizeRegistrationEmail } from "../../data/registrationEmailProviders";
+import { getDeviceId } from "../../utils/device";
 import type { RootStackParamList } from "../../routing/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "RegistrationEmail">;
@@ -59,7 +60,8 @@ export function RegistrationEmailScreen({ navigation, route }: Props) {
       setPhase("Saving email details to your Flow ID…");
       await new Promise((resolve) => setTimeout(resolve, 350));
       setPhase("Sending verification email with ReSend…");
-      await authService.saveRegistrationFlowEmail({ reservationId: route.params.reservationId, flowId, deviceId: route.params.deviceId, email: normalized });
+      const deviceId = await getDeviceId();
+      await authService.saveRegistrationFlowEmail({ reservationId: route.params.reservationId, flowId, deviceId, email: normalized });
       setPhase("Email details saved");
       setSuccess(true);
     } catch (e) {
