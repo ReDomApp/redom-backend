@@ -80,7 +80,6 @@ export class RegistrationFlowEmailService {
     const [updated] = await db
       .update(registrationFlowReservations)
       .set({
-        email: validated.email,
         registeredTables,
         memory: memory as never,
       })
