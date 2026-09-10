@@ -269,10 +269,10 @@ export const env = {
       ),
   },
 
-  ipQualityScore: {
+  ipApi: {
     apiKey:
       required(
-        "IPQS_API_KEY",
+        "IPAPI_API_KEY",
       ),
   },
 
