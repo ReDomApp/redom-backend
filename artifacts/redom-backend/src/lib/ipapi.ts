@@ -94,7 +94,6 @@ export interface IPAPIResult {
     geofeed?: string[];
   } | null;
 
-  // ReDom compatibility fields derived from the authoritative IPAPI response.
   fraud_score: number;
   proxy: boolean;
   vpn: boolean;
@@ -128,14 +127,15 @@ function normalizeIp(ip: string): string {
   return value.startsWith("::ffff:") ? value.slice(7) : value;
 }
 
-function responseError(data: unknown, status: number): Error {
+function responseError(data: unknown, status: number, retryAfter?: string): Error {
   const body = (data && typeof data === "object" ? data : {}) as {
     error?: unknown;
     error_code?: unknown;
   };
   const code = typeof body.error_code === "string" ? body.error_code : `HTTP_${status}`;
   const message = typeof body.error === "string" ? body.error : "IPAPI network lookup failed.";
-  return new Error(`IPAPI ${code}: ${message}`);
+  const retry = retryAfter ? ` Retry after ${retryAfter} seconds.` : "";
+  return new Error(`IPAPI ${code}: ${message}.${retry}`.replace(/\.\./g, "."));
 }
 
 function isTransientAxiosError(error: unknown): boolean {
@@ -149,12 +149,8 @@ function isTransientHttpStatus(status: number): boolean {
 }
 
 /**
- * Look up the public IP of the current network request using IPAPI's
- * documented single-IP GET endpoint. The API key stays server-side.
- *
- * IPAPI explicitly recommends https://api.ipapi.is as the production
- * endpoint because its DNS/edge layer automatically routes around unhealthy
- * regional servers. Do not pin this client to a regional hostname.
+ * Look up the handset-discovered public IP using IPAPI's documented endpoint.
+ * The key is sent in the JSON body so it never appears in a URL/query log.
  */
 export async function checkIP(ip: string): Promise<IPAPIResult> {
   const normalizedIp = normalizeIp(ip);
@@ -162,24 +158,33 @@ export async function checkIP(ip: string): Promise<IPAPIResult> {
 
   for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt += 1) {
     try {
-      const response = await axios.get<IPAPIResult>(IPAPI_URL, {
-        params: {
+      const response = await axios.post<IPAPIResult>(
+        IPAPI_URL,
+        {
           q: normalizedIp,
           key: env.ipApi.apiKey,
         },
-        headers: {
-          Accept: "application/json",
+        {
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          timeout: REQUEST_TIMEOUT_MS,
+          validateStatus: () => true,
         },
-        timeout: REQUEST_TIMEOUT_MS,
-        validateStatus: () => true,
-      });
+      );
 
       if (response.status < 200 || response.status >= 300) {
+        const retryAfter = typeof response.headers["retry-after"] === "string"
+          ? response.headers["retry-after"]
+          : undefined;
+
         if (isTransientHttpStatus(response.status) && attempt < MAX_TRANSIENT_ATTEMPTS) {
-          lastError = responseError(response.data, response.status);
+          lastError = responseError(response.data, response.status, retryAfter);
           continue;
         }
-        throw responseError(response.data, response.status);
+
+        throw responseError(response.data, response.status, retryAfter);
       }
 
       const data = response.data;
@@ -193,10 +198,6 @@ export async function checkIP(ip: string): Promise<IPAPIResult> {
         throw responseError(data, response.status);
       }
 
-      // IPAPI's company/asn abuser_score is a percentage-like decimal. Keep
-      // the explicit is_abuser flag separate: it is a boolean verdict, not a
-      // 100% fraud score. This prevents a low-score IPAPI abuser flag from
-      // being incorrectly represented as maximum risk in ReDom.
       const companyScore = parseAbuserScore(data.company?.abuser_score);
       const asnScore = parseAbuserScore(data.asn?.abuser_score);
       const fraudScore = Math.max(companyScore, asnScore);
