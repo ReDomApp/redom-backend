@@ -12,7 +12,6 @@ const router = Router();
 router.get("/network-provider", networkProviderRateLimit, networkProviderController.get.bind(networkProviderController));
 router.post("/register", authRateLimit, authController.register.bind(authController));
 
-/* Reserve the server-owned numeric Flow ID as soon as Create New Account is pressed. */
 router.post("/register/flow", authRateLimit, registrationFlowController.reserve.bind(registrationFlowController));
 router.get("/register/flow/:reservationId/memory", authRateLimit, registrationFlowController.getMemory.bind(registrationFlowController));
 router.patch("/register/flow/:reservationId/name", authRateLimit, registrationFlowController.saveName.bind(registrationFlowController));
@@ -21,8 +20,8 @@ router.patch("/register/flow/:reservationId/gender", authRateLimit, registration
 router.get("/register/flow/:reservationId/phone-country", authRateLimit, registrationFlowController.detectPhoneCountry.bind(registrationFlowController));
 router.patch("/register/flow/:reservationId/phone", authRateLimit, registrationFlowController.savePhone.bind(registrationFlowController));
 router.get("/register/flow/:reservationId/security", authRateLimit, registrationFlowController.inspectSecurity.bind(registrationFlowController));
+router.post("/register/flow/:reservationId/security/consent", authRateLimit, registrationFlowController.consentSecurity.bind(registrationFlowController));
 
-/* Multi-screen, server-owned registration flow. */
 router.post("/register/challenge", authRateLimit, registrationChallengeController.start.bind(registrationChallengeController));
 router.get("/register/challenge/:challengeId", authRateLimit, registrationChallengeController.getFlow.bind(registrationChallengeController));
 router.patch("/register/challenge/:challengeId", authRateLimit, registrationChallengeController.saveStep.bind(registrationChallengeController));
