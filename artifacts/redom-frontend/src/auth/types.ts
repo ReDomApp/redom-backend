@@ -9,6 +9,7 @@ export interface RegisterInput { firstName: string; lastName: string; username: 
 export interface RegistrationFlowReservation { success: boolean; reservationId: string; flowId: string; expiresAt: string; }
 export interface RegistrationFlowNameSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; }
 export interface RegistrationFlowBirthdaySaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; age: number; ageBand: "underage" | "teen" | "adult"; flowStatus: "active" | "completed"; }
+export interface RegistrationFlowGenderSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; gender: "female" | "male" | "custom" | null; pronouns?: "She / Her" | "He / Him" | "They / Them" | "Prefer not to say" | null; }
 export interface RegistrationChallengeStart { contactType: "phone" | "email"; target: string; deviceId?: string; reservationId?: string; flowId?: string; }
 export interface RegistrationChallengeResult { success: boolean; challengeId: string; flowId: string; contactType: "phone" | "email"; maskedTarget: string; expiresAt: string; currentStep: "contact" | "identity" | "username" | "profile" | "password" | "review"; }
 export interface RegistrationChallengeSaveResult { success: boolean; challengeId: string; flowId: string; maskedTarget: string; expiresAt: string; currentStep: RegistrationChallengeResult["currentStep"]; }
