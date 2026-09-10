@@ -16,10 +16,30 @@ ALTER TABLE "registration_flow_reservations"
   ADD COLUMN IF NOT EXISTS "ip_bot_status" boolean,
   ADD COLUMN IF NOT EXISTS "ip_country_code" varchar(2);
 --> statement-breakpoint
-ALTER TABLE "registration_flow_reservations"
-  ADD CONSTRAINT "registration_flow_reservations_phone_lookup_country_chk"
-  CHECK ("phone_lookup_country_code" IS NULL OR "phone_lookup_country_code" ~ '^[A-Z]{2}$');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'registration_flow_reservations_phone_lookup_country_chk'
+      AND conrelid = 'registration_flow_reservations'::regclass
+  ) THEN
+    ALTER TABLE "registration_flow_reservations"
+      ADD CONSTRAINT "registration_flow_reservations_phone_lookup_country_chk"
+      CHECK ("phone_lookup_country_code" IS NULL OR "phone_lookup_country_code" ~ '^[A-Z]{2}$');
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "registration_flow_reservations"
-  ADD CONSTRAINT "registration_flow_reservations_ip_country_chk"
-  CHECK ("ip_country_code" IS NULL OR "ip_country_code" ~ '^[A-Z]{2}$');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'registration_flow_reservations_ip_country_chk'
+      AND conrelid = 'registration_flow_reservations'::regclass
+  ) THEN
+    ALTER TABLE "registration_flow_reservations"
+      ADD CONSTRAINT "registration_flow_reservations_ip_country_chk"
+      CHECK ("ip_country_code" IS NULL OR "ip_country_code" ~ '^[A-Z]{2}$');
+  END IF;
+END $$;
