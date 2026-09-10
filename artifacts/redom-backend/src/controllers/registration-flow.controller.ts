@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { registrationFlowReservationService } from "../services/auth/registration-flow-reservation.service";
-import { registrationFlowMemoryService } from "../services/auth/registration-flow-memory.service";
 import {
   reserveRegistrationFlowSchema,
   saveRegistrationFlowBirthdaySchema,
@@ -21,10 +20,6 @@ function requestIp(req: Request) {
   return req.ip?.trim() || "0.0.0.0";
 }
 
-function flowIdFrom(req: Request, input?: { flowId?: string }) {
-  return input?.flowId || (typeof req.query.flowId === "string" ? req.query.flowId : "");
-}
-
 export class RegistrationFlowController {
   async reserve(req: Request, res: Response) {
     try { const input = reserveRegistrationFlowSchema.parse(req.body ?? {}); res.status(201).json(await registrationFlowReservationService.reserve(input.deviceId)); }
@@ -32,33 +27,18 @@ export class RegistrationFlowController {
   }
 
   async saveName(req: Request, res: Response) {
-    try {
-      const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required.");
-      const input = saveRegistrationFlowNameSchema.parse(req.body);
-      const result = await registrationFlowReservationService.saveName({ reservationId, ...input });
-      await registrationFlowMemoryService.registerScreenSafely({ reservationId, flowId: flowIdFrom(req, input), screen: "name" });
-      res.status(200).json(result);
-    } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to save your name." }); }
+    try { const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required."); const input = saveRegistrationFlowNameSchema.parse(req.body); res.status(200).json(await registrationFlowReservationService.saveName({ reservationId, ...input })); }
+    catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to save your name." }); }
   }
 
   async saveBirthday(req: Request, res: Response) {
-    try {
-      const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required.");
-      const input = saveRegistrationFlowBirthdaySchema.parse(req.body);
-      const result = await registrationFlowReservationService.saveBirthday({ reservationId, ...input });
-      await registrationFlowMemoryService.registerScreenSafely({ reservationId, flowId: flowIdFrom(req, input), screen: "birthday" });
-      res.status(200).json(result);
-    } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to save your birthday." }); }
+    try { const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required."); const input = saveRegistrationFlowBirthdaySchema.parse(req.body); res.status(200).json(await registrationFlowReservationService.saveBirthday({ reservationId, ...input })); }
+    catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to save your birthday." }); }
   }
 
   async saveGender(req: Request, res: Response) {
-    try {
-      const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required.");
-      const input = saveRegistrationFlowGenderSchema.parse(req.body);
-      const result = await registrationFlowReservationService.saveGender({ reservationId, ...input });
-      await registrationFlowMemoryService.registerScreenSafely({ reservationId, flowId: flowIdFrom(req, input), screen: "gender" });
-      res.status(200).json(result);
-    } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to save your gender." }); }
+    try { const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required."); const input = saveRegistrationFlowGenderSchema.parse(req.body); res.status(200).json(await registrationFlowReservationService.saveGender({ reservationId, ...input })); }
+    catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to save your gender." }); }
   }
 
   async detectPhoneCountry(req: Request, res: Response) {
@@ -74,11 +54,10 @@ export class RegistrationFlowController {
 
   async savePhone(req: Request, res: Response) {
     try {
-      const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required.");
+      const reservationId = reservationIdFrom(req);
+      if (!reservationId) throw new Error("reservationId is required.");
       const input = saveRegistrationFlowPhoneSchema.parse(req.body);
-      const result = await registrationFlowReservationService.savePhone({ reservationId, ...input, ip: requestIp(req) });
-      await registrationFlowMemoryService.registerScreenSafely({ reservationId, flowId: flowIdFrom(req, input), screen: "phone" });
-      res.status(200).json(result);
+      res.status(200).json(await registrationFlowReservationService.savePhone({ reservationId, ...input, ip: requestIp(req) }));
     } catch (error) {
       res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to verify your phone number." });
     }

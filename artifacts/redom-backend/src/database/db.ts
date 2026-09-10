@@ -61,7 +61,6 @@ import { videoQuality } from "./videoQuality";
 import { videoViews } from "./videoViews";
 import { registrationChallenges } from "./registration-challenges.schema";
 import { registrationFlowReservations } from "./registration-flow-reservations.schema";
-import { registrationFlowMemory } from "./registration-flow-memory.schema";
 
 const pool = new Pool({ connectionString: env.database.url });
 
@@ -84,7 +83,6 @@ export const db = drizzle(pool, {
     videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
     registrationChallenges,
     registrationFlowReservations,
-    registrationFlowMemory,
   },
 });
 
