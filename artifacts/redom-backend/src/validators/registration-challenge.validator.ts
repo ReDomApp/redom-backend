@@ -11,6 +11,12 @@ export const saveRegistrationFlowNameSchema = z.object({
   lastName: z.string().min(1).max(100),
 });
 
+export const saveRegistrationFlowBirthdaySchema = z.object({
+  flowId: z.string().regex(/^\d{6,16}$/),
+  deviceId: z.string().trim().min(1).max(255).optional(),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
 export const startRegistrationChallengeSchema = z.object({
   contactType: z.enum(["phone", "email"]),
   target: z.string().trim().min(1).max(255),
