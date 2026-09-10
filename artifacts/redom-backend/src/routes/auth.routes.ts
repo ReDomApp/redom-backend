@@ -20,6 +20,7 @@ router.patch("/register/flow/:reservationId/birthday", authRateLimit, registrati
 router.patch("/register/flow/:reservationId/gender", authRateLimit, registrationFlowController.saveGender.bind(registrationFlowController));
 router.get("/register/flow/:reservationId/phone-country", authRateLimit, registrationFlowController.detectPhoneCountry.bind(registrationFlowController));
 router.patch("/register/flow/:reservationId/phone", authRateLimit, registrationFlowController.savePhone.bind(registrationFlowController));
+router.get("/register/flow/:reservationId/security", authRateLimit, registrationFlowController.inspectSecurity.bind(registrationFlowController));
 
 /* Multi-screen, server-owned registration flow. */
 router.post("/register/challenge", authRateLimit, registrationChallengeController.start.bind(registrationChallengeController));
