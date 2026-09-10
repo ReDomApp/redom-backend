@@ -10,7 +10,7 @@ const TTL_MS = 30 * 60 * 1000;
 const MIN_LENGTH = 6;
 const MAX_LENGTH = 16;
 const MAX_NAME_LENGTH = 100;
-const NAME_PATTERN = /^[\p{L}][\p{L}\s.'-]*$/u;
+const NAME_PATTERN = /^[\p{L}][\p{L}\s.,'-]*$/u;
 
 function generateNumericFlowId() {
   const length = randomInt(MIN_LENGTH, MAX_LENGTH + 1);
@@ -42,8 +42,6 @@ export class RegistrationFlowReservationService {
         lte(registrationFlowReservations.expiresAt, new Date()),
       );
     } catch (error) {
-      // Expired-row cleanup is maintenance, not a prerequisite for allocating
-      // a new Flow ID. Never turn a cleanup failure into a broken signup screen.
       logger.warn({ error }, "Unable to purge expired registration Flow reservations; continuing");
     }
   }
@@ -53,24 +51,39 @@ export class RegistrationFlowReservationService {
     for (let attempt = 0; attempt < 12; attempt += 1) {
       const flowId = generateNumericFlowId();
       const now = new Date();
-      const existingReservation = await db.query.registrationFlowReservations.findFirst({
-        where: eq(registrationFlowReservations.flowId, flowId),
-      });
-      if (existingReservation) continue;
-      const existingChallenge = await db.query.registrationChallenges.findFirst({
-        where: and(
+
+      // Signup 0 only needs to know whether this public Flow ID is already
+      // reserved. Do not hydrate name/device/timestamps just to perform the
+      // uniqueness check; those fields belong to later lifecycle operations.
+      const existingReservation = await db
+        .select({ id: registrationFlowReservations.id })
+        .from(registrationFlowReservations)
+        .where(eq(registrationFlowReservations.flowId, flowId))
+        .limit(1);
+      if (existingReservation.length > 0) continue;
+
+      // The challenge lookup also only needs its identity key. Expiry remains
+      // part of the predicate because only an active challenge blocks reuse.
+      const existingChallenge = await db
+        .select({ id: registrationChallenges.id })
+        .from(registrationChallenges)
+        .where(and(
           eq(registrationChallenges.flowId, flowId),
           gt(registrationChallenges.expiresAt, now),
-        ),
-      });
-      if (existingChallenge) continue;
+        ))
+        .limit(1);
+      if (existingChallenge.length > 0) continue;
 
       const [reservation] = await db.insert(registrationFlowReservations).values({
         flowId,
         deviceId,
         expiresAt: new Date(now.getTime() + TTL_MS),
         createdAt: now,
-      }).returning();
+      }).returning({
+        id: registrationFlowReservations.id,
+        flowId: registrationFlowReservations.flowId,
+        expiresAt: registrationFlowReservations.expiresAt,
+      });
       if (!reservation) throw new Error("Unable to allocate a registration Flow ID.");
       return {
         success: true,
@@ -90,15 +103,23 @@ export class RegistrationFlowReservationService {
     lastName: string;
   }) {
     await this.purgeExpired();
-    const reservation = await db.query.registrationFlowReservations.findFirst({
-      where: and(
+    const reservation = await db
+      .select({
+        id: registrationFlowReservations.id,
+        flowId: registrationFlowReservations.flowId,
+        deviceId: registrationFlowReservations.deviceId,
+        expiresAt: registrationFlowReservations.expiresAt,
+      })
+      .from(registrationFlowReservations)
+      .where(and(
         eq(registrationFlowReservations.id, params.reservationId),
         eq(registrationFlowReservations.flowId, params.flowId),
         gt(registrationFlowReservations.expiresAt, new Date()),
-      ),
-    });
-    if (!reservation) throw new Error("Registration Flow ID is invalid or expired.");
-    if (reservation.deviceId && reservation.deviceId !== params.deviceId) {
+      ))
+      .limit(1);
+    const current = reservation[0];
+    if (!current) throw new Error("Registration Flow ID is invalid or expired.");
+    if (current.deviceId && current.deviceId !== params.deviceId) {
       throw new Error("Registration Flow ID is not valid for this device.");
     }
 
@@ -108,11 +129,15 @@ export class RegistrationFlowReservationService {
     const [updated] = await db.update(registrationFlowReservations)
       .set({ firstName, lastName })
       .where(and(
-        eq(registrationFlowReservations.id, reservation.id),
+        eq(registrationFlowReservations.id, current.id),
         eq(registrationFlowReservations.flowId, params.flowId),
         gt(registrationFlowReservations.expiresAt, new Date()),
       ))
-      .returning();
+      .returning({
+        id: registrationFlowReservations.id,
+        flowId: registrationFlowReservations.flowId,
+        expiresAt: registrationFlowReservations.expiresAt,
+      });
     if (!updated) throw new Error("Unable to save your name to this registration flow.");
 
     return {
@@ -125,19 +150,34 @@ export class RegistrationFlowReservationService {
 
   async consume(reservationId: string, flowId: string, deviceId?: string) {
     await this.purgeExpired();
-    const reservation = await db.query.registrationFlowReservations.findFirst({
-      where: and(
+    const reservation = await db
+      .select({
+        id: registrationFlowReservations.id,
+        flowId: registrationFlowReservations.flowId,
+        deviceId: registrationFlowReservations.deviceId,
+        firstName: registrationFlowReservations.firstName,
+        lastName: registrationFlowReservations.lastName,
+        expiresAt: registrationFlowReservations.expiresAt,
+        createdAt: registrationFlowReservations.createdAt,
+      })
+      .from(registrationFlowReservations)
+      .where(and(
         eq(registrationFlowReservations.id, reservationId),
         eq(registrationFlowReservations.flowId, flowId),
         gt(registrationFlowReservations.expiresAt, new Date()),
-      ),
-    });
-    if (!reservation) throw new Error("Registration Flow ID is invalid or expired.");
-    if (reservation.deviceId && deviceId && reservation.deviceId !== deviceId) {
+      ))
+      .limit(1);
+    const current = reservation[0];
+    if (!current) throw new Error("Registration Flow ID is invalid or expired.");
+    if (current.deviceId && deviceId && current.deviceId !== deviceId) {
       throw new Error("Registration Flow ID is not valid for this device.");
     }
-    await db.delete(registrationFlowReservations).where(eq(registrationFlowReservations.id, reservation.id));
-    return reservation;
+    await db.delete(registrationFlowReservations)
+      .where(and(
+        eq(registrationFlowReservations.id, current.id),
+        eq(registrationFlowReservations.flowId, current.flowId),
+      ));
+    return current;
   }
 }
 
