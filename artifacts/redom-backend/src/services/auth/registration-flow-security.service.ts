@@ -39,7 +39,7 @@ function connectionType(result: Awaited<ReturnType<typeof checkIP>>) {
   if (result.egress_service?.type) {
     return result.egress_service.type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
-  return result.company?.type ? result.company.type.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Residential / ISP";
+  return result.company?.type ? result.company.type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Residential / ISP";
 }
 
 export class RegistrationFlowSecurityService {
@@ -56,6 +56,22 @@ export class RegistrationFlowSecurityService {
       throw new Error("Registration Flow ID is not valid for this device.");
     }
 
+    const existingMemory = (reservation.memory ?? {}) as Record<string, unknown>;
+    const existingNetwork = (existingMemory.networkSecurity ?? {}) as Record<string, unknown>;
+    const cachedIp = typeof existingNetwork.ip === "string" ? existingNetwork.ip : null;
+
+    // Flow creation performs the authoritative IPAPI lookup once. Later Screen 4
+    // security reads reuse that same server-owned result instead of consuming
+    // another IPAPI lookup or producing a second inconsistent verdict.
+    if (cachedIp && cachedIp === params.ip && typeof existingNetwork.fraudScore === "number") {
+      return {
+        success: true,
+        flowId: reservation.flowId,
+        reservationId: reservation.id,
+        security: existingNetwork as RegistrationFlowNetworkSecurity,
+      };
+    }
+
     const result = await checkIP(params.ip);
     const security: RegistrationFlowNetworkSecurity = {
       ip: result.ip ?? params.ip,
@@ -65,25 +81,23 @@ export class RegistrationFlowSecurityService {
       region: result.location?.state ?? null,
       city: result.location?.city ?? null,
       timezone: result.location?.timezone ?? null,
-      organization: result.organization ?? null,
+      organization: result.company?.name ?? result.asn?.org ?? null,
       companyType: result.company?.type ?? result.asn?.type ?? null,
       asn: result.asn?.asn ?? null,
       datacenter: result.datacenter?.datacenter ?? null,
       vpnService: result.vpn?.service ?? null,
       egressService: result.egress_service?.type ?? null,
       egressProvider: result.egress_service?.provider ?? null,
-      proxy: result.proxy,
-      vpn: result.vpn,
-      tor: result.tor,
-      bot: result.bot_status,
-      abuser: result.recent_abuse ?? false,
+      proxy: result.is_proxy === true,
+      vpn: result.is_vpn === true,
+      tor: result.is_tor === true,
+      bot: result.is_crawler === true || result.bot_status === true,
+      abuser: result.is_abuser === true || result.recent_abuse === true,
       mobile: result.is_mobile === true,
       satellite: result.is_satellite === true,
       fraudScore: Number(result.fraud_score ?? 0),
     };
 
-    const existingMemory = (reservation.memory ?? {}) as Record<string, unknown>;
-    const existingNetwork = (existingMemory.networkSecurity ?? {}) as Record<string, unknown>;
     const memory = {
       ...existingMemory,
       networkSecurity: {
