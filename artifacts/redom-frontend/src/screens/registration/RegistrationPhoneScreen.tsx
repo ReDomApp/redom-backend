@@ -138,7 +138,7 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
       <View style={[styles.field, styles.phoneField]}><Text style={styles.caption}>Phone Number</Text><TextInput value={phone} onChangeText={(v) => { setPhone(v); setSaved(false); setSecurity(null); setError(null); }} placeholder="Mobile number" placeholderTextColor="#8A8D91" keyboardType="phone-pad" style={styles.input} editable={!checking && !saved} maxLength={24} /></View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable onPress={() => void inspect()} disabled={!canContinue} style={[styles.button, !canContinue && styles.disabled]}>{checking ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Continue</Text>}</Pressable>
-      <Pressable style={styles.email}><Text style={styles.muted}>Don't have phone number?</Text><Text style={styles.link}>Sign up with Email</Text></Pressable>
+      <Pressable onPress={() => navigation.navigate("RegistrationEmail", route.params)} style={styles.email} disabled={checking || saved}><Text style={styles.muted}>Don't have phone number?</Text><Text style={styles.link}>Sign up with Email</Text></Pressable>
       <View style={styles.progress}>{[0,1,2,3,4,5].map((i) => <View key={i} style={[styles.dot, i <= 4 && styles.activeDot]} />)}</View>
     </ScrollView>
 
