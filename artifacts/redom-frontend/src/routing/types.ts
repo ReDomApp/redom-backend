@@ -7,5 +7,6 @@ export type RootStackParamList = {
   RegistrationWelcome: undefined;
   RegistrationIdentity: RegistrationFlowReservationRouteParams;
   RegistrationBirthday: RegistrationFlowReservationRouteParams;
+  RegistrationGender: RegistrationFlowReservationRouteParams;
   Foundation: undefined;
 };
