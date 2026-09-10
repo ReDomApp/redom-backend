@@ -25,6 +25,8 @@
     {"idx": 20, "version": "7", "when": 1788955000000, "tag": "0020_registration_flow_birthday", "breakpoints": true},
     {"idx": 21, "version": "7", "when": 1788956000000, "tag": "0021_registration_flow_gender", "breakpoints": true},
     {"idx": 22, "version": "7", "when": 1788957000000, "tag": "0022_registration_flow_phone", "breakpoints": true},
-    {"idx": 23, "version": "7", "when": 1788958000000, "tag": "0023_registration_flow_phone_security", "breakpoints": true}
+    {"idx": 23, "version": "7", "when": 1788958000000, "tag": "0023_registration_flow_phone_security", "breakpoints": true},
+    {"idx": 24, "version": "7", "when": 1788959000000, "tag": "0024_registration_flow_memory", "breakpoints": true},
+    {"idx": 25, "version": "7", "when": 1788960000000, "tag": "0025_registration_flow_memory_trigger", "breakpoints": true}
   ]
 }
