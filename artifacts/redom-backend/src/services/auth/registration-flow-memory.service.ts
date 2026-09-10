@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import {
@@ -75,12 +75,11 @@ export class RegistrationFlowMemoryService {
       where: and(
         eq(registrationFlowReservations.id, params.reservationId),
         eq(registrationFlowReservations.flowId, params.flowId),
-        gt(registrationFlowReservations.expiresAt, new Date()),
       ),
     });
 
     if (!reservation) {
-      throw new Error("Registration Flow ID memory could not be updated because the flow reservation was not found or expired.");
+      throw new Error("Registration Flow ID memory could not be updated because the flow reservation was not found.");
     }
 
     const existingMemory = (reservation.memory ?? {}) as Partial<RegistrationFlowMemory>;
@@ -106,7 +105,6 @@ export class RegistrationFlowMemoryService {
         and(
           eq(registrationFlowReservations.id, reservation.id),
           eq(registrationFlowReservations.flowId, params.flowId),
-          gt(registrationFlowReservations.expiresAt, new Date()),
         ),
       )
       .returning();
