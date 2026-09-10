@@ -13,17 +13,9 @@ export interface TranslationResponse {
   translations: string[];
 }
 
-export interface ModerationResult {
-  flagged: boolean;
-  decision: "allow" | "block";
-  categories: Record<string, boolean>;
-  categoryScores: Record<string, number>;
-}
-
 const MODEL = "gpt-5.6-luna";
 const MAX_TEXTS = 100;
 const MAX_TEXT_LENGTH = 2_000;
-const MAX_MODERATION_LENGTH = 20_000;
 const translationCache = new Map<string, string>();
 const MAX_CACHE_ENTRIES = 2_000;
 
@@ -126,35 +118,4 @@ export async function translateUiTexts({
   }
 
   return { language, translations };
-}
-
-/**
- * Server-side content moderation boundary for user-generated text.
- * Callers should run this before publishing content rather than relying
- * on client-side moderation.
- */
-export async function moderateContent(text: string): Promise<ModerationResult> {
-  if (typeof text !== "string" || text.length === 0) {
-    throw new Error("Content is required for moderation.");
-  }
-  if (text.length > MAX_MODERATION_LENGTH) {
-    throw new Error(`Content exceeds the ${MAX_MODERATION_LENGTH}-character moderation limit.`);
-  }
-
-  const response = await openai.moderations.create({
-    model: "omni-moderation-latest",
-    input: text,
-  });
-
-  const result = response.results[0];
-  if (!result) {
-    throw new Error("OpenAI moderation returned no result.");
-  }
-
-  return {
-    flagged: result.flagged,
-    decision: result.flagged ? "block" : "allow",
-    categories: result.categories as unknown as Record<string, boolean>,
-    categoryScores: result.category_scores as unknown as Record<string, number>,
-  };
 }
