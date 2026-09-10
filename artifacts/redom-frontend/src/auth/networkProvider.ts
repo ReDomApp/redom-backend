@@ -1,4 +1,5 @@
 import { api } from "../api/client";
+import { detectPublicIp } from "./publicIp";
 
 export interface NetworkSecurity {
   ip: string | null;
@@ -48,9 +49,18 @@ export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
   loaded = false;
 
   try {
-    // The backend derives the address from the actual request reaching ReDom.
-    // No client-supplied address is accepted or sent to the backend.
-    const result = await api.get<NetworkProviderResponse>("/auth/network-provider");
+    // First obtain the public IP from the device's CURRENT Internet connection.
+    // IPAPI documents that omitting `q` returns the caller's own public IP.
+    // This request therefore runs from the handset over its active Wi-Fi/mobile
+    // connection, exactly like a normal "what is my IP" application.
+    const publicIp = await detectPublicIp();
+
+    // Send only the discovered public IP to ReDom. The backend performs the
+    // authenticated IPAPI lookup with IPAPI_API_KEY; the secret never ships
+    // inside the Expo bundle.
+    const result = await api.get<NetworkProviderResponse>(
+      `/auth/network-provider?ip=${encodeURIComponent(publicIp)}`,
+    );
 
     cached = result.success && result.security
       ? result
@@ -58,7 +68,7 @@ export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
   } catch (error) {
     const message = error instanceof Error && error.message
       ? error.message
-      : "We could not reach ReDom's network security service.";
+      : "We could not determine the current network IP or complete the security check.";
     cached = emptyNetworkProvider(message);
   }
 
