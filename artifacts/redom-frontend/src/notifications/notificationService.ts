@@ -1,5 +1,7 @@
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+import { loadLanguage } from "../i18n/language";
+import { localizeUiTexts } from "../i18n/aiLocalization";
 
 const CHANNEL_ID = "redom-default";
 
@@ -21,12 +23,8 @@ async function ensureNotificationPermission() {
       sound: null,
     });
   }
-
   const current = await Notifications.getPermissionsAsync();
-  if (current.granted || current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) {
-    return true;
-  }
-
+  if (current.granted || current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) return true;
   const requested = await Notifications.requestPermissionsAsync();
   return requested.granted || requested.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
 }
@@ -34,10 +32,20 @@ async function ensureNotificationPermission() {
 export async function showReDomNotification(title: string, body: string, data?: Record<string, string>) {
   try {
     if (!(await ensureNotificationPermission())) return false;
+    let notificationTitle = title;
+    let notificationBody = body;
+    if (data?.type === "registration-network-blocked") {
+      const language = await loadLanguage();
+      if (language !== "en") {
+        const translated = await localizeUiTexts(language, [title, body], "ReDom registration network security notification");
+        notificationTitle = translated[0] || title;
+        notificationBody = translated[1] || body;
+      }
+    }
     await Notifications.scheduleNotificationAsync({
       content: {
-        title,
-        body,
+        title: notificationTitle,
+        body: notificationBody,
         data,
         ...(Platform.OS === "android" ? { channelId: CHANNEL_ID } : {}),
       },
