@@ -1,34 +1,21 @@
-import {
-  Request,
-  Response,
-} from "express";
+import { Request, Response } from "express";
 
-import {
-  getNetworkProvider,
-} from "../services/auth/network-provider.service";
+import { getNetworkProvider } from "../services/auth/network-provider.service";
 
 export class NetworkProviderController {
-  async get(
-    req: Request,
-    res: Response,
-  ): Promise<void> {
+  async get(req: Request, res: Response): Promise<void> {
     try {
-      const result =
-        await getNetworkProvider(
-          req.ip,
-        );
-
-      res.status(200).json(
-        result,
-      );
+      res.status(200).json(await getNetworkProvider(req.ip));
     } catch {
       res.status(200).json({
         success: false,
         networkProvider: null,
+        termsUrl: null,
+        security: null,
+        warning: null,
       });
     }
   }
 }
 
-export const networkProviderController =
-  new NetworkProviderController();
+export const networkProviderController = new NetworkProviderController();
