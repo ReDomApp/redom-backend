@@ -1,4 +1,4 @@
-import { index, jsonb, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { index, jsonb, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 export const registrationFlowMemory = pgTable(
   "registration_flow_memory",
