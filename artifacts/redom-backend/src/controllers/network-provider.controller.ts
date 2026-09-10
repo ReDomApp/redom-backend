@@ -5,21 +5,18 @@ import { getNetworkProvider } from "../services/auth/network-provider.service";
 
 function normalizeIp(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  const ip = value.trim().replace(/^\[|\]$/g, "");
-  if (!ip || isIP(ip) === 0) return undefined;
-  return ip.startsWith("::ffff:") ? ip.slice(7) : ip;
+  const valueTrimmed = value.trim().replace(/^\[|\]$/g, "");
+  if (!valueTrimmed || isIP(valueTrimmed) === 0) return undefined;
+  return valueTrimmed.startsWith("::ffff:") ? valueTrimmed.slice(7) : valueTrimmed;
 }
 
-function clientIp(req: Request, suppliedIp?: string): string | undefined {
-  // Startup first discovers the handset's public IP through ipapi.is, then
-  // sends that exact address here. Keep req.ip as the server-side fallback.
-  return normalizeIp(suppliedIp) ?? normalizeIp(req.ip);
+function requestAddress(req: Request): string | undefined {
+  return normalizeIp(req.ip);
 }
 
 export class NetworkProviderController {
   async get(req: Request, res: Response): Promise<void> {
-    const requestedIp = typeof req.query.ip === "string" ? req.query.ip : undefined;
-    const ip = clientIp(req, requestedIp);
+    const ip = requestAddress(req);
 
     if (!ip) {
       res.status(503).json({
@@ -27,7 +24,7 @@ export class NetworkProviderController {
         networkProvider: null,
         termsUrl: null,
         security: null,
-        warning: "Unable to determine the device public IP address.",
+        warning: "Unable to determine the address of the current network request.",
       });
       return;
     }
