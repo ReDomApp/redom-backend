@@ -17,8 +17,6 @@ function normalizeIp(value: unknown): string | undefined {
  * The handset-discovered public IP is authoritative for network intelligence.
  * Render sits behind managed proxies, so req.ip is useful as an observation
  * but must not replace the public IP discovered directly from the handset.
- * Otherwise the backend can accidentally send a Render/proxy address to
- * IPAPI instead of the user's real public network address.
  */
 function requestAddress(req: Request): string | undefined {
   const discoveredPublicIp = normalizeIp(req.query.ip);
@@ -35,6 +33,7 @@ export class NetworkProviderController {
       const warning = "Unable to determine the public IP address of the current network.";
       res.status(503).json({
         success: false,
+        code: "NETWORK_IP_UNAVAILABLE",
         networkProvider: null,
         termsUrl: null,
         security: null,
@@ -48,8 +47,9 @@ export class NetworkProviderController {
       res.status(200).json(await getNetworkProvider(ip));
     } catch (error) {
       const warning = error instanceof Error ? error.message : "IPAPI network lookup failed.";
-      res.status(503).json({
+      res.status(502).json({
         success: false,
+        code: "IPAPI_LOOKUP_FAILED",
         networkProvider: null,
         termsUrl: null,
         security: null,
