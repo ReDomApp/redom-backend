@@ -20,55 +20,34 @@ export interface AbstractPhoneResult {
   risk_score?: number;
 }
 
-/**
- * Secondary phone-validation provider used only when IPQS itself is unavailable.
- * Abstract is not used to override a definitive IPQS validation result.
- */
+/** Secondary phone-validation provider used only when IPQS itself is unavailable. */
 export async function checkAbstractPhone(
   phoneNumber: string,
   options?: { countryCode?: string },
 ): Promise<AbstractPhoneResult> {
   const apiKey = env.abstract.apiKey;
-  if (!apiKey) {
-    throw new Error("ABSTRACT_API_KEY is not configured.");
-  }
+  if (!apiKey) throw new Error("ABSTRACT_API_KEY is not configured.");
 
-  const params = new URLSearchParams({
-    api_key: apiKey,
-    phone: phoneNumber,
-  });
-
-  if (options?.countryCode) {
-    params.set("country", options.countryCode.toUpperCase());
-  }
+  const params = new URLSearchParams({ api_key: apiKey, phone: phoneNumber });
+  if (options?.countryCode) params.set("country", options.countryCode.toUpperCase());
 
   try {
     const { data } = await axios.get<AbstractPhoneResult>(
       "https://phonevalidation.abstractapi.com/v1/",
-      {
-        params,
-        timeout: 15_000,
-      },
+      { params, timeout: 15_000 },
     );
-
     return data;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
       const code = error.code;
-      throw new Error(
-        `Abstract phone validation provider unavailable${status ? ` (HTTP ${status})` : code ? ` (${code})` : ""}.`,
-      );
+      throw new Error(`Abstract phone validation provider unavailable${status ? ` (HTTP ${status})` : code ? ` (${code})` : ""}.`);
     }
-
     throw new Error("Abstract phone validation provider unavailable.");
   }
 }
 
-export function normalizeAbstractPhoneResult(
-  result: AbstractPhoneResult,
-  requestedCountryCode: string,
-) {
+export function normalizeAbstractPhoneResult(result: AbstractPhoneResult, requestedCountryCode: string) {
   const countryCode = result.country?.code?.trim().toUpperCase() || null;
   const lineType = result.type?.trim() || null;
   const voip = Boolean(lineType && /voip/i.test(lineType));
@@ -95,10 +74,11 @@ export function normalizeAbstractPhoneResult(
     city: null,
     timezone: null,
     dialing_code: null,
-    accurate_country_code:
-      countryCode ? countryCode === requestedCountryCode.toUpperCase() : null,
+    accurate_country_code: countryCode ? countryCode === requestedCountryCode.toUpperCase() : null,
     active_status: null,
     user_activity: null,
     request_id: null,
+    provider: "abstract" as const,
+    lookup_type: "phone-validation" as const,
   };
 }
