@@ -193,6 +193,54 @@ export class RegistrationFlowReservationService {
     };
   }
 
+  async saveGender(params: {
+    reservationId: string;
+    flowId: string;
+    deviceId?: string;
+    gender: "female" | "male" | "custom";
+    pronouns?: "She / Her" | "He / Him" | "They / Them" | "Prefer not to say";
+  }) {
+    await this.purgeExpired();
+    const reservation = await db.query.registrationFlowReservations.findFirst({
+      where: and(
+        eq(registrationFlowReservations.id, params.reservationId),
+        eq(registrationFlowReservations.flowId, params.flowId),
+        eq(registrationFlowReservations.status, "active"),
+        gt(registrationFlowReservations.expiresAt, new Date()),
+      ),
+    });
+    if (!reservation) throw new Error("Registration Flow ID is invalid or expired.");
+    if (reservation.deviceId && reservation.deviceId !== params.deviceId) {
+      throw new Error("Registration Flow ID is not valid for this device.");
+    }
+    if (!reservation.firstName || !reservation.lastName || !reservation.dateOfBirth) {
+      throw new Error("Your name and birthday must be saved before your gender.");
+    }
+    if (params.gender === "custom" && !params.pronouns) {
+      throw new Error("Please choose your pronouns.");
+    }
+
+    const [updated] = await db.update(registrationFlowReservations)
+      .set({ gender: params.gender, pronouns: params.gender === "custom" ? params.pronouns : undefined })
+      .where(and(
+        eq(registrationFlowReservations.id, reservation.id),
+        eq(registrationFlowReservations.flowId, params.flowId),
+        eq(registrationFlowReservations.status, "active"),
+        gt(registrationFlowReservations.expiresAt, new Date()),
+      ))
+      .returning();
+    if (!updated) throw new Error("Unable to save your gender to this registration flow.");
+
+    return {
+      success: true,
+      reservationId: updated.id,
+      flowId: updated.flowId,
+      expiresAt: updated.expiresAt.toISOString(),
+      gender: updated.gender,
+      pronouns: updated.pronouns,
+    };
+  }
+
   async consume(reservationId: string, flowId: string, deviceId?: string) {
     await this.purgeExpired();
     const reservation = await db.query.registrationFlowReservations.findFirst({
