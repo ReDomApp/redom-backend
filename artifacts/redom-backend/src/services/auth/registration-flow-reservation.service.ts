@@ -21,7 +21,6 @@ function getAge(dateOfBirth: string, now = new Date()) { const match = /^(\d{4})
 function normalizeCountryCode(value: string) { return value.trim().toUpperCase(); }
 function normalizeLineType(value?: string | null) { return value?.trim().toUpperCase() || null; }
 function phoneLookupReason(ipqs: Awaited<ReturnType<typeof checkPhone>>) { if (ipqs.valid === false) return ipqs.message || "This phone number is invalid or does not exist."; if (ipqs.active === false) return "This phone number is not currently active."; if (ipqs.VOIP === true || normalizeLineType(ipqs.line_type) === "VOIP") return "This phone number appears to be a VoIP number."; if (ipqs.fraud_score >= 50) return `This phone number has a fraud risk score of ${ipqs.fraud_score}%.`; return ipqs.message || "This phone number could not be verified."; }
-function networkBlockReason(ip: Awaited<ReturnType<typeof checkIP>>) { if (ip.tor === true || ip.active_tor === true) return { code: "TOR_DETECTED" as const, message: "Your current Internet connection appears to be using Tor. Please disconnect Tor and reconnect using your normal Internet connection before continuing." }; if (ip.vpn === true || ip.active_vpn === true) return { code: "VPN_DETECTED" as const, message: "Your current Internet connection appears to be using a VPN. Please turn off your VPN and reconnect using your normal Internet connection before continuing." }; if (ip.proxy === true) return { code: "PROXY_DETECTED" as const, message: "Your current Internet connection appears to be using a proxy. Please disconnect the proxy and reconnect using your normal Internet connection before continuing." }; if (ip.hosting === true) return { code: "DATACENTER_DETECTED" as const, message: "Your current Internet connection appears to come from a datacenter or hosting network. Please switch to your normal mobile or residential Internet connection before continuing." }; if (ip.bot_status === true) return { code: "BOT_DETECTED" as const, message: "Your current Internet connection was flagged as automated traffic. Please reconnect using your normal Internet connection before continuing." }; if (Number(ip.fraud_score ?? 0) >= 75) return { code: "HIGH_IP_RISK" as const, message: "Your current Internet connection has a high security risk score. Please reconnect using your normal Internet connection before continuing." }; return null; }
 
 export class RegistrationFlowReservationService {
   private async purgeExpired() { try { await db.delete(registrationFlowReservations).where(lte(registrationFlowReservations.expiresAt, new Date())); } catch (error) { logger.warn({ error }, "Unable to purge expired registration Flow reservations; continuing"); } }
@@ -30,7 +29,7 @@ export class RegistrationFlowReservationService {
   async saveName(params: { reservationId: string; flowId: string; deviceId?: string; firstName: string; lastName: string }) { const reservation = await this.getActiveReservation(params); const firstName = validateName(params.firstName, "First name"); const lastName = validateName(params.lastName, "Last name"); const [updated] = await db.update(registrationFlowReservations).set({ firstName, lastName }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning(); if (!updated) throw new Error("Unable to save your name to this registration flow."); return { success: true, reservationId: updated.id, flowId: updated.flowId, expiresAt: updated.expiresAt.toISOString() }; }
   async saveBirthday(params: { reservationId: string; flowId: string; deviceId?: string; dateOfBirth: string }) { const reservation = await this.getActiveReservation(params); if (!reservation.firstName || !reservation.lastName) throw new Error("Your name must be saved before your birthday."); const age = getAge(params.dateOfBirth); const ageBand = age <= 12 ? "underage" : age <= 16 ? "teen" : "adult"; const status = age <= 12 ? "completed" : "active"; const [updated] = await db.update(registrationFlowReservations).set({ dateOfBirth: params.dateOfBirth, status }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning(); if (!updated) throw new Error("Unable to save your birthday to this registration flow."); return { success: true, reservationId: updated.id, flowId: updated.flowId, expiresAt: updated.expiresAt.toISOString(), age, ageBand, flowStatus: updated.status }; }
   async saveGender(params: { reservationId: string; flowId: string; deviceId?: string; gender: "female" | "male" | "custom"; pronouns?: "She / Her" | "He / Him" | "They / Them" | "Prefer not to say" }) { const reservation = await this.getActiveReservation(params); if (!reservation.firstName || !reservation.lastName || !reservation.dateOfBirth) throw new Error("Your name and birthday must be saved before your gender."); if (params.gender === "custom" && !params.pronouns) throw new Error("Please choose your pronouns."); const [updated] = await db.update(registrationFlowReservations).set({ gender: params.gender, pronouns: params.gender === "custom" ? params.pronouns : undefined }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning(); if (!updated) throw new Error("Unable to save your gender to this registration flow."); return { success: true, reservationId: updated.id, flowId: updated.flowId, expiresAt: updated.expiresAt.toISOString(), gender: updated.gender, pronouns: updated.pronouns }; }
-  async detectPhoneCountry(params: { reservationId: string; flowId: string; deviceId?: string; ip: string; deviceRegion?: string; timeZone?: string }) { await this.getActiveReservation(params); let countryCode: string | undefined; try { const ipqs = await checkIP(params.ip); countryCode = ipqs.success ? ipqs.country_code?.toUpperCase() : undefined; } catch (error) { logger.warn({ error }, "IPQS country detection failed; using device estimate"); } const fallback = params.deviceRegion?.toUpperCase(); return { success: true, countryCode: countryCode && /^[A-Z]{2}$/.test(countryCode) ? countryCode : fallback && /^[A-Z]{2}$/.test(fallback) ? fallback : null, source: countryCode ? "ipqs" : fallback ? "device" : "unknown", timeZone: params.timeZone ?? null } as const; }
+  async detectPhoneCountry(params: { reservationId: string; flowId: string; deviceId?: string; ip: string; deviceRegion?: string; timeZone?: string }) { await this.getActiveReservation(params); let countryCode: string | undefined; try { const ipapi = await checkIP(params.ip); countryCode = ipapi.success ? ipapi.country_code?.toUpperCase() : undefined; } catch (error) { logger.warn({ error }, "IPAPI country detection failed; using device estimate"); } const fallback = params.deviceRegion?.toUpperCase(); return { success: true, countryCode: countryCode && /^[A-Z]{2}$/.test(countryCode) ? countryCode : fallback && /^[A-Z]{2}$/.test(fallback) ? fallback : null, source: countryCode ? "ipapi" : fallback ? "device" : "unknown" } as const; }
 
   async savePhone(params: { reservationId: string; flowId: string; deviceId?: string; phoneNumber: string; countryCode: string; deviceRegion?: string; timeZone?: string; ip: string }) {
     const reservation = await this.getActiveReservation(params);
@@ -38,23 +37,23 @@ export class RegistrationFlowReservationService {
     const selectedCountry = normalizeCountryCode(params.countryCode);
     if (!/^[A-Z]{2}$/.test(selectedCountry)) throw new Error("The selected country is invalid.");
 
-    // Phone validation is deliberately first. IPQS must not be called before Twilio.
     let lookup: Awaited<ReturnType<typeof checkPhone>> | null = null;
-    let lookupProvider: "ipqs" | "abstract" | "twilio";
+    let lookupProvider: "abstract" | "twilio";
     let lookupType: "phone-validation" | "basic";
     let phoneNumber: string;
     let nationalFormat: string | null = null;
     let phoneCountryName: string | null = null;
     let callingCountryCode: string | null = null;
     let validationErrors: string[] | null = null;
+
     try {
       lookup = await checkPhone(params.phoneNumber, { countryCode: selectedCountry });
-      lookupProvider = lookup.provider || "ipqs";
+      lookupProvider = lookup.provider === "twilio" ? "twilio" : "abstract";
       lookupType = lookup.lookup_type === "basic" ? "basic" : "phone-validation";
       phoneNumber = lookup.formatted || params.phoneNumber;
     } catch (error) {
       if (!isPhoneProviderFailure(error)) throw error;
-      logger.warn({ error }, "Phone validation providers unavailable after Twilio/Abstract/IPQS attempts");
+      logger.warn({ error }, "Phone validation providers unavailable after Twilio/Abstract attempts");
       throw new Error("We could not verify this phone number right now. Please try again.");
     }
 
@@ -75,33 +74,21 @@ export class RegistrationFlowReservationService {
       phoneNumber = lookup.formatted || params.phoneNumber;
     }
 
-    // IP/network security remains mandatory, but it now happens only after phone validation.
-    let ipqsIp: Awaited<ReturnType<typeof checkIP>>;
-    try { ipqsIp = await checkIP(params.ip); } catch (error) { logger.error({ error }, "IPQS IP security lookup failed during registration phone verification"); throw new Error("We could not complete the security check for this registration. Please try again."); }
-    if (!ipqsIp.success) throw new Error("We could not complete the security check for this registration. Please try again.");
-    const firstBlock = networkBlockReason(ipqsIp);
-    if (firstBlock) throw new Error(`${firstBlock.code}: ${firstBlock.message}`);
-
-    let secondIpqsIp: Awaited<ReturnType<typeof checkIP>>;
-    try { secondIpqsIp = await checkIP(params.ip); } catch (error) { logger.error({ error }, "Second IP security observation failed during registration phone verification"); throw new Error("We could not complete the second security check for this registration. Please try again."); }
-    if (!secondIpqsIp.success) throw new Error("We could not complete the second security check for this registration. Please try again.");
-    const secondBlock = networkBlockReason(secondIpqsIp);
-    if (secondBlock) throw new Error(`${secondBlock.code}: ${secondBlock.message}`);
-    ipqsIp = secondIpqsIp;
-
-    const ipqsUsable = Boolean(lookup?.success);
-    const fraudScore = ipqsUsable ? Number(lookup?.fraud_score ?? 0) : 0;
-    const lineType = ipqsUsable ? lookup?.line_type?.trim() || null : null;
-    const carrier = ipqsUsable ? lookup?.carrier?.trim() || null : null;
-    const voip = ipqsUsable ? lookup?.VOIP === true || normalizeLineType(lineType) === "VOIP" : false;
-    if (lookupProvider === "twilio" && voip) throw new Error("This phone number cannot be used because it appears to be a VoIP number. Please enter another number or sign up using email.");
-    if (lookupProvider === "twilio" && ipqsUsable && fraudScore >= 50) throw new Error(`This phone number cannot be used because its fraud risk score is ${fraudScore}%. Please enter another number or sign up using email.`);
-    const phoneCountry = lookupProvider === "twilio" ? selectedCountry : normalizeCountryCode(lookup?.country || lookup?.country_code || "") || null;
-    const accurateCountryCode = lookupProvider === "twilio" ? lookup?.accurate_country_code ?? true : lookup?.accurate_country_code ?? null;
+    // Network/IP security is deliberately separated from phone validation. Screen 4
+    // must show the actual handset IPAPI result and wait for explicit consent before
+    // writing network-security details and completing the phone/security screen.
+    void params.ip;
+    const phoneFraudScore = Number(lookup.fraud_score ?? 0);
+    const lineType = lookup.line_type?.trim() || null;
+    const carrier = lookup.carrier?.trim() || null;
+    const voip = lookup.VOIP === true || normalizeLineType(lineType) === "VOIP";
+    const phoneCountry = lookupProvider === "twilio" ? selectedCountry : normalizeCountryCode(lookup.country || lookup.country_code || "") || null;
+    const accurateCountryCode = lookup.accurate_country_code ?? true;
     const lookupRequestId = randomUUID();
-    const [updated] = await db.update(registrationFlowReservations).set({ phoneNumber, phoneCountryCode: selectedCountry, phoneLookupStatus: "verified", phoneValid: true, phoneActive: ipqsUsable ? lookup!.active ?? null : null, phoneVoip: voip, phoneFraudScore: fraudScore, phoneLineType: lineType, phoneCarrier: carrier, phoneLookupCountryCode: phoneCountry, phoneLookupRequestId: lookupRequestId, phoneLookupAt: new Date(), ipFraudScore: Number(ipqsIp.fraud_score ?? 0), ipProxy: ipqsIp.proxy ?? false, ipVpn: ipqsIp.vpn ?? false, ipTor: ipqsIp.tor ?? false, ipBotStatus: ipqsIp.bot_status ?? false, ipCountryCode: ipqsIp.country_code?.toUpperCase() || null }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
+    const [updated] = await db.update(registrationFlowReservations).set({ phoneNumber, phoneCountryCode: selectedCountry, phoneLookupStatus: "verified", phoneValid: true, phoneActive: lookup.active ?? null, phoneVoip: voip, phoneFraudScore, phoneLineType: lineType, phoneCarrier: carrier, phoneLookupCountryCode: phoneCountry, phoneLookupRequestId: lookupRequestId, phoneLookupAt: new Date() }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
     if (!updated) throw new Error("Unable to save your phone number to this registration flow.");
-    return { success: true, reservationId: updated.id, flowId: updated.flowId, expiresAt: updated.expiresAt.toISOString(), phoneNumber: updated.phoneNumber, countryCode: updated.phoneCountryCode, lookupComplete: true, verificationStatus: "verified" as const, lookupProvider, lookupType, lookupRequestId, nationalFormat, phoneCountryName, callingCountryCode, validationErrors, valid: true, active: ipqsUsable ? lookup!.active ?? null : null, activeStatus: ipqsUsable ? lookup!.active_status ?? null : null, fraudScore, voip, prepaid: ipqsUsable ? lookup!.prepaid ?? null : null, risky: ipqsUsable ? lookup!.risky ?? null : null, recentAbuse: ipqsUsable ? lookup!.recent_abuse ?? null : null, leaked: ipqsUsable ? lookup!.leaked ?? null : null, spammer: ipqsUsable ? lookup!.spammer ?? null : null, lineType, carrier, phoneCountry, accurateCountryCode, ipSecurity: { fraudScore: Number(ipqsIp.fraud_score ?? 0), proxy: ipqsIp.proxy ?? false, vpn: ipqsIp.vpn ?? false, tor: ipqsIp.tor ?? false, botStatus: ipqsIp.bot_status ?? false, countryCode: ipqsIp.country_code?.toUpperCase() ?? null } };
+
+    return { success: true, reservationId: updated.id, flowId: updated.flowId, expiresAt: updated.expiresAt.toISOString(), phoneNumber: updated.phoneNumber, countryCode: updated.phoneCountryCode, lookupComplete: true, verificationStatus: "verified" as const, lookupProvider, lookupType, lookupRequestId, nationalFormat, phoneCountryName, callingCountryCode, validationErrors, valid: true, active: lookup.active ?? null, activeStatus: lookup.active_status ?? null, fraudScore: phoneFraudScore, voip, prepaid: lookup.prepaid ?? null, risky: lookup.risky ?? null, recentAbuse: lookup.recent_abuse ?? null, leaked: lookup.leaked ?? null, spammer: lookup.spammer ?? null, lineType, carrier, phoneCountry, accurateCountryCode, ipSecurity: { fraudScore: 0, proxy: false, vpn: false, tor: false, botStatus: false, countryCode: null } };
   }
 }
 export const registrationFlowReservationService = new RegistrationFlowReservationService();
