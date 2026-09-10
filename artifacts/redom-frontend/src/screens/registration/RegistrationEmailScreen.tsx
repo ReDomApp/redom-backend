@@ -27,7 +27,7 @@ export function RegistrationEmailScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState("Ready to validate");
+  const [phase, setPhase] = useState("Ready to save");
   const spin = useRef(new Animated.Value(0)).current;
 
   const provider = useMemo(() => getRegistrationEmailProvider(email), [email]);
@@ -58,15 +58,19 @@ export function RegistrationEmailScreen({ navigation, route }: Props) {
       if (!provider) throw new Error("ReDom doesn't accept unaffiliated email addresses. Please use a Google, Microsoft, or Yahoo email address from the supported list below.");
 
       setPhase("Saving email details to your Flow ID…");
-      await new Promise((resolve) => setTimeout(resolve, 350));
-      setPhase("Sending verification email with Resend…");
       const deviceId = await getDeviceId();
-      await authService.saveRegistrationFlowEmail({ reservationId: route.params.reservationId, flowId, deviceId, email: normalized });
+      await authService.saveRegistrationFlowEmail({
+        reservationId: route.params.reservationId,
+        flowId,
+        deviceId,
+        email: normalized,
+      });
+
       setPhase("Email details saved");
       setSuccess(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save this email address.");
-      setPhase("Ready to validate");
+      setPhase("Ready to save");
     } finally {
       animation.stop();
       setBusy(false);
