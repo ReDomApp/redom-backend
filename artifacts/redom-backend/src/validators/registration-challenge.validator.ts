@@ -24,6 +24,15 @@ export const saveRegistrationFlowGenderSchema = z.object({
   pronouns: z.enum(["She / Her", "He / Him", "They / Them", "Prefer not to say"]).optional(),
 });
 
+export const saveRegistrationFlowPhoneSchema = z.object({
+  flowId: z.string().regex(/^\d{6,16}$/),
+  deviceId: z.string().trim().min(1).max(255).optional(),
+  phoneNumber: z.string().regex(/^\+[1-9]\d{6,14}$/),
+  countryCode: z.string().regex(/^[A-Z]{2}$/),
+  deviceRegion: z.string().regex(/^[A-Z]{2}$/).optional(),
+  timeZone: z.string().trim().min(1).max(120).optional(),
+});
+
 export const startRegistrationChallengeSchema = z.object({
   contactType: z.enum(["phone", "email"]),
   target: z.string().trim().min(1).max(255),
