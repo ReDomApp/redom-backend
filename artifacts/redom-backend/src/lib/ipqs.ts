@@ -3,6 +3,8 @@ import axios from "axios";
 import { checkAbstractPhone, normalizeAbstractPhoneResult } from "./abstract-phone";
 import { checkTwilioPhone } from "./twilio-phone";
 
+export { checkIP } from "./ipapi";
+
 export interface IPQSResult {
   success: boolean;
   message?: string;
@@ -89,13 +91,6 @@ function shouldFallbackAfterIPQSError(error: unknown): boolean {
 export function isPhoneProviderFailure(error: unknown): boolean {
   if (error instanceof Error && /Abstract phone validation provider unavailable/i.test(error.message)) return true;
   return shouldFallbackAfterIPQSError(error);
-}
-
-export async function checkIP(ip: string): Promise<IPQSResult> {
-  const apiKey = requireApiKey();
-  const url = `https://ipqualityscore.com/api/json/ip/${apiKey}/${encodeURIComponent(ip)}`;
-  const { data } = await axios.get<IPQSResult>(url, { timeout: 10_000 });
-  return data;
 }
 
 /**
