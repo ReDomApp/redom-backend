@@ -52,6 +52,22 @@ function getAge(dateOfBirth: string, now = new Date()) {
   return age;
 }
 
+function normalizeCountryCode(value: string) {
+  return value.trim().toUpperCase();
+}
+
+function normalizeLineType(value?: string | null) {
+  return value?.trim().toUpperCase() || null;
+}
+
+function phoneLookupReason(ipqs: Awaited<ReturnType<typeof checkPhone>>) {
+  if (ipqs.valid === false) return ipqs.message || "This phone number is invalid or does not exist.";
+  if (ipqs.active === false) return "This phone number is not currently active.";
+  if (ipqs.VOIP === true || normalizeLineType(ipqs.line_type) === "VOIP") return "This phone number appears to be a VoIP number.";
+  if (ipqs.fraud_score >= 50) return `This phone number has a fraud risk score of ${ipqs.fraud_score}%.`;
+  return ipqs.message || "This phone number could not be verified.";
+}
+
 export class RegistrationFlowReservationService {
   private async purgeExpired() {
     try { await db.delete(registrationFlowReservations).where(lte(registrationFlowReservations.expiresAt, new Date())); }
@@ -117,25 +133,101 @@ export class RegistrationFlowReservationService {
   async detectPhoneCountry(params: { reservationId: string; flowId: string; deviceId?: string; ip: string; deviceRegion?: string; timeZone?: string }) {
     await this.getActiveReservation(params);
     let countryCode: string | undefined;
-    try { countryCode = (await checkIP(params.ip)).country_code?.toUpperCase(); } catch (error) { logger.warn({ error }, "IPQS country detection failed; using device estimate"); }
+    try {
+      const ipqs = await checkIP(params.ip);
+      countryCode = ipqs.success ? ipqs.country_code?.toUpperCase() : undefined;
+    } catch (error) {
+      logger.warn({ error }, "IPQS country detection failed; using device estimate");
+    }
     const fallback = params.deviceRegion?.toUpperCase();
-    return { success: true, countryCode: countryCode && /^[A-Z]{2}$/.test(countryCode) ? countryCode : fallback && /^[A-Z]{2}$/.test(fallback) ? fallback : null, source: countryCode ? "ipqs" : fallback ? "device" : "unknown", timeZone: params.timeZone ?? null };
+    return {
+      success: true,
+      countryCode: countryCode && /^[A-Z]{2}$/.test(countryCode) ? countryCode : fallback && /^[A-Z]{2}$/.test(fallback) ? fallback : null,
+      source: countryCode ? "ipqs" : fallback ? "device" : "unknown",
+      timeZone: params.timeZone ?? null,
+    } as const;
   }
 
-  async savePhone(params: { reservationId: string; flowId: string; deviceId?: string; phoneNumber: string; countryCode: string; deviceRegion?: string; timeZone?: string }) {
+  async savePhone(params: { reservationId: string; flowId: string; deviceId?: string; phoneNumber: string; countryCode: string; deviceRegion?: string; timeZone?: string; ip: string }) {
     const reservation = await this.getActiveReservation(params);
     if (!reservation.firstName || !reservation.lastName || !reservation.dateOfBirth || !reservation.gender) throw new Error("Your name, birthday, and gender must be saved before your phone number.");
-    const ipqs = await checkPhone(params.phoneNumber);
-    if (!ipqs.success) throw new Error("We could not verify this phone number. Please enter another number or sign up using email.");
+
+    const selectedCountry = normalizeCountryCode(params.countryCode);
+    if (!/^[A-Z]{2}$/.test(selectedCountry)) throw new Error("The selected country is invalid.");
+
+    let ipqsIp: Awaited<ReturnType<typeof checkIP>>;
+    try {
+      ipqsIp = await checkIP(params.ip);
+    } catch (error) {
+      logger.error({ error }, "IPQS IP security lookup failed during registration phone verification");
+      throw new Error("We could not complete the security check for this registration. Please try again.");
+    }
+    if (!ipqsIp.success) {
+      throw new Error(ipqsIp.message || "We could not complete the security check for this registration. Please try again.");
+    }
+
+    let ipqs: Awaited<ReturnType<typeof checkPhone>>;
+    try {
+      ipqs = await checkPhone(params.phoneNumber, { countryCode: selectedCountry });
+    } catch (error) {
+      logger.error({ error }, "IPQS phone lookup failed during registration");
+      throw new Error("We could not verify this phone number right now. Please try again.");
+    }
+
+    if (!ipqs.success) {
+      throw new Error(phoneLookupReason(ipqs));
+    }
+
     const fraudScore = Number(ipqs.fraud_score ?? 0);
-    const returnedCountry = ipqs.country_code?.toUpperCase();
+    const returnedCountry = normalizeCountryCode(ipqs.country || ipqs.country_code || "");
+    const lineType = ipqs.line_type?.trim() || null;
+    const voip = ipqs.VOIP === true || normalizeLineType(lineType) === "VOIP";
+    const activeKnown = typeof ipqs.active === "boolean";
+    const lookupComplete = true;
+
+    if (ipqs.valid === false) throw new Error("This phone number is invalid or does not exist. Please enter another number or sign up using email.");
+    if (ipqs.active === false) throw new Error("This phone number is not currently active. Please enter another number or sign up using email.");
+    if (voip) throw new Error("This phone number cannot be used because it appears to be a VoIP number. Please enter another number or sign up using email.");
     if (fraudScore >= 50) throw new Error(`This phone number cannot be used because its fraud risk score is ${fraudScore}%. Please enter another number or sign up using email.`);
-    if (ipqs.VOIP === true || String(ipqs.line_type ?? "").toLowerCase() === "voip") throw new Error("This phone number cannot be used because it appears to be a VoIP number. Please enter another number or sign up using email.");
-    if (ipqs.valid === false || ipqs.active === false) throw new Error("This phone number could not be verified as an active valid number. Please enter another number or sign up using email.");
-    if (returnedCountry && returnedCountry !== params.countryCode) throw new Error("The phone number country does not match the selected country code. Please check the country and phone number.");
-    const [updated] = await db.update(registrationFlowReservations).set({ phoneNumber: params.phoneNumber, phoneCountryCode: params.countryCode }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
+    if (ipqs.accurate_country_code === false || (returnedCountry && returnedCountry !== selectedCountry)) {
+      throw new Error("The phone number country does not match the selected country code. Please check the country and phone number.");
+    }
+
+    const [updated] = await db.update(registrationFlowReservations).set({ phoneNumber: ipqs.formatted || params.phoneNumber, phoneCountryCode: selectedCountry }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
     if (!updated) throw new Error("Unable to save your phone number to this registration flow.");
-    return { success: true, reservationId: updated.id, flowId: updated.flowId, expiresAt: updated.expiresAt.toISOString(), phoneNumber: updated.phoneNumber, countryCode: updated.phoneCountryCode, fraudScore, lineType: ipqs.line_type ?? null, voip: ipqs.VOIP === true };
+
+    return {
+      success: true,
+      reservationId: updated.id,
+      flowId: updated.flowId,
+      expiresAt: updated.expiresAt.toISOString(),
+      phoneNumber: updated.phoneNumber,
+      countryCode: updated.phoneCountryCode,
+      lookupComplete,
+      verificationStatus: "verified" as const,
+      valid: ipqs.valid ?? null,
+      active: ipqs.active ?? null,
+      activeStatus: ipqs.active_status ?? null,
+      fraudScore,
+      voip,
+      prepaid: ipqs.prepaid ?? null,
+      risky: ipqs.risky ?? null,
+      recentAbuse: ipqs.recent_abuse ?? null,
+      leaked: ipqs.leaked ?? null,
+      spammer: ipqs.spammer ?? null,
+      lineType,
+      carrier: ipqs.carrier ?? null,
+      phoneCountry: returnedCountry || null,
+      accurateCountryCode: ipqs.accurate_country_code ?? null,
+      ipSecurity: {
+        fraudScore: Number(ipqsIp.fraud_score ?? 0),
+        proxy: ipqsIp.proxy ?? false,
+        vpn: ipqsIp.vpn ?? false,
+        tor: ipqsIp.tor ?? false,
+        botStatus: ipqsIp.bot_status ?? false,
+        countryCode: ipqsIp.country_code?.toUpperCase() ?? null,
+      },
+    };
   }
 
   async consume(reservationId: string, flowId: string, deviceId?: string) {
