@@ -11,6 +11,7 @@ import { RegistrationWelcomeScreen } from "../screens/registration/RegistrationW
 import { RegistrationIdentityScreen } from "../screens/registration/RegistrationIdentityScreen";
 import { RegistrationBirthdayScreen } from "../screens/registration/RegistrationBirthdayScreen";
 import { RegistrationGenderScreen } from "../screens/registration/RegistrationGenderScreen";
+import { RegistrationPhoneScreen } from "../screens/registration/RegistrationPhoneScreen";
 import type { RootStackParamList } from "./types";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -22,17 +23,12 @@ export function AppNavigator() {
 
   useEffect(() => {
     let mounted = true;
-    if (hasLoadedNetworkProvider()) {
-      setNetworkProviderReady(true);
-      return () => { mounted = false; };
-    }
+    if (hasLoadedNetworkProvider()) { setNetworkProviderReady(true); return () => { mounted = false; }; }
     fetchNetworkProvider().then(() => { if (mounted) setNetworkProviderReady(true); }).catch(() => { if (mounted) setNetworkProviderReady(true); });
     return () => { mounted = false; };
   }, []);
 
-  useEffect(() => {
-    if (status !== "loading" && networkProviderReady) setStartupReady(true);
-  }, [status, networkProviderReady]);
+  useEffect(() => { if (status !== "loading" && networkProviderReady) setStartupReady(true); }, [status, networkProviderReady]);
 
   if (!startupReady || status === "loading") return <StartupScreen />;
 
@@ -49,6 +45,7 @@ export function AppNavigator() {
           <Stack.Screen name="RegistrationIdentity" component={RegistrationIdentityScreen} />
           <Stack.Screen name="RegistrationBirthday" component={RegistrationBirthdayScreen} />
           <Stack.Screen name="RegistrationGender" component={RegistrationGenderScreen} />
+          <Stack.Screen name="RegistrationPhone" component={RegistrationPhoneScreen} />
         </>
       )}
     </Stack.Navigator>
