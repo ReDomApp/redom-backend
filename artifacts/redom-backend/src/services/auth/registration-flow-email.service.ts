@@ -42,10 +42,12 @@ export class RegistrationFlowEmailService {
       email: validated.email,
       code,
       firstName: reservation.firstName ?? undefined,
+      purpose: "EMAIL_VERIFICATION",
+      expiresAt,
     });
 
-    if (!sendResult.success) {
-      throw new Error(sendResult.message || "ReDom could not send the email verification message.");
+    if (!sendResult?.providerReference) {
+      throw new Error("ReDom could not send the email verification message.");
     }
 
     const existingMemory = (reservation.memory ?? {}) as Record<string, unknown>;
@@ -56,8 +58,8 @@ export class RegistrationFlowEmailService {
       domain: validated.domain,
       provider: validated.provider,
       verificationStatus: "pending",
-      verificationProvider: "resend",
-      verificationRequestId: sendResult.message,
+      verificationProvider: sendResult.provider,
+      verificationRequestId: sendResult.providerReference,
       verificationCodeHash: hashOtp(code),
       verificationExpiresAt: expiresAt.toISOString(),
       savedAt: createdAt.toISOString(),
