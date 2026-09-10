@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import StartupArtwork from "../assets/brand/startup.svg";
-import InfoBlack from "../assets/auth/info-black.svg";
+import WarningBlack from "../assets/auth/warning-black.svg";
 import { fetchNetworkProvider, type NetworkProviderResponse } from "../auth/networkProvider";
 
 function maskIp(ip: string | null) {
@@ -12,13 +12,14 @@ function maskIp(ip: string | null) {
 }
 
 function titleFor(profile: NetworkProviderResponse) {
-  return profile.security?.vpn || profile.security?.datacenter
+  if (!profile.security) return "ReDom Network Security Check";
+  return profile.security.vpn || profile.security.datacenter
     ? "Your VPN Provider Terms and Conditions"
     : "Your Network Provider Terms and Conditions";
 }
 
 function warningFor(profile: NetworkProviderResponse) {
-  if (profile.security?.vpn) return "VPN detected. ReDom has detected that this connection is using a VPN provider.";
+  if (profile.security?.vpn) return "VPN detected. Your current connection appears to be using a VPN provider.";
   if (profile.security?.datacenter) return "Datacenter connection detected. This connection appears to come from a hosting or cloud network.";
   if (profile.security?.proxy) return "Proxy detected. This connection appears to use a proxy.";
   if (profile.security?.tor) return "Tor detected. Please use your normal Internet connection to continue.";
@@ -31,6 +32,7 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
   const rotation = useRef(new Animated.Value(0)).current;
   const [profile, setProfile] = useState<NetworkProviderResponse | null>(null);
   const [securityOpen, setSecurityOpen] = useState(false);
+  const [checking, setChecking] = useState(true);
   const completed = useRef(false);
 
   useEffect(() => {
@@ -39,32 +41,30 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
     return () => animation.stop();
   }, [rotation]);
 
+  async function runNetworkCheck() {
+    setChecking(true);
+    setSecurityOpen(false);
+    const result = await fetchNetworkProvider();
+    setProfile(result);
+    setChecking(false);
+    setSecurityOpen(true);
+  }
+
   useEffect(() => {
-    let mounted = true;
-    void (async () => {
-      const result = await fetchNetworkProvider();
-      if (!mounted) return;
-      setProfile(result);
-      setSecurityOpen(Boolean(result.security));
-      if (!result.security && !completed.current) {
-        completed.current = true;
-        onComplete();
-      }
-    })();
-    return () => { mounted = false; };
-  }, [onComplete]);
+    void runNetworkCheck();
+  }, []);
 
   const security = profile?.security;
   const warning = profile ? warningFor(profile) : null;
+  const failed = Boolean(profile && (!profile.success || !security));
   const isVpnOrDatacenter = Boolean(security?.vpn || security?.datacenter);
   const termsTitle = titleFor(profile ?? { success: false, networkProvider: null, termsUrl: null, security: null, warning: null });
 
   function continueToLogin() {
+    if (failed || !security || completed.current) return;
     setSecurityOpen(false);
-    if (!completed.current) {
-      completed.current = true;
-      onComplete();
-    }
+    completed.current = true;
+    onComplete();
   }
 
   return (
@@ -79,26 +79,30 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
       <Modal visible={securityOpen} transparent animationType="fade" onRequestClose={() => undefined}>
         <View style={styles.backdrop}>
           <View style={styles.card}>
-            <View style={styles.iconCircle}><InfoBlack width={28} height={28} /></View>
+            <View style={styles.iconCircle}><WarningBlack width={30} height={30} /></View>
             <Text style={styles.title}>{termsTitle}</Text>
-            <Text style={styles.subtitle}>{profile?.networkProvider ? `${profile.networkProvider} connection detected.` : "Your connection has been checked."}</Text>
+            <Text style={styles.subtitle}>
+              {failed ? (profile?.warning ?? "We could not complete the IP/network security check.") : profile?.networkProvider ? `${profile.networkProvider} connection detected.` : "Your connection has been checked."}
+            </Text>
 
-            {warning ? <View style={styles.warning}><InfoBlack width={20} height={20} /><Text style={styles.warningText}>{warning}</Text></View> : null}
+            {warning ? <View style={styles.warning}><WarningBlack width={20} height={20} /><Text style={styles.warningText}>{warning}</Text></View> : null}
 
-            <View style={styles.rows}>
+            {!failed ? <View style={styles.rows}>
               <View style={styles.row}><Text style={styles.label}>Your IP</Text><Text style={styles.value}>{maskIp(security?.ip ?? null)}</Text></View>
               <View style={styles.row}><Text style={styles.label}>Connection</Text><Text style={styles.value}>{security?.connection ?? "Unknown"}</Text></View>
               <View style={styles.row}><Text style={styles.label}>Provider</Text><Text style={styles.value}>{profile?.networkProvider ?? "Unknown"}</Text></View>
               <View style={styles.row}><Text style={styles.label}>Location</Text><Text style={styles.value}>{[security?.city, security?.region, security?.country].filter(Boolean).join(", ") || "Unknown"}</Text></View>
               <View style={styles.row}><Text style={styles.label}>Security score</Text><Text style={styles.value}>{security?.fraudScore ?? 0}%</Text></View>
-            </View>
+            </View> : null}
 
             {isVpnOrDatacenter ? <Text style={styles.embeddedNotice}>Your connection type has been detected automatically. ReDom is showing this warning before the login screen because the current network is not a normal residential/mobile connection.</Text> : null}
 
-            {profile?.termsUrl ? <Pressable onPress={() => void Linking.openURL(profile.termsUrl!)} style={styles.terms}><Text style={styles.termsText}>{termsTitle}</Text><Text style={styles.urlText}>{profile.termsUrl}</Text></Pressable> : null}
+            {!failed && profile?.termsUrl ? <Pressable onPress={() => void Linking.openURL(profile.termsUrl!)} style={styles.terms}><Text style={styles.termsText}>{termsTitle}</Text><Text style={styles.urlText}>{profile.termsUrl}</Text></Pressable> : null}
 
-            <Pressable onPress={continueToLogin} style={styles.button}><Text style={styles.buttonText}>Continue to ReDom</Text></Pressable>
-            <ActivityIndicator style={styles.providerIndicator} size="small" />
+            {failed
+              ? <Pressable onPress={() => void runNetworkCheck()} disabled={checking} style={styles.button}>{checking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Retry Network Check</Text>}</Pressable>
+              : <Pressable onPress={continueToLogin} style={styles.button}><Text style={styles.buttonText}>OK, Continue</Text></Pressable>}
+            {checking ? <ActivityIndicator style={styles.providerIndicator} size="small" /> : null}
           </View>
         </View>
       </Modal>
