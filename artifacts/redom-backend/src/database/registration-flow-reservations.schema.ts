@@ -11,6 +11,31 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
+export type RegistrationFlowNetworkSecurityMemory = {
+  ip: string | null;
+  connection: string | null;
+  country: string | null;
+  countryCode: string | null;
+  region: string | null;
+  city: string | null;
+  timezone: string | null;
+  organization: string | null;
+  companyType: string | null;
+  asn: number | null;
+  datacenter: string | null;
+  vpnService: string | null;
+  egressService: string | null;
+  egressProvider: string | null;
+  proxy: boolean;
+  vpn: boolean;
+  tor: boolean;
+  bot: boolean;
+  abuser: boolean;
+  mobile: boolean;
+  satellite: boolean;
+  fraudScore: number;
+};
+
 export type RegistrationFlowMemory = {
   flow: {
     flowId: string;
@@ -33,13 +58,9 @@ export type RegistrationFlowMemory = {
     carrier: string | null;
     lookupRequestId: string | null;
   };
-  networkSecurity: {
+  networkSecurity: RegistrationFlowNetworkSecurityMemory & {
     ipFraudScore: number | null;
-    proxy: boolean | null;
-    vpn: boolean | null;
-    tor: boolean | null;
     botStatus: boolean | null;
-    countryCode: string | null;
   };
 };
 
