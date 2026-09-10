@@ -42,11 +42,7 @@ export type RegistrationFlowEmailMemory = {
   address: string;
   domain: string;
   provider: "google" | "microsoft" | "yahoo";
-  verificationStatus: string;
-  verificationProvider: string;
-  verificationRequestId: string;
-  verificationCodeHash: string;
-  verificationExpiresAt: string;
+  verificationStatus: "not_started" | string;
   savedAt: string;
 };
 
