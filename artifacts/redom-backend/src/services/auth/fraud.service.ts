@@ -1,4 +1,4 @@
-import { checkIP } from "../../lib/ipqs";
+import { checkIP } from "../../lib/ipapi";
 import { lookup } from "../../lib/maxmind";
 import { verifyTurnstileToken } from "../../lib/turnstile";
 
