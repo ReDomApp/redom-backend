@@ -11,6 +11,8 @@ const MIN_LENGTH = 6;
 const MAX_LENGTH = 16;
 const MAX_NAME_LENGTH = 100;
 const NAME_PATTERN = /^[\p{L}][\p{L}\s.'-]*$/u;
+const MIN_BIRTH_YEAR = 1920;
+const MAX_BIRTH_YEAR = 2018;
 
 function generateNumericFlowId() {
   const length = randomInt(MIN_LENGTH, MAX_LENGTH + 1);
@@ -29,10 +31,30 @@ function validateName(value: string, field: "First name" | "Last name") {
   if (normalized.length < 3) throw new Error(`${field} must be at least 3 characters.`);
   if (normalized.length > MAX_NAME_LENGTH) throw new Error(`${field} is too long.`);
   if (!NAME_PATTERN.test(normalized)) {
-    throw new Error(`${field} can contain letters, spaces, periods, commas, apostrophes, and hyphens only.`);
+    throw new Error(`${field} can contain letters, spaces, periods, apostrophes, and hyphens only.`);
   }
   if (!/\p{L}/u.test(normalized)) throw new Error(`${field} must contain letters.`);
   return normalized;
+}
+
+function getAge(dateOfBirth: string, now = new Date()) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOfBirth);
+  if (!match) throw new Error("Please enter a valid date of birth.");
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < MIN_BIRTH_YEAR || year > MAX_BIRTH_YEAR) throw new Error("Your birthday must be between 1920 and 2018.");
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    throw new Error("Please enter a valid date of birth.");
+  }
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (date > today) throw new Error("Your date of birth cannot be in the future.");
+  let age = now.getUTCFullYear() - year;
+  const birthdayThisYear = new Date(Date.UTC(now.getUTCFullYear(), month - 1, day));
+  if (today < birthdayThisYear) age -= 1;
+  if (age < 1) throw new Error("You must be at least 1 year old to continue.");
+  return age;
 }
 
 export class RegistrationFlowReservationService {
@@ -42,8 +64,6 @@ export class RegistrationFlowReservationService {
         lte(registrationFlowReservations.expiresAt, new Date()),
       );
     } catch (error) {
-      // Expired-row cleanup is maintenance, not a prerequisite for allocating
-      // a new Flow ID. Never turn a cleanup failure into a broken signup screen.
       logger.warn({ error }, "Unable to purge expired registration Flow reservations; continuing");
     }
   }
@@ -94,6 +114,7 @@ export class RegistrationFlowReservationService {
       where: and(
         eq(registrationFlowReservations.id, params.reservationId),
         eq(registrationFlowReservations.flowId, params.flowId),
+        eq(registrationFlowReservations.status, "active"),
         gt(registrationFlowReservations.expiresAt, new Date()),
       ),
     });
@@ -110,6 +131,7 @@ export class RegistrationFlowReservationService {
       .where(and(
         eq(registrationFlowReservations.id, reservation.id),
         eq(registrationFlowReservations.flowId, params.flowId),
+        eq(registrationFlowReservations.status, "active"),
         gt(registrationFlowReservations.expiresAt, new Date()),
       ))
       .returning();
@@ -123,12 +145,61 @@ export class RegistrationFlowReservationService {
     };
   }
 
+  async saveBirthday(params: {
+    reservationId: string;
+    flowId: string;
+    deviceId?: string;
+    dateOfBirth: string;
+  }) {
+    await this.purgeExpired();
+    const reservation = await db.query.registrationFlowReservations.findFirst({
+      where: and(
+        eq(registrationFlowReservations.id, params.reservationId),
+        eq(registrationFlowReservations.flowId, params.flowId),
+        eq(registrationFlowReservations.status, "active"),
+        gt(registrationFlowReservations.expiresAt, new Date()),
+      ),
+    });
+    if (!reservation) throw new Error("Registration Flow ID is invalid or expired.");
+    if (reservation.deviceId && reservation.deviceId !== params.deviceId) {
+      throw new Error("Registration Flow ID is not valid for this device.");
+    }
+    if (!reservation.firstName || !reservation.lastName) {
+      throw new Error("Your name must be saved before your birthday.");
+    }
+
+    const age = getAge(params.dateOfBirth);
+    const ageBand = age <= 12 ? "underage" : age <= 16 ? "teen" : "adult";
+    const status = age <= 12 ? "completed" : "active";
+    const [updated] = await db.update(registrationFlowReservations)
+      .set({ dateOfBirth: params.dateOfBirth, status })
+      .where(and(
+        eq(registrationFlowReservations.id, reservation.id),
+        eq(registrationFlowReservations.flowId, params.flowId),
+        eq(registrationFlowReservations.status, "active"),
+        gt(registrationFlowReservations.expiresAt, new Date()),
+      ))
+      .returning();
+    if (!updated) throw new Error("Unable to save your birthday to this registration flow.");
+
+    return {
+      success: true,
+      reservationId: updated.id,
+      flowId: updated.flowId,
+      expiresAt: updated.expiresAt.toISOString(),
+      age,
+      ageBand,
+      flowStatus: updated.status,
+    };
+  }
+
   async consume(reservationId: string, flowId: string, deviceId?: string) {
     await this.purgeExpired();
     const reservation = await db.query.registrationFlowReservations.findFirst({
       where: and(
         eq(registrationFlowReservations.id, reservationId),
         eq(registrationFlowReservations.flowId, flowId),
+        eq(registrationFlowReservations.status, "active"),
         gt(registrationFlowReservations.expiresAt, new Date()),
       ),
     });
