@@ -109,7 +109,7 @@ export interface IPAPIResult {
   active_tor?: boolean;
 }
 
-const IPAPI_URL = "https://api.ipapi.is";
+const IPAPI_URL = "https://api.ipapi.is/";
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_TRANSIENT_ATTEMPTS = 2;
 
@@ -149,8 +149,8 @@ function isTransientHttpStatus(status: number): boolean {
 }
 
 /**
- * Look up the handset-discovered public IP using IPAPI's documented endpoint.
- * The key is sent in the JSON body so it never appears in a URL/query log.
+ * Look up the handset-discovered public IP using IPAPI's documented GET
+ * endpoint. The API key remains server-side and is never shipped to Expo.
  */
 export async function checkIP(ip: string): Promise<IPAPIResult> {
   const normalizedIp = normalizeIp(ip);
@@ -158,21 +158,15 @@ export async function checkIP(ip: string): Promise<IPAPIResult> {
 
   for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt += 1) {
     try {
-      const response = await axios.post<IPAPIResult>(
-        IPAPI_URL,
-        {
+      const response = await axios.get<IPAPIResult>(IPAPI_URL, {
+        params: {
           q: normalizedIp,
           key: env.ipApi.apiKey,
         },
-        {
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          timeout: REQUEST_TIMEOUT_MS,
-          validateStatus: () => true,
-        },
-      );
+        headers: { Accept: "application/json" },
+        timeout: REQUEST_TIMEOUT_MS,
+        validateStatus: () => true,
+      });
 
       if (response.status < 200 || response.status >= 300) {
         const retryAfter = typeof response.headers["retry-after"] === "string"
