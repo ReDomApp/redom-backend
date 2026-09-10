@@ -84,18 +84,18 @@ function ipapiError(data: unknown, status: number): Error {
   return new Error(`IPAPI ${code}: ${message}`);
 }
 
-/** Server-side IP/network intelligence. The API key never leaves the backend. */
+/** Server-side IP/network intelligence using IPAPI's JSON GET endpoint. The API key never leaves the backend. */
 export async function checkIP(ip: string): Promise<IPAPIResult> {
   const normalizedIp = normalizeIp(ip);
-  const response = await axios.post<IPAPIResult>(
-    "https://api.ipapi.is",
-    { q: normalizedIp, key: env.ipApi.apiKey },
-    {
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      timeout: 8_000,
-      validateStatus: () => true,
+  const response = await axios.get<IPAPIResult>("https://api.ipapi.is/", {
+    params: {
+      q: normalizedIp,
+      key: env.ipApi.apiKey,
     },
-  );
+    headers: { Accept: "application/json" },
+    timeout: 8_000,
+    validateStatus: () => true,
+  });
 
   if (response.status < 200 || response.status >= 300) {
     throw ipapiError(response.data, response.status);
