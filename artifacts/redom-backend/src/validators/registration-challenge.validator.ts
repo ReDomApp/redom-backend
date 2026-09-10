@@ -27,7 +27,10 @@ export const saveRegistrationFlowGenderSchema = z.object({
 export const saveRegistrationFlowPhoneSchema = z.object({
   flowId: z.string().regex(/^\d{6,16}$/),
   deviceId: z.string().trim().min(1).max(255).optional(),
-  phoneNumber: z.string().regex(/^\+[1-9]\d{6,14}$/),
+  // Keep syntactically short E.164-like input valid long enough for Twilio Basic Lookup
+  // to return the authoritative TOO_SHORT / INVALID_LENGTH result instead of Zod leaking
+  // an internal validation object to Screen 4.
+  phoneNumber: z.string().regex(/^\+[1-9]\d{4,14}$/),
   countryCode: z.string().regex(/^[A-Z]{2}$/),
   deviceRegion: z.string().regex(/^[A-Z]{2}$/).optional(),
   timeZone: z.string().trim().min(1).max(120).optional(),
