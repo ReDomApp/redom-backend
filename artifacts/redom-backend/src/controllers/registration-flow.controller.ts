@@ -19,7 +19,9 @@ function reservationIdFrom(req: Request) {
 }
 
 function requestIp(req: Request) {
-  return req.ip?.trim() || "0.0.0.0";
+  const raw = req.ip?.trim() || "";
+  if (raw.startsWith("::ffff:")) return raw.slice(7);
+  return raw || "0.0.0.0";
 }
 
 function flowIdFrom(req: Request, body: { flowId?: unknown }) {
@@ -29,8 +31,19 @@ function flowIdFrom(req: Request, body: { flowId?: unknown }) {
 
 export class RegistrationFlowController {
   async reserve(req: Request, res: Response) {
-    try { const input = reserveRegistrationFlowSchema.parse(req.body ?? {}); res.status(201).json(await registrationFlowReservationService.reserve(input.deviceId)); }
-    catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to create registration Flow ID." }); }
+    try {
+      const input = reserveRegistrationFlowSchema.parse(req.body ?? {});
+      const result = await registrationFlowReservationService.reserve(input.deviceId);
+      await registrationFlowSecurityService.inspect({
+        reservationId: result.reservationId,
+        flowId: result.flowId,
+        deviceId: input.deviceId,
+        ip: requestIp(req),
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to create registration Flow ID." });
+    }
   }
 
   async saveName(req: Request, res: Response) {
