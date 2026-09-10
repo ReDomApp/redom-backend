@@ -4,6 +4,7 @@ import { authController } from "../controllers/auth.controller";
 import { networkProviderController } from "../controllers/network-provider.controller";
 import { registrationChallengeController } from "../controllers/registration-challenge.controller";
 import { registrationFlowController } from "../controllers/registration-flow.controller";
+import { registrationFlowEmailController } from "../controllers/registration-flow-email.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { authRateLimit, networkProviderRateLimit, passwordResetRateLimit, verificationRateLimit } from "../middleware/rate-limit.middleware";
 
@@ -21,6 +22,7 @@ router.get("/register/flow/:reservationId/phone-country", authRateLimit, registr
 router.patch("/register/flow/:reservationId/phone", authRateLimit, registrationFlowController.savePhone.bind(registrationFlowController));
 router.get("/register/flow/:reservationId/security", authRateLimit, registrationFlowController.inspectSecurity.bind(registrationFlowController));
 router.post("/register/flow/:reservationId/security/consent", authRateLimit, registrationFlowController.consentSecurity.bind(registrationFlowController));
+router.patch("/register/flow/:reservationId/email", authRateLimit, registrationFlowEmailController.save.bind(registrationFlowEmailController));
 
 router.post("/register/challenge", authRateLimit, registrationChallengeController.start.bind(registrationChallengeController));
 router.get("/register/challenge/:challengeId", authRateLimit, registrationChallengeController.getFlow.bind(registrationChallengeController));
