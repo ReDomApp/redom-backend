@@ -63,8 +63,22 @@ function isIPQSServiceFailureMessage(message?: string): boolean {
   return /insufficient\s+credits?|credit\s+(?:balance|quota)|quota\s+(?:reached|exhausted)|temporarily\s+unavailable|service\s+unavailable|internal\s+server|rate\s+limit|too\s+many\s+requests|try\s+again\s+later/.test(normalized);
 }
 
+function getAxiosResponseMessage(error: unknown): string | undefined {
+  if (!axios.isAxiosError(error)) return undefined;
+  const data = error.response?.data as unknown;
+  if (!data || typeof data !== "object") return undefined;
+  const record = data as Record<string, unknown>;
+  return typeof record.message === "string"
+    ? record.message
+    : typeof record.error === "string"
+      ? record.error
+      : undefined;
+}
+
 function shouldFallbackAfterIPQSError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) return false;
+  const responseMessage = getAxiosResponseMessage(error);
+  if (isIPQSServiceFailureMessage(responseMessage)) return true;
   if (!error.response) return true;
   const status = error.response.status;
   return status === 402 || status === 408 || status === 422 || status === 425 || status === 429 || status >= 500;
