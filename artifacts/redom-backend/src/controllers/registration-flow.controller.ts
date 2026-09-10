@@ -11,17 +11,7 @@ import {
 } from "../validators/registration-challenge.validator";
 
 function reservationIdFrom(req: Request) {
-  return typeof req.params.reservationId === "string"
-    ? req.params.reservationId
-    : Array.isArray(req.params.reservationId) && req.params.reservationId.length === 1
-      ? req.params.reservationId[0]
-      : undefined;
-}
-
-function requestIp(req: Request) {
-  const raw = req.ip?.trim() || "";
-  if (raw.startsWith("::ffff:")) return raw.slice(7);
-  return raw || "0.0.0.0";
+  return typeof req.params.reservationId === "string" ? req.params.reservationId : Array.isArray(req.params.reservationId) && req.params.reservationId.length === 1 ? req.params.reservationId[0] : undefined;
 }
 
 function flowIdFrom(req: Request, body: { flowId?: unknown }) {
@@ -29,17 +19,21 @@ function flowIdFrom(req: Request, body: { flowId?: unknown }) {
   throw new Error("flowId is required.");
 }
 
+function queryIp(req: Request, fallback?: string) {
+  const supplied = typeof fallback === "string" ? fallback.trim() : "";
+  if (supplied) return supplied;
+  const query = typeof req.query.ip === "string" ? req.query.ip.trim() : "";
+  if (query) return query;
+  const raw = req.ip?.trim() || "";
+  if (raw.startsWith("::ffff:")) return raw.slice(7);
+  return raw || "0.0.0.0";
+}
+
 export class RegistrationFlowController {
   async reserve(req: Request, res: Response) {
     try {
       const input = reserveRegistrationFlowSchema.parse(req.body ?? {});
       const result = await registrationFlowReservationService.reserve(input.deviceId);
-      await registrationFlowSecurityService.inspect({
-        reservationId: result.reservationId,
-        flowId: result.flowId,
-        deviceId: input.deviceId,
-        ip: requestIp(req),
-      });
       res.status(201).json(result);
     } catch (error) {
       res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to create registration Flow ID." });
@@ -83,17 +77,17 @@ export class RegistrationFlowController {
       const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : undefined;
       const deviceRegion = typeof req.query.deviceRegion === "string" ? req.query.deviceRegion.toUpperCase() : undefined;
       const timeZone = typeof req.query.timeZone === "string" ? req.query.timeZone : undefined;
-      res.status(200).json(await registrationFlowReservationService.detectPhoneCountry({ reservationId, flowId, deviceId, ip: requestIp(req), deviceRegion, timeZone }));
+      const ip = queryIp(req);
+      res.status(200).json(await registrationFlowReservationService.detectPhoneCountry({ reservationId, flowId, deviceId, ip, deviceRegion, timeZone }));
     } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to detect your country." }); }
   }
 
   async savePhone(req: Request, res: Response) {
     try {
-      const reservationId = reservationIdFrom(req);
-      if (!reservationId) throw new Error("reservationId is required.");
+      const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required.");
       const input = saveRegistrationFlowPhoneSchema.parse(req.body);
-      const result = await registrationFlowReservationService.savePhone({ reservationId, ...input, ip: requestIp(req) });
-      await registrationFlowMemoryService.registerScreenSafely({ reservationId, flowId: flowIdFrom(req, input), screen: "phone" });
+      const result = await registrationFlowReservationService.savePhone({ reservationId, ...input, ip: queryIp(req, input.ip) });
+      // Screen 4 is not complete until the user explicitly accepts the network-data notice.
       res.status(200).json(result);
     } catch (error) {
       res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to verify your phone number." });
@@ -102,15 +96,28 @@ export class RegistrationFlowController {
 
   async inspectSecurity(req: Request, res: Response) {
     try {
-      const reservationId = reservationIdFrom(req);
-      if (!reservationId) throw new Error("reservationId is required.");
+      const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required.");
       const flowId = typeof req.query.flowId === "string" ? req.query.flowId.trim() : "";
       if (!flowId) throw new Error("flowId is required.");
       const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : undefined;
-      const result = await registrationFlowSecurityService.inspect({ reservationId, flowId, deviceId, ip: requestIp(req) });
+      const result = await registrationFlowSecurityService.inspect({ reservationId, flowId, deviceId, ip: queryIp(req) });
       res.status(200).json(result);
     } catch (error) {
       res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to complete the security check." });
+    }
+  }
+
+  async consentSecurity(req: Request, res: Response) {
+    try {
+      const reservationId = reservationIdFrom(req); if (!reservationId) throw new Error("reservationId is required.");
+      const flowId = typeof req.query.flowId === "string" ? req.query.flowId.trim() : "";
+      if (!flowId) throw new Error("flowId is required.");
+      const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : undefined;
+      const result = await registrationFlowSecurityService.consent({ reservationId, flowId, deviceId, ip: queryIp(req) });
+      await registrationFlowMemoryService.registerScreenSafely({ reservationId, flowId, screen: "phone" });
+      res.status(200).json(result);
+    } catch (error) {
+      res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to save network security details." });
     }
   }
 
