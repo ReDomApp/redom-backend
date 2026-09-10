@@ -10,6 +10,8 @@ export interface RegistrationFlowReservation { success: boolean; reservationId: 
 export interface RegistrationFlowNameSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; }
 export interface RegistrationFlowBirthdaySaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; age: number; ageBand: "underage" | "teen" | "adult"; flowStatus: "active" | "completed"; }
 export interface RegistrationFlowGenderSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; gender: "female" | "male" | "custom" | null; pronouns?: "She / Her" | "He / Him" | "They / Them" | "Prefer not to say" | null; }
+export interface RegistrationFlowPhoneCountryResult { success: boolean; countryCode: string | null; source: "ipqs" | "device" | "unknown"; timeZone: string | null; }
+export interface RegistrationFlowPhoneSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; phoneNumber: string; countryCode: string; fraudScore: number; lineType: string | null; voip: boolean; }
 export interface RegistrationChallengeStart { contactType: "phone" | "email"; target: string; deviceId?: string; reservationId?: string; flowId?: string; }
 export interface RegistrationChallengeResult { success: boolean; challengeId: string; flowId: string; contactType: "phone" | "email"; maskedTarget: string; expiresAt: string; currentStep: "contact" | "identity" | "username" | "profile" | "password" | "review"; }
 export interface RegistrationChallengeSaveResult { success: boolean; challengeId: string; flowId: string; maskedTarget: string; expiresAt: string; currentStep: RegistrationChallengeResult["currentStep"]; }
