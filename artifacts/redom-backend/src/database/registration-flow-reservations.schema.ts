@@ -4,11 +4,44 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   timestamp,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+
+export type RegistrationFlowMemory = {
+  flow: {
+    flowId: string;
+    reservationId: string;
+    status: string;
+    expiresAt: string;
+  };
+  screens: Record<string, { completed: boolean; completedAt: string }>;
+  identity: { firstName: string | null; lastName: string | null };
+  birthday: { dateOfBirth: string | null };
+  gender: { gender: string | null; pronouns: string | null };
+  phoneLookup: {
+    phoneNumber: string | null;
+    lookupStatus: string | null;
+    valid: boolean | null;
+    active: boolean | null;
+    voip: boolean | null;
+    fraudScore: number | null;
+    lineType: string | null;
+    carrier: string | null;
+    lookupRequestId: string | null;
+  };
+  networkSecurity: {
+    ipFraudScore: number | null;
+    proxy: boolean | null;
+    vpn: boolean | null;
+    tor: boolean | null;
+    botStatus: boolean | null;
+    countryCode: string | null;
+  };
+};
 
 export const registrationFlowReservations = pgTable(
   "registration_flow_reservations",
@@ -40,6 +73,8 @@ export const registrationFlowReservations = pgTable(
     ipBotStatus: boolean("ip_bot_status"),
     ipCountryCode: varchar("ip_country_code", { length: 2 }),
     status: varchar("status", { length: 16 }).notNull().default("active"),
+    registeredTables: jsonb("registered_tables").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    memory: jsonb("memory").$type<RegistrationFlowMemory>().notNull().default(sql`'{}'::jsonb`),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
