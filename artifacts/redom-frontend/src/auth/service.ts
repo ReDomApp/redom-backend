@@ -15,7 +15,7 @@ export const authService = {
   async verifyRegistrationChallenge(verificationChallengeId: string, code: string): Promise<{ success: boolean; message: string }> { return api.post<{ success: boolean; message: string }>(`/auth/register/verification/${verificationChallengeId}/verify`, { code }); },
   async getRegistrationFlow(challengeId: string): Promise<RegistrationChallengeResult> { return api.get<RegistrationChallengeResult>(`/auth/register/challenge/${challengeId}`); },
   async verifyEmail(input: { userId: string; code: string }): Promise<AuthResult> { return api.post<AuthResult>("/auth/verify-email", input); },
-  async verifyPhone(input: { userId: string; phoneNumber: string }): Promise<AuthResult> { return api.post<AuthResult>("/auth/verify-phone", input); },
+  async verifyPhone(input: { userId: string; phoneNumber: string; deviceId?: string }): Promise<AuthResult> { return api.post<AuthResult>("/auth/verify-phone", input); },
   async resendEmailCode(input: ResendVerificationInput): Promise<AuthResult> { return api.post<AuthResult>("/auth/resend-email-code", input); },
   async resendPhoneCode(input: ResendVerificationInput): Promise<AuthResult> { return api.post<AuthResult>("/auth/resend-phone-code", input); },
   async forgotPassword(input: ForgotPasswordInput): Promise<AuthResult> { return api.post<AuthResult>("/auth/forgot-password", input); },
