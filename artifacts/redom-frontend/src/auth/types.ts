@@ -11,7 +11,38 @@ export interface RegistrationFlowNameSaveResult { success: boolean; reservationI
 export interface RegistrationFlowBirthdaySaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; age: number; ageBand: "underage" | "teen" | "adult"; flowStatus: "active" | "completed"; }
 export interface RegistrationFlowGenderSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; gender: "female" | "male" | "custom" | null; pronouns?: "She / Her" | "He / Him" | "They / Them" | "Prefer not to say" | null; }
 export interface RegistrationFlowPhoneCountryResult { success: boolean; countryCode: string | null; source: "ipqs" | "device" | "unknown"; timeZone: string | null; }
-export interface RegistrationFlowPhoneSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; phoneNumber: string; countryCode: string; fraudScore: number; lineType: string | null; voip: boolean; }
+export interface RegistrationFlowPhoneSaveResult {
+  success: boolean;
+  reservationId: string;
+  flowId: string;
+  expiresAt: string;
+  phoneNumber: string;
+  countryCode: string;
+  lookupComplete: boolean;
+  verificationStatus: "verified";
+  valid: boolean | null;
+  active: boolean | null;
+  activeStatus: string | null;
+  fraudScore: number;
+  voip: boolean;
+  prepaid: boolean | null;
+  risky: boolean | null;
+  recentAbuse: boolean | null;
+  leaked: boolean | null;
+  spammer: boolean | null;
+  lineType: string | null;
+  carrier: string | null;
+  phoneCountry: string | null;
+  accurateCountryCode: boolean | null;
+  ipSecurity: {
+    fraudScore: number;
+    proxy: boolean;
+    vpn: boolean;
+    tor: boolean;
+    botStatus: boolean;
+    countryCode: string | null;
+  };
+}
 export interface RegistrationChallengeStart { contactType: "phone" | "email"; target: string; deviceId?: string; reservationId?: string; flowId?: string; }
 export interface RegistrationChallengeResult { success: boolean; challengeId: string; flowId: string; contactType: "phone" | "email"; maskedTarget: string; expiresAt: string; currentStep: "contact" | "identity" | "username" | "profile" | "password" | "review"; }
 export interface RegistrationChallengeSaveResult { success: boolean; challengeId: string; flowId: string; maskedTarget: string; expiresAt: string; currentStep: RegistrationChallengeResult["currentStep"]; }
