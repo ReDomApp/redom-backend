@@ -24,6 +24,8 @@ function buildMemory(
   reservation: typeof registrationFlowReservations.$inferSelect,
   screens: Record<string, MemoryScreen>,
 ): RegistrationFlowMemory {
+  const existingNetworkSecurity = (reservation.memory?.networkSecurity ?? {}) as Record<string, unknown>;
+
   return {
     flow: {
       flowId: reservation.flowId,
@@ -55,6 +57,7 @@ function buildMemory(
       lookupRequestId: reservation.phoneLookupRequestId,
     },
     networkSecurity: {
+      ...existingNetworkSecurity,
       ipFraudScore: reservation.ipFraudScore,
       proxy: reservation.ipProxy,
       vpn: reservation.ipVpn,
