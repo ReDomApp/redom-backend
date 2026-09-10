@@ -40,8 +40,16 @@ export class RegistrationFlowReservationService {
     let ipqsIp: Awaited<ReturnType<typeof checkIP>>;
     try { ipqsIp = await checkIP(params.ip); } catch (error) { logger.error({ error }, "IPQS IP security lookup failed during registration phone verification"); throw new Error("We could not complete the security check for this registration. Please try again."); }
     if (!ipqsIp.success) throw new Error(ipqsIp.message || "We could not complete the security check for this registration. Please try again.");
-    const block = networkBlockReason(ipqsIp);
-    if (block) throw new Error(`${block.code}: ${block.message}`);
+    const firstBlock = networkBlockReason(ipqsIp);
+    if (firstBlock) throw new Error(`${firstBlock.code}: ${firstBlock.message}`);
+
+    // A second live observation is required immediately before allowing the phone lookup/save.
+    let secondIpqsIp: Awaited<ReturnType<typeof checkIP>>;
+    try { secondIpqsIp = await checkIP(params.ip); } catch (error) { logger.error({ error }, "Second IP security observation failed during registration phone verification"); throw new Error("We could not complete the second security check for this registration. Please try again."); }
+    if (!secondIpqsIp.success) throw new Error(secondIpqsIp.message || "We could not complete the second security check for this registration. Please try again.");
+    const secondBlock = networkBlockReason(secondIpqsIp);
+    if (secondBlock) throw new Error(`${secondBlock.code}: ${secondBlock.message}`);
+    ipqsIp = secondIpqsIp;
 
     let lookup: Awaited<ReturnType<typeof checkPhone>> | null = null;
     let lookupProvider: "ipqs" | "abstract" | "twilio";
