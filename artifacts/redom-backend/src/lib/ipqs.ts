@@ -1,9 +1,6 @@
 import axios from "axios";
 
-import {
-  checkAbstractPhone,
-  normalizeAbstractPhoneResult,
-} from "./abstract-phone";
+import { checkAbstractPhone, normalizeAbstractPhoneResult } from "./abstract-phone";
 
 export interface IPQSResult {
   success: boolean;
@@ -46,6 +43,8 @@ export interface IPQSPhoneResult {
   active_status?: string | null;
   user_activity?: string | null;
   request_id?: string | null;
+  provider?: "ipqs" | "abstract";
+  lookup_type?: "phone-validation";
 }
 
 function requireApiKey(): string {
@@ -84,9 +83,7 @@ export async function checkPhone(
 ): Promise<IPQSPhoneResult> {
   const apiKey = requireApiKey();
   const params = new URLSearchParams({ strictness: "1" });
-  if (options?.countryCode) {
-    params.append("country[]", options.countryCode.toUpperCase());
-  }
+  if (options?.countryCode) params.append("country[]", options.countryCode.toUpperCase());
 
   const url = `https://ipqualityscore.com/api/json/phone/${apiKey}/${encodeURIComponent(phoneNumber)}?${params.toString()}`;
   const allowFallback = options?.allowFallback !== false;
@@ -94,17 +91,12 @@ export async function checkPhone(
   try {
     const { data } = await axios.get<IPQSPhoneResult>(url, { timeout: 15_000 });
 
-    if (!allowFallback) return data;
-
-    // A definitive IPQS validation result (including valid=false) is not a
-    // provider failure and must never be overridden by the fallback.
-    if (!shouldFallbackAfterIPQSResult(data)) return data;
+    if (!allowFallback) return { ...data, provider: "ipqs", lookup_type: "phone-validation" };
+    if (!shouldFallbackAfterIPQSResult(data)) return { ...data, provider: "ipqs", lookup_type: "phone-validation" };
 
     const abstractResult = await checkAbstractPhone(phoneNumber, options);
     return normalizeAbstractPhoneResult(abstractResult, options?.countryCode || "");
   } catch (error) {
-    // The Twilio post-validation enrichment path uses allowFallback=false and
-    // handles this error itself, preserving the successful Twilio result.
     if (!allowFallback) throw error;
     if (!shouldFallbackAfterIPQSError(error)) throw error;
 
