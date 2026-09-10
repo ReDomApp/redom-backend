@@ -38,6 +38,18 @@ export type RegistrationFlowNetworkSecurityMemory = {
   ipapi?: Record<string, unknown>;
 };
 
+export type RegistrationFlowEmailMemory = {
+  address: string;
+  domain: string;
+  provider: "google" | "microsoft" | "yahoo";
+  verificationStatus: string;
+  verificationProvider: string;
+  verificationRequestId: string;
+  verificationCodeHash: string;
+  verificationExpiresAt: string;
+  savedAt: string;
+};
+
 export type RegistrationFlowMemory = {
   flow: { flowId: string; reservationId: string; status: string; expiresAt: string };
   screens: Record<string, { completed: boolean; completedAt: string }>;
@@ -46,6 +58,7 @@ export type RegistrationFlowMemory = {
   gender: { gender: string | null; pronouns: string | null };
   phoneLookup: { phoneNumber: string | null; lookupStatus: string | null; valid: boolean | null; active: boolean | null; voip: boolean | null; fraudScore: number | null; lineType: string | null; carrier: string | null; lookupRequestId: string | null };
   networkSecurity: RegistrationFlowNetworkSecurityMemory & { ipFraudScore: number | null; botStatus: boolean | null };
+  email?: RegistrationFlowEmailMemory;
 };
 
 export const registrationFlowReservations = pgTable("registration_flow_reservations", {
