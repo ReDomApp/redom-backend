@@ -267,8 +267,7 @@ export const env = {
       required(
         "MEILISEARCH_CHAT_API_KEY",
       ),
-
-    },
+  },
 
   ipQualityScore: {
     apiKey:
@@ -279,7 +278,7 @@ export const env = {
 
   abstract: {
     apiKey:
-      required(
+      optional(
         "ABSTRACT_API_KEY",
       ),
   },
