@@ -29,6 +29,7 @@ function daysInMonth(year: number, month: number) {
 
 function WheelColumn({ values, selected, onChange, label, disabled }: { values: number[]; selected: number; onChange: (value: number) => void; label: string; disabled: boolean }) {
   const selectedIndex = Math.max(0, values.indexOf(selected));
+  const ITEM_HEIGHT = 50;
   return (
     <View style={styles.wheelWrap}>
       <Text style={styles.wheelLabel}>{label}</Text>
@@ -36,17 +37,17 @@ function WheelColumn({ values, selected, onChange, label, disabled }: { values: 
         style={styles.wheelViewport}
         scrollEnabled={!disabled}
         showsVerticalScrollIndicator={false}
-        snapToInterval={42}
+        snapToInterval={ITEM_HEIGHT}
         decelerationRate="fast"
         contentContainerStyle={styles.wheelContent}
         onMomentumScrollEnd={(event) => {
-          const index = Math.max(0, Math.min(values.length - 1, Math.round(event.nativeEvent.contentOffset.y / 42)));
+          const index = Math.max(0, Math.min(values.length - 1, Math.round(event.nativeEvent.contentOffset.y / ITEM_HEIGHT)));
           onChange(values[index]!);
         }}
-        contentOffset={{ x: 0, y: selectedIndex * 42 }}
+        contentOffset={{ x: 0, y: selectedIndex * ITEM_HEIGHT }}
       >
         {values.map((value) => (
-          <View key={value} style={styles.wheelItem}>
+          <View key={value} style={[styles.wheelItem, { height: ITEM_HEIGHT }]}>
             <Text style={[styles.wheelText, value === selected && styles.wheelTextSelected]}>{String(value).padStart(2, "0")}</Text>
           </View>
         ))}
@@ -148,7 +149,7 @@ export function RegistrationBirthdayScreen({ navigation, route }: Props) {
       <Modal visible={warning !== null} transparent animationType="fade" onRequestClose={() => {}}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            {warning === "child" ? <SecurityShield width={58} height={58} /> : <PrimarySecurity width={58} height={58} />}
+            {warning === "child" ? <SecurityShield width={64} height={64} /> : <PrimarySecurity width={64} height={64} />}
             <Text style={styles.modalTitle}>
               {warning === "child" ? <AIText context="ReDom child account safety">We can't continue with this account.</AIText> : <AIText context="ReDom teen account safety">A safety reminder before you continue</AIText>}
             </Text>
@@ -204,12 +205,12 @@ const styles = StyleSheet.create({
   lockedBox:{opacity:.6},
   wheelWrap:{flex:1,height:170,position:"relative",borderRightWidth:1,borderRightColor:"#E4E6E9"},
   wheelLabel:{position:"absolute",top:6,left:0,right:0,zIndex:2,fontSize:10.5,fontWeight:"800",color:BLUE,textAlign:"center"},
-  wheelViewport:{position:"absolute",top:30,left:0,right:0,bottom:0},
-  wheelContent:{paddingVertical:42},
-  wheelItem:{height:42,alignItems:"center",justifyContent:"center"},
+  wheelViewport:{position:"absolute",top:28,left:0,right:0,bottom:0},
+  wheelContent:{paddingVertical:43},
+  wheelItem:{alignItems:"center",justifyContent:"center"},
   wheelText:{fontSize:16,lineHeight:22,color:MUTED},
-  wheelTextSelected:{fontSize:19,lineHeight:24,color:TEXT,fontWeight:"800"},
-  wheelSelection:{position:"absolute",left:5,right:5,top:72,height:42,borderWidth:1.5,borderColor:BLUE,borderRadius:9},
+  wheelTextSelected:{fontSize:20,lineHeight:25,color:TEXT,fontWeight:"800"},
+  wheelSelection:{position:"absolute",left:5,right:5,top:71,height:50,borderWidth:1.5,borderColor:BLUE,borderRadius:10},
   error:{color:"#E41E3F",fontSize:13,lineHeight:19,fontWeight:"600",marginTop:12,textAlign:"center"},
   button:{height:54,borderRadius:13,backgroundColor:BLUE,alignItems:"center",justifyContent:"center",marginTop:20,width:"100%"},
   buttonText:{color:"#FFFFFF",fontSize:17,fontWeight:"800"},
@@ -223,8 +224,8 @@ const styles = StyleSheet.create({
   link:{color:BLUE,fontSize:14,fontWeight:"800"},
   companyRow:{flexDirection:"row",alignItems:"center",justifyContent:"center",gap:7,marginTop:9},
   company:{color:MUTED,fontSize:12},
-  modalBackdrop:{flex:1,backgroundColor:"rgba(0,0,0,.38)",justifyContent:"center",padding:20},
-  modalCard:{maxHeight:"82%",backgroundColor:"#FFFFFF",borderRadius:22,padding:24,alignItems:"center"},
+  modalBackdrop:{flex:1,backgroundColor:"rgba(0,0,0,.38)",justifyContent:"flex-start",paddingHorizontal:20,paddingTop:70},
+  modalCard:{maxHeight:"82%",width:"100%",backgroundColor:"#FFFFFF",borderRadius:22,padding:24,alignItems:"center",shadowOpacity:.2,shadowRadius:18,shadowOffset:{width:0,height:8},elevation:8},
   modalTitle:{color:TEXT,fontSize:21,lineHeight:27,fontWeight:"800",textAlign:"center",marginTop:12,marginBottom:12},
   warningScroll:{width:"100%",maxHeight:280},
   warningContent:{paddingBottom:18},
