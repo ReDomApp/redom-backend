@@ -1,5 +1,4 @@
 import { api } from "../api/client";
-import { detectPublicIp } from "./publicIp";
 
 export interface NetworkSecurity {
   ip: string | null;
@@ -49,20 +48,9 @@ export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
   loaded = false;
 
   try {
-    let publicIp: string | null = null;
-    try {
-      // First attempt: ask IPAPI directly from the handset for the handset's
-      // public Internet address. No API key is embedded in the mobile app.
-      publicIp = await detectPublicIp();
-    } catch {
-      // Fallback: let Express use its trusted Render proxy/client IP chain.
-      // The keyed IPAPI request still happens only on the server.
-    }
-
-    const path = publicIp
-      ? `/auth/network-provider?ip=${encodeURIComponent(publicIp)}`
-      : "/auth/network-provider";
-    const result = await api.get<NetworkProviderResponse>(path);
+    // The backend derives the address from the actual request reaching ReDom.
+    // No client-supplied address is accepted or sent to the backend.
+    const result = await api.get<NetworkProviderResponse>("/auth/network-provider");
 
     cached = result.success && result.security
       ? result
