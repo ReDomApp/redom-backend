@@ -62,9 +62,7 @@ function isIPQSServiceFailureMessage(message?: string): boolean {
 
 function shouldFallbackAfterIPQSError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) return false;
-
   if (!error.response) return true;
-
   const status = error.response.status;
   return status === 402 || status === 408 || status === 422 || status === 425 || status === 429 || status >= 500;
 }
@@ -82,7 +80,7 @@ export async function checkIP(ip: string): Promise<IPQSResult> {
 
 export async function checkPhone(
   phoneNumber: string,
-  options?: { countryCode?: string },
+  options?: { countryCode?: string; allowFallback?: boolean },
 ): Promise<IPQSPhoneResult> {
   const apiKey = requireApiKey();
   const params = new URLSearchParams({ strictness: "1" });
@@ -91,32 +89,26 @@ export async function checkPhone(
   }
 
   const url = `https://ipqualityscore.com/api/json/phone/${apiKey}/${encodeURIComponent(phoneNumber)}?${params.toString()}`;
+  const allowFallback = options?.allowFallback !== false;
 
   try {
     const { data } = await axios.get<IPQSPhoneResult>(url, { timeout: 15_000 });
 
+    if (!allowFallback) return data;
+
     // A definitive IPQS validation result (including valid=false) is not a
     // provider failure and must never be overridden by the fallback.
-    if (!shouldFallbackAfterIPQSResult(data)) {
-      return data;
-    }
+    if (!shouldFallbackAfterIPQSResult(data)) return data;
 
     const abstractResult = await checkAbstractPhone(phoneNumber, options);
-    return normalizeAbstractPhoneResult(
-      abstractResult,
-      options?.countryCode || "",
-    );
+    return normalizeAbstractPhoneResult(abstractResult, options?.countryCode || "");
   } catch (error) {
-    // Network errors, timeouts, rate limits, exhausted/quota responses, and
-    // provider 5xx failures are eligible for the Abstract fallback.
-    if (!shouldFallbackAfterIPQSError(error)) {
-      throw error;
-    }
+    // The Twilio post-validation enrichment path uses allowFallback=false and
+    // handles this error itself, preserving the successful Twilio result.
+    if (!allowFallback) throw error;
+    if (!shouldFallbackAfterIPQSError(error)) throw error;
 
     const abstractResult = await checkAbstractPhone(phoneNumber, options);
-    return normalizeAbstractPhoneResult(
-      abstractResult,
-      options?.countryCode || "",
-    );
+    return normalizeAbstractPhoneResult(abstractResult, options?.countryCode || "");
   }
 }
