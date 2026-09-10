@@ -69,18 +69,20 @@ export class RegistrationChallengeService {
     let flowId: string;
     let reservedFirstName: string | null = null;
     let reservedLastName: string | null = null;
+    let reservedDateOfBirth: string | null = null;
     if (params.reservationId || params.flowId) {
       if (!params.reservationId || !params.flowId) throw new Error("Registration Flow ID reservation is incomplete.");
       const reservation = await registrationFlowReservationService.consume(params.reservationId, params.flowId, params.deviceId);
       flowId = reservation.flowId;
       reservedFirstName = reservation.firstName;
       reservedLastName = reservation.lastName;
+      reservedDateOfBirth = reservation.dateOfBirth;
     } else {
       flowId = await this.generateFlowId();
     }
 
     const now = new Date();
-    const [challenge] = await db.insert(registrationChallenges).values({ flowId, contactType: params.contactType, target: normalizedTarget, normalizedTarget, firstName: reservedFirstName, lastName: reservedLastName, currentStep: reservedFirstName && reservedLastName ? "identity" : "contact", status: "pending", requestIp: params.requestIp, userAgent: params.userAgent, deviceId: params.deviceId, expiresAt: new Date(now.getTime() + CHALLENGE_TTL_MS), createdAt: now, updatedAt: now }).returning();
+    const [challenge] = await db.insert(registrationChallenges).values({ flowId, contactType: params.contactType, target: normalizedTarget, normalizedTarget, firstName: reservedFirstName, lastName: reservedLastName, dateOfBirth: reservedDateOfBirth, currentStep: reservedFirstName && reservedLastName ? "identity" : "contact", status: "pending", requestIp: params.requestIp, userAgent: params.userAgent, deviceId: params.deviceId, expiresAt: new Date(now.getTime() + CHALLENGE_TTL_MS), createdAt: now, updatedAt: now }).returning();
     if (!challenge) throw new Error("Unable to start registration flow.");
     return { success: true, challengeId: challenge.id, flowId: maskFlowId(challenge.flowId), contactType: challenge.contactType as RegistrationContactType, maskedTarget: maskTarget(normalizedTarget, params.contactType), expiresAt: challenge.expiresAt.toISOString(), currentStep: challenge.currentStep as RegistrationStep };
   }
