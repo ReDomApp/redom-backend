@@ -14,6 +14,7 @@ router.post("/register", authRateLimit, authController.register.bind(authControl
 
 /* Reserve the server-owned numeric Flow ID as soon as Create New Account is pressed. */
 router.post("/register/flow", authRateLimit, registrationFlowController.reserve.bind(registrationFlowController));
+router.get("/register/flow/:reservationId/memory", authRateLimit, registrationFlowController.getMemory.bind(registrationFlowController));
 router.patch("/register/flow/:reservationId/name", authRateLimit, registrationFlowController.saveName.bind(registrationFlowController));
 router.patch("/register/flow/:reservationId/birthday", authRateLimit, registrationFlowController.saveBirthday.bind(registrationFlowController));
 router.patch("/register/flow/:reservationId/gender", authRateLimit, registrationFlowController.saveGender.bind(registrationFlowController));
@@ -36,6 +37,6 @@ router.post("/resend-phone-code", verificationRateLimit, authController.resendPh
 router.post("/forgot-password", passwordResetRateLimit, authController.forgotPassword.bind(authController));
 router.post("/reset-password", passwordResetRateLimit, authController.resetPassword.bind(authController));
 router.post("/logout", authMiddleware, authController.logout.bind(authController));
-router.post("/refresh", authRateLimit, authController.refreshSession.bind(authController));
+router.post("/refresh", authRateLimit, authController.refresh.bind(authController));
 
 export default router;
