@@ -50,8 +50,43 @@ export interface RegistrationFlowPhoneSaveResult {
     countryCode: string | null;
   };
 }
+export interface RegistrationFlowMemory {
+  flow: { flowId: string; reservationId: string; status: string; expiresAt: string };
+  screens: Record<string, { completed: boolean; completedAt: string }>;
+  identity: { firstName: string | null; lastName: string | null };
+  birthday: { dateOfBirth: string | null };
+  gender: { gender: string | null; pronouns: string | null };
+  phoneLookup: {
+    phoneNumber: string | null;
+    lookupStatus: string | null;
+    valid: boolean | null;
+    active: boolean | null;
+    voip: boolean | null;
+    fraudScore: number | null;
+    lineType: string | null;
+    carrier: string | null;
+    lookupRequestId: string | null;
+  };
+  networkSecurity: {
+    ipFraudScore: number | null;
+    proxy: boolean | null;
+    vpn: boolean | null;
+    tor: boolean | null;
+    botStatus: boolean | null;
+    countryCode: string | null;
+  };
+}
+export interface RegistrationFlowMemoryResult {
+  success: boolean;
+  flowId: string;
+  reservationId: string;
+  status: string;
+  expiresAt: string;
+  registeredTables: string[];
+  memory: RegistrationFlowMemory;
+}
 export interface RegistrationChallengeStart { contactType: "phone" | "email"; target: string; deviceId?: string; reservationId?: string; flowId?: string; }
-export interface RegistrationChallengeResult { success: boolean; challengeId: string; flowId: string; contactType: "phone" | "email"; maskedTarget: string; expiresAt: string; currentStep: "contact" | "identity" | "username" | "profile" | "password" | "review"; }
+export interface RegistrationChallengeResult { success: boolean; challengeId: string; flowId: string; contactType: "phone" | "email"; maskedTarget: string; codeLength: number; expiresAt: string; currentStep: "contact" | "identity" | "username" | "profile" | "password" | "review"; }
 export interface RegistrationChallengeSaveResult { success: boolean; challengeId: string; flowId: string; maskedTarget: string; expiresAt: string; currentStep: RegistrationChallengeResult["currentStep"]; }
 export interface RegistrationCompletionResult { success: boolean; flowId: string; user: AuthUser; verification: LoginVerification; }
 export interface RegistrationStepData { firstName?: string; lastName?: string; username?: string; email?: string; phoneNumber?: string; dateOfBirth?: string; gender?: "male" | "female" | "custom"; password?: string; }
