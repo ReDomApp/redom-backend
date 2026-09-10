@@ -10,6 +10,7 @@ import CheckWhite from "../../assets/auth/check-white.svg";
 import SearchIcon from "../../assets/auth/search.svg";
 import { ReDomScreen } from "../../layout/ReDomScreen";
 import { AIText } from "../../i18n/AIText";
+import { useLanguage } from "../../i18n/LanguageProvider";
 import { authService } from "../../auth/service";
 import { detectPublicIp } from "../../auth/publicIp";
 import { getDeviceId } from "../../utils/device";
@@ -33,14 +34,7 @@ const flowMask = (v: string) => `${v.slice(0, 4)}${"•".repeat(Math.max(0, v.le
 const pretty = (v: unknown) => { try { return JSON.stringify(v, null, 2); } catch { return String(v); } };
 
 function hasBlockingNetworkRisk(security: RegistrationFlowNetworkSecurity): boolean {
-  return security.fraudScore >= 50 ||
-    security.vpn === true ||
-    security.proxy === true ||
-    security.tor === true ||
-    Boolean(security.datacenter) ||
-    Boolean(security.egressService) ||
-    security.bot === true ||
-    security.bogon === true;
+  return security.fraudScore >= 50 || security.vpn === true || security.proxy === true || security.tor === true || Boolean(security.datacenter) || Boolean(security.egressService) || security.bot === true || security.bogon === true;
 }
 
 export function RegistrationPhoneScreen({ navigation, route }: Props) {
@@ -63,10 +57,7 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
   const [deviceId, setDeviceId] = useState<string>();
   const [seconds, setSeconds] = useState(() => Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)));
 
-  useEffect(() => {
-    const id = setInterval(() => setSeconds(Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))), 1000);
-    return () => clearInterval(id);
-  }, [expiresAt]);
+  useEffect(() => { const id = setInterval(() => setSeconds(Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))), 1000); return () => clearInterval(id); }, [expiresAt]);
 
   useEffect(() => {
     let active = true;
@@ -79,13 +70,8 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
         if (active) setPublicIp(ip);
         const locale = getLocales()[0];
         const result = await authService.detectRegistrationFlowPhoneCountry({ reservationId, flowId, deviceId: id, deviceRegion: locale?.regionCode?.toUpperCase(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, ip });
-        if (active && result.countryCode) {
-          const detected = COUNTRIES.find((c) => c.code === result.countryCode);
-          if (detected) setCountry(detected);
-        }
-      } catch {
-        // Device country remains the safe fallback.
-      }
+        if (active && result.countryCode) { const detected = COUNTRIES.find((c) => c.code === result.countryCode); if (detected) setCountry(detected); }
+      } catch { /* Device country remains the safe fallback. */ }
     })();
     return () => { active = false; };
   }, [flowId, reservationId]);
@@ -98,40 +84,20 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
       const remaining = Math.max(0, BLOCK_SECONDS - elapsed);
       setRiskSeconds(remaining);
-      if (elapsed >= BLOCK_SECONDS) {
-        clearInterval(id);
-        navigation.replace("Login");
-      }
+      if (elapsed >= BLOCK_SECONDS) { clearInterval(id); navigation.replace("Login"); }
     }, 250);
     return () => clearInterval(id);
   }, [riskBlockOpen, navigation]);
 
-  const filteredCountries = useMemo(() => {
-    const q = countrySearch.trim().toLowerCase();
-    if (!q) return COUNTRIES;
-    const n = q.replace(/\s+/g, "");
-    return COUNTRIES.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase() === n.toUpperCase() || digits(c.dialCode).includes(n));
-  }, [countrySearch]);
-
+  const filteredCountries = useMemo(() => { const q = countrySearch.trim().toLowerCase(); if (!q) return COUNTRIES; const n = q.replace(/\s+/g, ""); return COUNTRIES.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase() === n.toUpperCase() || digits(c.dialCode).includes(n)); }, [countrySearch]);
   const canContinue = digits(phone).length >= 5 && seconds > 0 && !checking && !saved;
   const countdown = `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 
-  function buildPhone() {
-    const raw = phone.trim();
-    const value = digits(raw);
-    const prefix = dial(country);
-    if (!value) throw new Error("Please enter your mobile number.");
-    if (raw.startsWith("+") && !value.startsWith(prefix)) throw new Error("The phone number country code does not match the selected country.");
-    const national = (raw.startsWith("+") ? value.slice(prefix.length) : value).replace(/^0+/, "");
-    if (national.length < 5) throw new Error("Please enter a valid mobile number.");
-    return `+${prefix}${national}`;
-  }
+  function buildPhone() { const raw = phone.trim(); const value = digits(raw); const prefix = dial(country); if (!value) throw new Error("Please enter your mobile number."); if (raw.startsWith("+") && !value.startsWith(prefix)) throw new Error("The phone number country code does not match the selected country."); const national = (raw.startsWith("+") ? value.slice(prefix.length) : value).replace(/^0+/, ""); if (national.length < 5) throw new Error("Please enter a valid mobile number."); return `+${prefix}${national}`; }
 
   async function inspect() {
     if (!canContinue) return;
-    setChecking(true);
-    setStage("phone");
-    setError(null);
+    setChecking(true); setStage("phone"); setError(null);
     try {
       const ip = publicIp || await detectPublicIp();
       setPublicIp(ip);
@@ -140,51 +106,24 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
       await authService.saveRegistrationFlowPhone({ reservationId, flowId, deviceId, phoneNumber, countryCode: country.code, deviceRegion: locale?.regionCode?.toUpperCase(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, ip });
       setStage("security");
       const result = await authService.inspectRegistrationFlowSecurity({ reservationId, flowId, deviceId, ip });
-      setSecurity(result.security);
-      setConsent(false);
-      setSaved(true);
-      setSecurityOpen(true);
-      if (hasBlockingNetworkRisk(result.security)) {
-        setRiskBlockOpen(true);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to complete the registration security check.");
-      setSaved(false);
-    } finally {
-      setChecking(false);
-    }
+      setSecurity(result.security); setConsent(false); setSaved(true); setSecurityOpen(true);
+      if (hasBlockingNetworkRisk(result.security)) setRiskBlockOpen(true);
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to complete the registration security check."); setSaved(false); }
+    finally { setChecking(false); }
   }
 
   async function acceptSecurity() {
     if (!security || !consent || !publicIp || checking || riskBlockOpen) return;
-    setChecking(true);
-    setStage("saving");
-    setError(null);
+    setChecking(true); setStage("saving"); setError(null);
     try {
       await authService.consentRegistrationFlowSecurity({ reservationId, flowId, deviceId, ip: publicIp });
       setSecurityOpen(false);
       navigation.replace("Login");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to save network security details.");
-    } finally {
-      setChecking(false);
-    }
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to save network security details."); }
+    finally { setChecking(false); }
   }
 
-  const rows: Array<[string, string]> = security ? [
-    ["Your IP", maskIp(security.ip)],
-    ["Connection", security.connection || "Unknown"],
-    ["Country", security.country || security.countryCode || "Unknown"],
-    ["Region", security.region || "Unknown"],
-    ["City", security.city || "Unknown"],
-    ["Organization", security.organization || "Unknown"],
-    ["Company type", security.companyType || "Unknown"],
-    ["ASN", security.asn ? `AS${security.asn}` : "Unknown"],
-    ["Datacenter", security.datacenter || "None detected"],
-    ["Fraud risk", `${security.fraudScore}% (${security.fraudLevel || "low"})`],
-    ["Company abuse", `${security.companyAbuserScore ?? 0}%`],
-    ["ASN abuse", `${security.asnAbuserScore ?? 0}%`],
-  ] : [];
+  const rows: Array<[string, string]> = security ? [["Your IP", maskIp(security.ip)], ["Connection", security.connection || "Unknown"], ["Country", security.country || security.countryCode || "Unknown"], ["Region", security.region || "Unknown"], ["City", security.city || "Unknown"], ["Organization", security.organization || "Unknown"], ["Company type", security.companyType || "Unknown"], ["ASN", security.asn ? `AS${security.asn}` : "Unknown"], ["Datacenter", security.datacenter || "None detected"], ["Fraud risk", `${security.fraudScore}% (${security.fraudLevel || "low"})`], ["Company abuse", `${security.companyAbuserScore ?? 0}%`], ["ASN abuse", `${security.asnAbuserScore ?? 0}%`]] : [];
 
   return <ReDomScreen footer={<View style={styles.footer}><Text style={styles.muted}>{t("alreadyAccount")} <Text onPress={() => navigation.navigate("Login")} style={styles.link}>{t("login")}</Text></Text><View style={styles.company}><ReDomLogo width={72} height={20} /></View></View>}>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -219,15 +158,13 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
     </ScrollView></View></View></Modal>
 
     <Modal visible={riskBlockOpen} transparent animationType="fade" onRequestClose={() => undefined}>
-      <View style={styles.riskOverlay}>
-        <View style={styles.riskBlockCard}>
-          <View style={styles.infoIconCircle}><InfoBlack width={38} height={38} /></View>
-          <Text style={styles.riskBlockTitle}>Network connection not supported</Text>
-          <Text style={styles.riskBlockBody}>You might be using the Internet through a proxy, VPN, Tor network, datacenter, hosting service, or another connection that ReDom cannot use for registration.</Text>
-          <Text style={styles.riskBlockBody}>Please disconnect from the VPN, proxy, or other routed connection and try again using your normal Internet connection.</Text>
-          <Text style={styles.redirectText}>Returning to Login in {riskSeconds}s</Text>
-        </View>
-      </View>
+      <View style={styles.riskOverlay}><View style={styles.riskBlockCard}>
+        <View style={styles.infoIconCircle}><InfoBlack width={38} height={38} /></View>
+        <Text style={styles.riskBlockTitle}>Network connection not supported</Text>
+        <Text style={styles.riskBlockBody}>You might be using the Internet through a proxy, VPN, Tor network, datacenter, hosting service, or another connection that ReDom cannot use for registration.</Text>
+        <Text style={styles.riskBlockBody}>Please disconnect from the VPN, proxy, or other routed connection and try again using your normal Internet connection.</Text>
+        <Text style={styles.redirectText}>Returning to Login in {riskSeconds}s</Text>
+      </View></View>
     </Modal>
   </ReDomScreen>;
 }
