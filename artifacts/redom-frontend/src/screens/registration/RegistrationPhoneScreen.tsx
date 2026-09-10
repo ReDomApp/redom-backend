@@ -34,7 +34,9 @@ const flowMask = (v: string) => `${v.slice(0, 4)}${"•".repeat(Math.max(0, v.le
 const pretty = (v: unknown) => { try { return JSON.stringify(v, null, 2); } catch { return String(v); } };
 
 function hasBlockingNetworkRisk(security: RegistrationFlowNetworkSecurity): boolean {
-  return security.fraudScore >= 50 || security.vpn === true || security.proxy === true || security.tor === true || Boolean(security.datacenter) || Boolean(security.egressService) || security.bot === true || security.bogon === true;
+  const connectionText = `${security.connection ?? ""} ${security.companyType ?? ""}`.toLowerCase();
+  const hostingDetected = security.ipapi?.isDatacenter === true || connectionText.includes("hosting") || connectionText.includes("datacenter");
+  return security.fraudScore >= 50 || security.vpn === true || Boolean(security.vpnService) || security.proxy === true || security.tor === true || Boolean(security.datacenter) || hostingDetected || Boolean(security.egressService) || security.bot === true || security.bogon === true;
 }
 
 export function RegistrationPhoneScreen({ navigation, route }: Props) {
