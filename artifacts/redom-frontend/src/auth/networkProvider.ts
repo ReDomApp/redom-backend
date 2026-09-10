@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { detectPublicIp } from "./publicIp";
+import { getPublicIp } from "../lib/ipapi";
 
 export interface NetworkSecurity {
   ip: string | null;
@@ -49,15 +49,13 @@ export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
   loaded = false;
 
   try {
-    // First obtain the public IP from the device's CURRENT Internet connection.
-    // IPAPI documents that omitting `q` returns the caller's own public IP.
-    // This request therefore runs from the handset over its active Wi-Fi/mobile
-    // connection, exactly like a normal "what is my IP" application.
-    const publicIp = await detectPublicIp();
+    // Get the public IP directly from IPAPI using the device's CURRENT
+    // Wi-Fi/mobile connection. The shared IPAPI client owns the endpoint,
+    // timeout, response validation, and error handling.
+    const publicIp = await getPublicIp();
 
     // Send only the discovered public IP to ReDom. The backend performs the
-    // authenticated IPAPI lookup with IPAPI_API_KEY; the secret never ships
-    // inside the Expo bundle.
+    // authenticated IPAPI security lookup; IPAPI_API_KEY never ships in Expo.
     const result = await api.get<NetworkProviderResponse>(
       `/auth/network-provider?ip=${encodeURIComponent(publicIp)}`,
     );
