@@ -20,6 +20,13 @@ export interface RegistrationFlowPhoneSaveResult {
   countryCode: string;
   lookupComplete: boolean;
   verificationStatus: "verified";
+  lookupProvider: "ipqs" | "abstract" | "twilio";
+  lookupType: "phone-validation" | "basic";
+  lookupRequestId: string;
+  nationalFormat: string | null;
+  phoneCountryName: string | null;
+  callingCountryCode: string | null;
+  validationErrors: string[] | null;
   valid: boolean | null;
   active: boolean | null;
   activeStatus: string | null;
