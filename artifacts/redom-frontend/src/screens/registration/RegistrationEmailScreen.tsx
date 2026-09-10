@@ -59,7 +59,7 @@ export function RegistrationEmailScreen({ navigation, route }: Props) {
 
       setPhase("Saving email details to your Flow ID…");
       await new Promise((resolve) => setTimeout(resolve, 350));
-      setPhase("Sending verification email with ReSend…");
+      setPhase("Sending verification email with Resend…");
       const deviceId = await getDeviceId();
       await authService.saveRegistrationFlowEmail({ reservationId: route.params.reservationId, flowId, deviceId, email: normalized });
       setPhase("Email details saved");
