@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { registrationFlowReservationService } from "../services/auth/registration-flow-reservation.service";
 import { registrationFlowMemoryService } from "../services/auth/registration-flow-memory.service";
+import { registrationFlowSecurityService } from "../services/auth/registration-flow-security.service";
 import {
   reserveRegistrationFlowSchema,
   saveRegistrationFlowBirthdaySchema,
@@ -83,6 +84,20 @@ export class RegistrationFlowController {
       res.status(200).json(result);
     } catch (error) {
       res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to verify your phone number." });
+    }
+  }
+
+  async inspectSecurity(req: Request, res: Response) {
+    try {
+      const reservationId = reservationIdFrom(req);
+      if (!reservationId) throw new Error("reservationId is required.");
+      const flowId = typeof req.query.flowId === "string" ? req.query.flowId.trim() : "";
+      if (!flowId) throw new Error("flowId is required.");
+      const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : undefined;
+      const result = await registrationFlowSecurityService.inspect({ reservationId, flowId, deviceId, ip: requestIp(req) });
+      res.status(200).json(result);
+    } catch (error) {
+      res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to complete the security check." });
     }
   }
 
