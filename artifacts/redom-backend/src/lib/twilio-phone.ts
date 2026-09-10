@@ -11,12 +11,7 @@ export interface TwilioPhoneLookupResult {
   message: string;
 }
 
-/**
- * Performs Twilio Lookup Basic phone validation.
- * Line Type Intelligence is intentionally not requested here; IPQS is used
- * as the post-validation enrichment provider for fraud, line type, carrier,
- * and VoIP classification.
- */
+/** Performs Twilio Lookup Basic phone validation. */
 export async function checkTwilioPhone(
   phoneNumber: string,
 ): Promise<TwilioPhoneLookupResult> {
