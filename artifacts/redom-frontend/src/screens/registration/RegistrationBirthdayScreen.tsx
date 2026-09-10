@@ -27,12 +27,13 @@ function daysInMonth(year: number, month: number) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
-function WheelColumn({ values, selected, onChange, label }: { values: number[]; selected: number; onChange: (value: number) => void; label: string }) {
+function WheelColumn({ values, selected, onChange, label, disabled }: { values: number[]; selected: number; onChange: (value: number) => void; label: string; disabled: boolean }) {
   const selectedIndex = Math.max(0, values.indexOf(selected));
   return (
     <View style={styles.wheelWrap}>
       <Text style={styles.wheelLabel}>{label}</Text>
       <ScrollView
+        scrollEnabled={!disabled}
         showsVerticalScrollIndicator={false}
         snapToInterval={42}
         decelerationRate="fast"
@@ -66,6 +67,7 @@ export function RegistrationBirthdayScreen({ navigation, route }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<"child" | "teen" | null>(null);
   const [warningRead, setWarningRead] = useState(false);
+  const [flowLocked, setFlowLocked] = useState(false);
 
   useEffect(() => {
     const update = () => setSecondsLeft(Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)));
@@ -85,12 +87,13 @@ export function RegistrationBirthdayScreen({ navigation, route }: Props) {
   }, [year, month, day]);
 
   async function continueRegistration() {
-    if (loading || secondsLeft <= 0) return;
+    if (loading || flowLocked || secondsLeft <= 0) return;
     setLoading(true);
     setError(null);
     try {
       const result = await authService.saveRegistrationFlowBirthday({ reservationId, flowId, deviceId: await getDeviceId(), dateOfBirth });
       if (result.ageBand === "underage") {
+        setFlowLocked(true);
         setWarning("child");
         setWarningRead(false);
       } else if (result.ageBand === "teen") {
@@ -127,13 +130,13 @@ export function RegistrationBirthdayScreen({ navigation, route }: Props) {
         <Text style={styles.title}><AIText context="ReDom signup birthday title">What's your birthday?</AIText></Text>
         <Text style={styles.description}><AIText context="ReDom signup birthday description">Choose your date of birth. It must be the birthday you use in everyday life.</AIText></Text>
         <Text style={styles.helper}><AIText context="ReDom signup birthday privacy helper">You can always make this private later.</AIText></Text>
-        <View style={styles.spinnerBox}>
-          <WheelColumn label="YYYY" values={years} selected={year} onChange={setYear} />
-          <WheelColumn label="MM" values={Array.from({ length: 12 }, (_, index) => index + 1)} selected={month} onChange={setMonth} />
-          <WheelColumn label="DD" values={days} selected={day} onChange={setDay} />
+        <View style={[styles.spinnerBox, flowLocked && styles.lockedBox]}>
+          <WheelColumn label="YYYY" values={years} selected={year} onChange={setYear} disabled={flowLocked} />
+          <WheelColumn label="MM" values={Array.from({ length: 12 }, (_, index) => index + 1)} selected={month} onChange={setMonth} disabled={flowLocked} />
+          <WheelColumn label="DD" values={days} selected={day} onChange={setDay} disabled={flowLocked} />
         </View>
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-        <Pressable accessibilityRole="button" onPress={() => void continueRegistration()} disabled={loading || secondsLeft <= 0} style={[styles.button, (loading || secondsLeft <= 0) && styles.disabled]}>
+        <Pressable accessibilityRole="button" onPress={() => void continueRegistration()} disabled={loading || flowLocked || secondsLeft <= 0} style={[styles.button, (loading || flowLocked || secondsLeft <= 0) && styles.disabled]}>
           {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t("continue")}</Text>}
         </Pressable>
         <View style={styles.progress} accessibilityLabel={uiMessage("progress3")}>
@@ -197,6 +200,7 @@ const styles = StyleSheet.create({
   description:{color:TEXT,fontSize:15,lineHeight:22,textAlign:"center"},
   helper:{color:MUTED,fontSize:13,lineHeight:19,textAlign:"center",marginTop:5,marginBottom:22},
   spinnerBox:{height:170,width:"100%",borderWidth:1,borderColor:BORDER,borderRadius:14,flexDirection:"row",overflow:"hidden",backgroundColor:"#FFFFFF"},
+  lockedBox:{opacity:.6},
   wheelWrap:{flex:1,position:"relative",borderRightWidth:1,borderRightColor:"#E4E6E9"},
   wheelLabel:{fontSize:10.5,fontWeight:"800",color:BLUE,textAlign:"center",paddingTop:6},
   wheelContent:{paddingVertical:64},
