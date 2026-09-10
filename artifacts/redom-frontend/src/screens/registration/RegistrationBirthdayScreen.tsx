@@ -33,6 +33,7 @@ function WheelColumn({ values, selected, onChange, label, disabled }: { values: 
     <View style={styles.wheelWrap}>
       <Text style={styles.wheelLabel}>{label}</Text>
       <ScrollView
+        style={styles.wheelViewport}
         scrollEnabled={!disabled}
         showsVerticalScrollIndicator={false}
         snapToInterval={42}
@@ -201,13 +202,14 @@ const styles = StyleSheet.create({
   helper:{color:MUTED,fontSize:13,lineHeight:19,textAlign:"center",marginTop:5,marginBottom:22},
   spinnerBox:{height:170,width:"100%",borderWidth:1,borderColor:BORDER,borderRadius:14,flexDirection:"row",overflow:"hidden",backgroundColor:"#FFFFFF"},
   lockedBox:{opacity:.6},
-  wheelWrap:{flex:1,position:"relative",borderRightWidth:1,borderRightColor:"#E4E6E9"},
-  wheelLabel:{fontSize:10.5,fontWeight:"800",color:BLUE,textAlign:"center",paddingTop:6},
-  wheelContent:{paddingVertical:64},
+  wheelWrap:{flex:1,height:170,position:"relative",borderRightWidth:1,borderRightColor:"#E4E6E9"},
+  wheelLabel:{position:"absolute",top:6,left:0,right:0,zIndex:2,fontSize:10.5,fontWeight:"800",color:BLUE,textAlign:"center"},
+  wheelViewport:{position:"absolute",top:30,left:0,right:0,bottom:0},
+  wheelContent:{paddingVertical:42},
   wheelItem:{height:42,alignItems:"center",justifyContent:"center"},
-  wheelText:{fontSize:16,color:MUTED},
-  wheelTextSelected:{fontSize:19,color:TEXT,fontWeight:"800"},
-  wheelSelection:{position:"absolute",left:5,right:5,top:64,height:42,borderWidth:1.5,borderColor:BLUE,borderRadius:9},
+  wheelText:{fontSize:16,lineHeight:22,color:MUTED},
+  wheelTextSelected:{fontSize:19,lineHeight:24,color:TEXT,fontWeight:"800"},
+  wheelSelection:{position:"absolute",left:5,right:5,top:72,height:42,borderWidth:1.5,borderColor:BLUE,borderRadius:9},
   error:{color:"#E41E3F",fontSize:13,lineHeight:19,fontWeight:"600",marginTop:12,textAlign:"center"},
   button:{height:54,borderRadius:13,backgroundColor:BLUE,alignItems:"center",justifyContent:"center",marginTop:20,width:"100%"},
   buttonText:{color:"#FFFFFF",fontSize:17,fontWeight:"800"},
