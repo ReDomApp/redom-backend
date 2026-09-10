@@ -20,33 +20,81 @@ export interface IPAPIResult {
   is_abuser?: boolean | null;
   elapsed_ms?: number | null;
   vpn?: {
-    ip?: string | null; service?: string | null; url?: string | null; type?: string | null;
-    last_seen?: number | null; last_seen_str?: string | null; exit_node_region?: string | null;
-    country_code?: string | null; city_name?: string | null; latitude?: number | null; longitude?: number | null;
+    ip?: string | null;
+    service?: string | null;
+    url?: string | null;
+    type?: string | null;
+    last_seen?: number | null;
+    last_seen_str?: string | null;
+    exit_node_region?: string | null;
+    country_code?: string | null;
+    city_name?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
   } | null;
   datacenter?: {
-    datacenter?: string | null; domain?: string | null; network?: string | null; region?: string | null;
-    service?: string | null; network_border_group?: string | null; code?: string | null;
-    city?: string | null; state?: string | null; country?: string | null;
+    datacenter?: string | null;
+    domain?: string | null;
+    network?: string | null;
+    region?: string | null;
+    service?: string | null;
+    network_border_group?: string | null;
+    code?: string | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
   } | null;
   company?: {
-    name?: string | null; abuser_score?: string | null; domain?: string | null; type?: string | null;
-    network?: string | null; netname?: string | null;
+    name?: string | null;
+    abuser_score?: string | null;
+    domain?: string | null;
+    type?: string | null;
+    network?: string | null;
+    netname?: string | null;
   } | null;
-  abuse?: { name?: string | null; address?: string | null; email?: string | null; phone?: string | null } | null;
+  abuse?: {
+    name?: string | null;
+    address?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
   asn?: {
-    asn?: number | null; abuser_score?: string | null; route?: string | null; descr?: string | null;
-    country?: string | null; active?: boolean | null; org?: string | null; domain?: string | null;
-    abuse?: string | null; type?: string | null; created?: string | null; updated?: string | null; rir?: string | null;
+    asn?: number | null;
+    abuser_score?: string | null;
+    route?: string | null;
+    descr?: string | null;
+    country?: string | null;
+    active?: boolean | null;
+    org?: string | null;
+    domain?: string | null;
+    abuse?: string | null;
+    type?: string | null;
+    created?: string | null;
+    updated?: string | null;
+    rir?: string | null;
   } | null;
   location?: {
-    is_eu_member?: boolean | null; calling_code?: string | null; currency_code?: string | null;
-    continent?: string | null; country?: string | null; country_code?: string | null; state?: string | null;
-    city?: string | null; latitude?: number | null; longitude?: number | null; zip?: string | null;
-    timezone?: string | null; local_time?: string | null; local_time_unix?: number | null; is_dst?: boolean | null;
-    utcoffset?: string | null; accuracy?: "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "VERY_LOW" | null; geofeed?: string[];
+    is_eu_member?: boolean | null;
+    calling_code?: string | null;
+    currency_code?: string | null;
+    continent?: string | null;
+    country?: string | null;
+    country_code?: string | null;
+    state?: string | null;
+    city?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    zip?: string | null;
+    timezone?: string | null;
+    local_time?: string | null;
+    local_time_unix?: number | null;
+    is_dst?: boolean | null;
+    utcoffset?: string | null;
+    accuracy?: "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "VERY_LOW" | null;
+    geofeed?: string[];
   } | null;
 
+  // ReDom compatibility fields derived from the authoritative IPAPI response.
   fraud_score: number;
   proxy: boolean;
   vpn: boolean;
@@ -60,8 +108,11 @@ export interface IPAPIResult {
   recent_abuse?: boolean;
   active_vpn?: boolean;
   active_tor?: boolean;
-  request_id?: string;
 }
+
+const IPAPI_URL = "https://api.ipapi.is";
+const REQUEST_TIMEOUT_MS = 8_000;
+const MAX_TRANSIENT_ATTEMPTS = 2;
 
 function parseAbuserScore(value?: string | null): number {
   if (!value) return 0;
@@ -77,60 +128,104 @@ function normalizeIp(ip: string): string {
   return value.startsWith("::ffff:") ? value.slice(7) : value;
 }
 
-function ipapiError(data: unknown, status: number): Error {
-  const body = (data && typeof data === "object" ? data : {}) as { error?: unknown; error_code?: unknown };
+function responseError(data: unknown, status: number): Error {
+  const body = (data && typeof data === "object" ? data : {}) as {
+    error?: unknown;
+    error_code?: unknown;
+  };
   const code = typeof body.error_code === "string" ? body.error_code : `HTTP_${status}`;
   const message = typeof body.error === "string" ? body.error : "IPAPI network lookup failed.";
   return new Error(`IPAPI ${code}: ${message}`);
 }
 
-/** Server-side IP/network intelligence using IPAPI's JSON GET endpoint. The API key never leaves the backend. */
+function isTransientAxiosError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") return true;
+  return !error.response;
+}
+
+function isTransientHttpStatus(status: number): boolean {
+  return status >= 500 && status <= 599;
+}
+
+/**
+ * Look up the public IP of the current network request using IPAPI's
+ * documented single-IP GET endpoint. The API key stays server-side.
+ *
+ * IPAPI explicitly recommends https://api.ipapi.is as the production
+ * endpoint because its DNS/edge layer automatically routes around unhealthy
+ * regional servers. Do not pin this client to a regional hostname.
+ */
 export async function checkIP(ip: string): Promise<IPAPIResult> {
   const normalizedIp = normalizeIp(ip);
-  const response = await axios.get<IPAPIResult>("https://api.ipapi.is/", {
-    params: {
-      q: normalizedIp,
-      key: env.ipApi.apiKey,
-    },
-    headers: { Accept: "application/json" },
-    timeout: 8_000,
-    validateStatus: () => true,
-  });
+  let lastError: unknown;
 
-  if (response.status < 200 || response.status >= 300) {
-    throw ipapiError(response.data, response.status);
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await axios.get<IPAPIResult>(IPAPI_URL, {
+        params: {
+          q: normalizedIp,
+          key: env.ipApi.apiKey,
+        },
+        headers: {
+          Accept: "application/json",
+        },
+        timeout: REQUEST_TIMEOUT_MS,
+        validateStatus: () => true,
+      });
+
+      if (response.status < 200 || response.status >= 300) {
+        if (isTransientHttpStatus(response.status) && attempt < MAX_TRANSIENT_ATTEMPTS) {
+          lastError = responseError(response.data, response.status);
+          continue;
+        }
+        throw responseError(response.data, response.status);
+      }
+
+      const data = response.data;
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error("IPAPI returned an invalid JSON response.");
+      }
+
+      const errorCode = (data as unknown as { error_code?: unknown }).error_code;
+      const errorMessage = (data as unknown as { error?: unknown }).error;
+      if (typeof errorCode === "string" || typeof errorMessage === "string") {
+        throw responseError(data, response.status);
+      }
+
+      // IPAPI's company/asn abuser_score is a percentage-like decimal. Keep
+      // the explicit is_abuser flag separate: it is a boolean verdict, not a
+      // 100% fraud score. This prevents a low-score IPAPI abuser flag from
+      // being incorrectly represented as maximum risk in ReDom.
+      const companyScore = parseAbuserScore(data.company?.abuser_score);
+      const asnScore = parseAbuserScore(data.asn?.abuser_score);
+      const fraudScore = Math.max(companyScore, asnScore);
+      const crawler = Boolean(data.is_crawler);
+
+      return {
+        ...data,
+        success: true,
+        fraud_score: fraudScore,
+        proxy: data.is_proxy === true,
+        vpn: data.is_vpn === true,
+        tor: data.is_tor === true,
+        bot_status: crawler,
+        hosting: data.is_datacenter === true,
+        ISP: data.company?.name ?? undefined,
+        organization: data.company?.name ?? data.asn?.org ?? undefined,
+        ASN: data.asn?.asn ?? undefined,
+        country_code: data.location?.country_code?.toUpperCase() || undefined,
+        recent_abuse: data.is_abuser === true,
+        active_vpn: data.is_vpn === true,
+        active_tor: data.is_tor === true,
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt >= MAX_TRANSIENT_ATTEMPTS || !isTransientAxiosError(error)) {
+        throw error;
+      }
+    }
   }
 
-  const data = response.data;
-  if (!data || typeof data !== "object") throw new Error("IPAPI returned an invalid response.");
-
-  const errorCode = (data as unknown as { error_code?: unknown }).error_code;
-  const errorMessage = (data as unknown as { error?: unknown }).error;
-  if (typeof errorCode === "string" || typeof errorMessage === "string") {
-    throw ipapiError(data, response.status);
-  }
-
-  const isAbuser = data.is_abuser === true;
-  const companyScore = parseAbuserScore(data.company?.abuser_score);
-  const asnScore = parseAbuserScore(data.asn?.abuser_score);
-  const fraudScore = isAbuser ? 100 : Math.max(companyScore, asnScore);
-  const crawler = Boolean(data.is_crawler);
-
-  return {
-    ...data,
-    success: true,
-    fraud_score: fraudScore,
-    proxy: data.is_proxy === true,
-    vpn: data.is_vpn === true,
-    tor: data.is_tor === true,
-    bot_status: crawler,
-    hosting: data.is_datacenter === true,
-    ISP: data.company?.name ?? undefined,
-    organization: data.company?.name ?? data.asn?.org ?? undefined,
-    ASN: data.asn?.asn ?? undefined,
-    country_code: data.location?.country_code?.toUpperCase() || undefined,
-    recent_abuse: isAbuser,
-    active_vpn: data.is_vpn === true,
-    active_tor: data.is_tor === true,
-  };
+  throw lastError instanceof Error ? lastError : new Error("IPAPI network lookup failed.");
 }
