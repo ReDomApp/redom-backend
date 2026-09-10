@@ -11,6 +11,7 @@ import { RegistrationIdentityScreen } from "../screens/registration/Registration
 import { RegistrationBirthdayScreen } from "../screens/registration/RegistrationBirthdayScreen";
 import { RegistrationGenderScreen } from "../screens/registration/RegistrationGenderScreen";
 import { RegistrationPhoneScreen } from "../screens/registration/RegistrationPhoneScreen";
+import { RegistrationEmailScreen } from "../screens/registration/RegistrationEmailScreen";
 import type { RootStackParamList } from "./types";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -41,6 +42,7 @@ export function AppNavigator() {
           <Stack.Screen name="RegistrationBirthday" component={RegistrationBirthdayScreen} />
           <Stack.Screen name="RegistrationGender" component={RegistrationGenderScreen} />
           <Stack.Screen name="RegistrationPhone" component={RegistrationPhoneScreen} />
+          <Stack.Screen name="RegistrationEmail" component={RegistrationEmailScreen} options={{ presentation: "transparentModal", animation: "slide_from_bottom", contentStyle: { backgroundColor: "transparent" }, gestureEnabled: true }} />
         </>
       )}
     </Stack.Navigator>
