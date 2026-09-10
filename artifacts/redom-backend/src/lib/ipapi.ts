@@ -1,5 +1,7 @@
 import axios from "axios";
 
+import { env } from "../config/env";
+
 export interface IPAPIResult {
   success: boolean;
   message?: string;
@@ -111,12 +113,6 @@ export interface IPAPIResult {
   request_id?: string;
 }
 
-function requireApiKey(): string {
-  const apiKey = process.env.IPAPI_API_KEY?.trim();
-  if (!apiKey) throw new Error("IPAPI_API_KEY is not configured.");
-  return apiKey;
-}
-
 function parseAbuserScore(value?: string | null): number {
   if (!value) return 0;
   const match = value.match(/^\s*(\d+(?:\.\d+)?)/);
@@ -133,10 +129,8 @@ function parseAbuserScore(value?: string | null): number {
  * abuse, ASN, company and geolocation intelligence.
  */
 export async function checkIP(ip: string): Promise<IPAPIResult> {
-  const apiKey = requireApiKey();
-
   const { data } = await axios.get<IPAPIResult>("https://api.ipapi.is", {
-    params: { q: ip, key: apiKey },
+    params: { q: ip, key: env.ipApi.apiKey },
     timeout: 10_000,
     validateStatus: () => true,
   });
