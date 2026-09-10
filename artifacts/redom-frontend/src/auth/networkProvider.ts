@@ -1,4 +1,5 @@
 import { api } from "../api/client";
+import { detectPublicIp } from "./publicIp";
 
 export interface NetworkSecurity {
   ip: string | null;
@@ -45,12 +46,27 @@ let cached: NetworkProviderResponse = emptyNetworkProvider();
 let loaded = false;
 
 export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
+  loaded = false;
+
   try {
-    const result = await api.get<NetworkProviderResponse>("/auth/network-provider");
-    cached = result.success && result.security ? result : emptyNetworkProvider(result.warning || "We could not complete the network security check.");
-  } catch {
-    cached = emptyNetworkProvider("We could not reach ReDom's network security service.");
+    // Detect the handset's public Internet address immediately. This avoids
+    // accidentally asking IPAPI to inspect Render's server IP instead of the
+    // user's mobile/residential public IP.
+    const publicIp = await detectPublicIp();
+    const result = await api.get<NetworkProviderResponse>(
+      `/auth/network-provider?ip=${encodeURIComponent(publicIp)}`,
+    );
+
+    cached = result.success && result.security
+      ? result
+      : emptyNetworkProvider(result.warning || "IPAPI could not complete the network security check.");
+  } catch (error) {
+    const message = error instanceof Error && error.message
+      ? error.message
+      : "We could not reach ReDom's network security service.";
+    cached = emptyNetworkProvider(message);
   }
+
   loaded = true;
   return cached;
 }
