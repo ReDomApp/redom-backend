@@ -33,6 +33,9 @@ export interface NetworkProviderResult {
   warning: string | null;
 }
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const resultCache = new Map<string, { expiresAt: number; result: NetworkProviderResult }>();
+
 function connectionType(result: Awaited<ReturnType<typeof checkIP>>) {
   if (result.is_tor) return "Tor";
   if (result.is_vpn) return "VPN";
@@ -62,10 +65,15 @@ function warningFor(security: NetworkSecurityResult) {
 export async function getNetworkProvider(ip: string | undefined): Promise<NetworkProviderResult> {
   if (!ip) return { success: false, networkProvider: null, termsUrl: null, security: null, warning: null };
 
-  const result = await checkIP(ip);
+  const cacheKey = ip.trim();
+  const cached = resultCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  if (cached) resultCache.delete(cacheKey);
+
+  const result = await checkIP(cacheKey);
   const networkProvider = result.company?.name ?? result.asn?.org ?? null;
   const security: NetworkSecurityResult = {
-    ip: result.ip ?? ip,
+    ip: result.ip ?? cacheKey,
     connection: connectionType(result),
     country: result.location?.country ?? null,
     countryCode: result.location?.country_code?.toUpperCase() ?? null,
@@ -90,13 +98,14 @@ export async function getNetworkProvider(ip: string | undefined): Promise<Networ
   };
 
   const providerDomain = result.company?.domain ?? result.asn?.domain ?? result.vpn?.url ?? null;
-  const termsUrl = officialProviderUrl(providerDomain);
-
-  return {
+  const response: NetworkProviderResult = {
     success: true,
     networkProvider,
-    termsUrl,
+    termsUrl: officialProviderUrl(providerDomain),
     security,
     warning: warningFor(security),
   };
+
+  resultCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, result: response });
+  return response;
 }
