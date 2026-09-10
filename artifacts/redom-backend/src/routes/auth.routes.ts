@@ -37,6 +37,6 @@ router.post("/resend-phone-code", verificationRateLimit, authController.resendPh
 router.post("/forgot-password", passwordResetRateLimit, authController.forgotPassword.bind(authController));
 router.post("/reset-password", passwordResetRateLimit, authController.resetPassword.bind(authController));
 router.post("/logout", authMiddleware, authController.logout.bind(authController));
-router.post("/refresh", authRateLimit, authController.refresh.bind(authController));
+router.post("/refresh", authRateLimit, authController.refreshSession.bind(authController));
 
 export default router;
