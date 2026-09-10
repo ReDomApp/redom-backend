@@ -17,6 +17,13 @@ export const saveRegistrationFlowBirthdaySchema = z.object({
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
+export const saveRegistrationFlowGenderSchema = z.object({
+  flowId: z.string().regex(/^\d{6,16}$/),
+  deviceId: z.string().trim().min(1).max(255).optional(),
+  gender: z.enum(["female", "male", "custom"]),
+  pronouns: z.enum(["She / Her", "He / Him", "They / Them", "Prefer not to say"]).optional(),
+});
+
 export const startRegistrationChallengeSchema = z.object({
   contactType: z.enum(["phone", "email"]),
   target: z.string().trim().min(1).max(255),
