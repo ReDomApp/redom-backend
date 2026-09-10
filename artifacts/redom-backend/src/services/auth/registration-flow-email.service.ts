@@ -2,14 +2,10 @@ import { and, eq, gt } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
-import { emailService } from "./email.service";
 import { validateRegistrationEmail } from "../../config/registration-email-domains";
-import { generateOtp, getOtpExpiration, hashOtp } from "../../utils/otp";
-
-const EMAIL_OTP_LENGTH = 6 as const;
 
 export class RegistrationFlowEmailService {
-  async saveAndSend(params: {
+  async save(params: {
     reservationId: string;
     flowId: string;
     deviceId?: string;
@@ -34,21 +30,7 @@ export class RegistrationFlowEmailService {
     }
 
     const validated = validateRegistrationEmail(params.email);
-    const code = generateOtp(EMAIL_OTP_LENGTH);
     const createdAt = new Date();
-    const expiresAt = getOtpExpiration("email", createdAt);
-
-    const sendResult = await emailService.sendOtp({
-      email: validated.email,
-      code,
-      firstName: reservation.firstName ?? undefined,
-      purpose: "EMAIL_VERIFICATION",
-      expiresAt,
-    });
-
-    if (!sendResult?.providerReference) {
-      throw new Error("ReDom could not send the email verification message.");
-    }
 
     const existingMemory = (reservation.memory ?? {}) as Record<string, unknown>;
     const existingScreens = (existingMemory.screens ?? {}) as Record<string, unknown>;
@@ -57,11 +39,7 @@ export class RegistrationFlowEmailService {
       address: validated.email,
       domain: validated.domain,
       provider: validated.provider,
-      verificationStatus: "pending",
-      verificationProvider: sendResult.provider,
-      verificationRequestId: sendResult.providerReference,
-      verificationCodeHash: hashOtp(code),
-      verificationExpiresAt: expiresAt.toISOString(),
+      verificationStatus: "not_started",
       savedAt: createdAt.toISOString(),
     };
     const memory = {
@@ -75,7 +53,9 @@ export class RegistrationFlowEmailService {
         },
       },
     };
-    const registeredTables = [...new Set([...existingRegisteredTables, "registration_flow_reservations"])];
+    const registeredTables = [
+      ...new Set([...existingRegisteredTables, "registration_flow_reservations"]),
+    ];
 
     const [updated] = await db
       .update(registrationFlowReservations)
@@ -101,8 +81,7 @@ export class RegistrationFlowEmailService {
       reservationId: updated.id,
       email: validated.email,
       provider: validated.provider,
-      verificationSent: true,
-      verificationExpiresAt: expiresAt.toISOString(),
+      saved: true,
     };
   }
 }
