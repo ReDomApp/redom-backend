@@ -162,9 +162,7 @@ export class RegistrationFlowReservationService {
       logger.error({ error }, "IPQS IP security lookup failed during registration phone verification");
       throw new Error("We could not complete the security check for this registration. Please try again.");
     }
-    if (!ipqsIp.success) {
-      throw new Error(ipqsIp.message || "We could not complete the security check for this registration. Please try again.");
-    }
+    if (!ipqsIp.success) throw new Error(ipqsIp.message || "We could not complete the security check for this registration. Please try again.");
 
     let ipqs: Awaited<ReturnType<typeof checkPhone>>;
     try {
@@ -173,25 +171,19 @@ export class RegistrationFlowReservationService {
       logger.error({ error }, "IPQS phone lookup failed during registration");
       throw new Error("We could not verify this phone number right now. Please try again.");
     }
-
-    if (!ipqs.success) {
-      throw new Error(phoneLookupReason(ipqs));
-    }
+    if (!ipqs.success) throw new Error(phoneLookupReason(ipqs));
 
     const fraudScore = Number(ipqs.fraud_score ?? 0);
     const returnedCountry = normalizeCountryCode(ipqs.country || ipqs.country_code || "");
     const lineType = ipqs.line_type?.trim() || null;
     const voip = ipqs.VOIP === true || normalizeLineType(lineType) === "VOIP";
-    const activeKnown = typeof ipqs.active === "boolean";
     const lookupComplete = true;
 
     if (ipqs.valid === false) throw new Error("This phone number is invalid or does not exist. Please enter another number or sign up using email.");
     if (ipqs.active === false) throw new Error("This phone number is not currently active. Please enter another number or sign up using email.");
     if (voip) throw new Error("This phone number cannot be used because it appears to be a VoIP number. Please enter another number or sign up using email.");
     if (fraudScore >= 50) throw new Error(`This phone number cannot be used because its fraud risk score is ${fraudScore}%. Please enter another number or sign up using email.`);
-    if (ipqs.accurate_country_code === false || (returnedCountry && returnedCountry !== selectedCountry)) {
-      throw new Error("The phone number country does not match the selected country code. Please check the country and phone number.");
-    }
+    if (ipqs.accurate_country_code === false || (returnedCountry && returnedCountry !== selectedCountry)) throw new Error("The phone number country does not match the selected country code. Please check the country and phone number.");
 
     const [updated] = await db.update(registrationFlowReservations).set({ phoneNumber: ipqs.formatted || params.phoneNumber, phoneCountryCode: selectedCountry }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
     if (!updated) throw new Error("Unable to save your phone number to this registration flow.");
