@@ -2,10 +2,7 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
-import {
-  moderateContent,
-  translateUiTexts,
-} from "../services/aiContent.service";
+import { translateUiTexts } from "../services/aiContent.service";
 
 const router = Router();
 
@@ -20,10 +17,6 @@ const localizationSchema = z.object({
   language: z.string().trim().min(2).max(32),
   texts: z.array(z.string().min(1).max(2_000)).min(1).max(100),
   context: z.string().trim().max(500).optional(),
-});
-
-const moderationSchema = z.object({
-  text: z.string().min(1).max(20_000),
 });
 
 router.post("/localize", aiRateLimit, async (req, res) => {
@@ -42,26 +35,6 @@ router.post("/localize", aiRateLimit, async (req, res) => {
     req.log?.error?.({ err: error }, "AI localization failed");
     return res.status(502).json({
       error: "Unable to localize the requested UI text.",
-    });
-  }
-});
-
-router.post("/moderate", aiRateLimit, async (req, res) => {
-  const parsed = moderationSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: "Invalid moderation request.",
-      issues: parsed.error.flatten(),
-    });
-  }
-
-  try {
-    const result = await moderateContent(parsed.data.text);
-    return res.status(200).json(result);
-  } catch (error) {
-    req.log?.error?.({ err: error }, "AI moderation failed");
-    return res.status(502).json({
-      error: "Unable to moderate the submitted content.",
     });
   }
 });
