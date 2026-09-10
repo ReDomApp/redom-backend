@@ -9,7 +9,7 @@ import { logger } from "../../lib/logger";
 
 const SCREEN_TABLES = ["registration_flow_reservations"] as const;
 
-type Screen = "name" | "birthday" | "gender" | "phone";
+type Screen = "name" | "birthday" | "gender" | "phone" | "email";
 
 type MemoryScreen = {
   completed: boolean;
@@ -25,6 +25,7 @@ function buildMemory(
   screens: Record<string, MemoryScreen>,
 ): RegistrationFlowMemory {
   const existingNetworkSecurity = (reservation.memory?.networkSecurity ?? {}) as Record<string, unknown>;
+  const existingEmail = reservation.memory?.email;
 
   return {
     flow: {
@@ -65,6 +66,7 @@ function buildMemory(
       botStatus: reservation.ipBotStatus,
       countryCode: reservation.ipCountryCode,
     },
+    ...(existingEmail ? { email: existingEmail } : {}),
   };
 }
 
