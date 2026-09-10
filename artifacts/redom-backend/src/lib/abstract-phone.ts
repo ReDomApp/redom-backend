@@ -20,7 +20,7 @@ export interface AbstractPhoneResult {
   risk_score?: number;
 }
 
-/** Secondary phone-validation provider used only when IPQS itself is unavailable. */
+/** Secondary phone-validation provider used only when Twilio is unavailable. */
 export async function checkAbstractPhone(
   phoneNumber: string,
   options?: { countryCode?: string },
