@@ -11,8 +11,62 @@ export interface RegistrationFlowNameSaveResult { success: boolean; reservationI
 export interface RegistrationFlowBirthdaySaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; age: number; ageBand: "underage" | "teen" | "adult"; flowStatus: "active" | "completed"; }
 export interface RegistrationFlowGenderSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; gender: "female" | "male" | "custom" | null; pronouns?: "She / Her" | "He / Him" | "They / Them" | "Prefer not to say" | null; }
 export interface RegistrationFlowPhoneCountryResult { success: boolean; countryCode: string | null; source: "device" | "unknown" | "ipapi"; timeZone: string | null; }
-export interface RegistrationFlowNetworkSecurity { ip: string | null; connection: string | null; country: string | null; countryCode: string | null; region: string | null; city: string | null; timezone: string | null; organization: string | null; companyType: string | null; asn: number | null; datacenter: string | null; vpnService: string | null; egressService: string | null; egressProvider: string | null; proxy: boolean; vpn: boolean; tor: boolean; bot: boolean; abuser: boolean; mobile: boolean; satellite: boolean; fraudScore: number; }
+
+export interface RegistrationFlowIpapiDetails {
+  ip: string | null;
+  rir: string | null;
+  isBogon: boolean;
+  isMobile: boolean;
+  isSatellite: boolean;
+  isCrawler: boolean;
+  isDatacenter: boolean;
+  isTor: boolean;
+  isProxy: boolean;
+  isVpn: boolean;
+  isAbuser: boolean;
+  datacenter: Record<string, unknown> | null;
+  company: Record<string, unknown> | null;
+  abuse: Record<string, unknown> | null;
+  asn: Record<string, unknown> | null;
+  location: Record<string, unknown> | null;
+}
+
+export interface RegistrationFlowNetworkSecurity {
+  ip: string | null;
+  connection: string | null;
+  country: string | null;
+  countryCode: string | null;
+  region: string | null;
+  city: string | null;
+  timezone: string | null;
+  organization: string | null;
+  companyType: string | null;
+  asn: number | null;
+  datacenter: string | null;
+  datacenterDomain?: string | null;
+  datacenterNetwork?: string | null;
+  vpnService: string | null;
+  egressService: string | null;
+  egressProvider: string | null;
+  proxy: boolean;
+  vpn: boolean;
+  tor: boolean;
+  bot: boolean;
+  abuser: boolean;
+  mobile: boolean;
+  satellite: boolean;
+  bogon?: boolean;
+  fraudScore: number;
+  fraudLevel?: "low" | "moderate" | "high" | "critical";
+  companyAbuserScore?: number;
+  asnAbuserScore?: number;
+  securitySignals?: string[];
+  ipapi?: RegistrationFlowIpapiDetails;
+  consentedAt?: string | null;
+}
+
 export interface RegistrationFlowSecurityResult { success: boolean; flowId: string; reservationId: string; security: RegistrationFlowNetworkSecurity; }
+export interface RegistrationFlowSecurityConsentResult extends RegistrationFlowSecurityResult { consentedAt: string; screenCompleted: boolean; }
 export interface RegistrationFlowPhoneSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; phoneNumber: string; countryCode: string; lookupComplete: boolean; verificationStatus: "verified"; lookupProvider: "abstract" | "twilio"; lookupType: "phone-validation" | "basic"; lookupRequestId: string; nationalFormat: string | null; phoneCountryName: string | null; callingCountryCode: string | null; validationErrors: string[] | null; valid: boolean | null; active: boolean | null; activeStatus: string | null; fraudScore: number; voip: boolean; prepaid: boolean | null; risky: boolean | null; recentAbuse: boolean | null; leaked: boolean | null; spammer: boolean | null; lineType: string | null; carrier: string | null; phoneCountry: string | null; accurateCountryCode: boolean | null; ipSecurity: { fraudScore: number; proxy: boolean; vpn: boolean; tor: boolean; botStatus: boolean; countryCode: string | null; }; }
 export interface RegistrationFlowMemory { flow: { flowId: string; reservationId: string; status: string; expiresAt: string }; screens: Record<string, { completed: boolean; completedAt: string }>; identity: { firstName: string | null; lastName: string | null }; birthday: { dateOfBirth: string | null }; gender: { gender: string | null; pronouns: string | null }; phoneLookup: { phoneNumber: string | null; lookupStatus: string | null; valid: boolean | null; active: boolean | null; voip: boolean | null; fraudScore: number | null; lineType: string | null; carrier: string | null; lookupRequestId: string | null; }; networkSecurity: Partial<RegistrationFlowNetworkSecurity> & { ipFraudScore: number | null; proxy: boolean | null; vpn: boolean | null; tor: boolean | null; botStatus: boolean | null; countryCode: string | null; }; }
 export interface RegistrationFlowMemoryResult { success: boolean; flowId: string; reservationId: string; status: string; expiresAt: string; registeredTables: string[]; memory: RegistrationFlowMemory; }
