@@ -1,10 +1,11 @@
-import { randomBytes, randomInt } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { and, eq, gt, lte } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { registrationChallenges } from "../../database/registration-challenges.schema";
 import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
 import { checkIP, checkPhone } from "../../lib/ipqs";
+import { checkTwilioPhone } from "../../lib/twilio-phone";
 import { logger } from "../../lib/logger";
 
 const TTL_MS = 30 * 60 * 1000;
@@ -142,36 +143,53 @@ export class RegistrationFlowReservationService {
     catch (error) { logger.error({ error }, "IPQS IP security lookup failed during registration phone verification"); throw new Error("We could not complete the security check for this registration. Please try again."); }
     if (!ipqsIp.success) throw new Error(ipqsIp.message || "We could not complete the security check for this registration. Please try again.");
 
-    let ipqs: Awaited<ReturnType<typeof checkPhone>>;
-    try { ipqs = await checkPhone(params.phoneNumber, { countryCode: selectedCountry }); }
-    catch (error) { logger.error({ error }, "IPQS phone lookup failed during registration"); throw new Error("We could not verify this phone number right now. Please try again."); }
-    if (!ipqs.success) throw new Error(phoneLookupReason(ipqs));
+    // Twilio Basic Lookup establishes the final phone validation. It is also
+    // the last-resort provider after the existing IPQS -> Abstract path fails.
+    let twilioResult: Awaited<ReturnType<typeof checkTwilioPhone>>;
+    try { twilioResult = await checkTwilioPhone(params.phoneNumber); }
+    catch (error) { logger.warn({ error }, "Twilio Basic phone lookup failed during registration"); throw new Error("We could not verify this phone number right now. Please try again."); }
+    if (!twilioResult.valid) throw new Error("This phone number is invalid or does not exist. Please enter another number or sign up using email.");
 
-    const fraudScore = Number(ipqs.fraud_score ?? 0);
-    const returnedCountry = normalizeCountryCode(ipqs.country || ipqs.country_code || "");
-    const lineType = ipqs.line_type?.trim() || null;
-    const voip = ipqs.VOIP === true || normalizeLineType(lineType) === "VOIP";
-    const lookupComplete = true;
+    const twilioCountry = normalizeCountryCode(twilioResult.country_code || "");
+    if (!twilioCountry || twilioCountry !== selectedCountry) throw new Error("The phone number country does not match the selected country code. Please check the country and phone number.");
 
-    if (ipqs.valid === false) throw new Error("This phone number is invalid or does not exist. Please enter another number or sign up using email.");
-    if (ipqs.active === false) throw new Error("This phone number is not currently active. Please enter another number or sign up using email.");
+    // Enrich the successful Twilio result with IPQS only. Do not invoke the
+    // Abstract fallback here: if IPQS enrichment fails, Twilio remains valid.
+    let ipqs: Awaited<ReturnType<typeof checkPhone>> | null = null;
+    try {
+      ipqs = await checkPhone(twilioResult.phone_number, { countryCode: selectedCountry, allowFallback: false });
+    } catch (error) {
+      logger.warn({ error }, "IPQS phone enrichment failed after successful Twilio Basic lookup; retaining Twilio result");
+    }
+
+    const ipqsUsable = Boolean(ipqs?.success);
+    const fraudScore = ipqsUsable ? Number(ipqs?.fraud_score ?? 0) : 0;
+    const lineType = ipqsUsable ? ipqs?.line_type?.trim() || null : null;
+    const carrier = ipqsUsable ? ipqs?.carrier?.trim() || null : null;
+    const voip = ipqsUsable ? ipqs?.VOIP === true || normalizeLineType(lineType) === "VOIP" : false;
+    const lookupRequestId = randomUUID();
+    const lookupProvider = "twilio" as const;
+    const lookupType = "basic" as const;
+
+    if (ipqsUsable && ipqs!.valid === false) throw new Error("This phone number is invalid or does not exist. Please enter another number or sign up using email.");
+    if (ipqsUsable && ipqs!.active === false) throw new Error("This phone number is not currently active. Please enter another number or sign up using email.");
     if (voip) throw new Error("This phone number cannot be used because it appears to be a VoIP number. Please enter another number or sign up using email.");
-    if (fraudScore >= 50) throw new Error(`This phone number cannot be used because its fraud risk score is ${fraudScore}%. Please enter another number or sign up using email.`);
-    if (ipqs.accurate_country_code === false || (returnedCountry && returnedCountry !== selectedCountry)) throw new Error("The phone number country does not match the selected country code. Please check the country and phone number.");
+    if (ipqsUsable && fraudScore >= 50) throw new Error(`This phone number cannot be used because its fraud risk score is ${fraudScore}%. Please enter another number or sign up using email.`);
+    if (ipqsUsable && ipqs!.accurate_country_code === false) throw new Error("The phone number country does not match the selected country code. Please check the country and phone number.");
 
     const phoneLookupAt = new Date();
     const [updated] = await db.update(registrationFlowReservations).set({
-      phoneNumber: ipqs.formatted || params.phoneNumber,
+      phoneNumber: twilioResult.phone_number || params.phoneNumber,
       phoneCountryCode: selectedCountry,
       phoneLookupStatus: "verified",
-      phoneValid: ipqs.valid ?? null,
-      phoneActive: ipqs.active ?? null,
+      phoneValid: true,
+      phoneActive: ipqsUsable ? ipqs!.active ?? null : null,
       phoneVoip: voip,
       phoneFraudScore: fraudScore,
       phoneLineType: lineType,
-      phoneCarrier: ipqs.carrier?.trim() || null,
-      phoneLookupCountryCode: returnedCountry || null,
-      phoneLookupRequestId: ipqs.request_id || null,
+      phoneCarrier: carrier,
+      phoneLookupCountryCode: twilioCountry,
+      phoneLookupRequestId: lookupRequestId,
       phoneLookupAt,
       ipFraudScore: Number(ipqsIp.fraud_score ?? 0),
       ipProxy: ipqsIp.proxy ?? false,
@@ -189,22 +207,29 @@ export class RegistrationFlowReservationService {
       expiresAt: updated.expiresAt.toISOString(),
       phoneNumber: updated.phoneNumber,
       countryCode: updated.phoneCountryCode,
-      lookupComplete,
+      lookupComplete: true,
       verificationStatus: "verified" as const,
-      valid: ipqs.valid ?? null,
-      active: ipqs.active ?? null,
-      activeStatus: ipqs.active_status ?? null,
+      lookupProvider,
+      lookupType,
+      lookupRequestId,
+      nationalFormat: twilioResult.national_format,
+      phoneCountryName: twilioResult.country,
+      callingCountryCode: twilioResult.calling_country_code,
+      validationErrors: twilioResult.validation_errors,
+      valid: true,
+      active: ipqsUsable ? ipqs!.active ?? null : null,
+      activeStatus: ipqsUsable ? ipqs!.active_status ?? null : null,
       fraudScore,
       voip,
-      prepaid: ipqs.prepaid ?? null,
-      risky: ipqs.risky ?? null,
-      recentAbuse: ipqs.recent_abuse ?? null,
-      leaked: ipqs.leaked ?? null,
-      spammer: ipqs.spammer ?? null,
+      prepaid: ipqsUsable ? ipqs!.prepaid ?? null : null,
+      risky: ipqsUsable ? ipqs!.risky ?? null : null,
+      recentAbuse: ipqsUsable ? ipqs!.recent_abuse ?? null : null,
+      leaked: ipqsUsable ? ipqs!.leaked ?? null : null,
+      spammer: ipqsUsable ? ipqs!.spammer ?? null : null,
       lineType,
-      carrier: ipqs.carrier ?? null,
-      phoneCountry: returnedCountry || null,
-      accurateCountryCode: ipqs.accurate_country_code ?? null,
+      carrier,
+      phoneCountry: twilioCountry,
+      accurateCountryCode: true,
       ipSecurity: { fraudScore: Number(ipqsIp.fraud_score ?? 0), proxy: ipqsIp.proxy ?? false, vpn: ipqsIp.vpn ?? false, tor: ipqsIp.tor ?? false, botStatus: ipqsIp.bot_status ?? false, countryCode: ipqsIp.country_code?.toUpperCase() ?? null },
     };
   }
