@@ -49,13 +49,20 @@ export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
   loaded = false;
 
   try {
-    // Detect the handset's public Internet address immediately. This avoids
-    // accidentally asking IPAPI to inspect Render's server IP instead of the
-    // user's mobile/residential public IP.
-    const publicIp = await detectPublicIp();
-    const result = await api.get<NetworkProviderResponse>(
-      `/auth/network-provider?ip=${encodeURIComponent(publicIp)}`,
-    );
+    let publicIp: string | null = null;
+    try {
+      // First attempt: ask IPAPI directly from the handset for the handset's
+      // public Internet address. No API key is embedded in the mobile app.
+      publicIp = await detectPublicIp();
+    } catch {
+      // Fallback: let Express use its trusted Render proxy/client IP chain.
+      // The keyed IPAPI request still happens only on the server.
+    }
+
+    const path = publicIp
+      ? `/auth/network-provider?ip=${encodeURIComponent(publicIp)}`
+      : "/auth/network-provider";
+    const result = await api.get<NetworkProviderResponse>(path);
 
     cached = result.success && result.security
       ? result
