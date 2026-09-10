@@ -17,6 +17,8 @@ export const registrationFlowReservations = pgTable(
     firstName: varchar("first_name", { length: 100 }),
     lastName: varchar("last_name", { length: 100 }),
     dateOfBirth: varchar("date_of_birth", { length: 10 }),
+    gender: varchar("gender", { length: 16 }),
+    pronouns: varchar("pronouns", { length: 32 }),
     status: varchar("status", { length: 16 }).notNull().default("active"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -29,6 +31,14 @@ export const registrationFlowReservations = pgTable(
     statusFormat: check(
       "registration_flow_reservations_status_chk",
       sql`${table.status} in ('active', 'completed', 'blocked')`,
+    ),
+    genderFormat: check(
+      "registration_flow_reservations_gender_chk",
+      sql`${table.gender} is null or ${table.gender} in ('female', 'male', 'custom')`,
+    ),
+    pronounsFormat: check(
+      "registration_flow_reservations_pronouns_chk",
+      sql`${table.pronouns} is null or ${table.pronouns} in ('She / Her', 'He / Him', 'They / Them', 'Prefer not to say')`,
     ),
     expiresIdx: index("registration_flow_reservations_expires_idx").on(table.expiresAt),
   }),
