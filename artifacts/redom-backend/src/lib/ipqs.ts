@@ -56,13 +56,10 @@ export async function checkIP(ip: string): Promise<IPQSResult> {
   return data;
 }
 
-export async function checkPhone(
-  phoneNumber: string,
-  options?: { countryCode?: string },
-): Promise<IPQSPhoneResult> {
+export async function checkPhone(phoneNumber: string, options?: { countryCode?: string }): Promise<IPQSPhoneResult> {
   const apiKey = requireApiKey();
   const params = new URLSearchParams({ strictness: "1" });
-  if (options?.countryCode) params.set("country", options.countryCode.toUpperCase());
+  if (options?.countryCode) params.append("country[]", options.countryCode.toUpperCase());
   const url = `https://ipqualityscore.com/api/json/phone/${apiKey}/${encodeURIComponent(phoneNumber)}?${params.toString()}`;
   const { data } = await axios.get<IPQSPhoneResult>(url, { timeout: 15_000 });
   return data;
