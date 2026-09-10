@@ -28,8 +28,13 @@ export async function checkAbstractPhone(
   phoneNumber: string,
   options?: { countryCode?: string },
 ): Promise<AbstractPhoneResult> {
+  const apiKey = env.abstract.apiKey;
+  if (!apiKey) {
+    throw new Error("ABSTRACT_API_KEY is not configured.");
+  }
+
   const params = new URLSearchParams({
-    api_key: env.abstract.apiKey,
+    api_key: apiKey,
     phone: phoneNumber,
   });
 
