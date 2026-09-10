@@ -33,20 +33,23 @@ export interface NetworkProviderResponse {
   warning: string | null;
 }
 
-let cached: NetworkProviderResponse = {
+const emptyNetworkProvider = (warning: string | null = null): NetworkProviderResponse => ({
   success: false,
   networkProvider: null,
   termsUrl: null,
   security: null,
-  warning: null,
-};
+  warning,
+});
+
+let cached: NetworkProviderResponse = emptyNetworkProvider();
 let loaded = false;
 
 export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
   try {
-    cached = await api.get<NetworkProviderResponse>("/auth/network-provider");
+    const result = await api.get<NetworkProviderResponse>("/auth/network-provider");
+    cached = result.success && result.security ? result : emptyNetworkProvider(result.warning || "We could not complete the network security check.");
   } catch {
-    cached = { success: false, networkProvider: null, termsUrl: null, security: null, warning: null };
+    cached = emptyNetworkProvider("We could not reach ReDom's network security service.");
   }
   loaded = true;
   return cached;
@@ -61,6 +64,6 @@ export function getNetworkProvider(): string | null { return cached.networkProvi
 export function getNetworkSecurity(): NetworkProviderResponse { return cached; }
 export function hasLoadedNetworkProvider(): boolean { return loaded; }
 export function clearNetworkProvider(): void {
-  cached = { success: false, networkProvider: null, termsUrl: null, security: null, warning: null };
+  cached = emptyNetworkProvider();
   loaded = false;
 }
