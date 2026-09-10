@@ -5,7 +5,7 @@ import WarningBlack from "../assets/auth/warning-black.svg";
 import { fetchNetworkProvider, type NetworkProviderResponse } from "../auth/networkProvider";
 
 function maskIp(ip: string | null) {
-  if (!ip) return "Unavailable";
+  if (!ip) return "Detecting…";
   if (ip.includes(":")) return `${ip.slice(0, 8)}••••••`;
   const parts = ip.split(".");
   return parts.length === 4 ? `${parts[0]}.${parts[1]}.•••••` : `${ip.slice(0, 6)}•••••`;
@@ -31,7 +31,7 @@ function warningFor(profile: NetworkProviderResponse) {
 export function StartupScreen({ onComplete }: { onComplete: () => void }) {
   const rotation = useRef(new Animated.Value(0)).current;
   const [profile, setProfile] = useState<NetworkProviderResponse | null>(null);
-  const [securityOpen, setSecurityOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(true);
   const [checking, setChecking] = useState(true);
   const completed = useRef(false);
 
@@ -43,7 +43,8 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
 
   async function runNetworkCheck() {
     setChecking(true);
-    setSecurityOpen(false);
+    setProfile(null);
+    setSecurityOpen(true);
     const result = await fetchNetworkProvider();
     setProfile(result);
     setChecking(false);
@@ -61,7 +62,7 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
   const termsTitle = titleFor(profile ?? { success: false, networkProvider: null, termsUrl: null, security: null, warning: null });
 
   function continueToLogin() {
-    if (failed || !security || completed.current) return;
+    if (checking || failed || !security || completed.current) return;
     setSecurityOpen(false);
     completed.current = true;
     onComplete();
@@ -80,29 +81,36 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
         <View style={styles.backdrop}>
           <View style={styles.card}>
             <View style={styles.iconCircle}><WarningBlack width={30} height={30} /></View>
-            <Text style={styles.title}>{termsTitle}</Text>
+            <Text style={styles.title}>{checking ? "Detecting Your Network" : termsTitle}</Text>
             <Text style={styles.subtitle}>
-              {failed ? (profile?.warning ?? "We could not complete the IP/network security check.") : profile?.networkProvider ? `${profile.networkProvider} connection detected.` : "Your connection has been checked."}
+              {checking
+                ? "IPAPI is detecting your public IP address and network before ReDom opens Login."
+                : failed
+                  ? (profile?.warning ?? "IPAPI could not complete the network security check.")
+                  : profile?.networkProvider
+                    ? `${profile.networkProvider} connection detected.`
+                    : "Your connection has been checked."}
             </Text>
 
             {warning ? <View style={styles.warning}><WarningBlack width={20} height={20} /><Text style={styles.warningText}>{warning}</Text></View> : null}
 
-            {!failed ? <View style={styles.rows}>
-              <View style={styles.row}><Text style={styles.label}>Your IP</Text><Text style={styles.value}>{maskIp(security?.ip ?? null)}</Text></View>
-              <View style={styles.row}><Text style={styles.label}>Connection</Text><Text style={styles.value}>{security?.connection ?? "Unknown"}</Text></View>
+            {security ? <View style={styles.rows}>
+              <View style={styles.row}><Text style={styles.label}>Your IP</Text><Text style={styles.value}>{maskIp(security.ip)}</Text></View>
+              <View style={styles.row}><Text style={styles.label}>Connection</Text><Text style={styles.value}>{security.connection || "Unknown"}</Text></View>
               <View style={styles.row}><Text style={styles.label}>Provider</Text><Text style={styles.value}>{profile?.networkProvider ?? "Unknown"}</Text></View>
-              <View style={styles.row}><Text style={styles.label}>Location</Text><Text style={styles.value}>{[security?.city, security?.region, security?.country].filter(Boolean).join(", ") || "Unknown"}</Text></View>
-              <View style={styles.row}><Text style={styles.label}>Security score</Text><Text style={styles.value}>{security?.fraudScore ?? 0}%</Text></View>
+              <View style={styles.row}><Text style={styles.label}>Location</Text><Text style={styles.value}>{[security.city, security.region, security.country].filter(Boolean).join(", ") || "Unknown"}</Text></View>
+              <View style={styles.row}><Text style={styles.label}>Security score</Text><Text style={styles.value}>{security.fraudScore}%</Text></View>
             </View> : null}
 
-            {isVpnOrDatacenter ? <Text style={styles.embeddedNotice}>Your connection type has been detected automatically. ReDom is showing this warning before the login screen because the current network is not a normal residential/mobile connection.</Text> : null}
+            {isVpnOrDatacenter ? <Text style={styles.embeddedNotice}>Your connection type was detected automatically. ReDom is showing this warning before Login because the current network is not a normal residential/mobile connection.</Text> : null}
 
-            {!failed && profile?.termsUrl ? <Pressable onPress={() => void Linking.openURL(profile.termsUrl!)} style={styles.terms}><Text style={styles.termsText}>{termsTitle}</Text><Text style={styles.urlText}>{profile.termsUrl}</Text></Pressable> : null}
+            {!checking && !failed && profile?.termsUrl ? <Pressable onPress={() => void Linking.openURL(profile.termsUrl!)} style={styles.terms}><Text style={styles.termsText}>{termsTitle}</Text><Text style={styles.urlText}>{profile.termsUrl}</Text></Pressable> : null}
 
-            {failed
-              ? <Pressable onPress={() => void runNetworkCheck()} disabled={checking} style={styles.button}>{checking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Retry Network Check</Text>}</Pressable>
-              : <Pressable onPress={continueToLogin} style={styles.button}><Text style={styles.buttonText}>OK, Continue</Text></Pressable>}
-            {checking ? <ActivityIndicator style={styles.providerIndicator} size="small" /> : null}
+            {checking
+              ? <View style={styles.checkingButton}><ActivityIndicator color="#FFFFFF" /><Text style={styles.buttonText}>Checking network…</Text></View>
+              : failed
+                ? <Pressable onPress={() => void runNetworkCheck()} style={styles.button}><Text style={styles.buttonText}>Retry Network Check</Text></Pressable>
+                : <Pressable onPress={continueToLogin} style={styles.button}><Text style={styles.buttonText}>OK, Continue</Text></Pressable>}
           </View>
         </View>
       </Modal>
@@ -120,7 +128,7 @@ const styles = StyleSheet.create({
   card: { width: "100%", maxWidth: 420, borderRadius: 18, backgroundColor: "#FFFFFF", padding: 22, elevation: 8 },
   iconCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", marginBottom: 12 },
   title: { fontSize: 20, fontWeight: "700", color: "#1C1E21", marginBottom: 6 },
-  subtitle: { fontSize: 14, color: "#65676B", marginBottom: 14 },
+  subtitle: { fontSize: 14, lineHeight: 20, color: "#65676B", marginBottom: 14 },
   warning: { flexDirection: "row", gap: 10, alignItems: "flex-start", backgroundColor: "#FFF4E5", borderRadius: 12, padding: 12, marginBottom: 14 },
   warningText: { flex: 1, fontSize: 14, lineHeight: 20, color: "#7A4B00", fontWeight: "600" },
   rows: { borderTopWidth: 1, borderTopColor: "#E4E6EB" },
@@ -132,6 +140,6 @@ const styles = StyleSheet.create({
   termsText: { color: "#1877F2", fontSize: 14, fontWeight: "700" },
   urlText: { color: "#65676B", fontSize: 11, marginTop: 4 },
   button: { marginTop: 16, backgroundColor: "#1877F2", borderRadius: 10, paddingVertical: 13, alignItems: "center" },
+  checkingButton: { marginTop: 16, backgroundColor: "#1877F2", borderRadius: 10, paddingVertical: 13, alignItems: "center", justifyContent: "center", gap: 7 },
   buttonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
-  providerIndicator: { marginTop: 10 },
 });
