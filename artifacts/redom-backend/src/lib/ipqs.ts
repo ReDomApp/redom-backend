@@ -1,5 +1,10 @@
 import axios from "axios";
 
+import {
+  checkAbstractPhone,
+  normalizeAbstractPhoneResult,
+} from "./abstract-phone";
+
 export interface IPQSResult {
   success: boolean;
   message?: string;
@@ -49,6 +54,25 @@ function requireApiKey(): string {
   return apiKey;
 }
 
+function isIPQSServiceFailureMessage(message?: string): boolean {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return /insufficient\s+credits?|credit\s+(?:balance|quota)|quota\s+(?:reached|exhausted)|temporarily\s+unavailable|service\s+unavailable|internal\s+server|rate\s+limit|too\s+many\s+requests|try\s+again\s+later/.test(normalized);
+}
+
+function shouldFallbackAfterIPQSError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+
+  if (!error.response) return true;
+
+  const status = error.response.status;
+  return status === 402 || status === 408 || status === 422 || status === 425 || status === 429 || status >= 500;
+}
+
+function shouldFallbackAfterIPQSResult(result: IPQSPhoneResult): boolean {
+  return !result.success && isIPQSServiceFailureMessage(result.message);
+}
+
 export async function checkIP(ip: string): Promise<IPQSResult> {
   const apiKey = requireApiKey();
   const url = `https://ipqualityscore.com/api/json/ip/${apiKey}/${encodeURIComponent(ip)}`;
@@ -56,11 +80,43 @@ export async function checkIP(ip: string): Promise<IPQSResult> {
   return data;
 }
 
-export async function checkPhone(phoneNumber: string, options?: { countryCode?: string }): Promise<IPQSPhoneResult> {
+export async function checkPhone(
+  phoneNumber: string,
+  options?: { countryCode?: string },
+): Promise<IPQSPhoneResult> {
   const apiKey = requireApiKey();
   const params = new URLSearchParams({ strictness: "1" });
-  if (options?.countryCode) params.append("country[]", options.countryCode.toUpperCase());
+  if (options?.countryCode) {
+    params.append("country[]", options.countryCode.toUpperCase());
+  }
+
   const url = `https://ipqualityscore.com/api/json/phone/${apiKey}/${encodeURIComponent(phoneNumber)}?${params.toString()}`;
-  const { data } = await axios.get<IPQSPhoneResult>(url, { timeout: 15_000 });
-  return data;
+
+  try {
+    const { data } = await axios.get<IPQSPhoneResult>(url, { timeout: 15_000 });
+
+    // A definitive IPQS validation result (including valid=false) is not a
+    // provider failure and must never be overridden by the fallback.
+    if (!shouldFallbackAfterIPQSResult(data)) {
+      return data;
+    }
+
+    const abstractResult = await checkAbstractPhone(phoneNumber, options);
+    return normalizeAbstractPhoneResult(
+      abstractResult,
+      options?.countryCode || "",
+    );
+  } catch (error) {
+    // Network errors, timeouts, rate limits, exhausted/quota responses, and
+    // provider 5xx failures are eligible for the Abstract fallback.
+    if (!shouldFallbackAfterIPQSError(error)) {
+      throw error;
+    }
+
+    const abstractResult = await checkAbstractPhone(phoneNumber, options);
+    return normalizeAbstractPhoneResult(
+      abstractResult,
+      options?.countryCode || "",
+    );
+  }
 }
