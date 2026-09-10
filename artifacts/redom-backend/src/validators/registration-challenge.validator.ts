@@ -34,6 +34,12 @@ export const saveRegistrationFlowPhoneSchema = z.object({
   ip: z.string().trim().min(3).max(80),
 });
 
+export const saveRegistrationFlowEmailSchema = z.object({
+  flowId: z.string().regex(/^\d{6,16}$/),
+  deviceId: z.string().trim().min(1).max(255).optional(),
+  email: z.string().trim().min(3).max(320),
+});
+
 export const startRegistrationChallengeSchema = z.object({
   contactType: z.enum(["phone", "email"]),
   target: z.string().trim().min(1).max(255),
