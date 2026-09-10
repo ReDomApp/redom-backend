@@ -10,6 +10,7 @@ import { StartupScreen } from "../screens/StartupScreen";
 import { RegistrationWelcomeScreen } from "../screens/registration/RegistrationWelcomeScreen";
 import { RegistrationIdentityScreen } from "../screens/registration/RegistrationIdentityScreen";
 import { RegistrationBirthdayScreen } from "../screens/registration/RegistrationBirthdayScreen";
+import { RegistrationGenderScreen } from "../screens/registration/RegistrationGenderScreen";
 import type { RootStackParamList } from "./types";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -47,6 +48,7 @@ export function AppNavigator() {
           <Stack.Screen name="RegistrationWelcome" component={RegistrationWelcomeScreen} />
           <Stack.Screen name="RegistrationIdentity" component={RegistrationIdentityScreen} />
           <Stack.Screen name="RegistrationBirthday" component={RegistrationBirthdayScreen} />
+          <Stack.Screen name="RegistrationGender" component={RegistrationGenderScreen} />
         </>
       )}
     </Stack.Navigator>
