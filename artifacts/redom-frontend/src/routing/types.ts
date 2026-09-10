@@ -6,5 +6,6 @@ export type RootStackParamList = {
   DeviceVerification: { challengeId: string; channel: "sms" | "email" | "whatsapp"; maskedTarget: string; expiresAt: string; };
   RegistrationWelcome: undefined;
   RegistrationIdentity: RegistrationFlowReservationRouteParams;
+  RegistrationBirthday: RegistrationFlowReservationRouteParams;
   Foundation: undefined;
 };
