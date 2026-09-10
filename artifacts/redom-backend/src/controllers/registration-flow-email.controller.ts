@@ -14,7 +14,7 @@ export class RegistrationFlowEmailController {
       const reservationId = reservationIdFrom(req);
       if (!reservationId) throw new Error("reservationId is required.");
       const input = saveRegistrationFlowEmailSchema.parse(req.body);
-      const result = await registrationFlowEmailService.saveAndSend({ reservationId, ...input });
+      const result = await registrationFlowEmailService.save({ reservationId, ...input });
       return res.status(200).json(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save the registration email.";
