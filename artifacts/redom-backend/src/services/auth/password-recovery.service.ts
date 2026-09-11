@@ -5,6 +5,7 @@ import { users } from "../../database/schema";
 import { verifications } from "../../database/verifications.schema";
 import { resend } from "../../lib/resend";
 import { openai } from "../../lib/openai";
+import { checkIP } from "../../lib/ipapi";
 import { passwordService } from "./password.service";
 import { phoneService } from "./phone.service";
 import { verificationService } from "./verification.service";
@@ -28,21 +29,67 @@ export class PasswordRecoveryService {
     if (user.accountStatus === "suspended" || user.accountStatus === "banned") return { success: true, accountFound: false, reason: "unavailable", message: "This account is not available for password recovery." };
     return { success: true, accountFound: true, account: accountPayload(user, searched) };
   }
+
   private async getUserByIdentifier(identifier: string) { const value = identifier.trim(); if (!value) throw new Error("Account identifier is required."); if (value.includes("@")) { const email = value.toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Please enter a valid email address."); return db.query.users.findFirst({ where: eq(users.email, email) }); } return db.query.users.findFirst({ where: eq(users.phoneNumber, phoneService.validate(value)) }); }
+
   async sendCode(params: { identifier: string; channel: RecoveryChannel } & RequestContext) {
     const user = await this.getUserByIdentifier(params.identifier); if (!user) throw new Error("No ReDom account was found with that information."); if (user.accountStatus === "suspended" || user.accountStatus === "banned") throw new Error("This account is not available for password recovery.");
     let target: string; if (params.channel === "email") { if (!user.email) throw new Error("No email address is associated with this account."); target = user.email; } else { if (!user.phoneNumber) throw new Error("No phone number is associated with this account."); target = user.phoneNumber; if (!phoneService.supportsChannel(params.channel)) throw new Error("WhatsApp password recovery is not configured for ReDom."); }
     const verification = await verificationService.createVerification({ userId: user.id, purpose: "PASSWORD_RESET", target, channel: params.channel, requestedLength: 5, firstName: user.firstName, requestIp: params.ipAddress, userAgent: params.userAgent, deviceId: params.deviceId });
-    const searched = normalizeLookup(params.identifier); const searchedTarget = (params.channel === "email" && searched.type === "email" && target.toLowerCase() === searched.value) || (params.channel !== "email" && searched.type === "phone" && target === searched.value);
-    return { success: true, challengeId: verification.challengeId, channel: params.channel, maskedTarget: searchedTarget ? target : (params.channel === "email" ? maskEmail(target) : maskPhone(target)), codeLength: 5, expiresAt: verification.expiresAt.toISOString() };
+    return { success: true, challengeId: verification.challengeId, channel: params.channel, maskedTarget: params.channel === "email" ? maskEmail(target) : maskPhone(target), codeLength: 5, expiresAt: verification.expiresAt.toISOString() };
   }
-  async verifyCode(params: { challengeId: string; code: string } & RequestContext) { const verification = await db.query.verifications.findFirst({ where: eq(verifications.id, params.challengeId) }); if (!verification || verification.purpose !== "PASSWORD_RESET") throw new Error("Password reset verification was not found."); const result = await verificationService.verifyVerification({ challengeId: params.challengeId, code: params.code, purpose: "PASSWORD_RESET" }); if (!result.userId) throw new Error("Password reset is not associated with an account."); const resetToken = randomUUID(); await db.update(verifications).set({ sessionId: resetToken, updatedAt: new Date() }).where(eq(verifications.id, params.challengeId)); return { success: true, resetToken, message: "Verification successful. You can now change your password." }; }
+
+  async verifyCode(params: { challengeId: string; code: string } & RequestContext) {
+    const verification = await db.query.verifications.findFirst({ where: eq(verifications.id, params.challengeId) });
+    if (!verification || verification.purpose !== "PASSWORD_RESET") throw new Error("Password reset verification was not found.");
+    const result = await verificationService.verifyVerification({ challengeId: params.challengeId, code: params.code, purpose: "PASSWORD_RESET" });
+    if (!result.userId) throw new Error("Password reset is not associated with an account.");
+    const resetToken = randomUUID();
+    await db.update(verifications).set({ sessionId: resetToken, updatedAt: new Date() }).where(eq(verifications.id, params.challengeId));
+
+    let security: { country?: string | null; state?: string | null; city?: string | null; timezone?: string | null; latitude?: number | null; longitude?: number | null } | null = null;
+    if (params.ipAddress) {
+      try { const ip = await checkIP(params.ipAddress); security = ip.location ?? null; } catch { security = null; }
+    }
+    const user = await db.query.users.findFirst({ where: eq(users.id, result.userId) });
+    if (user?.email) {
+      try { await this.sendSecurityNotification({ user, context: params, security, stage: "verification" }); } catch { /* notification failure never invalidates a valid OTP */ }
+    }
+    return { success: true, resetToken, message: "Verification successful. Your reset request has been verified." };
+  }
+
   async changePassword(params: { resetToken: string; password: string } & RequestContext) {
-    passwordService.validate(params.password); const now = new Date(); const verification = await db.query.verifications.findFirst({ where: and(eq(verifications.sessionId, params.resetToken), eq(verifications.purpose, "PASSWORD_RESET"), eq(verifications.status, "consumed"), gt(verifications.verifiedAt, new Date(now.getTime() - 10 * 60 * 1000))) }); if (!verification?.userId || !verification.verifiedAt) throw new Error("This password reset session has expired. Please request a new code."); const user = await db.query.users.findFirst({ where: eq(users.id, verification.userId) }); if (!user) throw new Error("Account not found."); if (user.accountStatus === "suspended" || user.accountStatus === "banned") throw new Error("This account is not available.");
-    const passwordHash = await passwordService.hash(params.password); await db.transaction(async tx => { await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, user.id)); await tx.update(verifications).set({ sessionId: null, updatedAt: now }).where(eq(verifications.id, verification.id)); }); await sessionService.revokeAllSessions(user.id); const session = await sessionService.createSession({ userId: user.id, ipAddress: params.ipAddress, userAgent: params.userAgent, deviceId: params.deviceId, deviceName: params.deviceName, deviceType: params.deviceType, platform: params.platform, browser: params.browser, loginSource: "password-recovery", appVersion: params.appVersion }); if (user.email) { try { await this.sendNewLoginEmail({ user, sessionId: session.sessionId, context: params }); } catch {} }
+    passwordService.validate(params.password); const now = new Date();
+    const verification = await db.query.verifications.findFirst({ where: and(eq(verifications.sessionId, params.resetToken), eq(verifications.purpose, "PASSWORD_RESET"), eq(verifications.status, "consumed"), gt(verifications.verifiedAt, new Date(now.getTime() - 10 * 60 * 1000))) });
+    if (!verification?.userId || !verification.verifiedAt) throw new Error("This password reset session has expired. Please request a new code.");
+    const user = await db.query.users.findFirst({ where: eq(users.id, verification.userId) }); if (!user) throw new Error("Account not found."); if (user.accountStatus === "suspended" || user.accountStatus === "banned") throw new Error("This account is not available.");
+    const passwordHash = await passwordService.hash(params.password);
+    await db.transaction(async tx => { await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, user.id)); await tx.update(verifications).set({ sessionId: null, updatedAt: now }).where(eq(verifications.id, verification.id)); });
+    await sessionService.revokeAllSessions(user.id);
+    const session = await sessionService.createSession({ userId: user.id, ipAddress: params.ipAddress, userAgent: params.userAgent, deviceId: params.deviceId, deviceName: params.deviceName, deviceType: params.deviceType, platform: params.platform, browser: params.browser, loginSource: "password-recovery", appVersion: params.appVersion });
+    if (user.email) { try { const security = params.ipAddress ? await checkIP(params.ipAddress).catch(() => null) : null; await this.sendSecurityNotification({ user, sessionId: session.sessionId, context: params, security: security?.location ?? null, stage: "changed" }); } catch { /* password recovery has already succeeded */ } }
     return { success: true, message: "Your password has been changed successfully.", user: { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email, phoneNumber: user.phoneNumber, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus }, session };
   }
-  private async sendNewLoginEmail(params: { user: typeof users.$inferSelect; sessionId: string; context: RequestContext }) { const device = params.context.deviceName || params.context.deviceType || "Unknown device"; const ip = params.context.ipAddress || "Unavailable"; const language = params.context.language?.trim() || "English"; let subject = "New ReDom login detected"; let body = `A new login was detected after your ReDom password was changed.\n\nDevice: ${device}\nIP address: ${ip}\nSession ID: ${params.sessionId}\n\nIf this was not you, secure your account immediately.`; try { const response = await openai.responses.create({ model: "gpt-5.6-luna", input: `Write a concise ReDom security notification email in ${language}. The user's password was just changed through account recovery and ReDom created a new login session on the current device. Return JSON only: {"subject":"...","body":"..."}. Do not invent any facts. Preserve exactly these facts: device=${device}; ip=${ip}; sessionId=${params.sessionId}.` }); const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown }; if (typeof parsed.subject === "string" && typeof parsed.body === "string") { subject = parsed.subject; body = parsed.body; } } catch {} const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033"><h2>${this.escapeHtml(subject)}</h2><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p><p style="margin-top:24px">ReDom Platforms, Inc.</p></div>`; await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html }); }
+
+  private async sendSecurityNotification(params: { user: typeof users.$inferSelect; context: RequestContext; security: { country?: string | null; state?: string | null; city?: string | null; timezone?: string | null; latitude?: number | null; longitude?: number | null } | null; stage: "verification" | "changed"; sessionId?: string }) {
+    const device = params.context.deviceName || params.context.deviceType || "Unknown device";
+    const ip = params.context.ipAddress || "Unavailable";
+    const location = [params.security?.city, params.security?.state, params.security?.country].filter(Boolean).join(", ") || "Location unavailable";
+    const timezone = params.security?.timezone || "Timezone unavailable";
+    const language = params.context.language?.trim() || "English";
+    const isChanged = params.stage === "changed";
+    let subject = isChanged ? "Your ReDom password was changed" : "ReDom password change request verified";
+    let body = isChanged
+      ? `Your ReDom password was changed successfully.\n\nLocation: ${location}\nTimezone: ${timezone}\nIP address: ${ip}\nDevice: ${device}\n${params.sessionId ? `Session ID: ${params.sessionId}\n` : ""}\nIf you did not make this change, secure your account immediately.`
+      : `A ReDom password change request was verified.\n\nLocation: ${location}\nTimezone: ${timezone}\nIP address: ${ip}\nDevice: ${device}\n\nThe password has not yet been changed.`;
+    try {
+      const response = await openai.responses.create({ model: "gpt-5.6-luna", input: `Write a concise ReDom security email in ${language}. Return JSON only as {"subject":"...","body":"..."}. Do not invent facts. Preserve these exact facts and meaning: event=${isChanged ? "password changed successfully" : "password reset verification completed; password not yet changed"}; location=${location}; timezone=${timezone}; ip=${ip}; device=${device}; sessionId=${params.sessionId || "not created yet"}.` });
+      const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown }; if (typeof parsed.subject === "string" && typeof parsed.body === "string") { subject = parsed.subject; body = parsed.body; }
+    } catch { /* deterministic security notification fallback */ }
+    const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033"><h2>${this.escapeHtml(subject)}</h2><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p><p style="margin-top:24px">ReDom Platforms, Inc.</p></div>`;
+    await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html });
+  }
+
   private escapeHtml(value: string): string { return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;"); }
 }
 export const passwordRecoveryService = new PasswordRecoveryService();
