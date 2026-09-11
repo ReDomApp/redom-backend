@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { Request, Response } from "express";
 
 import { registrationChallengeService } from "../services/auth/registration-challenge.service";
@@ -11,7 +12,39 @@ import {
   verifyRegistrationChallengeSchema,
 } from "../validators/registration-challenge.validator";
 
-function requestContext(req: Request) { return { requestIp: req.ip, userAgent: req.get("user-agent") ?? undefined, deviceId: req.body?.deviceId }; }
+function normalizeIp(value: string): string {
+  const ip = value.trim().replace(/^\[|\]$/g, "").replace(/^::ffff:/i, "");
+  return ip;
+}
+
+function isPublicIp(value: string): boolean {
+  const ip = normalizeIp(value);
+  if (isIP(ip) === 4) {
+    const octets = ip.split(".").map(Number);
+    const [a, b] = octets;
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return false;
+    return a >= 1 && a <= 223;
+  }
+  if (isIP(ip) === 6) {
+    const lower = ip.toLowerCase();
+    if (lower === "::1" || lower === "::" || lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe8") || lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb")) return false;
+    return true;
+  }
+  return false;
+}
+
+function requestIp(req: Request): string | undefined {
+  const candidates = [
+    req.get("cf-connecting-ip"),
+    req.get("true-client-ip"),
+    ...(req.get("x-forwarded-for")?.split(",") ?? []),
+    req.ip,
+    req.socket.remoteAddress,
+  ];
+  return candidates.map((value) => value?.trim()).filter((value): value is string => Boolean(value)).map(normalizeIp).find(isPublicIp);
+}
+
+function requestContext(req: Request) { return { requestIp: requestIp(req), userAgent: req.get("user-agent") ?? undefined, deviceId: req.body?.deviceId }; }
 function routeParam(value: string | string[] | undefined, name: string): string {
   if (typeof value === "string" && value.length > 0) return value;
   if (Array.isArray(value) && value.length === 1 && value[0]) return value[0];
