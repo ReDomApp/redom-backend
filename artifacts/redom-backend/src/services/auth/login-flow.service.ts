@@ -4,6 +4,7 @@ import { users } from "../../database/schema";
 import { sessions } from "../../database/sessions.schema";
 import { verifications } from "../../database/verifications.schema";
 import { accountSecurity } from "../../database/accountSecurity";
+import { totpLoginChallenges } from "../../database/totp-login-challenges.schema";
 import { checkIP, type IPAPIResult } from "../../lib/ipapi";
 import { passwordService } from "./password.service";
 import { fraudService } from "./fraud.service";
@@ -25,7 +26,6 @@ function publicUser(user: typeof users.$inferSelect): PublicUser { return { id: 
 export class LoginFlowService {
   private async inspectIp(ipAddress?: string): Promise<IPAPIResult | null> { if (!ipAddress) return null; try { return await checkIP(ipAddress); } catch { return null; } }
   private async securitySettings(userId: string) { return db.query.accountSecurity.findFirst({ where: eq(accountSecurity.userId, userId) }); }
-
   private async createTwoFactorChallenge(user: typeof users.$inferSelect, security: typeof accountSecurity.$inferSelect, request: { ipAddress?: string; userAgent?: string; deviceId?: string }): Promise<LoginVerification> {
     if (!security.twoFactorEnabled || security.twoFactorMethod === "off") throw new Error("Two-factor authentication is not enabled.");
     if (security.twoFactorMethod === "authenticator") {
@@ -39,20 +39,17 @@ export class LoginFlowService {
     const challenge = await verificationService.createVerification({ userId: user.id, purpose: "TWO_FACTOR_AUTHENTICATION", target, channel, requestedLength: 6, firstName: user.firstName, requestIp: request.ipAddress, userAgent: request.userAgent, deviceId: request.deviceId });
     return { challengeId: challenge.challengeId, channel, target, maskedTarget: channel === "sms" ? maskPhone(target) : maskEmail(target), codeLength: challenge.codeLength, expiresAt: challenge.expiresAt };
   }
-
   private async finishLogin(user: typeof users.$inferSelect, data: LoginRequest, ipapi: IPAPIResult | null, deviceId?: string) {
     const session = await sessionService.createSession({ userId: user.id, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, region: ipapi?.location?.state ?? data.region, city: ipapi?.location?.city ?? data.city, userAgent: data.userAgent, platform: data.platform, browser: data.browser, deviceName: data.deviceName, deviceId, deviceType: data.deviceType, loginSource: data.loginSource ?? "mobile", appVersion: data.appVersion });
     await loginHistoryService.create({ userId: user.id, sessionId: session.sessionId, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, region: ipapi?.location?.state ?? data.region, city: ipapi?.location?.city ?? data.city, deviceName: data.deviceName, deviceType: data.deviceType, loginSource: data.loginSource ?? "mobile", appVersion: data.appVersion });
-    if (user.email) { try { await loginNotificationService.send({ email: user.email, firstName: user.firstName, lastName: user.lastName, ipAddress: data.ipAddress ?? "Unknown", eventAt: new Date(), deviceUserAgent: data.userAgent, ipapi }); } catch { /* Successful authentication is not rolled back for notification failure. */ } }
+    if (user.email) { try { await loginNotificationService.send({ email: user.email, firstName: user.firstName, lastName: user.lastName, ipAddress: data.ipAddress ?? "Unknown", eventAt: new Date(), deviceUserAgent: data.userAgent, ipapi }); } catch { } }
     return session;
   }
-
   private async completeAfterSecurity(user: typeof users.$inferSelect, data: LoginRequest, deviceId?: string, ipapi?: IPAPIResult | null): Promise<LoginFlowResult> {
     const security = await this.securitySettings(user.id); const network = ipapi ?? await this.inspectIp(data.ipAddress);
     if (security?.twoFactorEnabled) { const twoFactorVerification = await this.createTwoFactorChallenge(user, security, { ipAddress: data.ipAddress, userAgent: data.userAgent, deviceId }); return { success: true, message: security.twoFactorMethod === "authenticator" ? "Authenticator verification is required." : "Two-factor authentication is required.", requiresVerification: false, requiresTwoFactor: true, user: publicUser(user), twoFactorVerification }; }
     const session = await this.finishLogin(user, data, network, deviceId); return { success: true, message: "Login successful.", requiresVerification: false, requiresTwoFactor: false, user: publicUser(user), session };
   }
-
   async login(data: LoginRequest): Promise<LoginFlowResult> {
     const identifier = data.identifier.trim(); if (!identifier) throw new Error("Login identifier is required.");
     if (/^\d{15}$/.test(identifier)) throw new Error("Please use your mobile number or email address to log in.");
@@ -62,20 +59,16 @@ export class LoginFlowService {
     if (user.accountStatus === "suspended") throw new Error("Your account has been suspended.");
     if (user.accountStatus === "banned") throw new Error("Your account has been banned.");
     if (user.accountStatus === "pending") throw new Error("Your account is pending verification. Please verify your email address or phone number before logging in.");
-    const ipapi = await this.inspectIp(data.ipAddress);
-    await fraudService.checkLogin({ userId: user.id, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, userAgent: data.userAgent });
-    const deviceId = data.deviceId?.trim();
-    const knownDevice = Boolean(deviceId) && Boolean(await db.query.sessions.findFirst({ where: and(eq(sessions.userId, user.id), eq(sessions.deviceId, deviceId!)) }));
+    const ipapi = await this.inspectIp(data.ipAddress); await fraudService.checkLogin({ userId: user.id, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, userAgent: data.userAgent });
+    const deviceId = data.deviceId?.trim(); const knownDevice = Boolean(deviceId) && Boolean(await db.query.sessions.findFirst({ where: and(eq(sessions.userId, user.id), eq(sessions.deviceId, deviceId!)) }));
     if (!knownDevice) {
-      const channel = user.phoneNumber && user.phoneVerified ? "sms" : "email";
-      const target = channel === "sms" ? user.phoneNumber! : user.email!;
+      const channel = user.phoneNumber && user.phoneVerified ? "sms" : "email"; const target = channel === "sms" ? user.phoneNumber! : user.email!;
       if (channel === "email" && (!user.email || !user.emailVerified)) throw new Error("A verified email address or phone number is required to verify this device.");
       const challenge = await verificationService.createVerification({ userId: user.id, purpose: "LOGIN_DEVICE_VERIFICATION", target, channel, requestedLength: 6, firstName: user.firstName, requestIp: data.ipAddress, userAgent: data.userAgent, deviceId });
       return { success: true, message: "New device detected. Verification is required.", requiresVerification: true, requiresTwoFactor: false, verification: { challengeId: challenge.challengeId, channel, target, maskedTarget: channel === "sms" ? maskPhone(target) : maskEmail(target), codeLength: challenge.codeLength, expiresAt: challenge.expiresAt } };
     }
     return this.completeAfterSecurity(user, data, deviceId, ipapi);
   }
-
   async verifyNewDevice(params: { challengeId: string; code: string; ipAddress?: string; deviceId: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; userAgent?: string; country?: string; region?: string; city?: string; loginSource?: string; appVersion?: string; }) {
     const challenge = await db.query.verifications.findFirst({ where: eq(verifications.id, params.challengeId) }); if (!challenge) throw new Error("Verification challenge not found.");
     if (challenge.purpose !== "LOGIN_DEVICE_VERIFICATION") throw new Error("Invalid login verification challenge.");
@@ -88,11 +81,10 @@ export class LoginFlowService {
     const ipapi = await this.inspectIp(params.ipAddress); await fraudService.checkLogin({ userId: user.id, ipAddress: params.ipAddress, country: ipapi?.location?.country ?? params.country, userAgent: params.userAgent });
     return this.completeAfterSecurity(user, data, params.deviceId, ipapi);
   }
-
   async verifyTwoFactor(params: { challengeId: string; code: string; deviceId: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; userAgent?: string; ipAddress?: string; country?: string; region?: string; city?: string; loginSource?: string; appVersion?: string; }) {
-    const securityForChallenge = await db.query.totpLoginChallenges.findFirst({ where: eq(totpLoginChallenges.id, params.challengeId) });
-    if (securityForChallenge) {
-      const user = await db.query.users.findFirst({ where: eq(users.id, securityForChallenge.userId) }); if (!user) throw new Error("User not found.");
+    const totpChallenge = await db.query.totpLoginChallenges.findFirst({ where: eq(totpLoginChallenges.id, params.challengeId) });
+    if (totpChallenge) {
+      const user = await db.query.users.findFirst({ where: eq(users.id, totpChallenge.userId) }); if (!user) throw new Error("User not found.");
       await totpService.verifyLoginChallenge({ challengeId: params.challengeId, userId: user.id, code: params.code, deviceId: params.deviceId, requestIp: params.ipAddress });
       const data: LoginRequest = { identifier: user.email ?? user.phoneNumber ?? "", password: "", ipAddress: params.ipAddress, country: params.country, region: params.region, city: params.city, userAgent: params.userAgent, platform: params.platform, browser: params.browser, deviceName: params.deviceName, deviceId: params.deviceId, deviceType: params.deviceType, loginSource: params.loginSource ?? "mobile", appVersion: params.appVersion };
       const ipapi = await this.inspectIp(params.ipAddress); await fraudService.checkLogin({ userId: user.id, ipAddress: params.ipAddress, country: ipapi?.location?.country ?? params.country, userAgent: params.userAgent });
