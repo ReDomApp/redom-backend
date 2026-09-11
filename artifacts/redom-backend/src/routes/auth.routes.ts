@@ -5,6 +5,7 @@ import { registrationChallengeController } from "../controllers/registration-cha
 import { registrationFlowController } from "../controllers/registration-flow.controller";
 import { registrationFlowEmailController } from "../controllers/registration-flow-email.controller";
 import { registrationFlowPasswordController } from "../controllers/registration-flow-password.controller";
+import { registrationVerificationController } from "../controllers/registration-verification.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { authRateLimit, networkProviderRateLimit, passwordResetRateLimit, verificationRateLimit } from "../middleware/rate-limit.middleware";
 
@@ -27,6 +28,8 @@ router.get("/register/challenge/:challengeId", authRateLimit, registrationChalle
 router.patch("/register/challenge/:challengeId", authRateLimit, registrationChallengeController.saveStep.bind(registrationChallengeController));
 router.post("/register/challenge/:challengeId/complete", authRateLimit, registrationChallengeController.complete.bind(registrationChallengeController));
 router.post("/register/verification/:verificationChallengeId/verify", verificationRateLimit, registrationChallengeController.verify.bind(registrationChallengeController));
+router.post("/register/verification/:verificationChallengeId/resend", verificationRateLimit, registrationVerificationController.resend.bind(registrationVerificationController));
+router.post("/register/verification/:verificationChallengeId/switch-contact", verificationRateLimit, registrationVerificationController.switchContact.bind(registrationVerificationController));
 router.post("/login", authRateLimit, authController.login.bind(authController));
 router.post("/verify-login-device", verificationRateLimit, authController.verifyLoginDevice.bind(authController));
 router.post("/verify-email", verificationRateLimit, authController.verifyEmail.bind(authController));
