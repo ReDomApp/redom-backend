@@ -38,9 +38,28 @@ export class RegistrationInitializationService {
     const region = geo?.location?.state ?? null;
     const city = geo?.location?.city ?? null;
 
-    const [profile] = await db.insert(userProfiles).values({ userId: user.id, displayName: `${user.firstName} ${user.lastName}`.trim(), profileType: "personal", profileVisibility: "public", verified: false, displayJoinDate: true, profileCompletion: 100, followerCount: 0, followingCount: 0, friendCount: 0, postCount: 0, updatedAt: new Date() }).onConflictDoNothing({ target: userProfiles.userId }).returning();
+    const profileValues = {
+      userId: user.id,
+      displayName: `${user.firstName} ${user.lastName}`.trim(),
+      profileType: "personal" as const,
+      profileVisibility: "public" as const,
+      verified: false,
+      displayJoinDate: true,
+      profileCompletion: 100,
+      followerCount: 0,
+      followingCount: 0,
+      friendCount: 0,
+      postCount: 0,
+      ...(city ? { currentCity: city } : {}),
+      updatedAt: new Date(),
+    };
+    const [profile] = await db.insert(userProfiles).values(profileValues).onConflictDoNothing({ target: userProfiles.userId }).returning();
     const actualProfile = profile ?? await db.query.userProfiles.findFirst({ where: eq(userProfiles.userId, user.id) });
     if (!actualProfile) throw new Error("Unable to initialize the user profile.");
+
+    if (city) {
+      await db.update(userProfiles).set({ currentCity: city, updatedAt: new Date() }).where(eq(userProfiles.userId, user.id));
+    }
 
     const existingSettings = await db.query.userSettings.findFirst({ where: eq(userSettings.userId, user.id) });
     if (!existingSettings) await db.insert(userSettings).values({ userId: user.id, language: params.language?.trim() || "system", updatedAt: new Date() });
