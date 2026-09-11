@@ -13,6 +13,8 @@ import { RegistrationGenderScreen } from "../screens/registration/RegistrationGe
 import { RegistrationPhoneScreen } from "../screens/registration/RegistrationPhoneScreen";
 import { RegistrationEmailScreen } from "../screens/registration/RegistrationEmailScreen";
 import { RegistrationPasswordScreen } from "../screens/registration/RegistrationPasswordScreen";
+import { RegistrationReviewScreen } from "../screens/registration/RegistrationReviewScreen";
+import { RegistrationVerificationScreen } from "../screens/registration/RegistrationVerificationScreen";
 import type { RootStackParamList } from "./types";
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export function AppNavigator() {
@@ -21,7 +23,7 @@ export function AppNavigator() {
   if (!startupReady || status === "loading") return <StartupScreen onComplete={() => setStartupReady(true)} />;
   return <Stack.Navigator initialRouteName={status === "authenticated" ? "Foundation" : "Login"} screenOptions={{ headerShown: false, animation: "fade", contentStyle: { backgroundColor: "#FFFFFF" } }}>
     {status === "authenticated" ? <Stack.Screen name="Foundation" component={FoundationScreen}/> : <>
-      <Stack.Screen name="Login" component={LoginScreen}/><Stack.Screen name="FindAccount" component={FindAccountScreen}/><Stack.Screen name="DeviceVerification" component={DeviceVerificationScreen}/><Stack.Screen name="RegistrationWelcome" component={RegistrationWelcomeScreen}/><Stack.Screen name="RegistrationIdentity" component={RegistrationIdentityScreen}/><Stack.Screen name="RegistrationBirthday" component={RegistrationBirthdayScreen}/><Stack.Screen name="RegistrationGender" component={RegistrationGenderScreen}/><Stack.Screen name="RegistrationPhone" component={RegistrationPhoneScreen}/><Stack.Screen name="RegistrationEmail" component={RegistrationEmailScreen} options={{ presentation: "transparentModal", animation: "slide_from_bottom", contentStyle: { backgroundColor: "transparent" }, gestureEnabled: true }}/><Stack.Screen name="RegistrationPassword" component={RegistrationPasswordScreen}/>
+      <Stack.Screen name="Login" component={LoginScreen}/><Stack.Screen name="FindAccount" component={FindAccountScreen}/><Stack.Screen name="DeviceVerification" component={DeviceVerificationScreen}/><Stack.Screen name="RegistrationWelcome" component={RegistrationWelcomeScreen}/><Stack.Screen name="RegistrationIdentity" component={RegistrationIdentityScreen}/><Stack.Screen name="RegistrationBirthday" component={RegistrationBirthdayScreen}/><Stack.Screen name="RegistrationGender" component={RegistrationGenderScreen}/><Stack.Screen name="RegistrationPhone" component={RegistrationPhoneScreen}/><Stack.Screen name="RegistrationEmail" component={RegistrationEmailScreen} options={{ presentation: "transparentModal", animation: "slide_from_bottom", contentStyle: { backgroundColor: "transparent" }, gestureEnabled: true }}/><Stack.Screen name="RegistrationPassword" component={RegistrationPasswordScreen}/><Stack.Screen name="RegistrationReview" component={RegistrationReviewScreen}/><Stack.Screen name="RegistrationVerification" component={RegistrationVerificationScreen}/>
     </>}
   </Stack.Navigator>;
 }
