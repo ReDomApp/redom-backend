@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, or } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { stories } from "../../database/stories";
@@ -6,43 +6,21 @@ import { friends } from "../../database/friends";
 import { following } from "../../database/following";
 import { users } from "../../database/schema";
 import { userProfiles } from "../../database/userProfiles";
+import { postMedia } from "../../database/postMedia";
+import { polls } from "../../database/polls";
 import { checkIP } from "../../lib/ipapi";
 import { feedIndexingService } from "./feed-indexing.service";
 
-const SYSTEM_POSTS = [
-  {
-    id: "redom-system-welcome",
-    shareId: "REDOM00001",
-    content: "Welcome to ReDom — connect, share, discover people, communities, pages, videos and conversations.",
-    type: "text",
-    publishedAt: new Date().toISOString(),
-    authorId: "system",
-    firstName: "ReDom",
-    lastName: "",
-    username: "redom",
-    publicId: "234000000000001",
-    profileId: "system",
-    profilePhoto: null,
-  },
-  {
-    id: "redom-system-discover",
-    shareId: "REDOM00002",
-    content: "As ReDom grows, this feed will continuously index relevant public posts and recommendations for you.",
-    type: "text",
-    publishedAt: new Date().toISOString(),
-    authorId: "system",
-    firstName: "ReDom",
-    lastName: "",
-    username: "redom",
-    publicId: "234000000000001",
-    profileId: "system",
-    profilePhoto: null,
-  },
-] as const;
+const PAGE_SIZE = 40;
+const STORY_HOURS = 24;
 
 export class HomeFeedService {
-  async generate(params: { userId: string; ipAddress?: string }) {
+  async generate(params: { userId: string; ipAddress?: string; page?: number }) {
+    const page = Math.max(1, Math.floor(params.page ?? 1));
     const index = await feedIndexingService.build(params.userId);
+    const relationships = await feedIndexingService.getRelationshipIds(params.userId);
+    const friendSet = new Set(relationships.friendUserIds);
+    const followingSet = new Set(relationships.followingUserIds);
 
     let location = {
       country: index.anchorLogin.country,
@@ -61,88 +39,166 @@ export class HomeFeedService {
           timezone: geo.location?.timezone ?? null,
         };
       } catch {
-        // Current IP is only a first-feed fallback, never the established anchor.
+        // The current IP is only a fallback. It never replaces the first-login anchor.
       }
     }
 
-    const friendshipRows = await db
-      .select({ friendUserId: friends.friendUserId })
-      .from(friends)
-      .where(and(eq(friends.userId, params.userId), eq(friends.friendshipStatus, "active")))
-      .limit(100);
-    const friendUserIds = friendshipRows.map((row) => row.friendUserId);
+    const allRankedPosts = await feedIndexingService.rankPosts(params.userId, index, 500);
+    const postStart = (page - 1) * PAGE_SIZE;
+    const pagePosts = allRankedPosts.slice(postStart, postStart + PAGE_SIZE);
+    const postIds = pagePosts.map((post) => post.id);
 
-    const followingRows = await db
-      .select({ followingId: following.followingId })
-      .from(following)
-      .where(eq(following.userId, params.userId))
-      .limit(100);
-    const followingIds = followingRows.map((row) => row.followingId);
-    const priorityUserIds = new Set([...friendUserIds, ...followingIds]);
+    const [mediaRows, pollRows] = await Promise.all([
+      postIds.length
+        ? db.select({
+            id: postMedia.id,
+            postId: postMedia.postId,
+            shareId: postMedia.shareId,
+            mediaType: postMedia.mediaType,
+            objectKey: postMedia.objectKey,
+            thumbnailKey: postMedia.thumbnailKey,
+            fileName: postMedia.fileName,
+            mimeType: postMedia.mimeType,
+            fileSize: postMedia.fileSize,
+            width: postMedia.width,
+            height: postMedia.height,
+            duration: postMedia.duration,
+            caption: postMedia.caption,
+            altText: postMedia.altText,
+            displayOrder: postMedia.displayOrder,
+            isPrimary: postMedia.isPrimary,
+          }).from(postMedia).where(inArray(postMedia.postId, postIds)).orderBy(postMedia.displayOrder)
+        : [],
+      postIds.length
+        ? db.select({
+            id: polls.id,
+            postId: polls.postId,
+            question: polls.question,
+            options: polls.options,
+            optionVoteCounts: polls.optionVoteCounts,
+            totalVotes: polls.totalVotes,
+            votingType: polls.votingType,
+            anonymousVoting: polls.anonymousVoting,
+            allowVoteRemoval: polls.allowVoteRemoval,
+            duration: polls.duration,
+            expiresAt: polls.expiresAt,
+            manuallyClosed: polls.manuallyClosed,
+            closed: polls.closed,
+            expired: polls.expired,
+          }).from(polls).where(inArray(polls.postId, postIds))
+        : [],
+    ]);
 
-    const indexedPosts = await feedIndexingService.rankPosts(params.userId, index, 100);
-    const rankedPosts = indexedPosts
-      .map((post) => ({
-        ...post,
-        socialPriority: priorityUserIds.has(post.authorId) ? 80 : 0,
-      }))
-      .sort((a, b) => (b.score + b.socialPriority) - (a.score + a.socialPriority))
-      .slice(0, 40)
-      .map(({ score: _score, socialPriority: _socialPriority, authorCity: _authorCity, ...post }) => post);
-
-    const suggestedProfiles = await feedIndexingService.rankProfiles(params.userId, index, 10);
-
-    let friendStories: Array<{
-      id: string;
-      shareId: string;
-      storyText: string | null;
-      storyType: string;
-      expiresAt: Date;
-      firstName: string;
-      lastName: string;
-      username: string;
-      profilePhoto: string | null;
-    }> = [];
-
-    if (friendUserIds.length > 0) {
-      const friendProfiles = await db
-        .select({ id: userProfiles.id })
-        .from(userProfiles)
-        .where(inArray(userProfiles.userId, friendUserIds));
-      const friendProfileIds = friendProfiles.map((profile) => profile.id);
-
-      if (friendProfileIds.length > 0) {
-        friendStories = await db
-          .select({
-            id: stories.id,
-            shareId: stories.shareId,
-            storyText: stories.storyText,
-            storyType: stories.storyType,
-            expiresAt: stories.expiresAt,
-            firstName: users.firstName,
-            lastName: users.lastName,
-            username: users.username,
-            profilePhoto: userProfiles.profilePhoto,
-          })
-          .from(stories)
-          .innerJoin(userProfiles, eq(stories.authorId, userProfiles.id))
-          .innerJoin(users, eq(userProfiles.userId, users.id))
-          .where(
-            and(
-              inArray(stories.authorId, friendProfileIds),
-              eq(stories.deleted, false),
-              eq(stories.moderationStatus, "approved"),
-              gt(stories.expiresAt, new Date()),
-            ),
-          )
-          .orderBy(desc(stories.createdAt))
-          .limit(30);
-      }
+    const mediaByPost = new Map<string, typeof mediaRows>();
+    for (const media of mediaRows) {
+      const list = mediaByPost.get(media.postId) ?? [];
+      list.push(media);
+      mediaByPost.set(media.postId, list);
     }
+    const pollByPost = new Map(pollRows.map((poll) => [poll.postId, poll]));
+
+    const posts = pagePosts.map((post) => ({
+      ...post,
+      media: mediaByPost.get(post.id) ?? [],
+      poll: pollByPost.get(post.id) ?? null,
+      relationship: post.source === "friend"
+        ? { type: "friend", label: `${post.firstName} is your friend` }
+        : post.source === "following"
+          ? { type: "following", label: "You follow this page" }
+          : null,
+      recommendation: post.recommended
+        ? { type: "preferences", label: "Suggested post that matches your preferences" }
+        : null,
+    }));
+
+    // Stories live for 24 hours. Expired rows are never returned to the active feed.
+    // They remain stored so the future archive worker can retain them as history.
+    const storySince = new Date(Date.now() - STORY_HOURS * 60 * 60 * 1000);
+    const storyVisibility = [
+      eq(stories.privacy, "public"),
+      relationships.friendUserIds.length ? and(eq(stories.privacy, "friends"), inArray(userProfiles.userId, relationships.friendUserIds)) : undefined,
+      relationships.followingUserIds.length ? and(eq(stories.privacy, "public"), inArray(userProfiles.userId, relationships.followingUserIds)) : undefined,
+    ].filter(Boolean) as Array<any>;
+
+    const storyCandidates = await db
+      .select({
+        id: stories.id,
+        shareId: stories.shareId,
+        storyText: stories.storyText,
+        storyType: stories.storyType,
+        mediaId: stories.mediaId,
+        hasMusic: stories.hasMusic,
+        musicTitle: stories.musicTitle,
+        musicArtist: stories.musicArtist,
+        hasStickers: stories.hasStickers,
+        privacy: stories.privacy,
+        professionalMode: stories.professionalMode,
+        expiresAt: stories.expiresAt,
+        createdAt: stories.createdAt,
+        authorId: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        username: users.username,
+        publicId: users.publicId,
+        profileId: users.profileId,
+        profilePhoto: userProfiles.profilePhoto,
+      })
+      .from(stories)
+      .innerJoin(userProfiles, eq(stories.authorId, userProfiles.id))
+      .innerJoin(users, eq(userProfiles.userId, users.id))
+      .where(and(
+        eq(stories.deleted, false),
+        eq(stories.moderationStatus, "approved"),
+        gt(stories.expiresAt, new Date()),
+        gt(stories.createdAt, storySince),
+        eq(users.accountStatus, "active"),
+        or(...storyVisibility),
+      ))
+      .orderBy(desc(stories.createdAt))
+      .limit(200);
+
+    const interestMap = new Map(index.interests.map((interest) => [interest.token, interest.score]));
+    const scoredStories = storyCandidates.map((story) => {
+      const text = `${story.storyText ?? ""} ${story.firstName} ${story.lastName} ${story.username}`.toLowerCase();
+      const matchingInterests = [...interestMap.entries()].reduce((score, [token, weight]) => score + (text.includes(token) ? weight : 0), 0);
+      const directRelationship = friendSet.has(story.authorId) || followingSet.has(story.authorId);
+      return {
+        ...story,
+        score: (directRelationship ? 100 : 0) + matchingInterests,
+        source: friendSet.has(story.authorId) ? "friend" : followingSet.has(story.authorId) ? "following" : "recommended",
+        recommendation: !directRelationship && matchingInterests > 0
+          ? { type: "preferences", label: "Suggested story that matches your preferences" }
+          : null,
+      };
+    });
+
+    scoredStories.sort((a, b) => b.score - a.score);
+    const storyAuthors = new Set<string>();
+    const activeStories = scoredStories.filter((story) => {
+      if (storyAuthors.has(story.authorId)) return false;
+      storyAuthors.add(story.authorId);
+      return true;
+    }).slice(0, 30).map(({ score: _score, ...story }) => ({
+      ...story,
+      relationship: story.source === "friend"
+        ? { type: "friend", label: `${story.firstName} is your friend` }
+        : story.source === "following"
+          ? { type: "following", label: `You follow ${story.firstName}` }
+          : null,
+    }));
+
+    const suggestedProfiles = (await feedIndexingService.rankProfiles(params.userId, index, 10)).map((profile) => ({
+      ...profile,
+      placement: "stories",
+      label: "Friend suggestion",
+    }));
 
     return {
       success: true,
       refreshedAt: new Date().toISOString(),
+      page,
+      pageSize: PAGE_SIZE,
+      hasMore: postStart + pagePosts.length < allRankedPosts.length,
       indexing: {
         provider: "ReDom Indexing Engine",
         locationSource: index.anchorLogin.loginTime ? "first_login_history" : params.ipAddress ? "current_ip_fallback" : "unavailable",
@@ -153,16 +209,16 @@ export class HomeFeedService {
           laterLoginHistory: 0.3,
         },
         behaviorSignals: {
-          actions: ["comment", "share", "save", "like", "watch_video", "follow", "search"],
+          actions: ["comment", "share", "save", "like", "reaction", "watch_video", "follow", "search"],
           interestsIndexed: index.interests.length,
           contentTypesIndexed: index.contentTypePreferences.length,
         },
-        friendsIndexed: friendUserIds.length,
-        followingIndexed: followingIds.length,
+        friendsIndexed: relationships.friendUserIds.length,
+        followingIndexed: relationships.followingUserIds.length,
       },
-      posts: rankedPosts.length > 0 ? rankedPosts : SYSTEM_POSTS,
-      suggestedProfiles,
-      friendStories,
+      stories: activeStories,
+      friendSuggestions: suggestedProfiles,
+      posts,
     };
   }
 }
