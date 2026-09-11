@@ -12,6 +12,6 @@ export type RootStackParamList = {
   RegistrationEmail: RegistrationFlowReservationRouteParams;
   RegistrationPassword: RegistrationFlowReservationRouteParams;
   RegistrationReview: RegistrationFlowReservationRouteParams;
-  RegistrationVerification: { verificationChallengeId: string; flowId: string; channel: "sms" | "email"; maskedTarget: string; expiresAt: string };
+  RegistrationVerification: { verificationChallengeId: string; reservationId: string; deviceId?: string; flowId: string; channel: "sms" | "email"; maskedTarget: string; expiresAt: string };
   Foundation: undefined;
 };
