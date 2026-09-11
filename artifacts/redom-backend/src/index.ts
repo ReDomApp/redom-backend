@@ -13,29 +13,29 @@ import {
   stopRegistrationFlowReservationCleanup,
 } from "./services/auth/registration-flow-reservation-cleanup.service";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
+// Render supplies PORT for web services. Keep 10000 as a safe local/default
+// fallback so the process can still start when PORT is not explicitly set.
+const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
 
 if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-  throw new Error(`Invalid PORT value: \"${rawPort}\"`);
+  throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const server = app.listen(port, (err) => {
-  if (err) {
-    logger.error({ error: serializeError(err) }, "Error listening on port");
-    process.exit(1);
-  }
+// Bind explicitly to all interfaces. Render's health/port scanner connects
+// through the container network, so binding only to localhost would make the
+// service appear down even though the Node process is running.
+const host = "0.0.0.0";
 
+const server = app.listen(port, host, () => {
   startRegistrationChallengeCleanup();
   startRegistrationFlowReservationCleanup();
-  logger.info({ port }, "Server listening");
+  logger.info({ host, port }, "Server listening");
+});
+
+server.on("error", (error) => {
+  logger.error({ error: serializeError(error), host, port }, "HTTP server error");
+  process.exit(1);
 });
 
 function serializeError(error: unknown): { name: string; message: string; stack?: string } {
