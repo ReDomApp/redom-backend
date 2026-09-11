@@ -4,9 +4,43 @@ import { db } from "../../database/db";
 import { posts } from "../../database/posts";
 import { stories } from "../../database/stories";
 import { friends } from "../../database/friends";
+import { following } from "../../database/following";
 import { users } from "../../database/schema";
 import { userProfiles } from "../../database/userProfiles";
 import { checkIP } from "../../lib/ipapi";
+
+const SYSTEM_POSTS = [
+  {
+    id: "redom-system-welcome",
+    shareId: null,
+    content: "Welcome to ReDom — connect, share, discover people, communities, pages, videos and conversations.",
+    type: "text",
+    publishedAt: new Date().toISOString(),
+    authorId: "system",
+    firstName: "ReDom",
+    lastName: "",
+    username: "redom",
+    publicId: null,
+    profileId: "system",
+    profilePhoto: null,
+    system: true,
+  },
+  {
+    id: "redom-system-discover",
+    shareId: null,
+    content: "As ReDom grows, this feed will continuously index relevant public posts and recommendations for you.",
+    type: "text",
+    publishedAt: new Date().toISOString(),
+    authorId: "system",
+    firstName: "ReDom",
+    lastName: "",
+    username: "redom",
+    publicId: null,
+    profileId: "system",
+    profilePhoto: null,
+    system: true,
+  },
+] as const;
 
 export class HomeFeedService {
   async generate(params: { userId: string; ipAddress?: string }) {
@@ -27,9 +61,24 @@ export class HomeFeedService {
           timezone: geo.location?.timezone ?? null,
         };
       } catch {
-        // Feed generation remains available when IP geolocation is temporarily unavailable.
+        // Location is a ranking signal; feed delivery must remain available.
       }
     }
+
+    const friendshipRows = await db
+      .select({ friendUserId: friends.friendUserId })
+      .from(friends)
+      .where(and(eq(friends.userId, params.userId), eq(friends.friendshipStatus, "active")))
+      .limit(100);
+    const friendUserIds = friendshipRows.map((row) => row.friendUserId);
+
+    const followingRows = await db
+      .select({ followingId: following.followingId })
+      .from(following)
+      .where(eq(following.userId, params.userId))
+      .limit(100);
+    const followingIds = followingRows.map((row) => row.followingId);
+    const priorityUserIds = new Set([...friendUserIds, ...followingIds]);
 
     const publicPosts = await db
       .select({
@@ -45,13 +94,25 @@ export class HomeFeedService {
         publicId: users.publicId,
         profileId: users.profileId,
         profilePhoto: userProfiles.profilePhoto,
+        currentCity: userProfiles.currentCity,
       })
       .from(posts)
       .innerJoin(users, eq(posts.userId, users.id))
       .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
       .where(and(eq(posts.deleted, false), eq(posts.visibility, "public"), eq(users.accountStatus, "active")))
       .orderBy(desc(posts.publishedAt))
-      .limit(40);
+      .limit(100);
+
+    const rankedPosts = publicPosts
+      .map((post) => {
+        let score = post.publishedAt.getTime() / 1_000_000_000;
+        if (priorityUserIds.has(post.authorId)) score += 1000;
+        if (location.city && post.currentCity && post.currentCity.toLowerCase() === location.city.toLowerCase()) score += 500;
+        return { post, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 40)
+      .map(({ post }) => ({ ...post, system: false }));
 
     const suggestionWhere = location.city
       ? and(
@@ -85,13 +146,6 @@ export class HomeFeedService {
       .orderBy(desc(userProfiles.friendCount), desc(userProfiles.followerCount), desc(userProfiles.createdAt))
       .limit(10);
 
-    const friendshipRows = await db
-      .select({ friendUserId: friends.friendUserId })
-      .from(friends)
-      .where(and(eq(friends.userId, params.userId), eq(friends.friendshipStatus, "active")))
-      .limit(100);
-
-    const friendUserIds = friendshipRows.map((row) => row.friendUserId);
     let friendStories: Array<{
       id: string;
       shareId: string;
@@ -106,7 +160,7 @@ export class HomeFeedService {
 
     if (friendUserIds.length > 0) {
       const friendProfiles = await db
-        .select({ id: userProfiles.id, userId: userProfiles.userId })
+        .select({ id: userProfiles.id })
         .from(userProfiles)
         .where(inArray(userProfiles.userId, friendUserIds));
       const friendProfileIds = friendProfiles.map((profile) => profile.id);
@@ -141,8 +195,10 @@ export class HomeFeedService {
         locationSource: params.ipAddress ? "ipapi" : "unavailable",
         approximate: Boolean(params.ipAddress),
         location,
+        friendsIndexed: friendUserIds.length,
+        followingIndexed: followingIds.length,
       },
-      posts: publicPosts,
+      posts: rankedPosts.length > 0 ? rankedPosts : SYSTEM_POSTS,
       suggestedProfiles,
       friendStories,
     };
