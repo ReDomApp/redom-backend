@@ -41,7 +41,7 @@ export class FeedService {
         city = geo.location?.city ?? null;
         country = geo.location?.country ?? null;
       } catch {
-        // Feed remains usable when the location intelligence provider is unavailable.
+        // Location intelligence is a ranking signal, not a requirement for a feed response.
       }
     }
 
@@ -111,7 +111,6 @@ export class FeedService {
       ? await db.select({
           id: stories.id,
           shareId: stories.shareId,
-          authorId: stories.authorId,
           storyType: stories.storyType,
           storyText: stories.storyText,
           expiresAt: stories.expiresAt,
@@ -141,24 +140,38 @@ export class FeedService {
         })
           .from(userProfiles)
           .innerJoin(users, eq(userProfiles.userId, users.id))
-          .where(and(eq(userProfiles.profileVisibility, "public"), eq(userProfiles.currentCity, city), users.id !== params.userId ? undefined : undefined))
+          .where(eq(userProfiles.profileVisibility, "public"))
           .orderBy(desc(userProfiles.followerCount))
-          .limit(10)
+          .limit(25)
       : [];
 
-    const suggestions = suggestionRows.filter((row) => row.userId !== params.userId).map((row) => ({
-      userId: row.userId,
-      profileId: row.profileId,
-      username: row.username,
-      displayName: `${row.firstName} ${row.lastName}`.trim(),
-      profilePhoto: row.profilePhoto,
-      currentCity: row.currentCity,
-    }));
+    const suggestions = suggestionRows
+      .filter((row) => row.userId !== params.userId && (!city || !row.currentCity || row.currentCity.toLowerCase() === city!.toLowerCase()))
+      .slice(0, 10)
+      .map((row) => ({
+        userId: row.userId,
+        profileId: row.profileId,
+        username: row.username,
+        displayName: `${row.firstName} ${row.lastName}`.trim(),
+        profilePhoto: row.profilePhoto,
+        currentCity: row.currentCity,
+      }));
 
     return {
       success: true,
-      indexing: { location: city || country ? { city, country, source: "ipapi", approximate: true } : null, friends: friendIds.length, following: followingIds.length },
-      stories: storyRows.map((row) => ({ id: row.id, shareId: row.shareId, author: { displayName: row.displayName, username: row.username, profileId: row.profileId, profilePhoto: row.profilePhoto }, storyType: row.storyType, storyText: row.storyText, expiresAt: row.expiresAt.toISOString() })),
+      indexing: {
+        location: city || country ? { city, country, source: "ipapi", approximate: true } : null,
+        friends: friendIds.length,
+        following: followingIds.length,
+      },
+      stories: storyRows.map((row) => ({
+        id: row.id,
+        shareId: row.shareId,
+        author: { displayName: row.displayName, username: row.username, profileId: row.profileId, profilePhoto: row.profilePhoto },
+        storyType: row.storyType,
+        storyText: row.storyText,
+        expiresAt: row.expiresAt.toISOString(),
+      })),
       suggestions,
       posts: rankedPosts.length > 0 ? rankedPosts : SYSTEM_POSTS,
     };
