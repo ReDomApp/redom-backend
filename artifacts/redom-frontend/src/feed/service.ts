@@ -28,6 +28,18 @@ export interface HomeFeedProfileSuggestion {
   followerCount: number;
 }
 
+export interface HomeFeedFriendStory {
+  id: string;
+  shareId: string;
+  storyText: string | null;
+  storyType: string;
+  expiresAt: string;
+  firstName: string;
+  lastName: string;
+  username: string;
+  profilePhoto: string | null;
+}
+
 export interface HomeFeedResult {
   success: boolean;
   refreshedAt: string;
@@ -39,7 +51,7 @@ export interface HomeFeedResult {
   };
   posts: HomeFeedPost[];
   suggestedProfiles: HomeFeedProfileSuggestion[];
-  friendStories: unknown[];
+  friendStories: HomeFeedFriendStory[];
 }
 
 export const feedService = {
