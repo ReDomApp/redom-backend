@@ -10,9 +10,14 @@ export class HomeFeedController {
         return;
       }
 
+      const rawPage = Array.isArray(req.query.page) ? req.query.page[0] : req.query.page;
+      const parsedPage = rawPage === undefined ? 1 : Number.parseInt(String(rawPage), 10);
+      const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+
       const result = await homeFeedService.generate({
         userId: req.user.userId,
         ipAddress: req.ip,
+        page,
       });
 
       res.status(200).json(result);
