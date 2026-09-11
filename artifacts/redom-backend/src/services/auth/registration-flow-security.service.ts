@@ -183,6 +183,35 @@ export class RegistrationFlowSecurityService {
     return { success: true, flowId: reservation.flowId, reservationId: reservation.id, security };
   }
 
+  async capture(params: { reservationId: string; flowId: string; deviceId?: string; ip: string }) {
+    const reservation = await this.reservation(params);
+    const inspected = await this.inspect(params);
+    const capturedAt = new Date().toISOString();
+    const security = { ...inspected.security, consentedAt: null };
+    const existingMemory = (reservation.memory ?? {}) as Record<string, unknown>;
+    const memory = {
+      ...existingMemory,
+      networkSecurity: {
+        ...security,
+        consented: false,
+        capturedAt,
+        dataPurpose: "abuse_prevention_and_registration_security",
+        dataSource: "IPAPI",
+      },
+    };
+    const [updated] = await db.update(registrationFlowReservations).set({
+      memory: memory as never,
+      ipFraudScore: security.fraudScore,
+      ipProxy: security.proxy,
+      ipVpn: security.vpn,
+      ipTor: security.tor,
+      ipBotStatus: security.bot,
+      ipCountryCode: security.countryCode,
+    }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, params.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
+    if (!updated) throw new Error("Unable to save network security details to this registration Flow ID.");
+    return { success: true, flowId: updated.flowId, reservationId: updated.id, security, capturedAt };
+  }
+
   async consent(params: { reservationId: string; flowId: string; deviceId?: string; ip: string }) {
     const reservation = await this.reservation(params);
     const inspected = await this.inspect(params);
