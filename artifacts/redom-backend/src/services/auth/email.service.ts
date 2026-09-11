@@ -40,12 +40,7 @@ export class EmailService {
     if (!flowId) throw new Error("Registration confirmation requires the registration Flow ID.");
     if (!userAgent) throw new Error("Registration confirmation requires the user's registration device information.");
 
-    // The Flow ID is the source of truth for the registration network context.
-    // Read the IP captured for this exact flow, then perform a fresh IPAPI lookup
-    // so location, coordinates, timezone and local-time data come from that IP.
-    const reservation = await db.query.registrationFlowReservations.findFirst({
-      where: eq(registrationFlowReservations.flowId, flowId),
-    });
+    const reservation = await db.query.registrationFlowReservations.findFirst({ where: eq(registrationFlowReservations.flowId, flowId) });
     const memory = reservation?.memory as { networkSecurity?: { ip?: string | null } } | undefined;
     const flowIp = memory?.networkSecurity?.ip?.trim() || null;
     if (!flowIp) throw new Error("Registration confirmation could not determine the registration IP from the Flow ID.");
@@ -53,25 +48,20 @@ export class EmailService {
     const ip = await checkIP(flowIp);
     const location = ip.location;
     const timezone = location?.timezone || null;
-    if (!location?.city || !location.country || location.latitude == null || location.longitude == null || !timezone) {
-      throw new Error("Registration confirmation could not verify the user's registration location and timezone from the registration IP.");
-    }
+    if (!location?.city || !location.country || location.latitude == null || location.longitude == null || !timezone) throw new Error("Registration confirmation could not verify the user's registration location and timezone from the registration IP.");
 
     const device = this.parseDevice(userAgent);
     const timeParts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long", month: "short", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short" }).formatToParts(params.registeredAt);
     const part = (type: Intl.DateTimeFormatPartTypes) => timeParts.find((item) => item.type === type)?.value ?? "";
     const registeredText = `${part("weekday")}, ${part("month")} ${part("day")}, ${part("year")} ${part("hour")}:${part("minute")}:${part("second")} ${part("dayPeriod")} (${part("timeZoneName")})`;
-    const latitude = Number(location.latitude);
-    const longitude = Number(location.longitude);
+    const latitude = Number(location.latitude); const longitude = Number(location.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error("Registration confirmation could not verify the user's map coordinates from the registration IP.");
-
     const delta = 0.04;
     const bbox = `${longitude - delta},${latitude - delta},${longitude + delta},${latitude + delta}`;
     const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${latitude},${longitude}`)}`;
     const mapLink = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(String(latitude))}&mlon=${encodeURIComponent(String(longitude))}#map=12/${encodeURIComponent(String(latitude))}/${encodeURIComponent(String(longitude))}`;
     const profileSvg = this.buildProfilePlaceholder(firstName, lastName);
     const subject = "Your ReDom registration was successful";
-
     const result = await resend.emails.send({
       from: this.sender,
       to: email,
@@ -79,6 +69,38 @@ export class EmailService {
       html: `<!doctype html><html><body style="margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div style="text-align:center;margin-bottom:24px">${profileSvg}<h2 style="margin:18px 0 6px">Dear ${this.escapeHtml(firstName)} ${this.escapeHtml(lastName)},</h2><p style="margin:0;color:#667085">Your ReDom registration has been successfully verified.</p></div><p>You have registered successfully to ReDom on <strong>${this.escapeHtml(registeredText)}</strong>.</p><p>Here are some extra details about this recent registration:</p><div style="border:1px solid #e4e7ec;border-radius:12px;overflow:hidden;margin:20px 0"><iframe title="Approximate registration location" src="${mapUrl}" width="100%" height="280" frameborder="0" style="border:0;display:block"></iframe><div style="padding:14px 16px;background:#fafbfc"><strong>Location:</strong> ${this.escapeHtml(location.city)}, ${this.escapeHtml(location.country)} (shown as approximate)<br><strong>Device:</strong> ${this.escapeHtml(device)}<br><strong>IP:</strong> ${this.escapeHtml(flowIp)}<br><strong>Time:</strong> ${this.escapeHtml(registeredText)}<br><strong>Timezone:</strong> ${this.escapeHtml(timezone)}</div></div><p style="font-size:13px"><a href="${mapLink}" style="color:#1877f2">View the approximate location on the map</a></p><p>If this was you, you can disregard this message.</p><p>If that wasn't you, we strongly advise that you change your password as soon as possible and notify us by replying to this email.</p><p>If you experience any problems kindly contact us at <a href="mailto:support@redomapp.com">support@redomapp.com</a> or send us a WhatsApp message at +234 701 486 5940.</p><p style="margin-top:28px">ReDom Platforms, Inc.</p></div></div></body></html>`,
     });
     if (result.error) throw new Error(`Resend failed to deliver the registration confirmation email: ${result.error.message}`);
+    return { provider: "resend", providerReference: result.data?.id };
+  }
+
+  async sendPendingRegistrationInvalidation(params: { firstName: string; lastName: string; email: string; phone?: string | null; flowIds: string[]; invalidatedAt: Date; requestIp?: string; userAgent?: string }): Promise<{ provider: string; providerReference?: string }> {
+    const firstName = params.firstName.trim();
+    const lastName = params.lastName.trim();
+    const email = this.validate(params.email);
+    if (!firstName || !lastName) throw new Error("Pending registration deletion email requires the user's full name.");
+    if (!params.requestIp) throw new Error("Pending registration deletion email requires the invalidation request IP.");
+
+    const ip = await checkIP(params.requestIp);
+    const location = ip.location;
+    const timezone = location?.timezone || null;
+    const city = location?.city || null;
+    const country = location?.country || null;
+    const region = location?.region || location?.state || null;
+    const coordinates = location?.latitude != null && location?.longitude != null ? `${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}` : null;
+    const timeParts = timezone ? new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short", timeZone: timezone }).formatToParts(params.invalidatedAt) : [];
+    const part = (type: Intl.DateTimeFormatPartTypes) => timeParts.find((item) => item.type === type)?.value ?? "";
+    const invalidatedText = timezone ? `${part("weekday")}, ${part("month")} ${part("day")}, ${part("year")} ${part("hour")}:${part("minute")} ${part("dayPeriod")} (${part("timeZoneName")})` : params.invalidatedAt.toISOString();
+    const locationText = [city, region, country].filter(Boolean).join(", ") || "Location unavailable";
+    const flowText = params.flowIds.length ? params.flowIds.join(", ") : "No active Flow ID remained";
+    const device = params.userAgent ? this.parseDevice(params.userAgent) : "Device information unavailable";
+    const subject = "Your ReDom pending registration was invalidated";
+
+    const result = await resend.emails.send({
+      from: this.sender,
+      to: email,
+      subject,
+      html: `<!doctype html><html><body style="margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div style="text-align:center;margin-bottom:24px"><div style="font-size:46px;font-weight:800;color:#1877f2">R</div><h2 style="margin:12px 0 6px">Dear ${this.escapeHtml(firstName)} ${this.escapeHtml(lastName)},</h2><p style="margin:0;color:#667085">Your pending ReDom registration has been invalidated.</p></div><p>Your pending registration was successfully invalidated after the verification code was confirmed. Because the registration had not been verified, the associated pending account and registration data were deleted so you can start a new registration.</p><h3 style="margin-top:26px">Invalidation details</h3><div style="border:1px solid #e4e7ec;border-radius:12px;padding:16px;background:#fafbfc"><strong>Email:</strong> ${this.escapeHtml(email)}<br><strong>Phone:</strong> ${this.escapeHtml(params.phone || "Not provided")}<br><strong>Registration Flow ID(s):</strong> ${this.escapeHtml(flowText)}<br><strong>Location:</strong> ${this.escapeHtml(locationText)} (shown as approximate)<br><strong>Device:</strong> ${this.escapeHtml(device)}<br><strong>IP:</strong> ${this.escapeHtml(params.requestIp)}<br><strong>Time:</strong> ${this.escapeHtml(invalidatedText)}<br><strong>Timezone:</strong> ${this.escapeHtml(timezone || "Timezone unavailable")}${coordinates ? `<br><strong>Approximate coordinates:</strong> ${this.escapeHtml(coordinates)}` : ""}</div><p style="margin-top:24px">The deleted registration was unverified. This invalidation does not affect any separately verified ReDom account.</p><p>If you did not request this action, please contact us immediately at <a href="mailto:support@redomapp.com">support@redomapp.com</a> or send us a WhatsApp message at +234 701 486 5940.</p><p>You may now create a new ReDom account.</p><p style="margin-top:28px">Kind Regards,<br>ReDom Platforms, Inc.</p></div></div></body></html>`,
+    });
+    if (result.error) throw new Error(`Resend failed to deliver the pending registration invalidation email: ${result.error.message}`);
     return { provider: "resend", providerReference: result.data?.id };
   }
 
