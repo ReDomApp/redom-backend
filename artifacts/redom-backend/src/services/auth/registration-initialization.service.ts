@@ -1,5 +1,4 @@
 import { and, eq, gt } from "drizzle-orm";
-
 import { db } from "../../database/db";
 import { users } from "../../database/schema";
 import { userProfiles } from "../../database/userProfiles";
@@ -62,7 +61,8 @@ export class RegistrationInitializationService {
     await db.delete(registrationChallenges).where(eq(registrationChallenges.id, challenge.id));
     await db.delete(verifications).where(eq(verifications.id, verification.id));
 
-    return { success: true, flowId: challenge.flowId, user, session, language: params.language?.trim() || "system", location: { country, region, city, timezone: geo?.location?.timezone ?? null }, profileId: user.profileId, publicId: user.publicId };
+    const publicUser = { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email ?? null, phoneNumber: user.phoneNumber ?? null, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus };
+    return { success: true, flowId: challenge.flowId, user: publicUser, session, language: params.language?.trim() || "system", location: { country, region, city, timezone: geo?.location?.timezone ?? null }, profileId: user.profileId, publicId: user.publicId };
   }
 }
 
