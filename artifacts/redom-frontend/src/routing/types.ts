@@ -11,5 +11,7 @@ export type RootStackParamList = {
   RegistrationPhone: RegistrationFlowReservationRouteParams;
   RegistrationEmail: RegistrationFlowReservationRouteParams;
   RegistrationPassword: RegistrationFlowReservationRouteParams;
+  RegistrationReview: RegistrationFlowReservationRouteParams;
+  RegistrationVerification: { verificationChallengeId: string; flowId: string; channel: "sms" | "email"; maskedTarget: string; expiresAt: string };
   Foundation: undefined;
 };
