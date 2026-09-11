@@ -48,14 +48,11 @@ export class PasswordRecoveryService {
     await db.update(verifications).set({ sessionId: resetToken, updatedAt: new Date() }).where(eq(verifications.id, params.challengeId));
 
     let security: { country?: string | null; state?: string | null; city?: string | null; timezone?: string | null; latitude?: number | null; longitude?: number | null } | null = null;
-    if (params.ipAddress) {
-      try { const ip = await checkIP(params.ipAddress); security = ip.location ?? null; } catch { security = null; }
-    }
+    if (params.ipAddress) { try { const ip = await checkIP(params.ipAddress); security = ip.location ?? null; } catch { security = null; } }
     const user = await db.query.users.findFirst({ where: eq(users.id, result.userId) });
-    if (user?.email) {
-      try { await this.sendSecurityNotification({ user, context: params, security, stage: "verification" }); } catch { /* notification failure never invalidates a valid OTP */ }
-    }
-    return { success: true, resetToken, message: "Verification successful. Your reset request has been verified." };
+    let notificationStatus: "sent" | "openai_unavailable" | "delivery_failed" | "not_configured" = "not_configured";
+    if (user?.email) { try { await this.sendSecurityNotification({ user, context: params, security, stage: "verification" }); notificationStatus = "sent"; } catch (error) { notificationStatus = error instanceof Error && error.message === "OpenAI not responding." ? "openai_unavailable" : "delivery_failed"; } }
+    return { success: true, resetToken, notificationStatus, message: notificationStatus === "openai_unavailable" ? "OpenAI not responding. Your verification was successful; you can continue." : "Verification successful. Your security details were collected and your password can now be changed." };
   }
 
   async changePassword(params: { resetToken: string; password: string } & RequestContext) {
@@ -63,12 +60,14 @@ export class PasswordRecoveryService {
     const verification = await db.query.verifications.findFirst({ where: and(eq(verifications.sessionId, params.resetToken), eq(verifications.purpose, "PASSWORD_RESET"), eq(verifications.status, "consumed"), gt(verifications.verifiedAt, new Date(now.getTime() - 10 * 60 * 1000))) });
     if (!verification?.userId || !verification.verifiedAt) throw new Error("This password reset session has expired. Please request a new code.");
     const user = await db.query.users.findFirst({ where: eq(users.id, verification.userId) }); if (!user) throw new Error("Account not found."); if (user.accountStatus === "suspended" || user.accountStatus === "banned") throw new Error("This account is not available.");
+    const location = params.ipAddress ? await checkIP(params.ipAddress).catch(() => null) : null;
     const passwordHash = await passwordService.hash(params.password);
     await db.transaction(async tx => { await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, user.id)); await tx.update(verifications).set({ sessionId: null, updatedAt: now }).where(eq(verifications.id, verification.id)); });
     await sessionService.revokeAllSessions(user.id);
     const session = await sessionService.createSession({ userId: user.id, ipAddress: params.ipAddress, userAgent: params.userAgent, deviceId: params.deviceId, deviceName: params.deviceName, deviceType: params.deviceType, platform: params.platform, browser: params.browser, loginSource: "password-recovery", appVersion: params.appVersion });
-    if (user.email) { try { const security = params.ipAddress ? await checkIP(params.ipAddress).catch(() => null) : null; await this.sendSecurityNotification({ user, sessionId: session.sessionId, context: params, security: security?.location ?? null, stage: "changed" }); } catch { /* password recovery has already succeeded */ } }
-    return { success: true, message: "Your password has been changed successfully.", user: { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email, phoneNumber: user.phoneNumber, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus }, session };
+    let notificationStatus: "sent" | "openai_unavailable" | "delivery_failed" | "not_configured" = "not_configured";
+    if (user.email) { try { await this.sendSecurityNotification({ user, sessionId: session.sessionId, context: params, security: location?.location ?? null, stage: "changed" }); notificationStatus = "sent"; } catch (error) { notificationStatus = error instanceof Error && error.message === "OpenAI not responding." ? "openai_unavailable" : "delivery_failed"; } }
+    return { success: true, notificationStatus, message: notificationStatus === "openai_unavailable" ? "Password changed successfully. OpenAI not responding; continuing to your account." : "Your password has been changed successfully.", user: { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email, phoneNumber: user.phoneNumber, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus }, session };
   }
 
   private async sendSecurityNotification(params: { user: typeof users.$inferSelect; context: RequestContext; security: { country?: string | null; state?: string | null; city?: string | null; timezone?: string | null; latitude?: number | null; longitude?: number | null } | null; stage: "verification" | "changed"; sessionId?: string }) {
@@ -78,14 +77,10 @@ export class PasswordRecoveryService {
     const timezone = params.security?.timezone || "Timezone unavailable";
     const language = params.context.language?.trim() || "English";
     const isChanged = params.stage === "changed";
-    let subject = isChanged ? "Your ReDom password was changed" : "ReDom password change request verified";
-    let body = isChanged
-      ? `Your ReDom password was changed successfully.\n\nLocation: ${location}\nTimezone: ${timezone}\nIP address: ${ip}\nDevice: ${device}\n${params.sessionId ? `Session ID: ${params.sessionId}\n` : ""}\nIf you did not make this change, secure your account immediately.`
-      : `A ReDom password change request was verified.\n\nLocation: ${location}\nTimezone: ${timezone}\nIP address: ${ip}\nDevice: ${device}\n\nThe password has not yet been changed.`;
-    try {
-      const response = await openai.responses.create({ model: "gpt-5.6-luna", input: `Write a concise ReDom security email in ${language}. Return JSON only as {"subject":"...","body":"..."}. Do not invent facts. Preserve these exact facts and meaning: event=${isChanged ? "password changed successfully" : "password reset verification completed; password not yet changed"}; location=${location}; timezone=${timezone}; ip=${ip}; device=${device}; sessionId=${params.sessionId || "not created yet"}.` });
-      const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown }; if (typeof parsed.subject === "string" && typeof parsed.body === "string") { subject = parsed.subject; body = parsed.body; }
-    } catch { /* deterministic security notification fallback */ }
+    const event = isChanged ? "password changed successfully" : "password reset verification completed; password not yet changed";
+    const response = await openai.responses.create({ model: "gpt-5.6-luna", input: `Write a concise ReDom security email in ${language}. Return JSON only as {"subject":"...","body":"..."}. Do not invent facts. Preserve these exact facts and meaning: event=${event}; location=${location}; timezone=${timezone}; ip=${ip}; device=${device}; sessionId=${params.sessionId || "not created yet"}.` }).catch(() => { throw new Error("OpenAI not responding."); });
+    let subject: string; let body: string;
+    try { const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown }; if (typeof parsed.subject !== "string" || typeof parsed.body !== "string") throw new Error(); subject = parsed.subject; body = parsed.body; } catch { throw new Error("OpenAI not responding."); }
     const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033"><h2>${this.escapeHtml(subject)}</h2><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p><p style="margin-top:24px">ReDom Platforms, Inc.</p></div>`;
     await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html });
   }
