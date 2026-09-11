@@ -8,6 +8,7 @@ import { registrationFlowEmailController } from "../controllers/registration-flo
 import { registrationFlowPasswordController } from "../controllers/registration-flow-password.controller";
 import { registrationVerificationController } from "../controllers/registration-verification.controller";
 import { registrationInitializationController } from "../controllers/registration-initialization.controller";
+import { totpController } from "../controllers/totp.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { authRateLimit, networkProviderRateLimit, passwordResetRateLimit, verificationRateLimit } from "../middleware/rate-limit.middleware";
 const router = Router();
@@ -47,4 +48,9 @@ router.post("/forgot-password", passwordResetRateLimit, authController.forgotPas
 router.post("/reset-password", passwordResetRateLimit, authController.resetPassword.bind(authController));
 router.post("/logout", authMiddleware, authController.logout.bind(authController));
 router.post("/refresh", authRateLimit, authController.refreshSession.bind(authController));
+
+// Authenticator setup/recovery is available only to an authenticated ReDom account.
+router.post("/security/2fa/authenticator/setup", authMiddleware, authRateLimit, totpController.beginSetup.bind(totpController));
+router.post("/security/2fa/authenticator/confirm", authMiddleware, verificationRateLimit, totpController.confirmSetup.bind(totpController));
+router.post("/security/2fa/authenticator/recovery-code", authMiddleware, verificationRateLimit, totpController.useRecoveryCode.bind(totpController));
 export default router;
