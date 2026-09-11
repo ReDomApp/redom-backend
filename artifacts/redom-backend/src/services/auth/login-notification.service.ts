@@ -10,6 +10,7 @@ export class LoginNotificationService {
     lastName: string;
     ipAddress: string;
     eventAt: Date;
+    deviceName?: string;
     deviceUserAgent?: string;
     ipapi?: IPAPIResult | null;
   }) {
@@ -17,7 +18,9 @@ export class LoginNotificationService {
     const location = [params.ipapi?.location?.city, params.ipapi?.location?.state, params.ipapi?.location?.country]
       .filter(Boolean)
       .join(", ") || "Location unavailable";
-    const device = this.parseDevice(params.deviceUserAgent ?? "Unknown device");
+    // Prefer the device name supplied by the ReDom client. okhttp/OkHttp is the
+    // transport User-Agent and should not be presented to the user as the device.
+    const device = params.deviceName?.trim() || this.parseDevice(params.deviceUserAgent ?? "Unknown device");
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       weekday: "long",
@@ -47,6 +50,7 @@ export class LoginNotificationService {
   }
 
   private parseDevice(userAgent: string): string {
+    if (/^okhttp\//i.test(userAgent.trim())) return "Android app";
     const android = userAgent.match(/Android\s+([^;\)]+)/i)?.[1]?.trim();
     const manufacturer = userAgent.match(/\b(Infinix|TECNO|Techno|Samsung|Xiaomi|Redmi|OPPO|vivo|OnePlus|Google|Huawei|Motorola|Nokia|Sony|Apple)\b/i)?.[1];
     const model = userAgent.match(/Android[^;\)]*;\s*(?:[a-z]{2}-[A-Z]{2};\s*)?(?:wv;\s*)?([^;\)]+?)(?:\s+Build\/[^;\)]*)?[;\)]/i)?.[1]?.trim();
