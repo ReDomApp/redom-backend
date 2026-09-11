@@ -24,6 +24,7 @@ export interface RegistrationChallengeStart { contactType: "phone" | "email"; ta
 export interface RegistrationChallengeResult { success: boolean; challengeId: string; flowId: string; contactType: "phone" | "email"; target?: string; maskedTarget: string; codeLength: number; expiresAt: string; currentStep: "contact" | "identity" | "username" | "profile" | "password" | "review"; }
 export interface RegistrationChallengeSaveResult { success: boolean; challengeId: string; flowId: string; maskedTarget: string; expiresAt: string; currentStep: RegistrationChallengeResult["currentStep"]; }
 export interface RegistrationCompletionResult { success: boolean; flowId: string; user: AuthUser; verification: LoginVerification; }
+export interface RegistrationInitializationResult { success: boolean; flowId: string; user: AuthUser; session: AuthSession; language: string; profileId: string; publicId: string; location?: { country: string | null; region: string | null; city: string | null; timezone: string | null }; }
 export interface RegistrationStepData { firstName?: string; lastName?: string; username?: string; email?: string; phoneNumber?: string; dateOfBirth?: string; gender?: "male" | "female" | "custom"; password?: string; }
 export interface ResendVerificationInput { userId: string; }
 export interface ForgotPasswordInput { identifier: string; }
