@@ -44,14 +44,15 @@ export class PasswordRecoveryService {
     if (!verification || verification.purpose !== "PASSWORD_RESET") throw new Error("Password reset verification was not found.");
     const result = await verificationService.verifyVerification({ challengeId: params.challengeId, code: params.code, purpose: "PASSWORD_RESET" });
     if (!result.userId) throw new Error("Password reset is not associated with an account.");
+    const verifiedAt = new Date();
     const resetToken = randomUUID();
-    await db.update(verifications).set({ sessionId: resetToken, updatedAt: new Date() }).where(eq(verifications.id, params.challengeId));
+    await db.update(verifications).set({ sessionId: resetToken, updatedAt: verifiedAt }).where(eq(verifications.id, params.challengeId));
 
     let security: { country?: string | null; state?: string | null; city?: string | null; timezone?: string | null; latitude?: number | null; longitude?: number | null } | null = null;
     if (params.ipAddress) { try { const ip = await checkIP(params.ipAddress); security = ip.location ?? null; } catch { security = null; } }
     const user = await db.query.users.findFirst({ where: eq(users.id, result.userId) });
     let notificationStatus: "sent" | "openai_unavailable" | "delivery_failed" | "not_configured" = "not_configured";
-    if (user?.email) { try { await this.sendSecurityNotification({ user, context: params, security, stage: "verification" }); notificationStatus = "sent"; } catch (error) { notificationStatus = error instanceof Error && error.message === "OpenAI not responding." ? "openai_unavailable" : "delivery_failed"; } }
+    if (user?.email) { try { await this.sendSecurityNotification({ user, context: params, security, eventAt: verifiedAt, stage: "verification" }); notificationStatus = "sent"; } catch (error) { notificationStatus = error instanceof Error && error.message === "OpenAI not responding." ? "openai_unavailable" : "delivery_failed"; } }
     return { success: true, resetToken, notificationStatus, message: notificationStatus === "openai_unavailable" ? "OpenAI not responding. Your verification was successful; you can continue." : "Verification successful. Your security details were collected and your password can now be changed." };
   }
 
@@ -66,11 +67,11 @@ export class PasswordRecoveryService {
     await sessionService.revokeAllSessions(user.id);
     const session = await sessionService.createSession({ userId: user.id, ipAddress: params.ipAddress, userAgent: params.userAgent, deviceId: params.deviceId, deviceName: params.deviceName, deviceType: params.deviceType, platform: params.platform, browser: params.browser, loginSource: "password-recovery", appVersion: params.appVersion });
     let notificationStatus: "sent" | "openai_unavailable" | "delivery_failed" | "not_configured" = "not_configured";
-    if (user.email) { try { await this.sendSecurityNotification({ user, sessionId: session.sessionId, context: params, security: location?.location ?? null, stage: "changed" }); notificationStatus = "sent"; } catch (error) { notificationStatus = error instanceof Error && error.message === "OpenAI not responding." ? "openai_unavailable" : "delivery_failed"; } }
+    if (user.email) { try { await this.sendSecurityNotification({ user, sessionId: session.sessionId, context: params, security: location?.location ?? null, eventAt: now, stage: "changed" }); notificationStatus = "sent"; } catch (error) { notificationStatus = error instanceof Error && error.message === "OpenAI not responding." ? "openai_unavailable" : "delivery_failed"; } }
     return { success: true, notificationStatus, message: notificationStatus === "openai_unavailable" ? "Password changed successfully. OpenAI not responding; continuing to your account." : "Your password has been changed successfully.", user: { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email, phoneNumber: user.phoneNumber, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus }, session };
   }
 
-  private async sendSecurityNotification(params: { user: typeof users.$inferSelect; context: RequestContext; security: { country?: string | null; state?: string | null; city?: string | null; timezone?: string | null; latitude?: number | null; longitude?: number | null } | null; stage: "verification" | "changed"; sessionId?: string }) {
+  private async sendSecurityNotification(params: { user: typeof users.$inferSelect; context: RequestContext; security: { country?: string | null; state?: string | null; city?: string | null; timezone?: string | null; latitude?: number | null; longitude?: number | null } | null; eventAt: Date; stage: "verification" | "changed"; sessionId?: string }) {
     const device = params.context.deviceName || params.context.deviceType || "Unknown device";
     const ip = params.context.ipAddress || "Unavailable";
     const location = [params.security?.city, params.security?.state, params.security?.country].filter(Boolean).join(", ") || "Location unavailable";
@@ -82,26 +83,26 @@ export class PasswordRecoveryService {
       let subject: string; let body: string;
       try { const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown }; if (typeof parsed.subject !== "string" || typeof parsed.body !== "string") throw new Error(); subject = parsed.subject; body = parsed.body; } catch { throw new Error("OpenAI not responding."); }
       const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033"><h2>${this.escapeHtml(subject)}</h2><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p><p style="margin-top:24px">ReDom Platforms, Inc.</p></div>`;
-      await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html });
+      await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, replyTo: "support@redomapp.com", subject, html });
       return;
     }
 
     const subject = "Your ReDom password was changed successfully";
-    const body = `Dear ${params.user.firstName} ${params.user.lastName},\n\nYou have changed your password successfully on ReDom (${this.formatDateTime(params.security)}).\n\nHere are some extra details about this recent login:\n\nLocation: ${location} (shown as approximate)\nDevice: ${device}\nIP: ${ip}\nTime: ${this.formatTime(params.security)}\nDate: ${this.formatDate(params.security)}\n\nIf this was you, please you can disregard this message.\n\nIf that wasn't you, we highly advise that you change your password as soon as possible and also notify us by replying to this mail.\n\nPlease if you did not initiate this action, contact our customer support on support@redomapp.com. or send us a WhatsApp message at +234 70 1486 5940.\nKind Regards,\nReDom Platforms, Inc.`;
+    const body = `Dear ${params.user.firstName} ${params.user.lastName},\n\nYou have changed your password successfully on ReDom (${this.formatDateTime(params.security, params.eventAt)}).\n\nHere are some extra details about this recent login:\n\nLocation: ${location} (shown as approximate)\nDevice: ${device}\nIP: ${ip}\nTime: ${this.formatTime(params.security, params.eventAt)}\nDate: ${this.formatDate(params.security, params.eventAt)}\n\nIf this was you, please you can disregard this message.\n\nIf that wasn't you, we highly advise that you change your password as soon as possible and also notify us by replying to this mail.\n\nPlease if you did not initiate this action, contact our customer support on support@redomapp.com. or send us a WhatsApp message at +234 70 1486 5940.\nKind Regards,\nReDom Platforms, Inc.`;
     const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033;line-height:1.55"><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p></div>`;
-    await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html });
+    await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, replyTo: "support@redomapp.com", subject, html });
   }
 
-  private getDateParts(security: { timezone?: string | null } | null) {
+  private getDateParts(security: { timezone?: string | null } | null, eventAt: Date) {
     const timezone = security?.timezone || "UTC";
     try {
-      const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(new Date());
+      const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(eventAt);
       return Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, part.value]));
-    } catch { return Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value])); }
+    } catch { return Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(eventAt).filter(part => part.type !== "literal").map(part => [part.type, part.value])); }
   }
-  private formatDateTime(security: { timezone?: string | null } | null) { const p = this.getDateParts(security); return `${p.weekday}, ${p.month} ${p.day}, ${p.year} ${p.hour}:${p.minute} ${p.dayPeriod}`; }
-  private formatTime(security: { timezone?: string | null } | null) { const p = this.getDateParts(security); return `${p.hour}:${p.minute} ${p.dayPeriod}`; }
-  private formatDate(security: { timezone?: string | null } | null) { const p = this.getDateParts(security); return `${p.month} ${p.day}, ${p.year}`; }
+  private formatDateTime(security: { timezone?: string | null } | null, eventAt: Date) { const p = this.getDateParts(security, eventAt); return `${p.weekday}, ${p.month} ${p.day}, ${p.year} ${p.hour}:${p.minute} ${p.dayPeriod}`; }
+  private formatTime(security: { timezone?: string | null } | null, eventAt: Date) { const p = this.getDateParts(security, eventAt); return `${p.hour}:${p.minute} ${p.dayPeriod}`; }
+  private formatDate(security: { timezone?: string | null } | null, eventAt: Date) { const p = this.getDateParts(security, eventAt); return `${p.month} ${p.day}, ${p.year}`; }
 
   private escapeHtml(value: string): string { return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;"); }
 }
