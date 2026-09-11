@@ -15,12 +15,24 @@ import { checkIP } from "../../lib/ipapi";
 
 export class RegistrationInitializationService {
   async initialize(params: { verificationChallengeId: string; language?: string; ipAddress?: string; userAgent?: string; deviceId?: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; loginSource?: string; appVersion?: string; }) {
-    const verification = await db.query.verifications.findFirst({ where: and(eq(verifications.id, params.verificationChallengeId), eq(verifications.status, "verified"), gt(verifications.expiresAt, new Date())) });
-    if (!verification || !["EMAIL_VERIFICATION", "PHONE_VERIFICATION"].includes(verification.purpose)) throw new Error("Registration verification is not complete or has expired.");
+    // verificationService marks a successfully entered registration OTP as
+    // "consumed" (with verifiedAt/consumedAt set). Initialization must use
+    // that authoritative state rather than looking for the old "verified"
+    // status. The reservation/registration flow is the remaining lifetime
+    // boundary for the setup process.
+    const verification = await db.query.verifications.findFirst({
+      where: and(
+        eq(verifications.id, params.verificationChallengeId),
+        eq(verifications.status, "consumed"),
+      ),
+    });
+    if (!verification || !["EMAIL_VERIFICATION", "PHONE_VERIFICATION"].includes(verification.purpose) || !verification.verifiedAt) {
+      throw new Error("Registration verification is not complete or has expired.");
+    }
     if (!verification.sessionId) throw new Error("Registration flow is missing.");
     const challenge = await db.query.registrationChallenges.findFirst({ where: eq(registrationChallenges.id, verification.sessionId) });
     if (!challenge) throw new Error("Registration flow is no longer available.");
-    const reservation = await db.query.registrationFlowReservations.findFirst({ where: and(eq(registrationFlowReservations.flowId, challenge.flowId), eq(registrationFlowReservations.status, "active")) });
+    const reservation = await db.query.registrationFlowReservations.findFirst({ where: and(eq(registrationFlowReservations.flowId, challenge.flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date())) });
     if (!reservation) throw new Error("Registration Flow ID is no longer active.");
 
     let user = verification.userId ? await db.query.users.findFirst({ where: eq(users.id, verification.userId) }) : null;
