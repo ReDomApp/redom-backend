@@ -10,5 +10,6 @@ export type RootStackParamList = {
   RegistrationGender: RegistrationFlowReservationRouteParams;
   RegistrationPhone: RegistrationFlowReservationRouteParams;
   RegistrationEmail: RegistrationFlowReservationRouteParams;
+  RegistrationPassword: RegistrationFlowReservationRouteParams;
   Foundation: undefined;
 };
