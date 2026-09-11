@@ -20,6 +20,7 @@ import MarketplaceIcon from "../assets/home-feed/marketplace.svg";
 import CreateIcon from "../assets/home-feed/create.svg";
 import VideoIcon from "../assets/home-feed/video.svg";
 import UploadStoryIcon from "../assets/home-feed/upload-story.svg";
+import AddMediaIcon from "../assets/home-feed/add-media.svg";
 import ProfilePlaceholder from "../assets/home-feed/profile-placeholder.svg";
 import MoreIcon from "../assets/navigation/more.svg";
 import CloseIcon from "../assets/navigation/close.svg";
@@ -70,21 +71,6 @@ const fallbackPosts: HomeFeedPost[] = [
     shareId: "REDOM00001",
     content:
       "Welcome to ReDom. This is where public ReDom posts, people, communities, pages, videos and conversations will appear as the network grows.",
-    type: "text",
-    publishedAt: new Date().toISOString(),
-    authorId: "redom-system",
-    firstName: "ReDom",
-    lastName: "",
-    username: "redom",
-    publicId: "234000000000001",
-    profileId: "234000000000001",
-    profilePhoto: null,
-  },
-  {
-    id: "redom-official-discover",
-    shareId: "REDOM00002",
-    content:
-      "Discover what is happening on ReDom. As more people join, your feed will automatically index public content and profiles relevant to your experience.",
     type: "text",
     publishedAt: new Date().toISOString(),
     authorId: "redom-system",
@@ -157,125 +143,112 @@ export function HomeFeedScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
-        <ReDomLogo width={122} height={35} />
-        <View style={styles.headerActions}>
-          <Pressable style={styles.headerCircle} accessibilityLabel="Search">
+      <View style={styles.topHeader}>
+        <View style={styles.logoWrap}>
+          <ReDomLogo width={116} height={34} />
+        </View>
+        <View style={styles.topActions}>
+          <Pressable style={styles.topIconButton} accessibilityLabel="Search">
             <SearchIcon width={23} height={23} />
           </Pressable>
-          <Pressable style={styles.headerCircle} accessibilityLabel="Messenger">
-            <MessengerIcon width={25} height={25} />
-          </Pressable>
-          <Pressable style={styles.headerCircle} accessibilityLabel="Notifications">
-            <NotificationsIcon width={25} height={25} />
-          </Pressable>
-          <Pressable style={styles.headerProfile} accessibilityLabel="Profile">
-            <Avatar size={39} />
+          <Pressable style={styles.topIconButton} accessibilityLabel="Messenger">
+            <MessengerIcon width={24} height={24} />
           </Pressable>
           <Pressable
-            style={styles.headerCircle}
+            style={styles.topIconButton}
             onPress={() => setMenuOpen(true)}
             accessibilityLabel="Menu"
           >
-            <MenuIcon width={25} height={25} />
+            <MenuIcon width={24} height={24} />
           </Pressable>
         </View>
+      </View>
+
+      <View style={styles.navigationBar}>
+        <Pressable style={[styles.navigationItem, styles.navigationItemActive]} onPress={() => void handleHomePress()} accessibilityLabel="Home">
+          <HomeIcon width={27} height={27} />
+        </Pressable>
+        <Pressable style={styles.navigationItem} accessibilityLabel="Reels">
+          <VideoIcon width={27} height={27} />
+        </Pressable>
+        <Pressable style={styles.navigationItem} accessibilityLabel="Marketplace">
+          <MarketplaceIcon width={27} height={27} />
+        </Pressable>
+        <Pressable style={styles.navigationItem} accessibilityLabel="Notifications">
+          <NotificationsIcon width={27} height={27} />
+        </Pressable>
+        <Pressable style={styles.navigationItem} accessibilityLabel="Profile">
+          <Avatar size={31} />
+        </Pressable>
       </View>
 
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feed}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refreshFeed} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshFeed} />}
       >
         {welcomeVisible && (
-          <View style={styles.greeting}>
-            <Pressable style={styles.greetingAvatar} accessibilityLabel="Profile">
-              <Avatar size={54} />
-            </Pressable>
-            <View style={styles.greetingText}>
-              <Text style={styles.greetingName}>Welcome, {displayName}</Text>
-              {user?.username ? (
-                <Text style={styles.greetingHandle}>
-                  @{user.username.replace(/^@/, "")}
-                </Text>
-              ) : null}
+          <View style={styles.welcomeStrip}>
+            <Avatar size={40} />
+            <View style={styles.welcomeCopy}>
+              <Text style={styles.welcomeTitle}>Welcome, {displayName}</Text>
+              {user?.username ? <Text style={styles.welcomeHandle}>@{user.username.replace(/^@/, "")}</Text> : null}
             </View>
-            <Pressable
-              style={styles.greetingClose}
-              onPress={() => setWelcomeVisible(false)}
-              accessibilityLabel="Remove welcome"
-            >
-              <CloseIcon width={25} height={25} />
+            <Pressable style={styles.closeButton} onPress={() => setWelcomeVisible(false)} accessibilityLabel="Dismiss welcome">
+              <CloseIcon width={22} height={22} />
             </Pressable>
           </View>
         )}
 
         <View style={styles.composer}>
-          <Pressable style={styles.composerAvatar} accessibilityLabel="Profile">
-            <Avatar size={42} />
+          <Avatar size={42} />
+          <Pressable style={styles.composerInput} accessibilityLabel="Create a post">
+            <Text style={styles.composerHint}>What's on your mind{user?.firstName ? `, ${user.firstName}` : ""}?</Text>
           </Pressable>
-          <Pressable style={styles.composerInput}>
-            <Text style={styles.composerHint}>
-              What's on your mind{user?.firstName ? `, ${user.firstName}` : ""}?
-            </Text>
-          </Pressable>
-          <Pressable accessibilityLabel="Post">
-            <Text style={styles.postButton}>Post</Text>
+          <Pressable style={styles.mediaButton} accessibilityLabel="Add photo or video">
+            <AddMediaIcon width={27} height={27} />
           </Pressable>
         </View>
 
         <View style={styles.quickActions}>
           <Pressable style={styles.quickAction} accessibilityLabel="Create post">
-            <CreateIcon width={28} height={28} />
+            <CreateIcon width={25} height={25} />
             <Text style={styles.quickText}>Create post</Text>
           </Pressable>
+          <View style={styles.quickDivider} />
           <Pressable style={styles.quickAction} accessibilityLabel="Photo or video">
-            <VideoIcon width={28} height={28} />
+            <VideoIcon width={25} height={25} />
             <Text style={styles.quickText}>Photo/video</Text>
           </Pressable>
+          <View style={styles.quickDivider} />
           <Pressable style={styles.quickAction} accessibilityLabel="Story">
-            <UploadStoryIcon width={28} height={28} />
+            <UploadStoryIcon width={25} height={25} />
             <Text style={styles.quickText}>Story</Text>
           </Pressable>
         </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Stories</Text>
-          <Text style={styles.seeAll}>See all</Text>
+          <Pressable accessibilityLabel="See all stories"><Text style={styles.seeAll}>See all</Text></Pressable>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.circularRail}
-        >
-          <Pressable style={styles.circularStory} accessibilityLabel="Add story">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyRail}>
+          <Pressable style={styles.storyCard} accessibilityLabel="Create story">
             <View style={styles.storyAvatarWrap}>
               <Avatar size={70} />
-              <View style={styles.storyAddBadge}>
-                <CreateIcon width={17} height={17} />
-              </View>
+              <View style={styles.storyAddBadge}><CreateIcon width={15} height={15} /></View>
             </View>
-            <Text style={styles.circularName}>Add story</Text>
+            <Text style={styles.storyName}>Create story</Text>
           </Pressable>
-
           {friendStories.slice(0, 12).map((story: HomeFeedFriendStory) => (
-            <Pressable
-              style={styles.circularStory}
-              key={story.id}
-              accessibilityLabel={`Story by ${story.firstName} ${story.lastName}`}
-            >
+            <Pressable style={styles.storyCard} key={story.id} accessibilityLabel={`Story by ${story.firstName} ${story.lastName}`}>
               <View style={styles.storyAvatarWrap}>
-                <View style={styles.storyBlueRing}>
+                <View style={styles.storyRing}>
                   <Avatar uri={story.profilePhoto} size={64} />
                 </View>
               </View>
-              <Text style={styles.circularName} numberOfLines={1}>
-                {story.firstName}
-              </Text>
+              <Text style={styles.storyName} numberOfLines={1}>{story.firstName}</Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -283,35 +256,17 @@ export function HomeFeedScreen() {
         {suggestions.length > 0 && (
           <View style={styles.suggestionsSection}>
             <View style={styles.sectionHeader}>
-              <View>
+              <View style={styles.sectionHeaderCopy}>
                 <Text style={styles.sectionTitle}>People you may know</Text>
-                {indexedPlace ? (
-                  <Text style={styles.indexingText}>Based on your approximate location · {indexedPlace}</Text>
-                ) : (
-                  <Text style={styles.indexingText}>Indexed for your experience</Text>
-                )}
+                <Text style={styles.indexingText}>{indexedPlace ? `Based on your approximate location · ${indexedPlace}` : "Personalized for your experience"}</Text>
               </View>
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.circularRail}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRail}>
               {suggestions.map((profile: HomeFeedProfileSuggestion) => (
-                <Pressable
-                  style={styles.profileSuggestion}
-                  key={profile.userId}
-                  accessibilityLabel={`Profile ${profile.firstName} ${profile.lastName}`}
-                >
-                  <View style={styles.suggestionAvatarRing}>
-                    <Avatar uri={profile.profilePhoto} size={70} />
-                  </View>
-                  <Text style={styles.suggestionName} numberOfLines={1}>
-                    {profile.firstName} {profile.lastName}
-                  </Text>
-                  <Text style={styles.suggestionHandle} numberOfLines={1}>
-                    @{profile.username.replace(/^@/, "")}
-                  </Text>
+                <Pressable style={styles.suggestionCard} key={profile.userId} accessibilityLabel={`Profile ${profile.firstName} ${profile.lastName}`}>
+                  <View style={styles.suggestionAvatarRing}><Avatar uri={profile.profilePhoto} size={68} /></View>
+                  <Text style={styles.suggestionName} numberOfLines={1}>{profile.firstName} {profile.lastName}</Text>
+                  <Text style={styles.suggestionHandle} numberOfLines={1}>@{profile.username.replace(/^@/, "")}</Text>
                 </Pressable>
               ))}
             </ScrollView>
@@ -323,119 +278,53 @@ export function HomeFeedScreen() {
           return (
             <View style={styles.post} key={post.id}>
               <View style={styles.postHeader}>
-                <Avatar uri={post.profilePhoto} size={48} />
+                <Avatar uri={post.profilePhoto} size={46} />
                 <View style={styles.postIdentity}>
                   <Text style={styles.postName}>{author}</Text>
-                  <Text style={styles.postMeta}>Public</Text>
+                  <Text style={styles.postMeta}>Public · ReDom</Text>
                 </View>
-                <Pressable style={styles.more} accessibilityLabel="More">
-                  <MoreIcon width={22} height={22} />
-                </Pressable>
+                <Pressable style={styles.moreButton} accessibilityLabel="More options"><MoreIcon width={22} height={22} /></Pressable>
               </View>
               <Text style={styles.postBody}>{post.content}</Text>
-              <View style={styles.postBrandArea}>
-                <ReDomLogo width={135} height={39} />
-              </View>
+              <View style={styles.postBrandArea}><ReDomLogo width={145} height={42} /></View>
               <View style={styles.engagement}>
-                <Text style={styles.engagementText}>Like</Text>
-                <Text style={styles.engagementText}>Comment</Text>
-                <Text style={styles.engagementText}>Share</Text>
+                <Pressable><Text style={styles.engagementText}>Like</Text></Pressable>
+                <Pressable><Text style={styles.engagementText}>Comment</Text></Pressable>
+                <Pressable><Text style={styles.engagementText}>Share</Text></Pressable>
               </View>
             </View>
           );
         })}
       </ScrollView>
 
-      <View style={styles.bottomNav}>
-        <Pressable
-          style={styles.bottomItem}
-          onPress={() => void handleHomePress()}
-          accessibilityLabel="Home"
-        >
-          <HomeIcon width={32} height={32} />
-        </Pressable>
-        <Pressable style={styles.bottomItem} accessibilityLabel="Marketplace">
-          <MarketplaceIcon width={32} height={32} />
-        </Pressable>
-        <Pressable style={styles.bottomItem} accessibilityLabel="Create">
-          <CreateIcon width={34} height={34} />
-        </Pressable>
-        <Pressable style={styles.bottomItem} accessibilityLabel="Alerts">
-          <NotificationsIcon width={32} height={32} />
-        </Pressable>
-        <Pressable
-          style={styles.bottomItem}
-          onPress={() => setMenuOpen(true)}
-          accessibilityLabel="Menu"
-        >
-          <MenuIcon width={32} height={32} />
-        </Pressable>
-      </View>
-
-      <Modal
-        visible={menuOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMenuOpen(false)}
-      >
+      <Modal visible={menuOpen} transparent animationType="slide" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.modalBackdrop}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => setMenuOpen(false)}
-          />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
           <View style={styles.menuSheet}>
             <View style={styles.menuGrabber} />
             <View style={styles.menuTop}>
               <ReDomLogo width={108} height={31} />
-              <Pressable
-                onPress={() => setMenuOpen(false)}
-                accessibilityLabel="Close menu"
-              >
-                <CloseIcon width={28} height={28} />
-              </Pressable>
+              <Pressable onPress={() => setMenuOpen(false)} accessibilityLabel="Close menu"><CloseIcon width={28} height={28} /></Pressable>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Pressable
-                style={styles.menuSectionHeader}
-                onPress={() => setSupportOpen((value) => !value)}
-              >
-                <HelpSupportIcon width={39} height={39} />
+              <Pressable style={styles.menuSectionHeader} onPress={() => setSupportOpen(value => !value)}>
+                <HelpSupportIcon width={38} height={38} />
                 <Text style={styles.menuSectionTitle}>Help and support</Text>
                 <Text style={styles.chevron}>{supportOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
-              {supportOpen &&
-                menuSupport.map(([label, Icon]) => (
-                  <Pressable key={label} style={styles.menuRow}>
-                    <Icon width={39} height={39} />
-                    <Text style={styles.menuText}>{label}</Text>
-                  </Pressable>
-                ))}
-
+              {supportOpen && menuSupport.map(([label, Icon]) => (
+                <Pressable key={label} style={styles.menuRow}><Icon width={37} height={37} /><Text style={styles.menuText}>{label}</Text></Pressable>
+              ))}
               <View style={styles.divider} />
-
-              <Pressable
-                style={styles.menuSectionHeader}
-                onPress={() => setSettingsOpen((value) => !value)}
-              >
-                <SettingsIcon width={42} height={42} />
+              <Pressable style={styles.menuSectionHeader} onPress={() => setSettingsOpen(value => !value)}>
+                <SettingsIcon width={40} height={40} />
                 <Text style={styles.menuSectionTitle}>Settings and privacy</Text>
                 <Text style={styles.chevron}>{settingsOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
-              {settingsOpen &&
-                menuSettings.map(([label, Icon]) => (
-                  <Pressable key={label} style={styles.menuRow}>
-                    <Icon width={39} height={39} />
-                    <Text style={styles.menuText}>{label}</Text>
-                  </Pressable>
-                ))}
-
-              <Pressable
-                style={styles.logoutRow}
-                onPress={() => {
-                  setMenuOpen(false);
-                  void logout();
-                }}
-              >
+              {settingsOpen && menuSettings.map(([label, Icon]) => (
+                <Pressable key={label} style={styles.menuRow}><Icon width={37} height={37} /><Text style={styles.menuText}>{label}</Text></Pressable>
+              ))}
+              <Pressable style={styles.logoutRow} onPress={() => { setMenuOpen(false); void logout(); }}>
                 <Text style={styles.logoutText}>Log out</Text>
               </Pressable>
             </ScrollView>
@@ -448,59 +337,71 @@ export function HomeFeedScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#F0F2F5" },
-  header: {
-    height: 64,
-    paddingHorizontal: 12,
+  topHeader: {
+    height: 58,
+    paddingHorizontal: 10,
+    paddingTop: 3,
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  logoWrap: { marginTop: 3, flex: 1 },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  topIconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F0F2F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  navigationBar: {
+    height: 52,
+    paddingHorizontal: 5,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#D9DDE3",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "space-around",
   },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 5 },
-  headerCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F0F2F5",
+  navigationItem: {
+    height: 52,
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
   },
-  headerProfile: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
+  navigationItemActive: {
+    borderBottomWidth: 3,
+    borderBottomColor: "#1877F2",
   },
-  feed: { paddingBottom: 86 },
-  greeting: {
-    minHeight: 86,
-    paddingHorizontal: 15,
-    paddingVertical: 13,
+  feed: { paddingBottom: 18 },
+  welcomeStrip: {
+    minHeight: 62,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E4E6EB",
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
   },
-  greetingAvatar: { width: 54, height: 54, borderRadius: 27, overflow: "hidden" },
-  greetingText: { flex: 1 },
-  greetingName: { fontSize: 20, fontWeight: "900", color: "#1C1E21" },
-  greetingHandle: { fontSize: 13, color: "#65676B", marginTop: 2 },
-  greetingClose: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  welcomeCopy: { flex: 1 },
+  welcomeTitle: { fontSize: 16, fontWeight: "800", color: "#1C1E21" },
+  welcomeHandle: { fontSize: 12, color: "#65676B", marginTop: 1 },
+  closeButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
   composer: {
+    minHeight: 66,
     paddingHorizontal: 13,
-    paddingVertical: 11,
+    paddingVertical: 10,
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     gap: 9,
   },
-  composerAvatar: { width: 42, height: 42, borderRadius: 21, overflow: "hidden" },
   composerInput: {
     flex: 1,
     height: 43,
@@ -511,124 +412,66 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
   },
   composerHint: { fontSize: 14, color: "#65676B" },
-  postButton: { color: "#1877F2", fontSize: 15, fontWeight: "900" },
+  mediaButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
   quickActions: {
-    paddingVertical: 8,
+    height: 55,
+    paddingHorizontal: 7,
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#E4E6EB",
     borderBottomWidth: 1,
     borderBottomColor: "#E4E6EB",
     flexDirection: "row",
+    alignItems: "center",
   },
-  quickAction: { flex: 1, alignItems: "center", justifyContent: "center", gap: 2 },
+  quickAction: { flex: 1, height: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
   quickText: { fontSize: 11, fontWeight: "700", color: "#65676B" },
+  quickDivider: { width: 1, height: 27, backgroundColor: "#E4E6EB" },
   sectionHeader: {
-    paddingHorizontal: 15,
-    paddingTop: 15,
+    paddingHorizontal: 14,
+    paddingTop: 13,
     paddingBottom: 8,
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  sectionTitle: { fontSize: 19, fontWeight: "900", color: "#1C1E21" },
+  sectionHeaderCopy: { flex: 1 },
+  sectionTitle: { fontSize: 18, fontWeight: "900", color: "#1C1E21" },
   seeAll: { fontSize: 14, color: "#1877F2", fontWeight: "800" },
-  circularRail: { paddingHorizontal: 15, paddingBottom: 14, gap: 16, backgroundColor: "#FFFFFF" },
-  circularStory: { width: 76, alignItems: "center" },
+  storyRail: { paddingHorizontal: 13, paddingBottom: 12, gap: 13, backgroundColor: "#FFFFFF" },
+  storyCard: { width: 74, alignItems: "center" },
   storyAvatarWrap: { width: 72, height: 72, alignItems: "center", justifyContent: "center" },
-  storyBlueRing: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    borderWidth: 3,
-    borderColor: "#1877F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  storyAddBadge: {
-    position: "absolute",
-    right: -1,
-    bottom: -1,
-    width: 25,
-    height: 25,
-    borderRadius: 13,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  circularName: { marginTop: 5, fontSize: 11, fontWeight: "700", color: "#1C1E21", maxWidth: 76 },
-  suggestionsSection: { marginTop: 8, backgroundColor: "#FFFFFF" },
-  indexingText: { fontSize: 11, color: "#65676B", marginTop: 2 },
-  profileSuggestion: { width: 118, alignItems: "center" },
-  suggestionAvatarRing: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    borderWidth: 2,
-    borderColor: "#1877F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  suggestionName: { marginTop: 6, fontSize: 12, fontWeight: "800", color: "#1C1E21", maxWidth: 116 },
-  suggestionHandle: { marginTop: 2, fontSize: 10, color: "#65676B", maxWidth: 116 },
-  post: { marginTop: 8, backgroundColor: "#FFFFFF" },
-  postHeader: { padding: 13, flexDirection: "row", alignItems: "center", gap: 10 },
+  storyRing: { width: 70, height: 70, borderRadius: 35, borderWidth: 3, borderColor: "#1877F2", alignItems: "center", justifyContent: "center" },
+  storyAddBadge: { position: "absolute", right: -1, bottom: -1, width: 24, height: 24, borderRadius: 12, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#E4E6EB" },
+  storyName: { marginTop: 5, fontSize: 11, fontWeight: "700", color: "#1C1E21", maxWidth: 74, textAlign: "center" },
+  suggestionsSection: { marginTop: 7, backgroundColor: "#FFFFFF" },
+  indexingText: { marginTop: 2, fontSize: 10, color: "#65676B" },
+  suggestionRail: { paddingHorizontal: 13, paddingBottom: 14, gap: 13 },
+  suggestionCard: { width: 116, alignItems: "center" },
+  suggestionAvatarRing: { width: 74, height: 74, borderRadius: 37, borderWidth: 2, borderColor: "#1877F2", alignItems: "center", justifyContent: "center" },
+  suggestionName: { marginTop: 5, fontSize: 12, fontWeight: "800", color: "#1C1E21", maxWidth: 114, textAlign: "center" },
+  suggestionHandle: { marginTop: 1, fontSize: 10, color: "#65676B", maxWidth: 114, textAlign: "center" },
+  post: { marginTop: 7, backgroundColor: "#FFFFFF" },
+  postHeader: { minHeight: 64, paddingHorizontal: 13, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 10 },
   postIdentity: { flex: 1 },
   postName: { fontSize: 16, fontWeight: "900", color: "#1C1E21" },
-  postMeta: { marginTop: 2, fontSize: 12, color: "#65676B" },
-  more: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
-  postBody: { paddingHorizontal: 13, paddingBottom: 12, fontSize: 16, lineHeight: 25, color: "#1C1E21" },
-  postBrandArea: {
-    height: 170,
-    backgroundColor: "#EAF2FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  engagement: {
-    height: 45,
-    paddingHorizontal: 24,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    borderTopColor: "#E4E6EB",
-  },
+  postMeta: { marginTop: 1, fontSize: 11, color: "#65676B" },
+  moreButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+  postBody: { paddingHorizontal: 13, paddingBottom: 12, fontSize: 15, lineHeight: 23, color: "#1C1E21" },
+  postBrandArea: { height: 175, backgroundColor: "#EAF2FF", alignItems: "center", justifyContent: "center" },
+  engagement: { height: 45, paddingHorizontal: 24, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: "#E4E6EB" },
   engagementText: { fontSize: 13, fontWeight: "800", color: "#65676B" },
-  bottomNav: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 68,
-    backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
-    borderTopColor: "#D9DDE3",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-  },
-  bottomItem: { width: 54, height: 54, alignItems: "center", justifyContent: "center" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.34)", justifyContent: "flex-end" },
-  menuSheet: {
-    maxHeight: "84%",
-    minHeight: "52%",
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 10,
-    paddingHorizontal: 20,
-  },
+  menuSheet: { maxHeight: "84%", minHeight: "52%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10, paddingHorizontal: 20 },
   menuGrabber: { alignSelf: "center", width: 80, height: 5, borderRadius: 3, backgroundColor: "#C7CBD1", marginBottom: 14 },
   menuTop: { height: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 3 },
   menuSectionHeader: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 13, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-  menuSectionTitle: { flex: 1, fontSize: 20, fontWeight: "900", color: "#1C1E21" },
+  menuSectionTitle: { flex: 1, fontSize: 19, fontWeight: "900", color: "#1C1E21" },
   chevron: { fontSize: 25, color: "#65676B", paddingRight: 4 },
   menuRow: { minHeight: 58, flexDirection: "row", alignItems: "center", gap: 14 },
   menuText: { fontSize: 15, fontWeight: "700", color: "#1C1E21" },
   divider: { height: 8, backgroundColor: "#F0F2F5", marginHorizontal: -20 },
-  logoutRow: { height: 76, marginTop: 14, marginBottom: 20, borderRadius: 18, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
+  logoutRow: { height: 72, marginTop: 14, marginBottom: 20, borderRadius: 18, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
   logoutText: { fontSize: 18, fontWeight: "900", color: "#D92D55" },
 });
