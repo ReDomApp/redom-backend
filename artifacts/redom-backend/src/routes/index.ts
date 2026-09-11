@@ -15,6 +15,9 @@ import sessionRoutes
 import aiRoutes
   from "./ai.routes";
 
+import feedRoutes
+  from "./feed.routes";
+
 const router: IRouter =
   Router();
 
@@ -35,6 +38,11 @@ router.use(
 router.use(
   "/ai",
   aiRoutes,
+);
+
+router.use(
+  "/feed",
+  feedRoutes,
 );
 
 export default router;
