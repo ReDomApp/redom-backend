@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, ne, or } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { activityLog } from "../../database/activityLog";
@@ -8,6 +8,8 @@ import { posts } from "../../database/posts";
 import { reactions } from "../../database/reactions";
 import { userProfiles } from "../../database/userProfiles";
 import { users } from "../../database/schema";
+import { friends } from "../../database/friends";
+import { following } from "../../database/following";
 
 const ACTION_WEIGHT: Record<string, number> = {
   comment: 5,
@@ -40,7 +42,7 @@ function tokens(value: string | null | undefined): string[] {
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((token) => token.length >= 3 && !STOP_WORDS.has(token))
-    .slice(0, 80);
+    .slice(0, 120);
 }
 
 function addInterest(map: Map<string, number>, values: string[], weight: number) {
@@ -108,8 +110,6 @@ export class FeedIndexingService {
       .orderBy(desc(activityLog.activityTime))
       .limit(2000);
 
-    // search_history.user_id points to user_profiles.id, not users.id.
-    // Join through the user's profile so search intent is attached to the correct account.
     const searches = await db
       .select({
         searchQuery: searchHistory.searchQuery,
@@ -156,13 +156,31 @@ export class FeedIndexingService {
       locationMix: { anchorWeight: 0.7, explorationWeight: 0.3 },
       interests: [...interestScores.entries()]
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 60)
+        .slice(0, 80)
         .map(([token, score]) => ({ token, score })),
       contentTypePreferences: [...contentTypeScores.entries()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, 20)
         .map(([type, score]) => ({ type, score })),
       source: "login_history_and_activity",
+    };
+  }
+
+  async getRelationshipIds(userId: string) {
+    const [friendRows, followingRows] = await Promise.all([
+      db.select({ friendUserId: friends.friendUserId })
+        .from(friends)
+        .where(and(eq(friends.userId, userId), eq(friends.friendshipStatus, "active")))
+        .limit(500),
+      db.select({ followingId: following.followingId })
+        .from(following)
+        .where(eq(following.userId, userId))
+        .limit(500),
+    ]);
+
+    return {
+      friendUserIds: friendRows.map((row) => row.friendUserId),
+      followingUserIds: followingRows.map((row) => row.followingId),
     };
   }
 
@@ -187,7 +205,7 @@ export class FeedIndexingService {
       .innerJoin(users, eq(userProfiles.userId, users.id))
       .where(and(ne(userProfiles.userId, userId), eq(userProfiles.profileVisibility, "public"), eq(users.accountStatus, "active")))
       .orderBy(desc(userProfiles.friendCount), desc(userProfiles.followerCount), desc(userProfiles.createdAt))
-      .limit(200);
+      .limit(300);
 
     if (!candidates.length) return [];
 
@@ -200,11 +218,12 @@ export class FeedIndexingService {
 
     const firstLocationByUser = new Map<string, typeof candidateLogins[number]>();
     for (const login of candidateLogins) {
-      if (!firstLocationByUser.has(login.userId) && (login.country || login.region || login.city)) {
-        firstLocationByUser.set(login.userId, login);
-      }
+      if (!firstLocationByUser.has(login.userId) && (login.country || login.region || login.city)) firstLocationByUser.set(login.userId, login);
     }
 
+    const { friendUserIds, followingUserIds } = await this.getRelationshipIds(userId);
+    const friendSet = new Set(friendUserIds);
+    const followingSet = new Set(followingUserIds);
     const anchorCountry = normalizeLocation(index.anchorLogin.country);
     const anchorRegion = normalizeLocation(index.anchorLogin.region);
     const anchorCity = normalizeLocation(index.anchorLogin.city);
@@ -216,41 +235,54 @@ export class FeedIndexingService {
       const candidateCountry = normalizeLocation(candidateLocation?.country);
       const candidateRegion = normalizeLocation(candidateLocation?.region);
       const candidateCity = normalizeLocation(candidateLocation?.city);
-      let anchorScore = 0;
-      if (anchorCountry && candidateCountry === anchorCountry) anchorScore += 55;
-      if (anchorRegion && candidateRegion === anchorRegion) anchorScore += 20;
-      if (anchorCity && candidateCity === anchorCity) anchorScore += 25;
-      const explorationScore = laterCountries.has(candidateCountry ?? "") ? 70 : candidateCountry && candidateCountry !== anchorCountry ? 40 : 0;
+
+      let anchorGeo = 0;
+      if (anchorCountry && candidateCountry === anchorCountry) anchorGeo += 0.55;
+      if (anchorRegion && candidateRegion === anchorRegion) anchorGeo += 0.20;
+      if (anchorCity && candidateCity === anchorCity) anchorGeo += 0.25;
+      const laterGeo = laterCountries.has(candidateCountry ?? "") ? 1 : candidateCountry && candidateCountry !== anchorCountry ? 0.5 : 0;
+      const geoScore = anchorGeo * 0.7 + laterGeo * 0.3;
+
       const text = tokens([candidate.bio, candidate.occupation, candidate.education, candidate.currentCity, candidate.username].filter(Boolean).join(" "));
       let behaviorScore = 0;
       for (const token of text) behaviorScore += interestMap.get(token) ?? 0;
-      behaviorScore += Math.min(20, candidate.friendCount * 0.25 + candidate.followerCount * 0.05);
-      const bucket = anchorScore > 0 ? "anchor" : "exploration";
-      const locationScore = bucket === "anchor" ? anchorScore * 0.7 : explorationScore * 0.3;
-      return { ...candidate, score: locationScore + behaviorScore, bucket };
+      behaviorScore = Math.min(1, behaviorScore / 25);
+
+      const relationshipBoost = friendSet.has(candidate.userId) ? 1 : followingSet.has(candidate.userId) ? 0.7 : 0;
+      return {
+        ...candidate,
+        score: geoScore * 0.7 + behaviorScore * 0.3 + relationshipBoost,
+        suggestionType: friendSet.has(candidate.userId) ? "friend" : followingSet.has(candidate.userId) ? "following" : "friend_suggestion",
+      };
     });
 
     scored.sort((a, b) => b.score - a.score);
-    const anchorCandidates = scored.filter((candidate) => candidate.bucket === "anchor");
-    const explorationCandidates = scored.filter((candidate) => candidate.bucket === "exploration");
-    const anchorCount = Math.ceil(limit * 0.7);
-    const explorationCount = Math.max(0, limit - anchorCount);
-    const selected = [...anchorCandidates.slice(0, anchorCount), ...explorationCandidates.slice(0, explorationCount)];
-    if (selected.length < limit) {
-      const selectedIds = new Set(selected.map((candidate) => candidate.userId));
-      selected.push(...scored.filter((candidate) => !selectedIds.has(candidate.userId)).slice(0, limit - selected.length));
-    }
-    return selected.slice(0, limit);
+    return scored.slice(0, limit).map(({ score: _score, ...profile }) => profile);
   }
 
-  async rankPosts(userId: string, index: FeedIndex, limit = 40) {
+  async rankPosts(userId: string, index: FeedIndex, limit = 80) {
+    const { friendUserIds, followingUserIds } = await this.getRelationshipIds(userId);
+    const friendSet = new Set(friendUserIds);
+    const followingSet = new Set(followingUserIds);
+
+    const visibilityConditions = [
+      eq(posts.visibility, "public"),
+      friendUserIds.length ? and(eq(posts.visibility, "friends"), inArray(posts.userId, friendUserIds)) : undefined,
+      followingUserIds.length ? and(eq(posts.visibility, "followers"), inArray(posts.userId, followingUserIds)) : undefined,
+    ].filter(Boolean) as Array<any>;
+
     const candidates = await db
       .select({
         id: posts.id,
         shareId: posts.shareId,
         content: posts.content,
         type: posts.type,
+        visibility: posts.visibility,
+        commentsEnabled: posts.commentsEnabled,
+        sharingEnabled: posts.sharingEnabled,
         publishedAt: posts.publishedAt,
+        createdAt: posts.createdAt,
+        updatedAt: posts.updatedAt,
         authorId: users.id,
         firstName: users.firstName,
         lastName: users.lastName,
@@ -263,35 +295,74 @@ export class FeedIndexingService {
       .from(posts)
       .innerJoin(users, eq(posts.userId, users.id))
       .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
-      .where(and(eq(posts.deleted, false), eq(posts.visibility, "public"), eq(users.accountStatus, "active")))
-      .orderBy(desc(posts.publishedAt))
-      .limit(200);
+      .where(and(eq(posts.deleted, false), eq(users.accountStatus, "active"), or(...visibilityConditions)))
+      .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
+      .limit(500);
 
     const interacted = await db
       .select({ contentId: reactions.contentId })
       .from(reactions)
       .innerJoin(userProfiles, eq(reactions.reactorId, userProfiles.id))
       .where(and(eq(userProfiles.userId, userId), eq(reactions.active, true)))
-      .limit(1000);
+      .limit(2000);
     const interactedIds = new Set(interacted.map((row) => row.contentId));
+
     const interestMap = new Map(index.interests.map((interest) => [interest.token, interest.score]));
     const typeMap = new Map(index.contentTypePreferences.map((item) => [item.type, item.score]));
+    const anchorCountry = normalizeLocation(index.anchorLogin.country);
+    const anchorRegion = normalizeLocation(index.anchorLogin.region);
+    const anchorCity = normalizeLocation(index.anchorLogin.city);
+    const laterCountries = new Set(index.laterLocations.map((location) => normalizeLocation(location.country)).filter(Boolean) as string[]);
 
     const scored = candidates.map((post) => {
       const postTokens = tokens(post.content);
-      let behaviorScore = typeMap.get(post.type.toLowerCase()) ?? 0;
-      for (const token of postTokens) behaviorScore += interestMap.get(token) ?? 0;
-      if (interactedIds.has(post.id)) behaviorScore -= 100;
+      let behavior = typeMap.get(post.type.toLowerCase()) ?? 0;
+      for (const token of postTokens) behavior += interestMap.get(token) ?? 0;
+      const behaviorScore = Math.min(1, behavior / 30);
+
+      const sameAnchorCountry = Boolean(anchorCountry && post.authorCity && normalizeLocation(post.authorCity) === anchorCountry);
+      const sameAnchorRegion = Boolean(anchorRegion && locationMatch(post.authorCity, anchorRegion));
+      const sameAnchorCity = Boolean(anchorCity && locationMatch(post.authorCity, anchorCity));
+      const anchorGeo = (sameAnchorCountry ? 0.55 : 0) + (sameAnchorRegion ? 0.20 : 0) + (sameAnchorCity ? 0.25 : 0);
+      const laterGeo = laterCountries.has(normalizeLocation(post.authorCity) ?? "") ? 1 : 0;
+      const geoScore = anchorGeo * 0.7 + laterGeo * 0.3;
+
       const freshnessHours = Math.max(0, (Date.now() - post.publishedAt.getTime()) / 3600000);
-      const freshnessScore = Math.max(0, 18 - freshnessHours / 8);
-      const anchorCityScore = index.anchorLogin.city && locationMatch(post.authorCity, index.anchorLogin.city) ? 20 : 0;
-      const laterCitySignal = index.laterLocations.some((location) => location.city && locationMatch(post.authorCity, location.city)) ? 5 : 0;
-      const locationScore = anchorCityScore * 0.7 + laterCitySignal * 0.3;
-      return { ...post, score: behaviorScore + freshnessScore + locationScore };
+      const freshnessScore = Math.max(0, 1 - freshnessHours / 168);
+      const relationshipScore = friendSet.has(post.authorId) ? 1 : followingSet.has(post.authorId) ? 0.75 : 0;
+      const relevance = behaviorScore + geoScore + freshnessScore * 0.25;
+      const isDirectRelationship = relationshipScore > 0;
+      const recommended = !isDirectRelationship && behaviorScore > 0;
+
+      return {
+        ...post,
+        score: relevance + relationshipScore,
+        recommended,
+        source: friendSet.has(post.authorId) ? "friend" : followingSet.has(post.authorId) ? "following" : recommended ? "recommended" : "public",
+        sourceLabel: friendSet.has(post.authorId)
+          ? `${post.firstName} is your friend`
+          : followingSet.has(post.authorId)
+            ? `You follow this page`
+            : recommended
+              ? "Suggested post that matches your preferences"
+              : null,
+      };
     });
 
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit);
+
+    // Do not let one author dominate a feed page.
+    const authorCounts = new Map<string, number>();
+    const selected: typeof scored = [];
+    for (const post of scored) {
+      const count = authorCounts.get(post.authorId) ?? 0;
+      if (count >= 3) continue;
+      authorCounts.set(post.authorId, count + 1);
+      selected.push(post);
+      if (selected.length >= limit) break;
+    }
+
+    return selected.map(({ score: _score, ...post }) => post);
   }
 }
 
