@@ -78,8 +78,6 @@ export class FeedIndexingService {
         region: loginHistory.region,
         city: loginHistory.city,
         loginTime: loginHistory.loginTime,
-        createdAt: loginHistory.createdAt,
-        active: loginHistory.active,
         hiddenByUser: loginHistory.hiddenByUser,
       })
       .from(loginHistory)
@@ -110,10 +108,18 @@ export class FeedIndexingService {
       .orderBy(desc(activityLog.activityTime))
       .limit(2000);
 
+    // search_history.user_id points to user_profiles.id, not users.id.
+    // Join through the user's profile so search intent is attached to the correct account.
     const searches = await db
-      .select({ searchQuery: searchHistory.searchQuery, searchType: searchHistory.searchType, searchCount: searchHistory.searchCount, createdAt: searchHistory.createdAt })
+      .select({
+        searchQuery: searchHistory.searchQuery,
+        searchType: searchHistory.searchType,
+        searchCount: searchHistory.searchCount,
+        createdAt: searchHistory.createdAt,
+      })
       .from(searchHistory)
-      .where(and(eq(searchHistory.userId, userId), eq(searchHistory.active, true), eq(searchHistory.deleted, false), gt(searchHistory.createdAt, since)))
+      .innerJoin(userProfiles, eq(searchHistory.userId, userProfiles.id))
+      .where(and(eq(userProfiles.userId, userId), eq(searchHistory.active, true), eq(searchHistory.deleted, false), gt(searchHistory.createdAt, since)))
       .orderBy(desc(searchHistory.createdAt))
       .limit(500);
 
@@ -134,7 +140,8 @@ export class FeedIndexingService {
       const weight = Math.min(8, 2 + Math.max(0, search.searchCount - 1));
       addInterest(interestScores, tokens(search.searchQuery), weight);
       if (search.searchType && search.searchType !== "all") {
-        contentTypeScores.set(search.searchType.toLowerCase(), (contentTypeScores.get(search.searchType.toLowerCase()) ?? 0) + weight);
+        const type = search.searchType.toLowerCase();
+        contentTypeScores.set(type, (contentTypeScores.get(type) ?? 0) + weight);
       }
     }
 
@@ -147,8 +154,14 @@ export class FeedIndexingService {
       },
       laterLocations,
       locationMix: { anchorWeight: 0.7, explorationWeight: 0.3 },
-      interests: [...interestScores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 60).map(([token, score]) => ({ token, score })),
-      contentTypePreferences: [...contentTypeScores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([type, score]) => ({ type, score })),
+      interests: [...interestScores.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 60)
+        .map(([token, score]) => ({ token, score })),
+      contentTypePreferences: [...contentTypeScores.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 20)
+        .map(([type, score]) => ({ type, score })),
       source: "login_history_and_activity",
     };
   }
@@ -222,7 +235,12 @@ export class FeedIndexingService {
     const explorationCandidates = scored.filter((candidate) => candidate.bucket === "exploration");
     const anchorCount = Math.ceil(limit * 0.7);
     const explorationCount = Math.max(0, limit - anchorCount);
-    return [...anchorCandidates.slice(0, anchorCount), ...explorationCandidates.slice(0, explorationCount)].slice(0, limit);
+    const selected = [...anchorCandidates.slice(0, anchorCount), ...explorationCandidates.slice(0, explorationCount)];
+    if (selected.length < limit) {
+      const selectedIds = new Set(selected.map((candidate) => candidate.userId));
+      selected.push(...scored.filter((candidate) => !selectedIds.has(candidate.userId)).slice(0, limit - selected.length));
+    }
+    return selected.slice(0, limit);
   }
 
   async rankPosts(userId: string, index: FeedIndex, limit = 40) {
@@ -267,8 +285,8 @@ export class FeedIndexingService {
       const freshnessHours = Math.max(0, (Date.now() - post.publishedAt.getTime()) / 3600000);
       const freshnessScore = Math.max(0, 18 - freshnessHours / 8);
       const anchorCityScore = index.anchorLogin.city && locationMatch(post.authorCity, index.anchorLogin.city) ? 20 : 0;
-      const laterCountrySignal = index.laterLocations.some((location) => location.city && locationMatch(post.authorCity, location.city)) ? 5 : 0;
-      const locationScore = anchorCityScore * 0.7 + laterCountrySignal * 0.3;
+      const laterCitySignal = index.laterLocations.some((location) => location.city && locationMatch(post.authorCity, location.city)) ? 5 : 0;
+      const locationScore = anchorCityScore * 0.7 + laterCitySignal * 0.3;
       return { ...post, score: behaviorScore + freshnessScore + locationScore };
     });
 
