@@ -75,15 +75,33 @@ export class PasswordRecoveryService {
     const ip = params.context.ipAddress || "Unavailable";
     const location = [params.security?.city, params.security?.state, params.security?.country].filter(Boolean).join(", ") || "Location unavailable";
     const timezone = params.security?.timezone || "Timezone unavailable";
-    const language = params.context.language?.trim() || "English";
     const isChanged = params.stage === "changed";
-    const event = isChanged ? "password changed successfully" : "password reset verification completed; password not yet changed";
-    const response = await openai.responses.create({ model: "gpt-5.6-luna", input: `Write a concise ReDom security email in ${language}. Return JSON only as {"subject":"...","body":"..."}. Do not invent facts. Preserve these exact facts and meaning: event=${event}; location=${location}; timezone=${timezone}; ip=${ip}; device=${device}; sessionId=${params.sessionId || "not created yet"}.` }).catch(() => { throw new Error("OpenAI not responding."); });
-    let subject: string; let body: string;
-    try { const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown }; if (typeof parsed.subject !== "string" || typeof parsed.body !== "string") throw new Error(); subject = parsed.subject; body = parsed.body; } catch { throw new Error("OpenAI not responding."); }
-    const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033"><h2>${this.escapeHtml(subject)}</h2><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p><p style="margin-top:24px">ReDom Platforms, Inc.</p></div>`;
+
+    if (!isChanged) {
+      const response = await openai.responses.create({ model: "gpt-5.6-luna", input: `Write a concise ReDom security email in ${params.context.language?.trim() || "English"}. Return JSON only as {"subject":"...","body":"..."}. Do not invent facts. State that the password-reset verification code was successfully verified and the password has not yet been changed. Preserve these exact facts: location=${location}; timezone=${timezone}; ip=${ip}; device=${device}.` }).catch(() => { throw new Error("OpenAI not responding."); });
+      let subject: string; let body: string;
+      try { const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown }; if (typeof parsed.subject !== "string" || typeof parsed.body !== "string") throw new Error(); subject = parsed.subject; body = parsed.body; } catch { throw new Error("OpenAI not responding."); }
+      const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033"><h2>${this.escapeHtml(subject)}</h2><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p><p style="margin-top:24px">ReDom Platforms, Inc.</p></div>`;
+      await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html });
+      return;
+    }
+
+    const subject = "Your ReDom password was changed successfully";
+    const body = `Dear ${params.user.firstName} ${params.user.lastName},\n\nYou have changed your password successfully on ReDom (${this.formatDateTime(params.security)}).\n\nHere are some extra details about this recent login:\n\nLocation: ${location} (shown as approximate)\nDevice: ${device}\nIP: ${ip}\nTime: ${this.formatTime(params.security)}\nDate: ${this.formatDate(params.security)}\n\nIf this was you, please you can disregard this message.\n\nIf that wasn't you, we highly advise that you change your password as soon as possible and also notify us by replying to this mail.\n\nPlease if you did not initiate this action, contact our customer support on support@redomapp.com. or send us a WhatsApp message at +234 70 1486 5940.\nKind Regards,\nReDom Platforms, Inc.`;
+    const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033;line-height:1.55"><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p></div>`;
     await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html });
   }
+
+  private getDateParts(security: { timezone?: string | null } | null) {
+    const timezone = security?.timezone || "UTC";
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(new Date());
+      return Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+    } catch { return Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value])); }
+  }
+  private formatDateTime(security: { timezone?: string | null } | null) { const p = this.getDateParts(security); return `${p.weekday}, ${p.month} ${p.day}, ${p.year} ${p.hour}:${p.minute} ${p.dayPeriod}`; }
+  private formatTime(security: { timezone?: string | null } | null) { const p = this.getDateParts(security); return `${p.hour}:${p.minute} ${p.dayPeriod}`; }
+  private formatDate(security: { timezone?: string | null } | null) { const p = this.getDateParts(security); return `${p.month} ${p.day}, ${p.year}`; }
 
   private escapeHtml(value: string): string { return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;"); }
 }
