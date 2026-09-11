@@ -2,7 +2,7 @@ import { resend } from "../../lib/resend";
 import { checkIP } from "../../lib/ipapi";
 
 export class EmailService {
-  private readonly sender = "ReDom <onboarding@resend.dev>";
+  private readonly sender = "ReDom <noreply@wnncompany.com>";
 
   normalize(email: string): string { return email.trim().toLowerCase(); }
 
@@ -47,7 +47,7 @@ export class EmailService {
     const timezone = location.timezone;
     const timeParts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long", month: "short", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short" }).formatToParts(params.registeredAt);
     const part = (type: Intl.DateTimeFormatPartTypes) => timeParts.find((item) => item.type === type)?.value ?? "";
-    const registeredText = `${part("weekday")}, ${part("month")} ${part("day")}, ${part("year")} ${part("hour")}:${part("minute")}:${part("second")} ${part("dayPeriod")} (${part("timeZoneName")})`;
+    const registeredText = `${part("weekday")}, ${part("month")} ${part("day")}, ${part("year")} ${part("hour")}:${part("minute")}::${part("second")} ${part("dayPeriod")} (${part("timeZoneName")})`;
     const latitude = Number(location.latitude);
     const longitude = Number(location.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error("Registration confirmation could not verify the user's map coordinates.");
