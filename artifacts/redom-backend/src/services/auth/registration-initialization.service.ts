@@ -6,6 +6,7 @@ import { userProfiles } from "../../database/userProfiles";
 import { userSettings } from "../../database/userSettings";
 import { userPrivacy } from "../../database/userPrivacy";
 import { accountSecurity } from "../../database/accountSecurity";
+import { feedPreferences } from "../../database/feedPreferences";
 import { registrationChallenges } from "../../database/registration-challenges.schema";
 import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
 import { verifications } from "../../database/verifications.schema";
@@ -14,19 +15,7 @@ import { loginHistoryService } from "./login-history.service";
 import { checkIP } from "../../lib/ipapi";
 
 export class RegistrationInitializationService {
-  async initialize(params: {
-    verificationChallengeId: string;
-    language?: string;
-    ipAddress?: string;
-    userAgent?: string;
-    deviceId?: string;
-    deviceName?: string;
-    deviceType?: string;
-    platform?: string;
-    browser?: string;
-    loginSource?: string;
-    appVersion?: string;
-  }) {
+  async initialize(params: { verificationChallengeId: string; language?: string; ipAddress?: string; userAgent?: string; deviceId?: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; loginSource?: string; appVersion?: string; }) {
     const verification = await db.query.verifications.findFirst({ where: and(eq(verifications.id, params.verificationChallengeId), eq(verifications.status, "verified"), gt(verifications.expiresAt, new Date())) });
     if (!verification || !["EMAIL_VERIFICATION", "PHONE_VERIFICATION"].includes(verification.purpose)) throw new Error("Registration verification is not complete or has expired.");
     if (!verification.sessionId) throw new Error("Registration flow is missing.");
@@ -61,6 +50,8 @@ export class RegistrationInitializationService {
     if (!existingPrivacy) await db.insert(userPrivacy).values({ userId: user.id, updatedAt: new Date() });
     const existingSecurity = await db.query.accountSecurity.findFirst({ where: eq(accountSecurity.userId, user.id) });
     if (!existingSecurity) await db.insert(accountSecurity).values({ userId: user.id, updatedAt: new Date() });
+    const existingFeedPreferences = await db.query.feedPreferences.findFirst({ where: eq(feedPreferences.userId, actualProfile.id) });
+    if (!existingFeedPreferences) await db.insert(feedPreferences).values({ userId: actualProfile.id });
 
     const session = await sessionService.createSession({ userId: user.id, ipAddress: ip || undefined, country: country ?? undefined, region: region ?? undefined, city: city ?? undefined, userAgent: params.userAgent ?? verification.userAgent ?? challenge.userAgent ?? undefined, platform: params.platform, browser: params.browser, deviceName: params.deviceName, deviceId: params.deviceId ?? verification.deviceId ?? challenge.deviceId ?? undefined, deviceType: params.deviceType, loginSource: params.loginSource ?? "registration", appVersion: params.appVersion });
     await loginHistoryService.create({ userId: user.id, sessionId: session.sessionId, flowId: challenge.flowId, deviceName: params.deviceName, deviceType: params.deviceType, loginSource: params.loginSource ?? "registration", appVersion: params.appVersion, ipAddress: ip || "Unknown", country: country ?? undefined, region: region ?? undefined, city: city ?? undefined });
