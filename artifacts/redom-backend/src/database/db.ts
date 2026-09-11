@@ -1,12 +1,11 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-
 import { env } from "../config/env";
-
 import { users } from "./schema";
 import { userProfiles } from "./userProfiles";
 import { accountSecurity } from "./accountSecurity";
 import { twoFactorRecoveryCodes } from "./twoFactorRecoveryCodes";
+import { totpLoginChallenges } from "./totp-login-challenges.schema";
 import { sessions } from "./sessions.schema";
 import { activeSessions } from "./activeSessions";
 import { loginHistory } from "./loginHistory";
@@ -63,27 +62,21 @@ import { registrationChallenges } from "./registration-challenges.schema";
 import { registrationFlowReservations } from "./registration-flow-reservations.schema";
 
 const pool = new Pool({ connectionString: env.database.url });
-
 pool.on("connect", () => console.log("Connected to Neon PostgreSQL"));
 pool.on("error", (error) => console.error("Database connection error:", error));
 
-export const db = drizzle(pool, {
-  schema: {
-    users, userProfiles, accountSecurity, twoFactorRecoveryCodes,
-    sessions, activeSessions, loginHistory, activityLog, userPrivacy, userSettings,
-    verification, verificationDocuments, verificationSubscriptions, verifications,
-    accountActions, reports, appeals, blockedUsers, restrictedUsers, mutedUsers,
-    followers, following, friends, friendRequests,
-    conversations, conversationParticipants, messages, messageAttachments, messageReads,
-    messageRequests, messageDrafts, calls,
-    posts, postMedia, postMentions, draftPosts, scheduledPosts, polls, reactions, saves,
-    shares, stories, storyViewers, feedPreferences, notifications, searchHistory,
-    marketplaceCategories, marketplaceListings, marketplaceInteractions, marketplaceReviews,
-    marketplaceTransactions,
-    videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
-    registrationChallenges,
-    registrationFlowReservations,
-  },
-});
-
+export const db = drizzle(pool, { schema: {
+  users, userProfiles, accountSecurity, twoFactorRecoveryCodes, totpLoginChallenges,
+  sessions, activeSessions, loginHistory, activityLog, userPrivacy, userSettings,
+  verification, verificationDocuments, verificationSubscriptions, verifications,
+  accountActions, reports, appeals, blockedUsers, restrictedUsers, mutedUsers,
+  followers, following, friends, friendRequests,
+  conversations, conversationParticipants, messages, messageAttachments, messageReads,
+  messageRequests, messageDrafts, calls,
+  posts, postMedia, postMentions, draftPosts, scheduledPosts, polls, reactions, saves,
+  shares, stories, storyViewers, feedPreferences, notifications, searchHistory,
+  marketplaceCategories, marketplaceListings, marketplaceInteractions, marketplaceReviews,
+  marketplaceTransactions, videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
+  registrationChallenges, registrationFlowReservations,
+} });
 export { pool };
