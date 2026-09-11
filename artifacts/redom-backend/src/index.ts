@@ -8,6 +8,10 @@ import {
   startRegistrationChallengeCleanup,
   stopRegistrationChallengeCleanup,
 } from "./services/auth/registration-challenge-cleanup.service";
+import {
+  startRegistrationFlowReservationCleanup,
+  stopRegistrationFlowReservationCleanup,
+} from "./services/auth/registration-flow-reservation-cleanup.service";
 
 const rawPort = process.env["PORT"];
 
@@ -30,6 +34,7 @@ const server = app.listen(port, (err) => {
   }
 
   startRegistrationChallengeCleanup();
+  startRegistrationFlowReservationCleanup();
   logger.info({ port }, "Server listening");
 });
 
@@ -51,6 +56,7 @@ function serializeError(error: unknown): { name: string; message: string; stack?
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutdown requested");
   stopRegistrationChallengeCleanup();
+  stopRegistrationFlowReservationCleanup();
 
   server.close(async (error) => {
     if (error) {
