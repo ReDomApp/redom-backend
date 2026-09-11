@@ -1,7 +1,9 @@
-import { and, desc, eq, ilike, ne } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, ne, gt } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { posts } from "../../database/posts";
+import { stories } from "../../database/stories";
+import { friends } from "../../database/friends";
 import { users } from "../../database/schema";
 import { userProfiles } from "../../database/userProfiles";
 import { checkIP } from "../../lib/ipapi";
@@ -83,6 +85,54 @@ export class HomeFeedService {
       .orderBy(desc(userProfiles.friendCount), desc(userProfiles.followerCount), desc(userProfiles.createdAt))
       .limit(10);
 
+    const friendshipRows = await db
+      .select({ friendUserId: friends.friendUserId })
+      .from(friends)
+      .where(and(eq(friends.userId, params.userId), eq(friends.friendshipStatus, "active")))
+      .limit(100);
+
+    const friendUserIds = friendshipRows.map((row) => row.friendUserId);
+    let friendStories: Array<{
+      id: string;
+      shareId: string;
+      storyText: string | null;
+      storyType: string;
+      expiresAt: Date;
+      firstName: string;
+      lastName: string;
+      username: string;
+      profilePhoto: string | null;
+    }> = [];
+
+    if (friendUserIds.length > 0) {
+      const friendProfiles = await db
+        .select({ id: userProfiles.id, userId: userProfiles.userId })
+        .from(userProfiles)
+        .where(inArray(userProfiles.userId, friendUserIds));
+      const friendProfileIds = friendProfiles.map((profile) => profile.id);
+
+      if (friendProfileIds.length > 0) {
+        friendStories = await db
+          .select({
+            id: stories.id,
+            shareId: stories.shareId,
+            storyText: stories.storyText,
+            storyType: stories.storyType,
+            expiresAt: stories.expiresAt,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            username: users.username,
+            profilePhoto: userProfiles.profilePhoto,
+          })
+          .from(stories)
+          .innerJoin(userProfiles, eq(stories.authorId, userProfiles.id))
+          .innerJoin(users, eq(userProfiles.userId, users.id))
+          .where(and(inArray(stories.authorId, friendProfileIds), eq(stories.deleted, false), eq(stories.moderationStatus, "approved"), gt(stories.expiresAt, new Date())))
+          .orderBy(desc(stories.createdAt))
+          .limit(30);
+      }
+    }
+
     return {
       success: true,
       refreshedAt: new Date().toISOString(),
@@ -94,7 +144,7 @@ export class HomeFeedService {
       },
       posts: publicPosts,
       suggestedProfiles,
-      friendStories: [],
+      friendStories,
     };
   }
 }
