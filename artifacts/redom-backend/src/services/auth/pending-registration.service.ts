@@ -50,8 +50,8 @@ export class PendingRegistrationService {
     const user = await this.findPending(params.identifier, params.password);
     const target = params.channel === "email" ? user.email : user.phoneNumber;
     if (!target) throw new Error(`No ${params.channel === "email" ? "email address" : "phone number"} is available for this pending registration.`);
-    const verification = await verificationService.createVerification({ userId: user.id, purpose: "PENDING_REGISTRATION_INVALIDATION", target, channel: params.channel, requestedLength: 8, firstName: user.firstName, requestIp: params.requestIp, userAgent: params.userAgent, deviceId: params.deviceId, sessionId: user.id });
-    return { success: true, challengeId: verification.challengeId, channel: params.channel, target, maskedTarget: params.channel === "email" ? maskEmail(target) : maskPhone(target), codeLength: 8, expiresAt: verification.expiresAt.toISOString() };
+    const verification = await verificationService.createVerification({ userId: user.id, purpose: "PENDING_REGISTRATION_INVALIDATION", target, channel: params.channel, requestedLength: 4, firstName: user.firstName, requestIp: params.requestIp, userAgent: params.userAgent, deviceId: params.deviceId, sessionId: user.id });
+    return { success: true, challengeId: verification.challengeId, channel: params.channel, target, maskedTarget: params.channel === "email" ? maskEmail(target) : maskPhone(target), codeLength: 4, expiresAt: verification.expiresAt.toISOString() };
   }
   async verifyAndInvalidate(params: { challengeId: string; code: string; deviceId?: string; requestIp?: string; userAgent?: string }) {
     const challenge = await db.query.verifications.findFirst({ where: eq(verifications.id, params.challengeId) });
@@ -97,8 +97,6 @@ export class PendingRegistrationService {
         await emailService.sendPendingRegistrationInvalidation({ firstName: user.firstName, lastName: user.lastName, email, phone, flowIds, invalidatedAt, requestIp: params.requestIp, userAgent: params.userAgent || challenge.userAgent || undefined });
         emailNotification = "sent";
       } catch {
-        // The account deletion has already completed. Notification failure must not
-        // recreate or roll back the deleted pending registration.
         emailNotification = "delivery_failed";
       }
     }
