@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authController } from "../controllers/auth.controller";
+import { passwordRecoveryController } from "../controllers/password-recovery.controller";
 import { networkProviderController } from "../controllers/network-provider.controller";
 import { registrationChallengeController } from "../controllers/registration-challenge.controller";
 import { registrationFlowController } from "../controllers/registration-flow.controller";
@@ -36,6 +37,10 @@ router.post("/verify-email", verificationRateLimit, authController.verifyEmail.b
 router.post("/verify-phone", verificationRateLimit, authController.verifyPhone.bind(authController));
 router.post("/resend-email-code", verificationRateLimit, authController.resendEmailCode.bind(authController));
 router.post("/resend-phone-code", verificationRateLimit, authController.resendPhoneCode.bind(authController));
+router.post("/find-account", passwordResetRateLimit, passwordRecoveryController.findAccount.bind(passwordRecoveryController));
+router.post("/password-reset/send", passwordResetRateLimit, passwordRecoveryController.sendCode.bind(passwordRecoveryController));
+router.post("/password-reset/verify", verificationRateLimit, passwordRecoveryController.verifyCode.bind(passwordRecoveryController));
+router.post("/password-reset/change", passwordResetRateLimit, passwordRecoveryController.changePassword.bind(passwordRecoveryController));
 router.post("/forgot-password", passwordResetRateLimit, authController.forgotPassword.bind(authController));
 router.post("/reset-password", passwordResetRateLimit, authController.resetPassword.bind(authController));
 router.post("/logout", authMiddleware, authController.logout.bind(authController));
