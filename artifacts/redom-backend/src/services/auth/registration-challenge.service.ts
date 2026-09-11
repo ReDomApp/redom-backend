@@ -12,6 +12,7 @@ import { publicIdService } from "./public-id.service";
 import { profileIdService } from "./profile-id.service";
 import { verificationService } from "./verification.service";
 import { registrationFlowReservationService } from "./registration-flow-reservation.service";
+import { registrationFlowMemoryService } from "./registration-flow-memory.service";
 
 export type RegistrationStep = "contact" | "identity" | "username" | "profile" | "password" | "review";
 const CHALLENGE_TTL_MS = 30 * 60 * 1000;
@@ -20,6 +21,7 @@ const FLOW_ID_MAX_LENGTH = 16;
 const FLOW_ID_GENERATION_ATTEMPTS = 12;
 
 type RegistrationContactType = "phone" | "email";
+type RegistrationGender = "male" | "female" | "custom";
 
 function maskFlowId(flowId: string) { return flowId.length > 4 ? `${flowId.slice(0, 4)}••••••••✓` : `${flowId}✓`; }
 function generateNumericFlowId(): string {
@@ -70,19 +72,51 @@ export class RegistrationChallengeService {
     let reservedFirstName: string | null = null;
     let reservedLastName: string | null = null;
     let reservedDateOfBirth: string | null = null;
+    let reservedGender: RegistrationGender | null = null;
+    let reservedPasswordHash: string | null = null;
+    let reservedEmail: string | null = null;
+    let reservedPhoneNumber: string | null = null;
     if (params.reservationId || params.flowId) {
       if (!params.reservationId || !params.flowId) throw new Error("Registration Flow ID reservation is incomplete.");
       const reservation = await registrationFlowReservationService.consume(params.reservationId, params.flowId, params.deviceId);
+      const flowMemory = await registrationFlowMemoryService.get({ reservationId: params.reservationId, flowId: params.flowId, deviceId: params.deviceId });
+      const memory = flowMemory.memory;
       flowId = reservation.flowId;
       reservedFirstName = reservation.firstName;
       reservedLastName = reservation.lastName;
       reservedDateOfBirth = reservation.dateOfBirth;
+      reservedGender = memory.gender?.gender === "male" || memory.gender?.gender === "female" || memory.gender?.gender === "custom" ? memory.gender.gender : null;
+      reservedPasswordHash = memory.password?.hash ?? null;
+      reservedEmail = memory.email?.address ?? null;
+      reservedPhoneNumber = memory.phoneLookup?.phoneNumber ?? null;
+      if (params.contactType === "email" && reservedEmail && reservedEmail !== normalizedTarget) throw new Error("The email address does not match this registration flow.");
+      if (params.contactType === "phone" && reservedPhoneNumber && reservedPhoneNumber !== normalizedTarget) throw new Error("The phone number does not match this registration flow.");
     } else {
       flowId = await this.generateFlowId();
     }
 
     const now = new Date();
-    const [challenge] = await db.insert(registrationChallenges).values({ flowId, contactType: params.contactType, target: normalizedTarget, normalizedTarget, firstName: reservedFirstName, lastName: reservedLastName, dateOfBirth: reservedDateOfBirth, currentStep: reservedFirstName && reservedLastName ? "identity" : "contact", status: "pending", requestIp: params.requestIp, userAgent: params.userAgent, deviceId: params.deviceId, expiresAt: new Date(now.getTime() + CHALLENGE_TTL_MS), createdAt: now, updatedAt: now }).returning();
+    const [challenge] = await db.insert(registrationChallenges).values({
+      flowId,
+      contactType: params.contactType,
+      target: normalizedTarget,
+      normalizedTarget,
+      firstName: reservedFirstName,
+      lastName: reservedLastName,
+      email: reservedEmail,
+      phoneNumber: reservedPhoneNumber,
+      dateOfBirth: reservedDateOfBirth,
+      gender: reservedGender,
+      passwordHash: reservedPasswordHash,
+      currentStep: reservedFirstName && reservedLastName ? "identity" : "contact",
+      status: "pending",
+      requestIp: params.requestIp,
+      userAgent: params.userAgent,
+      deviceId: params.deviceId,
+      expiresAt: new Date(now.getTime() + CHALLENGE_TTL_MS),
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
     if (!challenge) throw new Error("Unable to start registration flow.");
     return { success: true, challengeId: challenge.id, flowId: maskFlowId(challenge.flowId), contactType: challenge.contactType as RegistrationContactType, maskedTarget: maskTarget(normalizedTarget, params.contactType), expiresAt: challenge.expiresAt.toISOString(), currentStep: challenge.currentStep as RegistrationStep };
   }
