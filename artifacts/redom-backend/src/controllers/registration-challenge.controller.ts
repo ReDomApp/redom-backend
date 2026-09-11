@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { registrationChallengeService } from "../services/auth/registration-challenge.service";
 import "../services/auth/registration-flow-reservation.consume";
 import "../services/auth/registration-challenge-complete-raw-flow";
+import "../services/auth/registration-challenge-verify-errors";
 import {
   completeRegistrationChallengeSchema,
   saveRegistrationStepSchema,
@@ -10,9 +11,7 @@ import {
   verifyRegistrationChallengeSchema,
 } from "../validators/registration-challenge.validator";
 
-function requestContext(req: Request) {
-  return { requestIp: req.ip, userAgent: req.get("user-agent") ?? undefined, deviceId: req.body?.deviceId };
-}
+function requestContext(req: Request) { return { requestIp: req.ip, userAgent: req.get("user-agent") ?? undefined, deviceId: req.body?.deviceId }; }
 function routeParam(value: string | string[] | undefined, name: string): string {
   if (typeof value === "string" && value.length > 0) return value;
   if (Array.isArray(value) && value.length === 1 && value[0]) return value[0];
