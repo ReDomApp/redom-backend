@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { db } from "../../database/db";
 import { users } from "../../database/schema";
 import { verifications } from "../../database/verifications.schema";
@@ -25,28 +25,15 @@ type RequestContext = {
   language?: string;
 };
 
-function maskEmail(email: string): string {
-  const [local, domain] = email.split("@");
-  if (!local || !domain) return "••••";
-  const visible = local.slice(0, 1);
-  return `${visible}${"•".repeat(Math.max(4, Math.min(8, local.length + 1)))}@${domain}`;
-}
-
-function maskPhone(phone: string): string {
-  const normalized = phone.replace(/\s+/g, "");
-  if (normalized.length <= 7) return `${normalized.slice(0, 3)}••••`;
-  return `${normalized.slice(0, Math.min(4, normalized.length - 6))}${"•".repeat(6)}${normalized.slice(-2)}`;
-}
-
 function accountPayload(user: typeof users.$inferSelect) {
   return {
     firstName: user.firstName,
-    email: user.email ? maskEmail(user.email) : null,
-    phoneNumber: user.phoneNumber ? maskPhone(user.phoneNumber) : null,
+    email: user.email,
+    phoneNumber: user.phoneNumber,
     methods: [
-      ...(user.email ? [{ channel: "email" as const, maskedTarget: maskEmail(user.email) }] : []),
-      ...(user.phoneNumber ? [{ channel: "sms" as const, maskedTarget: maskPhone(user.phoneNumber) }] : []),
-      ...(user.phoneNumber ? [{ channel: "whatsapp" as const, maskedTarget: maskPhone(user.phoneNumber) }] : []),
+      ...(user.email ? [{ channel: "email" as const, maskedTarget: user.email }] : []),
+      ...(user.phoneNumber ? [{ channel: "sms" as const, maskedTarget: user.phoneNumber }] : []),
+      ...(user.phoneNumber ? [{ channel: "whatsapp" as const, maskedTarget: user.phoneNumber }] : []),
     ],
   };
 }
@@ -121,7 +108,7 @@ export class PasswordRecoveryService {
       success: true,
       challengeId: verification.challengeId,
       channel: params.channel,
-      maskedTarget: params.channel === "email" ? maskEmail(target) : maskPhone(target),
+      maskedTarget: target,
       codeLength: 5,
       expiresAt: verification.expiresAt.toISOString(),
     };
@@ -177,7 +164,13 @@ export class PasswordRecoveryService {
       appVersion: params.appVersion,
     });
 
-    if (user.email) await this.sendNewLoginEmail({ user, sessionId: session.sessionId, context: params });
+    if (user.email) {
+      try {
+        await this.sendNewLoginEmail({ user, sessionId: session.sessionId, context: params });
+      } catch {
+        // Password recovery has already succeeded; notification delivery must not make it appear to fail.
+      }
+    }
 
     return {
       success: true,
