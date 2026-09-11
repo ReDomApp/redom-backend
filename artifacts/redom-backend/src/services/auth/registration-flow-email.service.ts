@@ -3,6 +3,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { db } from "../../database/db";
 import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
 import { validateRegistrationEmail } from "../../config/registration-email-domains";
+import { registrationFlowSecurityService } from "./registration-flow-security.service";
 
 export class RegistrationFlowEmailService {
   async save(params: {
@@ -10,6 +11,7 @@ export class RegistrationFlowEmailService {
     flowId: string;
     deviceId?: string;
     email: string;
+    ip: string;
   }) {
     const reservation = await db.query.registrationFlowReservations.findFirst({
       where: and(
@@ -30,11 +32,27 @@ export class RegistrationFlowEmailService {
     }
 
     const validated = validateRegistrationEmail(params.email);
+    const network = await registrationFlowSecurityService.capture({
+      reservationId: params.reservationId,
+      flowId: params.flowId,
+      deviceId: params.deviceId,
+      ip: params.ip,
+    });
     const createdAt = new Date();
 
-    const existingMemory = (reservation.memory ?? {}) as Record<string, unknown>;
+    const latestReservation = await db.query.registrationFlowReservations.findFirst({
+      where: and(
+        eq(registrationFlowReservations.id, params.reservationId),
+        eq(registrationFlowReservations.flowId, params.flowId),
+      ),
+    });
+    if (!latestReservation) {
+      throw new Error("Registration Flow ID could not be reloaded after the network security check.");
+    }
+
+    const existingMemory = (latestReservation.memory ?? {}) as Record<string, unknown>;
     const existingScreens = (existingMemory.screens ?? {}) as Record<string, unknown>;
-    const existingRegisteredTables = reservation.registeredTables ?? [];
+    const existingRegisteredTables = latestReservation.registeredTables ?? [];
     const emailMemory = {
       address: validated.email,
       domain: validated.domain,
@@ -45,6 +63,14 @@ export class RegistrationFlowEmailService {
     const memory = {
       ...existingMemory,
       email: emailMemory,
+      networkSecurity: {
+        ...(existingMemory.networkSecurity as Record<string, unknown> | undefined),
+        ...network.security,
+        capturedAt: network.capturedAt,
+        consented: false,
+        dataPurpose: "abuse_prevention_and_registration_security",
+        dataSource: "IPAPI",
+      },
       screens: {
         ...existingScreens,
         email: {
@@ -65,7 +91,7 @@ export class RegistrationFlowEmailService {
       })
       .where(
         and(
-          eq(registrationFlowReservations.id, reservation.id),
+          eq(registrationFlowReservations.id, latestReservation.id),
           eq(registrationFlowReservations.flowId, params.flowId),
         ),
       )
@@ -82,6 +108,8 @@ export class RegistrationFlowEmailService {
       email: validated.email,
       provider: validated.provider,
       saved: true,
+      ip: network.security.ip,
+      networkSecurity: network.security,
     };
   }
 }
