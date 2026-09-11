@@ -1,5 +1,8 @@
 import { resend } from "../../lib/resend";
 import { checkIP } from "../../lib/ipapi";
+import { db } from "../../database/db";
+import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
+import { eq } from "drizzle-orm";
 
 export class EmailService {
   private readonly sender = "ReDom <noreply@wnncompany.com>";
@@ -27,30 +30,40 @@ export class EmailService {
     return { provider: "resend", providerReference: result.data?.id };
   }
 
-  async sendRegistrationConfirmation(params: { firstName: string; lastName: string; email: string; registeredAt: Date; requestIp: string; userAgent: string }): Promise<{ provider: string; providerReference?: string }> {
+  async sendRegistrationConfirmation(params: { firstName: string; lastName: string; email: string; registeredAt: Date; flowId: string; userAgent: string }): Promise<{ provider: string; providerReference?: string }> {
     const firstName = params.firstName.trim();
     const lastName = params.lastName.trim();
     const email = this.validate(params.email);
-    const requestIp = params.requestIp.trim();
+    const flowId = params.flowId.trim();
     const userAgent = params.userAgent.trim();
     if (!firstName || !lastName) throw new Error("Registration confirmation requires the verified user's full name.");
-    if (!requestIp) throw new Error("Registration confirmation requires the user's registration IP address.");
+    if (!flowId) throw new Error("Registration confirmation requires the registration Flow ID.");
     if (!userAgent) throw new Error("Registration confirmation requires the user's registration device information.");
 
-    const ip = await checkIP(requestIp);
+    // The Flow ID is the source of truth for the registration network context.
+    // Read the IP captured for this exact flow, then perform a fresh IPAPI lookup
+    // so location, coordinates, timezone and local-time data come from that IP.
+    const reservation = await db.query.registrationFlowReservations.findFirst({
+      where: eq(registrationFlowReservations.flowId, flowId),
+    });
+    const memory = reservation?.memory as { networkSecurity?: { ip?: string | null } } | undefined;
+    const flowIp = memory?.networkSecurity?.ip?.trim() || null;
+    if (!flowIp) throw new Error("Registration confirmation could not determine the registration IP from the Flow ID.");
+
+    const ip = await checkIP(flowIp);
     const location = ip.location;
-    if (!location?.city || !location.country || location.latitude == null || location.longitude == null || !location.timezone) {
-      throw new Error("Registration confirmation could not verify the user's registration location and timezone.");
+    const timezone = location?.timezone || null;
+    if (!location?.city || !location.country || location.latitude == null || location.longitude == null || !timezone) {
+      throw new Error("Registration confirmation could not verify the user's registration location and timezone from the registration IP.");
     }
 
     const device = this.parseDevice(userAgent);
-    const timezone = location.timezone;
     const timeParts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long", month: "short", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short" }).formatToParts(params.registeredAt);
     const part = (type: Intl.DateTimeFormatPartTypes) => timeParts.find((item) => item.type === type)?.value ?? "";
-    const registeredText = `${part("weekday")}, ${part("month")} ${part("day")}, ${part("year")} ${part("hour")}:${part("minute")}::${part("second")} ${part("dayPeriod")} (${part("timeZoneName")})`;
+    const registeredText = `${part("weekday")}, ${part("month")} ${part("day")}, ${part("year")} ${part("hour")}:${part("minute")}:${part("second")} ${part("dayPeriod")} (${part("timeZoneName")})`;
     const latitude = Number(location.latitude);
     const longitude = Number(location.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error("Registration confirmation could not verify the user's map coordinates.");
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error("Registration confirmation could not verify the user's map coordinates from the registration IP.");
 
     const delta = 0.04;
     const bbox = `${longitude - delta},${latitude - delta},${longitude + delta},${latitude + delta}`;
@@ -63,7 +76,7 @@ export class EmailService {
       from: this.sender,
       to: email,
       subject,
-      html: `<!doctype html><html><body style="margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div style="text-align:center;margin-bottom:24px">${profileSvg}<h2 style="margin:18px 0 6px">Dear ${this.escapeHtml(firstName)} ${this.escapeHtml(lastName)},</h2><p style="margin:0;color:#667085">Your ReDom registration has been successfully verified.</p></div><p>You have registered successfully to ReDom on <strong>${this.escapeHtml(registeredText)}</strong>.</p><p>Here are some extra details about this recent registration:</p><div style="border:1px solid #e4e7ec;border-radius:12px;overflow:hidden;margin:20px 0"><iframe title="Approximate registration location" src="${mapUrl}" width="100%" height="280" frameborder="0" style="border:0;display:block"></iframe><div style="padding:14px 16px;background:#fafbfc"><strong>Location:</strong> ${this.escapeHtml(location.city)}, ${this.escapeHtml(location.country)} (shown as approximate)<br><strong>Device:</strong> ${this.escapeHtml(device)}<br><strong>IP:</strong> ${this.escapeHtml(requestIp)}<br><strong>Time:</strong> ${this.escapeHtml(registeredText)}<br><strong>Timezone:</strong> ${this.escapeHtml(timezone)}</div></div><p style="font-size:13px"><a href="${mapLink}" style="color:#1877f2">View the approximate location on the map</a></p><p>If this was you, you can disregard this message.</p><p>If that wasn't you, we strongly advise that you change your password as soon as possible and notify us by replying to this email.</p><p>If you experience any problems kindly contact us at <a href="mailto:support@redomapp.com">support@redomapp.com</a> or send us a WhatsApp message at +234 701 486 5940.</p><p style="margin-top:28px">ReDom Platforms, Inc.</p></div></div></body></html>`,
+      html: `<!doctype html><html><body style="margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div style="text-align:center;margin-bottom:24px">${profileSvg}<h2 style="margin:18px 0 6px">Dear ${this.escapeHtml(firstName)} ${this.escapeHtml(lastName)},</h2><p style="margin:0;color:#667085">Your ReDom registration has been successfully verified.</p></div><p>You have registered successfully to ReDom on <strong>${this.escapeHtml(registeredText)}</strong>.</p><p>Here are some extra details about this recent registration:</p><div style="border:1px solid #e4e7ec;border-radius:12px;overflow:hidden;margin:20px 0"><iframe title="Approximate registration location" src="${mapUrl}" width="100%" height="280" frameborder="0" style="border:0;display:block"></iframe><div style="padding:14px 16px;background:#fafbfc"><strong>Location:</strong> ${this.escapeHtml(location.city)}, ${this.escapeHtml(location.country)} (shown as approximate)<br><strong>Device:</strong> ${this.escapeHtml(device)}<br><strong>IP:</strong> ${this.escapeHtml(flowIp)}<br><strong>Time:</strong> ${this.escapeHtml(registeredText)}<br><strong>Timezone:</strong> ${this.escapeHtml(timezone)}</div></div><p style="font-size:13px"><a href="${mapLink}" style="color:#1877f2">View the approximate location on the map</a></p><p>If this was you, you can disregard this message.</p><p>If that wasn't you, we strongly advise that you change your password as soon as possible and notify us by replying to this email.</p><p>If you experience any problems kindly contact us at <a href="mailto:support@redomapp.com">support@redomapp.com</a> or send us a WhatsApp message at +234 701 486 5940.</p><p style="margin-top:28px">ReDom Platforms, Inc.</p></div></div></body></html>`,
     });
     if (result.error) throw new Error(`Resend failed to deliver the registration confirmation email: ${result.error.message}`);
     return { provider: "resend", providerReference: result.data?.id };
