@@ -39,7 +39,7 @@ export class EmailService {
 
     const ip = await checkIP(requestIp);
     const location = ip.location;
-    if (!location?.city || !location.country || !location.latitude || !location.longitude || !location.timezone) {
+    if (!location?.city || !location.country || location.latitude == null || location.longitude == null || !location.timezone) {
       throw new Error("Registration confirmation could not verify the user's registration location and timezone.");
     }
 
