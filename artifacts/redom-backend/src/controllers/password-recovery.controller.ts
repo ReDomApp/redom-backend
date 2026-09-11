@@ -1,9 +1,18 @@
 import { Request, Response } from "express";
 import { passwordRecoveryService } from "../services/auth/password-recovery.service";
 
+function getRequestIp(req: Request): string | undefined {
+  const forwarded = req.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return req.get("x-real-ip")?.trim() || req.ip || undefined;
+}
+
 function context(req: Request) {
   return {
-    ipAddress: req.ip,
+    ipAddress: getRequestIp(req),
     userAgent: req.get("user-agent") ?? undefined,
     deviceId: req.body?.deviceId,
     deviceName: req.body?.deviceName,
