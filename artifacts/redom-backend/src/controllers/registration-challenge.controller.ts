@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 
 import { registrationChallengeService } from "../services/auth/registration-challenge.service";
 import "../services/auth/registration-flow-reservation.consume";
+import "../services/auth/registration-challenge-complete-raw-flow";
 import {
   completeRegistrationChallengeSchema,
   saveRegistrationStepSchema,
