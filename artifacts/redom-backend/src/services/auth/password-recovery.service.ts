@@ -13,141 +13,36 @@ import { sessionService } from "./session.service";
 type RecoveryChannel = "email" | "sms" | "whatsapp";
 type RequestContext = { ipAddress?: string; userAgent?: string; deviceId?: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; loginSource?: string; appVersion?: string; language?: string };
 
-function maskEmail(email: string): string {
-  const [local, domain] = email.split("@");
-  if (!local || !domain) return "••••";
-  return `${local.slice(0, 1)}${"•".repeat(Math.max(4, Math.min(8, local.length + 1)))}@${domain}`;
-}
-
-function maskPhone(phone: string): string {
-  const normalized = phone.replace(/\s+/g, "");
-  if (normalized.length <= 7) return `${normalized.slice(0, 3)}••••`;
-  return `${normalized.slice(0, Math.min(4, normalized.length - 6))}${"•".repeat(6)}${normalized.slice(-2)}`;
-}
-
-function normalizeLookup(value: string): { type: "email" | "phone"; value: string } {
-  const trimmed = value.trim();
-  if (trimmed.includes("@")) return { type: "email", value: trimmed.toLowerCase() };
-  return { type: "phone", value: phoneService.validate(trimmed) };
-}
-
-function accountPayload(user: typeof users.$inferSelect, searched: { type: "email" | "phone"; value: string }) {
-  const searchedEmail = searched.type === "email" && user.email?.toLowerCase() === searched.value;
-  const searchedPhone = searched.type === "phone" && user.phoneNumber === searched.value;
-  const emailDisplay = user.email ? (searchedEmail ? user.email : maskEmail(user.email)) : null;
-  const phoneDisplay = user.phoneNumber ? (searchedPhone ? user.phoneNumber : maskPhone(user.phoneNumber)) : null;
-
-  return {
-    firstName: user.firstName,
-    email: emailDisplay,
-    phoneNumber: phoneDisplay,
-    methods: [
-      ...(user.email ? [{ channel: "email" as const, maskedTarget: emailDisplay! }] : []),
-      ...(user.phoneNumber ? [{ channel: "sms" as const, maskedTarget: phoneDisplay! }] : []),
-      ...(user.phoneNumber ? [{ channel: "whatsapp" as const, maskedTarget: phoneDisplay! }] : []),
-    ],
-  };
-}
+function maskEmail(email: string): string { const [local, domain] = email.split("@"); if (!local || !domain) return "••••"; return `${local.slice(0, 1)}${"•".repeat(Math.max(4, Math.min(8, local.length + 1)))}@${domain}`; }
+function maskPhone(phone: string): string { const normalized = phone.replace(/\s+/g, ""); if (normalized.length <= 7) return `${normalized.slice(0, 3)}••••`; return `${normalized.slice(0, Math.min(4, normalized.length - 6))}${"•".repeat(6)}${normalized.slice(-2)}`; }
+function normalizeLookup(value: string): { type: "email" | "phone"; value: string } { const trimmed = value.trim(); if (trimmed.includes("@")) return { type: "email", value: trimmed.toLowerCase() }; return { type: "phone", value: phoneService.validate(trimmed) }; }
+function accountPayload(user: typeof users.$inferSelect, searched: { type: "email" | "phone"; value: string }) { const searchedEmail = searched.type === "email" && user.email?.toLowerCase() === searched.value; const searchedPhone = searched.type === "phone" && user.phoneNumber === searched.value; const emailDisplay = user.email ? (searchedEmail ? user.email : maskEmail(user.email)) : null; const phoneDisplay = user.phoneNumber ? (searchedPhone ? user.phoneNumber : maskPhone(user.phoneNumber)) : null; return { firstName: user.firstName, email: emailDisplay, phoneNumber: phoneDisplay, methods: [...(user.email ? [{ channel: "email" as const, maskedTarget: emailDisplay! }] : []), ...(user.phoneNumber ? [{ channel: "sms" as const, maskedTarget: phoneDisplay! }] : []), ...(user.phoneNumber ? [{ channel: "whatsapp" as const, maskedTarget: phoneDisplay! }] : [])] }; }
 
 export class PasswordRecoveryService {
   async findAccount(identifier: string) {
-    const value = identifier.trim();
-    if (!value) throw new Error("Please enter your email address or phone number.");
-
-    let searched: { type: "email" | "phone"; value: string };
-    try { searched = normalizeLookup(value); } catch { return { success: true, accountFound: false, reason: "invalid_phone", message: "Please enter a valid phone number." }; }
-
-    if (searched.type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(searched.value)) {
-      return { success: true, accountFound: false, reason: "invalid_email", message: "Please enter a valid email address." };
-    }
-
-    const user = searched.type === "email"
-      ? await db.query.users.findFirst({ where: eq(users.email, searched.value) })
-      : await db.query.users.findFirst({ where: eq(users.phoneNumber, searched.value) });
-
+    const value = identifier.trim(); if (!value) throw new Error("Please enter your email address or phone number.");
+    let searched: { type: "email" | "phone"; value: string }; try { searched = normalizeLookup(value); } catch { return { success: true, accountFound: false, reason: "invalid_phone", message: "Please enter a valid phone number." }; }
+    if (searched.type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(searched.value)) return { success: true, accountFound: false, reason: "invalid_email", message: "Please enter a valid email address." };
+    const user = searched.type === "email" ? await db.query.users.findFirst({ where: eq(users.email, searched.value) }) : await db.query.users.findFirst({ where: eq(users.phoneNumber, searched.value) });
     if (!user) return { success: true, accountFound: false, reason: "not_found", message: "No ReDom account was found with that information." };
     if (user.accountStatus === "suspended" || user.accountStatus === "banned") return { success: true, accountFound: false, reason: "unavailable", message: "This account is not available for password recovery." };
-
     return { success: true, accountFound: true, account: accountPayload(user, searched) };
   }
-
-  private async getUserByIdentifier(identifier: string) {
-    const value = identifier.trim();
-    if (!value) throw new Error("Account identifier is required.");
-    if (value.includes("@")) {
-      const email = value.toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Please enter a valid email address.");
-      return db.query.users.findFirst({ where: eq(users.email, email) });
-    }
-    return db.query.users.findFirst({ where: eq(users.phoneNumber, phoneService.validate(value)) });
-  }
-
+  private async getUserByIdentifier(identifier: string) { const value = identifier.trim(); if (!value) throw new Error("Account identifier is required."); if (value.includes("@")) { const email = value.toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Please enter a valid email address."); return db.query.users.findFirst({ where: eq(users.email, email) }); } return db.query.users.findFirst({ where: eq(users.phoneNumber, phoneService.validate(value)) }); }
   async sendCode(params: { identifier: string; channel: RecoveryChannel } & RequestContext) {
-    const user = await this.getUserByIdentifier(params.identifier);
-    if (!user) throw new Error("No ReDom account was found with that information.");
-    if (user.accountStatus === "suspended" || user.accountStatus === "banned") throw new Error("This account is not available for password recovery.");
-
-    let target: string;
-    if (params.channel === "email") {
-      if (!user.email) throw new Error("No email address is associated with this account.");
-      target = user.email;
-    } else {
-      if (!user.phoneNumber) throw new Error("No phone number is associated with this account.");
-      target = user.phoneNumber;
-      if (!phoneService.supportsChannel(params.channel)) throw new Error("WhatsApp password recovery is not configured for ReDom.");
-    }
-
+    const user = await this.getUserByIdentifier(params.identifier); if (!user) throw new Error("No ReDom account was found with that information."); if (user.accountStatus === "suspended" || user.accountStatus === "banned") throw new Error("This account is not available for password recovery.");
+    let target: string; if (params.channel === "email") { if (!user.email) throw new Error("No email address is associated with this account."); target = user.email; } else { if (!user.phoneNumber) throw new Error("No phone number is associated with this account."); target = user.phoneNumber; if (!phoneService.supportsChannel(params.channel)) throw new Error("WhatsApp password recovery is not configured for ReDom."); }
     const verification = await verificationService.createVerification({ userId: user.id, purpose: "PASSWORD_RESET", target, channel: params.channel, requestedLength: 5, firstName: user.firstName, requestIp: params.ipAddress, userAgent: params.userAgent, deviceId: params.deviceId });
-    return { success: true, challengeId: verification.challengeId, channel: params.channel, maskedTarget: params.channel === "email" ? maskEmail(target) : maskPhone(target), codeLength: 5, expiresAt: verification.expiresAt.toISOString() };
+    const searched = normalizeLookup(params.identifier); const searchedTarget = (params.channel === "email" && searched.type === "email" && target.toLowerCase() === searched.value) || (params.channel !== "email" && searched.type === "phone" && target === searched.value);
+    return { success: true, challengeId: verification.challengeId, channel: params.channel, maskedTarget: searchedTarget ? target : (params.channel === "email" ? maskEmail(target) : maskPhone(target)), codeLength: 5, expiresAt: verification.expiresAt.toISOString() };
   }
-
-  async verifyCode(params: { challengeId: string; code: string } & RequestContext) {
-    const verification = await db.query.verifications.findFirst({ where: eq(verifications.id, params.challengeId) });
-    if (!verification || verification.purpose !== "PASSWORD_RESET") throw new Error("Password reset verification was not found.");
-    const result = await verificationService.verifyVerification({ challengeId: params.challengeId, code: params.code, purpose: "PASSWORD_RESET" });
-    if (!result.userId) throw new Error("Password reset is not associated with an account.");
-    const resetToken = randomUUID();
-    await db.update(verifications).set({ sessionId: resetToken, updatedAt: new Date() }).where(eq(verifications.id, params.challengeId));
-    return { success: true, resetToken, message: "Verification successful. You can now change your password." };
-  }
-
+  async verifyCode(params: { challengeId: string; code: string } & RequestContext) { const verification = await db.query.verifications.findFirst({ where: eq(verifications.id, params.challengeId) }); if (!verification || verification.purpose !== "PASSWORD_RESET") throw new Error("Password reset verification was not found."); const result = await verificationService.verifyVerification({ challengeId: params.challengeId, code: params.code, purpose: "PASSWORD_RESET" }); if (!result.userId) throw new Error("Password reset is not associated with an account."); const resetToken = randomUUID(); await db.update(verifications).set({ sessionId: resetToken, updatedAt: new Date() }).where(eq(verifications.id, params.challengeId)); return { success: true, resetToken, message: "Verification successful. You can now change your password." }; }
   async changePassword(params: { resetToken: string; password: string } & RequestContext) {
-    passwordService.validate(params.password);
-    const now = new Date();
-    const verification = await db.query.verifications.findFirst({ where: and(eq(verifications.sessionId, params.resetToken), eq(verifications.purpose, "PASSWORD_RESET"), eq(verifications.status, "consumed"), gt(verifications.verifiedAt, new Date(now.getTime() - 10 * 60 * 1000))) });
-    if (!verification?.userId || !verification.verifiedAt) throw new Error("This password reset session has expired. Please request a new code.");
-    const user = await db.query.users.findFirst({ where: eq(users.id, verification.userId) });
-    if (!user) throw new Error("Account not found.");
-    if (user.accountStatus === "suspended" || user.accountStatus === "banned") throw new Error("This account is not available.");
-
-    const passwordHash = await passwordService.hash(params.password);
-    await db.transaction(async tx => {
-      await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, user.id));
-      await tx.update(verifications).set({ sessionId: null, updatedAt: now }).where(eq(verifications.id, verification.id));
-    });
-    await sessionService.revokeAllSessions(user.id);
-    const session = await sessionService.createSession({ userId: user.id, ipAddress: params.ipAddress, userAgent: params.userAgent, deviceId: params.deviceId, deviceName: params.deviceName, deviceType: params.deviceType, platform: params.platform, browser: params.browser, loginSource: "password-recovery", appVersion: params.appVersion });
-    if (user.email) { try { await this.sendNewLoginEmail({ user, sessionId: session.sessionId, context: params }); } catch { /* recovery succeeds even if notification delivery fails */ } }
-
+    passwordService.validate(params.password); const now = new Date(); const verification = await db.query.verifications.findFirst({ where: and(eq(verifications.sessionId, params.resetToken), eq(verifications.purpose, "PASSWORD_RESET"), eq(verifications.status, "consumed"), gt(verifications.verifiedAt, new Date(now.getTime() - 10 * 60 * 1000))) }); if (!verification?.userId || !verification.verifiedAt) throw new Error("This password reset session has expired. Please request a new code."); const user = await db.query.users.findFirst({ where: eq(users.id, verification.userId) }); if (!user) throw new Error("Account not found."); if (user.accountStatus === "suspended" || user.accountStatus === "banned") throw new Error("This account is not available.");
+    const passwordHash = await passwordService.hash(params.password); await db.transaction(async tx => { await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, user.id)); await tx.update(verifications).set({ sessionId: null, updatedAt: now }).where(eq(verifications.id, verification.id)); }); await sessionService.revokeAllSessions(user.id); const session = await sessionService.createSession({ userId: user.id, ipAddress: params.ipAddress, userAgent: params.userAgent, deviceId: params.deviceId, deviceName: params.deviceName, deviceType: params.deviceType, platform: params.platform, browser: params.browser, loginSource: "password-recovery", appVersion: params.appVersion }); if (user.email) { try { await this.sendNewLoginEmail({ user, sessionId: session.sessionId, context: params }); } catch {} }
     return { success: true, message: "Your password has been changed successfully.", user: { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email, phoneNumber: user.phoneNumber, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus }, session };
   }
-
-  private async sendNewLoginEmail(params: { user: typeof users.$inferSelect; sessionId: string; context: RequestContext }) {
-    const device = params.context.deviceName || params.context.deviceType || "Unknown device";
-    const ip = params.context.ipAddress || "Unavailable";
-    const language = params.context.language?.trim() || "English";
-    let subject = "New ReDom login detected";
-    let body = `A new login was detected after your ReDom password was changed.\n\nDevice: ${device}\nIP address: ${ip}\nSession ID: ${params.sessionId}\n\nIf this was not you, secure your account immediately.`;
-    try {
-      const response = await openai.responses.create({ model: "gpt-5.6-luna", input: `Write a concise ReDom security notification email in ${language}. The user's password was just changed through account recovery and ReDom created a new login session on the current device. Return JSON only: {"subject":"...","body":"..."}. Do not invent any facts. Preserve exactly these facts: device=${device}; ip=${ip}; sessionId=${params.sessionId}.` });
-      const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown };
-      if (typeof parsed.subject === "string" && typeof parsed.body === "string") { subject = parsed.subject; body = parsed.body; }
-    } catch { /* deterministic fallback */ }
-    const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033"><h2>${this.escapeHtml(subject)}</h2><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p><p style="margin-top:24px">ReDom Platforms, Inc.</p></div>`;
-    await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html });
-  }
-
+  private async sendNewLoginEmail(params: { user: typeof users.$inferSelect; sessionId: string; context: RequestContext }) { const device = params.context.deviceName || params.context.deviceType || "Unknown device"; const ip = params.context.ipAddress || "Unavailable"; const language = params.context.language?.trim() || "English"; let subject = "New ReDom login detected"; let body = `A new login was detected after your ReDom password was changed.\n\nDevice: ${device}\nIP address: ${ip}\nSession ID: ${params.sessionId}\n\nIf this was not you, secure your account immediately.`; try { const response = await openai.responses.create({ model: "gpt-5.6-luna", input: `Write a concise ReDom security notification email in ${language}. The user's password was just changed through account recovery and ReDom created a new login session on the current device. Return JSON only: {"subject":"...","body":"..."}. Do not invent any facts. Preserve exactly these facts: device=${device}; ip=${ip}; sessionId=${params.sessionId}.` }); const parsed = JSON.parse(response.output_text) as { subject?: unknown; body?: unknown }; if (typeof parsed.subject === "string" && typeof parsed.body === "string") { subject = parsed.subject; body = parsed.body; } } catch {} const html = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033"><h2>${this.escapeHtml(subject)}</h2><p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p><p style="margin-top:24px">ReDom Platforms, Inc.</p></div>`; await resend.emails.send({ from: "ReDom <noreply@wnncompany.com>", to: params.user.email!, subject, html }); }
   private escapeHtml(value: string): string { return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;"); }
 }
-
 export const passwordRecoveryService = new PasswordRecoveryService();
