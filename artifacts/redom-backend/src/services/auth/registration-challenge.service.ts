@@ -233,7 +233,7 @@ export class RegistrationChallengeService {
         lastName: user.lastName,
         email: user.email ?? verification.normalizedTarget,
         registeredAt: verifiedAt,
-        requestIp: challenge.requestIp ?? "",
+        flowId: challenge.flowId,
         userAgent: challenge.userAgent ?? "",
       });
     }
