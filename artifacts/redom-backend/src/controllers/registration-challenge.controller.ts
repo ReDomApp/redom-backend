@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 
 import { registrationChallengeService } from "../services/auth/registration-challenge.service";
+import "../services/auth/registration-flow-reservation.consume";
 import {
   completeRegistrationChallengeSchema,
   saveRegistrationStepSchema,
