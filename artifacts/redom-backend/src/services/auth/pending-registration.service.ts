@@ -53,17 +53,21 @@ export class PendingRegistrationService {
     const verification = await verificationService.createVerification({ userId: user.id, purpose: "PENDING_REGISTRATION_INVALIDATION", target, channel: params.channel, requestedLength: 8, firstName: user.firstName, requestIp: params.requestIp, userAgent: params.userAgent, deviceId: params.deviceId, sessionId: user.id });
     return { success: true, challengeId: verification.challengeId, channel: params.channel, target, maskedTarget: params.channel === "email" ? maskEmail(target) : maskPhone(target), codeLength: 8, expiresAt: verification.expiresAt.toISOString() };
   }
-  async verifyAndInvalidate(params: { challengeId: string; code: string; deviceId?: string }) {
+  async verifyAndInvalidate(params: { challengeId: string; code: string; deviceId?: string; requestIp?: string; userAgent?: string }) {
     const challenge = await db.query.verifications.findFirst({ where: eq(verifications.id, params.challengeId) });
     if (!challenge || challenge.purpose !== "PENDING_REGISTRATION_INVALIDATION") throw new Error("Pending registration verification challenge not found.");
     if (challenge.deviceId && params.deviceId && challenge.deviceId !== params.deviceId) throw new Error("This verification code belongs to another device.");
     if (!challenge.userId) throw new Error("Pending registration is not associated with an account.");
     const user = assertPending(await db.query.users.findFirst({ where: eq(users.id, challenge.userId) }));
     await verificationService.verifyVerification({ challengeId: params.challengeId, code: params.code, purpose: "PENDING_REGISTRATION_INVALIDATION" });
-    const email = user.email; const phone = user.phoneNumber;
+
+    const email = user.email;
+    const phone = user.phoneNumber;
     const targetConditions = [email ? eq(registrationChallenges.email, email) : undefined, phone ? eq(registrationChallenges.phoneNumber, phone) : undefined].filter(Boolean) as any[];
     const oldFlowRows = targetConditions.length ? await db.query.registrationChallenges.findMany({ where: or(...targetConditions) }) : [];
-    const flowIds = [...new Set(oldFlowRows.map((row) => row.flowId))];
+    const flowIds = [...new Set(oldFlowRows.map((row) => row.flowId).filter(Boolean))];
+    const invalidatedAt = new Date();
+
     await db.transaction(async (tx) => {
       await tx.delete(verificationSubscriptions).where(eq(verificationSubscriptions.userId, user.id));
       await tx.delete(accountSecurity).where(eq(accountSecurity.userId, user.id));
@@ -86,7 +90,20 @@ export class PendingRegistrationService {
       if (phone) await tx.delete(registrationFlowReservations).where(eq(registrationFlowReservations.phoneNumber, phone));
       await tx.delete(users).where(and(eq(users.id, user.id), eq(users.accountStatus, "pending"), eq(users.emailVerified, false), eq(users.phoneVerified, false)));
     });
-    return { success: true, invalidated: true, message: "Your pending registration has been invalidated and all data associated with this unverified registration has been deleted. You can now create a new ReDom account." };
+
+    let emailNotification: "sent" | "delivery_failed" | "not_applicable" = "not_applicable";
+    if (email) {
+      try {
+        await emailService.sendPendingRegistrationInvalidation({ firstName: user.firstName, lastName: user.lastName, email, phone, flowIds, invalidatedAt, requestIp: params.requestIp, userAgent: params.userAgent || challenge.userAgent || undefined });
+        emailNotification = "sent";
+      } catch {
+        // The account deletion has already completed. Notification failure must not
+        // recreate or roll back the deleted pending registration.
+        emailNotification = "delivery_failed";
+      }
+    }
+
+    return { success: true, invalidated: true, emailNotification, message: "Your pending registration has been invalidated and all data associated with this unverified registration has been deleted. You can now create a new ReDom account." };
   }
 }
 export const pendingRegistrationService = new PendingRegistrationService();
