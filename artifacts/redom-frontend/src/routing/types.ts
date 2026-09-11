@@ -4,6 +4,7 @@ export type RootStackParamList = {
   Login: undefined;
   FindAccount: undefined;
   DeviceVerification: { challengeId: string; channel: "sms" | "email" | "whatsapp"; maskedTarget: string; expiresAt: string };
+  LoginTwoFactor: { challengeId: string; channel: "sms" | "email" | "whatsapp"; maskedTarget: string; expiresAt: string };
   RegistrationWelcome: undefined;
   RegistrationIdentity: RegistrationFlowReservationRouteParams;
   RegistrationBirthday: RegistrationFlowReservationRouteParams;
