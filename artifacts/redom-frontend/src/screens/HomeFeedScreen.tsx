@@ -1,16 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Image,
-  Modal,
-  Pressable,
-  RefreshControl,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-
+import { Image, Modal, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import ReDomLogo from "../assets/brand/redom-logo.svg";
 import HomeIcon from "../assets/home-feed/home.svg";
 import SearchIcon from "../assets/home-feed/search.svg";
@@ -38,40 +27,14 @@ import LinkHistoryIcon from "../assets/home-feed/link-history.svg";
 import DarkModeIcon from "../assets/home-feed/dark-mode.svg";
 import LanguageIcon from "../assets/home-feed/language.svg";
 import { useAuthContext } from "../auth/context";
-import { feedService, type HomeFeedPost, type HomeFeedProfileSuggestion } from "../feed/service";
+import { feedService, type HomeFeedFriendStory, type HomeFeedPost, type HomeFeedProfileSuggestion } from "../feed/service";
 
-const menuSupport = [
-  ["Scam Protection Center", ScamIcon],
-  ["Support", SupportIcon],
-  ["Report a problem", ReportIcon],
-  ["Terms and Policies", TermsIcon],
-] as const;
-
-const menuSettings = [
-  ["Settings", SettingsIcon],
-  ["Privacy Center", PrivacyIcon],
-  ["Time management", TimeIcon],
-  ["Device requests", DeviceRequestsIcon],
-  ["Recent ad activity", AdsIcon],
-  ["Orders and payments", OrdersIcon],
-  ["Link history", LinkHistoryIcon],
-  ["Dark mode", DarkModeIcon],
-  ["Language", LanguageIcon],
-] as const;
+const menuSupport = [["Scam Protection Center", ScamIcon], ["Support", SupportIcon], ["Report a problem", ReportIcon], ["Terms and Policies", TermsIcon]] as const;
+const menuSettings = [["Settings", SettingsIcon], ["Privacy Center", PrivacyIcon], ["Time management", TimeIcon], ["Device requests", DeviceRequestsIcon], ["Recent ad activity", AdsIcon], ["Orders and payments", OrdersIcon], ["Link history", LinkHistoryIcon], ["Dark mode", DarkModeIcon], ["Language", LanguageIcon]] as const;
 
 const fallbackPosts: HomeFeedPost[] = [
-  {
-    id: "redom-welcome-1", shareId: "REDOM00001",
-    content: "Welcome to ReDom. Discover people, communities, pages, videos and conversations as your ReDom experience grows.",
-    type: "text", publishedAt: new Date().toISOString(), authorId: "redom-system",
-    firstName: "ReDom", lastName: "", username: "redom", publicId: "234000000000001", profileId: "234000000000001", profilePhoto: null,
-  },
-  {
-    id: "redom-welcome-2", shareId: "REDOM00002",
-    content: "Your ReDom Home Feed is ready. New public ReDom posts will appear here automatically as they are created.",
-    type: "text", publishedAt: new Date().toISOString(), authorId: "redom-system-2",
-    firstName: "ReDom", lastName: "", username: "redom", publicId: "234000000000001", profileId: "234000000000001", profilePhoto: null,
-  },
+  { id: "redom-welcome-1", shareId: "REDOM00001", content: "Welcome to ReDom. Discover people, communities, pages, videos and conversations as your ReDom experience grows.", type: "text", publishedAt: new Date().toISOString(), authorId: "redom-system", firstName: "ReDom", lastName: "", username: "redom", publicId: "234000000000001", profileId: "234000000000001", profilePhoto: null },
+  { id: "redom-welcome-2", shareId: "REDOM00002", content: "Your ReDom Home Feed is ready. New public ReDom posts will appear here automatically as they are created.", type: "text", publishedAt: new Date().toISOString(), authorId: "redom-system-2", firstName: "ReDom", lastName: "", username: "redom", publicId: "234000000000001", profileId: "234000000000001", profilePhoto: null },
 ];
 
 function Avatar({ uri, size = 48 }: { uri?: string | null; size?: number }) {
@@ -89,6 +52,7 @@ export function HomeFeedScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [posts, setPosts] = useState<HomeFeedPost[]>(fallbackPosts);
   const [suggestions, setSuggestions] = useState<HomeFeedProfileSuggestion[]>([]);
+  const [friendStories, setFriendStories] = useState<HomeFeedFriendStory[]>([]);
 
   const displayName = useMemo(() => (user ? `${user.firstName} ${user.lastName}`.trim() : "You"), [user]);
 
@@ -98,6 +62,7 @@ export function HomeFeedScreen() {
       const result = await feedService.getHomeFeed();
       setPosts(result.posts.length ? result.posts : fallbackPosts);
       setSuggestions(result.suggestedProfiles);
+      setFriendStories(result.friendStories);
     } catch {
       setPosts(fallbackPosts);
     } finally {
@@ -125,12 +90,7 @@ export function HomeFeedScreen() {
         </View>
       </View>
 
-      <ScrollView
-        ref={scrollRef}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.feed}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshFeed} />}
-      >
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.feed} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshFeed} />}>
         {welcomeVisible && (
           <View style={styles.greeting}>
             <Pressable style={styles.avatarButton} accessibilityLabel="Profile"><Avatar size={52} /></Pressable>
@@ -160,14 +120,12 @@ export function HomeFeedScreen() {
             <View style={styles.storyRing}><Avatar size={66} /><View style={styles.addBadge}><CreateIcon width={17} height={17} /></View></View>
             <Text style={styles.storyName}>Add story</Text>
           </Pressable>
-          <View style={styles.storyPeopleGroup}>
-            <Text style={styles.storyGroupTitle}>Friends' stories</Text>
-            <View style={styles.circleRow}>
-              <View style={styles.emptyStoryCircle}><Text style={styles.emptyStoryMark}>+</Text></View>
-              <View style={styles.emptyStoryCircle}><Text style={styles.emptyStoryMark}>+</Text></View>
-              <View style={styles.emptyStoryCircle}><Text style={styles.emptyStoryMark}>+</Text></View>
-            </View>
-          </View>
+          {friendStories.slice(0, 8).map((story) => (
+            <Pressable style={styles.storyPerson} key={story.id} accessibilityLabel={`Story by ${story.firstName} ${story.lastName}`}>
+              <View style={styles.storyRing}><Avatar uri={story.profilePhoto} size={66} /></View>
+              <Text style={styles.storyName} numberOfLines={1}>{story.firstName}</Text>
+            </Pressable>
+          ))}
         </ScrollView>
 
         {suggestions.length > 0 && (
@@ -189,11 +147,7 @@ export function HomeFeedScreen() {
           const author = `${post.firstName} ${post.lastName}`.trim();
           return (
             <View style={styles.post} key={post.id}>
-              <View style={styles.postHeader}>
-                <Avatar uri={post.profilePhoto} size={46} />
-                <View style={styles.postIdentity}><Text style={styles.postName}>{author || "ReDom"}</Text><Text style={styles.postMeta}>Just now · Public</Text></View>
-                <Pressable style={styles.more}><MoreIcon width={21} height={21} /></Pressable>
-              </View>
+              <View style={styles.postHeader}><Avatar uri={post.profilePhoto} size={46} /><View style={styles.postIdentity}><Text style={styles.postName}>{author || "ReDom"}</Text><Text style={styles.postMeta}>Just now · Public</Text></View><Pressable style={styles.more}><MoreIcon width={21} height={21} /></Pressable></View>
               <Text style={styles.postBody}>{post.content}</Text>
               <View style={styles.mediaPlaceholder}><ReDomLogo width={125} height={36} /></View>
               <View style={styles.engagement}><Text style={styles.engagementText}>Like</Text><Text style={styles.engagementText}>Comment</Text><Text style={styles.engagementText}>Share</Text></View>
@@ -232,69 +186,64 @@ export function HomeFeedScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F0F2F5" },
-  header: { height: 64, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#D9DDE3", paddingHorizontal: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 6 },
-  circle: { width: 39, height: 39, borderRadius: 20, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
-  headerProfile: { width: 39, height: 39, borderRadius: 20, overflow: "hidden", alignItems: "center", justifyContent: "center" },
-  feed: { paddingBottom: 82 },
-  greeting: { backgroundColor: "#FFF", paddingHorizontal: 15, paddingVertical: 13, flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-  avatarButton: { width: 52, height: 52, borderRadius: 26, overflow: "hidden" },
-  greetingText: { flex: 1 },
-  name: { fontSize: 19, fontWeight: "900", color: "#1C1E21" },
-  handle: { fontSize: 13, color: "#65676B", marginTop: 2 },
-  greetingClose: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-  composer: { backgroundColor: "#FFF", paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", gap: 10 },
-  smallAvatar: { width: 40, height: 40, borderRadius: 20, overflow: "hidden" },
-  composerInput: { flex: 1, height: 42, borderRadius: 22, borderWidth: 1, borderColor: "#D9DDE3", justifyContent: "center", paddingHorizontal: 15 },
-  composerHint: { color: "#65676B", fontSize: 14 },
-  postButton: { color: "#1877F2", fontWeight: "900", fontSize: 15 },
-  quickActions: { backgroundColor: "#FFF", flexDirection: "row", borderTopWidth: 1, borderTopColor: "#E4E6EB", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", paddingVertical: 9 },
-  quick: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3 },
-  quickText: { fontSize: 11, fontWeight: "700", color: "#65676B" },
-  storyQuickIcon: { width: 24, height: 24, alignItems: "center", justifyContent: "center" },
-  storyQuickDot: { color: "#1877F2", fontSize: 18 },
-  sectionHeader: { backgroundColor: "#FFF", paddingHorizontal: 15, paddingTop: 17, paddingBottom: 8, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  sectionTitle: { fontSize: 19, fontWeight: "900", color: "#1C1E21" },
-  seeAll: { fontSize: 14, color: "#1877F2", fontWeight: "800" },
-  storyRail: { backgroundColor: "#FFF", paddingHorizontal: 13, paddingBottom: 15, gap: 18 },
-  storyPerson: { width: 78, alignItems: "center" },
-  storyRing: { width: 74, height: 74, borderRadius: 37, borderWidth: 3, borderColor: "#1877F2", alignItems: "center", justifyContent: "center", position: "relative" },
-  addBadge: { position: "absolute", right: -2, bottom: -2, width: 25, height: 25, borderRadius: 13, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#D9DDE3", alignItems: "center", justifyContent: "center" },
-  storyName: { marginTop: 6, fontSize: 11, fontWeight: "800", color: "#1C1E21" },
-  storyPeopleGroup: { minWidth: 205, justifyContent: "center" },
-  storyGroupTitle: { fontSize: 13, fontWeight: "800", color: "#65676B", marginBottom: 7 },
-  circleRow: { flexDirection: "row", gap: 13 },
-  emptyStoryCircle: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, borderColor: "#D9DDE3", backgroundColor: "#F8F9FB", alignItems: "center", justifyContent: "center" },
-  emptyStoryMark: { fontSize: 25, color: "#1877F2" },
-  suggestionSection: { backgroundColor: "#FFF", marginTop: 8, paddingBottom: 13 },
-  sectionHeaderInner: { paddingHorizontal: 15, paddingTop: 15, paddingBottom: 8 },
-  suggestionRail: { paddingHorizontal: 13, gap: 10 },
-  suggestionCard: { width: 118, alignItems: "center", borderWidth: 1, borderColor: "#E0E2E5", borderRadius: 12, paddingVertical: 11, paddingHorizontal: 7, backgroundColor: "#FFF" },
-  suggestionName: { marginTop: 7, fontSize: 12, fontWeight: "900", color: "#1C1E21", maxWidth: 105 },
-  suggestionHandle: { marginTop: 2, fontSize: 10, color: "#65676B", maxWidth: 105 },
-  post: { backgroundColor: "#FFF", marginTop: 8, paddingTop: 13 },
-  postHeader: { paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10 },
-  postIdentity: { flex: 1 },
-  postName: { fontSize: 15, fontWeight: "900", color: "#1C1E21" },
-  postMeta: { fontSize: 11, color: "#65676B", marginTop: 2 },
-  more: { padding: 7 },
-  postBody: { fontSize: 15, lineHeight: 22, color: "#1C1E21", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
-  mediaPlaceholder: { height: 205, marginTop: 8, backgroundColor: "#EAF2FF", alignItems: "center", justifyContent: "center" },
-  engagement: { height: 45, borderTopWidth: 1, borderTopColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-around" },
-  engagementText: { fontSize: 13, fontWeight: "800", color: "#65676B" },
-  bottomNav: { position: "absolute", left: 0, right: 0, bottom: 0, height: 64, backgroundColor: "#FFF", borderTopWidth: 1, borderTopColor: "#D9DDE3", flexDirection: "row", justifyContent: "space-around", alignItems: "center" },
-  bottomItem: { width: 60, height: 54, alignItems: "center", justifyContent: "center" },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,.35)", justifyContent: "flex-end" },
-  menuSheet: { backgroundColor: "#FFF", maxHeight: "94%", borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingTop: 9 },
-  menuGrabber: { width: 42, height: 4, borderRadius: 3, backgroundColor: "#C7CAD0", alignSelf: "center", marginBottom: 4 },
-  menuTop: { height: 54, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  menuSectionHeader: { minHeight: 72, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", gap: 11 },
-  menuSectionTitle: { flex: 1, fontSize: 21, fontWeight: "900", color: "#050505" },
-  chevron: { fontSize: 25, color: "#65676B", fontWeight: "700" },
-  menuRow: { height: 74, paddingHorizontal: 38, flexDirection: "row", alignItems: "center", gap: 22 },
-  menuText: { fontSize: 18, fontWeight: "600", color: "#0B0B0B" },
-  divider: { height: 1, backgroundColor: "#D9DDE3", marginTop: 8 },
-  logoutRow: { height: 62, marginHorizontal: 20, marginVertical: 14, borderRadius: 12, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
-  logoutText: { color: "#E41E3F", fontSize: 16, fontWeight: "900" },
+  root:{flex:1,backgroundColor:"#F0F2F5"},
+  header:{height:64,backgroundColor:"#FFF",borderBottomWidth:1,borderBottomColor:"#D9DDE3",paddingHorizontal:13,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+  headerActions:{flexDirection:"row",alignItems:"center",gap:6},
+  circle:{width:39,height:39,borderRadius:20,backgroundColor:"#F0F2F5",alignItems:"center",justifyContent:"center"},
+  headerProfile:{width:39,height:39,borderRadius:20,overflow:"hidden",alignItems:"center",justifyContent:"center"},
+  feed:{paddingBottom:82},
+  greeting:{backgroundColor:"#FFF",paddingHorizontal:15,paddingVertical:13,flexDirection:"row",alignItems:"center",gap:12,borderBottomWidth:1,borderBottomColor:"#E4E6EB"},
+  avatarButton:{width:52,height:52,borderRadius:26,overflow:"hidden"},
+  greetingText:{flex:1},
+  name:{fontSize:19,fontWeight:"900",color:"#1C1E21"},
+  handle:{fontSize:13,color:"#65676B",marginTop:2},
+  greetingClose:{width:38,height:38,alignItems:"center",justifyContent:"center"},
+  composer:{backgroundColor:"#FFF",paddingHorizontal:13,paddingVertical:11,flexDirection:"row",alignItems:"center",gap:10},
+  smallAvatar:{width:40,height:40,borderRadius:20,overflow:"hidden"},
+  composerInput:{flex:1,height:42,borderRadius:22,borderWidth:1,borderColor:"#D9DDE3",justifyContent:"center",paddingHorizontal:15},
+  composerHint:{color:"#65676B",fontSize:14},
+  postButton:{color:"#1877F2",fontWeight:"900",fontSize:15},
+  quickActions:{backgroundColor:"#FFF",flexDirection:"row",borderTopWidth:1,borderTopColor:"#E4E6EB",borderBottomWidth:1,borderBottomColor:"#E4E6EB",paddingVertical:9},
+  quick:{flex:1,alignItems:"center",justifyContent:"center",gap:3},
+  quickText:{fontSize:11,fontWeight:"700",color:"#65676B"},
+  storyQuickIcon:{width:24,height:24,alignItems:"center",justifyContent:"center"},
+  storyQuickDot:{color:"#1877F2",fontSize:18},
+  sectionHeader:{backgroundColor:"#FFF",paddingHorizontal:15,paddingTop:17,paddingBottom:8,flexDirection:"row",justifyContent:"space-between",alignItems:"center"},
+  sectionTitle:{fontSize:19,fontWeight:"900",color:"#1C1E21"},
+  seeAll:{fontSize:14,color:"#1877F2",fontWeight:"800"},
+  storyRail:{backgroundColor:"#FFF",paddingHorizontal:13,paddingBottom:15,gap:18},
+  storyPerson:{width:78,alignItems:"center"},
+  storyRing:{width:74,height:74,borderRadius:37,borderWidth:3,borderColor:"#1877F2",alignItems:"center",justifyContent:"center",position:"relative"},
+  addBadge:{position:"absolute",right:-2,bottom:-2,width:25,height:25,borderRadius:13,backgroundColor:"#FFF",borderWidth:1,borderColor:"#D9DDE3",alignItems:"center",justifyContent:"center"},
+  storyName:{marginTop:6,fontSize:11,fontWeight:"800",color:"#1C1E21"},
+  suggestionSection:{backgroundColor:"#FFF",marginTop:8,paddingBottom:13},
+  sectionHeaderInner:{paddingHorizontal:15,paddingTop:15,paddingBottom:8},
+  suggestionRail:{paddingHorizontal:13,gap:10},
+  suggestionCard:{width:118,alignItems:"center",borderWidth:1,borderColor:"#E0E2E5",borderRadius:12,paddingVertical:11,paddingHorizontal:7,backgroundColor:"#FFF"},
+  suggestionName:{marginTop:7,fontSize:12,fontWeight:"900",color:"#1C1E21",maxWidth:105},
+  suggestionHandle:{marginTop:2,fontSize:10,color:"#65676B",maxWidth:105},
+  post:{backgroundColor:"#FFF",marginTop:8,paddingTop:13},
+  postHeader:{paddingHorizontal:14,flexDirection:"row",alignItems:"center",gap:10},
+  postIdentity:{flex:1},
+  postName:{fontSize:15,fontWeight:"900",color:"#1C1E21"},
+  postMeta:{fontSize:11,color:"#65676B",marginTop:2},
+  more:{padding:7},
+  postBody:{fontSize:15,lineHeight:22,color:"#1C1E21",paddingHorizontal:14,paddingTop:12,paddingBottom:4},
+  mediaPlaceholder:{height:205,marginTop:8,backgroundColor:"#EAF2FF",alignItems:"center",justifyContent:"center"},
+  engagement:{height:45,borderTopWidth:1,borderTopColor:"#E4E6EB",flexDirection:"row",alignItems:"center",justifyContent:"space-around"},
+  engagementText:{fontSize:13,fontWeight:"800",color:"#65676B"},
+  bottomNav:{position:"absolute",left:0,right:0,bottom:0,height:64,backgroundColor:"#FFF",borderTopWidth:1,borderTopColor:"#D9DDE3",flexDirection:"row",justifyContent:"space-around",alignItems:"center"},
+  bottomItem:{width:60,height:54,alignItems:"center",justifyContent:"center"},
+  modalBackdrop:{flex:1,backgroundColor:"rgba(0,0,0,.35)",justifyContent:"flex-end"},
+  menuSheet:{backgroundColor:"#FFF",maxHeight:"94%",borderTopLeftRadius:18,borderTopRightRadius:18,paddingTop:9},
+  menuGrabber:{width:42,height:4,borderRadius:3,backgroundColor:"#C7CAD0",alignSelf:"center",marginBottom:4},
+  menuTop:{height:54,paddingHorizontal:20,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+  menuSectionHeader:{minHeight:72,paddingHorizontal:20,flexDirection:"row",alignItems:"center",gap:11},
+  menuSectionTitle:{flex:1,fontSize:21,fontWeight:"900",color:"#050505"},
+  chevron:{fontSize:25,color:"#65676B",fontWeight:"700"},
+  menuRow:{height:74,paddingHorizontal:38,flexDirection:"row",alignItems:"center",gap:22},
+  menuText:{fontSize:18,fontWeight:"600",color:"#0B0B0B"},
+  divider:{height:1,backgroundColor:"#D9DDE3",marginTop:8},
+  logoutRow:{height:62,marginHorizontal:20,marginVertical:14,borderRadius:12,backgroundColor:"#F0F2F5",alignItems:"center",justifyContent:"center"},
+  logoutText:{color:"#E41E3F",fontSize:16,fontWeight:"900"},
 });
