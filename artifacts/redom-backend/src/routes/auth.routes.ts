@@ -10,7 +10,6 @@ import { registrationVerificationController } from "../controllers/registration-
 import { registrationInitializationController } from "../controllers/registration-initialization.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { authRateLimit, networkProviderRateLimit, passwordResetRateLimit, verificationRateLimit } from "../middleware/rate-limit.middleware";
-
 const router = Router();
 router.get("/network-provider", networkProviderRateLimit, networkProviderController.get.bind(networkProviderController));
 router.post("/register", authRateLimit, authController.register.bind(authController));
@@ -35,6 +34,7 @@ router.post("/register/verification/:verificationChallengeId/switch-contact", ve
 router.post("/register/initialize", authRateLimit, registrationInitializationController.initialize.bind(registrationInitializationController));
 router.post("/login", authRateLimit, authController.login.bind(authController));
 router.post("/verify-login-device", verificationRateLimit, authController.verifyLoginDevice.bind(authController));
+router.post("/verify-login-2fa", verificationRateLimit, authController.verifyLoginTwoFactor.bind(authController));
 router.post("/verify-email", verificationRateLimit, authController.verifyEmail.bind(authController));
 router.post("/verify-phone", verificationRateLimit, authController.verifyPhone.bind(authController));
 router.post("/resend-email-code", verificationRateLimit, authController.resendEmailCode.bind(authController));
