@@ -42,7 +42,7 @@ export class LoginFlowService {
   private async finishLogin(user: typeof users.$inferSelect, data: LoginRequest, ipapi: IPAPIResult | null, deviceId?: string) {
     const session = await sessionService.createSession({ userId: user.id, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, region: ipapi?.location?.state ?? data.region, city: ipapi?.location?.city ?? data.city, userAgent: data.userAgent, platform: data.platform, browser: data.browser, deviceName: data.deviceName, deviceId, deviceType: data.deviceType, loginSource: data.loginSource ?? "mobile", appVersion: data.appVersion });
     await loginHistoryService.create({ userId: user.id, sessionId: session.sessionId, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, region: ipapi?.location?.state ?? data.region, city: ipapi?.location?.city ?? data.city, deviceName: data.deviceName, deviceType: data.deviceType, loginSource: data.loginSource ?? "mobile", appVersion: data.appVersion });
-    if (user.email) { try { await loginNotificationService.send({ email: user.email, firstName: user.firstName, lastName: user.lastName, ipAddress: data.ipAddress ?? "Unknown", eventAt: new Date(), deviceUserAgent: data.userAgent, ipapi }); } catch { } }
+    if (user.email) { try { await loginNotificationService.send({ email: user.email, firstName: user.firstName, lastName: user.lastName, ipAddress: data.ipAddress ?? "Unknown", eventAt: new Date(), deviceName: data.deviceName, deviceUserAgent: data.userAgent, ipapi }); } catch { } }
     return session;
   }
   private async completeAfterSecurity(user: typeof users.$inferSelect, data: LoginRequest, deviceId?: string, ipapi?: IPAPIResult | null): Promise<LoginFlowResult> {
