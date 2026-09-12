@@ -5,12 +5,21 @@ import { AuthProvider } from "./auth/context";
 import { LanguageContainer } from "./i18n/LanguageContainer";
 import { AppNavigator } from "./routing/AppNavigator";
 
+const linking = {
+  prefixes: ["redom://", "https://redom.app"],
+  config: {
+    screens: {
+      Profile: "profile/username/:userId",
+    },
+  },
+};
+
 export function App() {
   return (
     <SafeAreaProvider>
       <LanguageContainer>
         <AuthProvider>
-          <NavigationContainer>
+          <NavigationContainer linking={linking}>
             <StatusBar style="auto" />
             <AppNavigator />
           </NavigationContainer>
