@@ -1,16 +1,74 @@
 import { useEffect, useState } from "react";
-import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { api } from "../api/client";
-import Globe from "../assets/home-feed/profile-audience-globe.svg";
-import Group from "../assets/home-feed/profile-audience-group.svg";
-import Friends from "../assets/home-feed/profile-audience-friends.svg";
+import BackIcon from "../assets/edit-profile/back.svg";
+import GlobeIcon from "../assets/edit-profile/globe.svg";
+import { EditProfileAudienceModal, type Privacy, privacyLabel } from "./edit-profile/EditProfileAudienceModal";
+import { SavingOverlay } from "./edit-profile/SavingOverlay";
 
-type Props=NativeStackScreenProps<RootStackParamList,"EditBio">;
-type Privacy="public"|"friends_of_friends"|"friends"|"only_me"|"custom";
-const label=(v:Privacy)=>({public:"Public",friends_of_friends:"Friends of friends",friends:"Friends",only_me:"Only Me",custom:"Custom"}[v]);
-export function EditBioScreen({navigation}:Props){const [text,setText]=useState("");const[initial,setInitial]=useState("");const[privacy,setPrivacy]=useState<Privacy>("public");const[audience,setAudience]=useState(false);const[saving,setSaving]=useState(false);useEffect(()=>{void api.get<any>("/profile/edit").then(r=>{setText(r.profile.bio||"");setInitial(r.profile.bio||"");setPrivacy(r.profile.bioPrivacy||"public")});},[]);const save=async()=>{setSaving(true);try{await api.patch("/profile/edit/details",{bio:text,bio_privacy:privacy});navigation.goBack()}finally{setSaving(false)}};return <SafeAreaView style={s.root}><Header onBack={()=>navigation.goBack()} title="About you"/><ScrollView contentContainerStyle={s.content}><Text style={s.label}>Introduce yourself</Text><TextInput multiline maxLength={101} value={text} onChangeText={setText} placeholder="Introduce yourself" placeholderTextColor="#65676B" style={s.input}/><Text style={s.counter}>{text.length}/101</Text><Pressable style={s.audience} onPress={()=>setAudience(true)}><Globe width={23} height={23}/><Text style={s.audienceText}>{label(privacy)}</Text><Text style={s.arrow}>›</Text></Pressable><Pressable disabled={text===initial||saving} onPress={()=>void save()} style={[s.save,(text===initial||saving)&&s.disabled]}><Text style={s.saveText}>{saving?"Saving...":"Save"}</Text></Pressable></ScrollView><Audience visible={audience} value={privacy} onChange={setPrivacy} onClose={()=>setAudience(false)}/></SafeAreaView>}
-function Header({onBack,title}:{onBack:()=>void;title:string}){return <View style={s.header}><Pressable onPress={onBack}><Text style={s.back}>‹</Text></Pressable><Text style={s.title}>{title}</Text><View style={{width:40}}/></View>}
-function Audience({visible,value,onChange,onClose}:{visible:boolean;value:Privacy;onChange:(v:Privacy)=>void;onClose:()=>void}){const opts:[Privacy,string,any][]=[["public","Public",Globe],["friends_of_friends","Friends of friends",Group],["friends","Friends",Friends],["only_me","Only Me",Globe],["custom","Custom",Group]];return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={s.backdrop}><View style={s.modal}><Text style={s.modalTitle}>Choose audience</Text>{opts.map(([v,t,I])=><Pressable key={v} style={s.option} onPress={()=>{if(v==="custom"){onClose();return}onChange(v)}}><I width={25} height={25}/><View style={{flex:1}}><Text style={s.optTitle}>{t}</Text><Text style={s.optDesc}>{v==="public"?"Anyone on or off ReDom":v==="friends_of_friends"?"Your friends of friends":v==="friends"?"Your friends on ReDom":"Private"}</Text></View><Text style={[s.radio,value===v&&s.radioOn]}>{value===v?"●":"○"}</Text></Pressable>)}<Pressable style={s.done} onPress={onClose}><Text style={s.doneText}>Done</Text></Pressable></View></View></Modal>}
-const s=StyleSheet.create({root:{flex:1,backgroundColor:"#fff"},header:{height:64,flexDirection:"row",justifyContent:"space-between",alignItems:"center",paddingHorizontal:20},back:{fontSize:44,fontWeight:"300"},title:{fontSize:24,fontWeight:"800"},content:{padding:23},label:{fontSize:20,fontWeight:"800",marginBottom:12},input:{minHeight:145,borderWidth:1,borderColor:"#CCD0D5",borderRadius:10,padding:14,fontSize:18,textAlignVertical:"top",color:"#050505"},counter:{textAlign:"right",color:"#65676B",marginTop:7},audience:{height:54,flexDirection:"row",alignItems:"center",gap:10,borderBottomWidth:1,borderBottomColor:"#E4E6EB",marginTop:20},audienceText:{fontSize:16,fontWeight:"700",flex:1},arrow:{fontSize:30,color:"#65676B"},save:{height:50,borderRadius:9,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center",marginTop:24},disabled:{opacity:.45},saveText:{color:"#fff",fontSize:17,fontWeight:"800"},backdrop:{flex:1,backgroundColor:"rgba(0,0,0,.45)",justifyContent:"flex-end"},modal:{backgroundColor:"#fff",borderTopLeftRadius:20,borderTopRightRadius:20,padding:22},modalTitle:{fontSize:21,fontWeight:"800",marginBottom:12},option:{minHeight:62,flexDirection:"row",alignItems:"center",gap:12},optTitle:{fontSize:16,fontWeight:"800"},optDesc:{fontSize:13,color:"#65676B",marginTop:2},radio:{fontSize:25,color:"#65676B"},radioOn:{color:"#1877F2"},done:{height:48,borderRadius:9,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center",marginTop:10},doneText:{color:"#fff",fontWeight:"800",fontSize:16}});
+type Props = NativeStackScreenProps<RootStackParamList, "EditBio">;
+
+export function EditBioScreen({ navigation }: Props) {
+  const [text, setText] = useState("");
+  const [initial, setInitial] = useState("");
+  const [privacy, setPrivacy] = useState<Privacy>("public");
+  const [audience, setAudience] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void api.get<any>("/profile/edit").then((response) => {
+      const bio = response.profile.bio || "";
+      setText(bio); setInitial(bio); setPrivacy(response.profile.bioPrivacy || "public");
+    }).catch(() => Alert.alert("About you", "Unable to load your bio right now."));
+  }, []);
+
+  const save = async () => {
+    if (text === initial || saving) return;
+    setSaving(true);
+    try {
+      await api.patch("/profile/edit/details", { bio: text, bio_privacy: privacy });
+      navigation.navigate("Profile");
+    } catch {
+      Alert.alert("About you", "Your changes could not be saved. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <SafeAreaView style={styles.root}>
+    <Header onBack={() => navigation.goBack()} />
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Text style={styles.heading}>About you</Text>
+      <Text style={styles.label}>Introduce yourself</Text>
+      <View style={styles.inputFrame}>
+        <TextInput multiline maxLength={101} value={text} onChangeText={setText} placeholder="Introduce yourself" placeholderTextColor="#8A8D91" style={styles.input} textAlignVertical="top" />
+        <Text style={styles.counter}>{text.length}/101</Text>
+      </View>
+      <Pressable style={styles.audience} onPress={() => setAudience(true)}>
+        <GlobeIcon width={27} height={27} /><View style={styles.audienceCopy}><Text style={styles.audienceTitle}>Who can see this?</Text><Text style={styles.audienceValue}>{privacyLabel(privacy)}</Text></View><Text style={styles.arrow}>›</Text>
+      </Pressable>
+      <Pressable disabled={text === initial || saving} onPress={() => void save()} style={[styles.save, (text === initial || saving) && styles.saveDisabled]}><Text style={styles.saveText}>{saving ? "Saving..." : "Save"}</Text></Pressable>
+    </ScrollView>
+    <EditProfileAudienceModal visible={audience} value={privacy} onChange={setPrivacy} onDone={() => setAudience(false)} />
+    <SavingOverlay visible={saving} />
+  </SafeAreaView>;
+}
+
+function Header({ onBack }: { onBack: () => void }) { return <View style={styles.header}><Pressable onPress={onBack} hitSlop={12}><BackIcon width={34} height={34} /></Pressable><Text style={styles.title}>Edit profile</Text><View style={styles.spacer} /></View>; }
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#fff" },
+  header: { height: 64, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: 1, borderBottomColor: "#F0F2F5" },
+  title: { fontSize: 25, fontWeight: "800", color: "#050505" }, spacer: { width: 34 },
+  content: { padding: 24, paddingBottom: 40 },
+  heading: { fontSize: 27, fontWeight: "800", color: "#050505", marginBottom: 28 },
+  label: { fontSize: 17, fontWeight: "800", color: "#050505", marginBottom: 10 },
+  inputFrame: { borderWidth: 1, borderColor: "#CCD0D5", borderRadius: 10, minHeight: 170, padding: 14 },
+  input: { minHeight: 125, fontSize: 19, lineHeight: 25, color: "#050505", padding: 0 },
+  counter: { textAlign: "right", color: "#65676B", fontSize: 13, marginTop: 7 },
+  audience: { minHeight: 72, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
+  audienceCopy: { flex: 1, marginLeft: 13 }, audienceTitle: { fontSize: 16, fontWeight: "800", color: "#050505" }, audienceValue: { fontSize: 14, color: "#65676B", marginTop: 3 }, arrow: { fontSize: 31, color: "#65676B" },
+  save: { height: 50, borderRadius: 8, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center", marginTop: 28 }, saveDisabled: { opacity: 0.45 }, saveText: { color: "#fff", fontSize: 17, fontWeight: "800" },
+});
