@@ -45,6 +45,13 @@ async function getProfile(req: Request, res: Response) {
          p.profile_photo,
          p.cover_photo,
          p.current_city,
+         p.hometown,
+         p.bio,
+         p.bio_privacy,
+         p.current_city_privacy,
+         p.hometown_privacy,
+         p.birthday_month_day_privacy,
+         p.birthday_year_privacy,
          p.profile_visibility,
          p.verified,
          p.display_join_date,
@@ -81,6 +88,20 @@ async function getProfile(req: Request, res: Response) {
       profile.id === viewerId ||
       profile.profile_id === viewerProfileId;
 
+    const relationship = owner ? { friend: true, friends_of_friends: true } : ((await pool.query(
+      `SELECT
+         EXISTS (SELECT 1 FROM friends f WHERE ((f.user_id=$1 AND f.friend_user_id=$2) OR (f.user_id=$2 AND f.friend_user_id=$1)) AND f.friendship_status='active') AS friend,
+         EXISTS (SELECT 1 FROM friends f1 JOIN friends f2 ON f2.user_id=f1.friend_user_id WHERE f1.user_id=$1 AND f1.friendship_status='active' AND f2.friend_user_id=$2 AND f2.friendship_status='active') AS friends_of_friends`,
+      [viewerId, profile.id],
+    )).rows[0] || { friend: false, friends_of_friends: false });
+
+    const canSee = (privacy: string | null | undefined) => {
+      if (owner || privacy === 'public') return true;
+      if (privacy === 'friends') return !!relationship.friend;
+      if (privacy === 'friends_of_friends') return !!relationship.friends_of_friends;
+      return false;
+    };
+
     if (!owner && profile.profile_visibility === "private") {
       return res.json({
         success: true,
@@ -99,6 +120,8 @@ async function getProfile(req: Request, res: Response) {
           followerCount: profile.follower_count ?? 0,
           postCount: profile.post_count ?? 0,
           location: null,
+          hometown: null,
+          bio: null,
           birthday: null,
           joinedAt: formatMonthYear(profile.joined_at),
           joinedCountry: profile.joined_country || "",
@@ -188,8 +211,18 @@ async function getProfile(req: Request, res: Response) {
       friendCount: profile.friend_count ?? friends.rowCount ?? 0,
       followerCount: profile.follower_count ?? 0,
       postCount: profile.post_count ?? posts.rowCount ?? 0,
-      location: profile.current_city || null,
-      birthday: formatDate(profile.date_of_birth),
+      bio: canSee(profile.bio_privacy) ? (profile.bio || null) : null,
+      location: canSee(profile.current_city_privacy) ? (profile.current_city || null) : null,
+      hometown: canSee(profile.hometown_privacy) ? (profile.hometown || null) : null,
+      birthday: profile.date_of_birth ? (() => {
+        const d = new Date(profile.date_of_birth);
+        const monthDay = canSee(profile.birthday_month_day_privacy);
+        const year = canSee(profile.birthday_year_privacy);
+        if (monthDay && year) return formatDate(profile.date_of_birth);
+        if (monthDay) return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+        if (year) return d.toLocaleDateString('en-US', { year: 'numeric' });
+        return null;
+      })() : null,
       joinedAt: formatMonthYear(profile.joined_at),
       joinedCountry: profile.joined_country || "",
       verified: !!profile.verified,
