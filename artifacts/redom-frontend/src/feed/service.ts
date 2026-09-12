@@ -3,11 +3,19 @@ import { api } from "../api/client";
 export type PostReactionType = "like" | "haha" | "sad" | "love";
 
 export interface PostReactionSummary {
+  // All visual reaction variants are counted together as Likes.
   total: number;
-  top: Array<{ type: PostReactionType; emoji: string; count: number }>;
+  top: Array<{ type: PostReactionType; count: number }>;
   counts: Record<PostReactionType, number>;
   myReaction: PostReactionType | null;
-  visibleReactors: Array<{ userId: string; firstName: string; lastName: string; username: string; profilePhoto: string | null; reactionType: string; emoji: string }>;
+  visibleReactors: Array<{
+    userId: string;
+    firstName: string;
+    lastName: string;
+    username: string;
+    profilePhoto: string | null;
+    reactionType: string;
+  }>;
   hiddenReactorCount: number;
 }
 
