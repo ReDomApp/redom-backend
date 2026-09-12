@@ -9,5 +9,10 @@ export type RootStackParamList = {
   CustomizingExperience: { verificationChallengeId: string; reservationId?: string; flowId: string };
   HomeFeed: undefined;
   Profile: { userId?: string; shareCode?: string } | undefined;
+  EditProfile: undefined;
+  EditBio: undefined;
+  EditLocationSearch: { kind: "location" | "hometown" };
+  EditLocationConfirm: { kind: "location" | "hometown"; result: string };
+  EditBirthday: undefined;
   Foundation: undefined;
 };
