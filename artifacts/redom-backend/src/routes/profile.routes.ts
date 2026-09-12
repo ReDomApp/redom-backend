@@ -9,10 +9,11 @@ const formatMonthYear = (value: string | Date | null) => value ? new Date(value)
 async function getProfile(req: Request, res: Response) {
   try {
     const viewerId = req.user.userId;
+    const viewerProfileId = req.user.profileId;
     const requestedId = req.params.userId || viewerId;
     const profileResult = await pool.query(`SELECT u.id,u.first_name,u.last_name,u.username,u.public_id,u.profile_id,u.date_of_birth,u.created_at AS joined_at,p.profile_photo,p.cover_photo,p.current_city,p.profile_visibility,p.verified,p.display_join_date,p.friend_count,p.follower_count,p.post_count,lh.country AS joined_country FROM users u LEFT JOIN user_profiles p ON p.user_id=u.id LEFT JOIN LATERAL (SELECT country FROM login_history WHERE user_id=u.id AND country IS NOT NULL AND country<>'' ORDER BY login_time ASC LIMIT 1) lh ON true WHERE u.id=$1 OR u.public_id=$1 OR u.profile_id=$1 LIMIT 1`, [requestedId]);
     if (!profileResult.rows.length) return res.status(404).json({ success:false, message:"Profile not found." });
-    const profile=profileResult.rows[0]; const owner=profile.id===viewerId;
+    const profile=profileResult.rows[0]; const owner=profile.profile_id===viewerProfileId;
     if (!owner && profile.profile_visibility === "private") return res.json({success:true,profile:{userId:profile.id,firstName:profile.first_name,lastName:profile.last_name,username:profile.username,publicId:profile.public_id,profileId:null,profilePhoto:mediaUrl(profile.profile_photo),coverPhoto:mediaUrl(profile.cover_photo),friendCount:profile.friend_count??0,followerCount:profile.follower_count??0,postCount:profile.post_count??0,location:null,birthday:null,joinedAt:formatMonthYear(profile.joined_at),joinedCountry:profile.joined_country||"",verified:!!profile.verified,isOwner:false,friends:[],reels:[],photos:[],posts:[],suggestions:[]}});
     const [friends,posts,reels,photos,suggestions]=await Promise.all([
       pool.query(`SELECT u.id,u.first_name,u.last_name,u.username,p.profile_photo FROM friends f JOIN users u ON u.id=f.friend_user_id LEFT JOIN user_profiles p ON p.user_id=u.id WHERE f.user_id=$1 AND f.friendship_status='active' ORDER BY f.friends_since DESC LIMIT 50`,[profile.id]),
