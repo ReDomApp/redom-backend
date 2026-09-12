@@ -39,6 +39,7 @@ async function getProfile(req: Request, res: Response) {
          u.username,
          u.public_id,
          u.profile_id,
+         u.profile_share_code,
          u.date_of_birth,
          lh.login_time AS joined_at,
          p.profile_photo,
@@ -63,8 +64,9 @@ async function getProfile(req: Request, res: Response) {
        WHERE u.id::text = $1::text
           OR u.public_id::text = $1::text
           OR u.profile_id::text = $1::text
+          OR u.profile_share_code = $1::text
        LIMIT 1`,
-      [requestedId],
+      [String(requestedId)],
     );
 
     if (!profileResult.rows.length) {
@@ -89,6 +91,8 @@ async function getProfile(req: Request, res: Response) {
           username: profile.username,
           publicId: profile.public_id,
           profileId: null,
+          shareCode: profile.profile_share_code,
+          shareUrl: `https://redom.app/profile/username/${profile.profile_share_code}`,
           profilePhoto: mediaUrl(profile.profile_photo),
           coverPhoto: mediaUrl(profile.cover_photo),
           friendCount: profile.friend_count ?? 0,
@@ -177,6 +181,8 @@ async function getProfile(req: Request, res: Response) {
       username: profile.username,
       publicId: profile.public_id,
       profileId: profile.profile_id,
+      shareCode: profile.profile_share_code,
+      shareUrl: `https://redom.app/profile/username/${profile.profile_share_code}`,
       profilePhoto: mediaUrl(profile.profile_photo),
       coverPhoto: mediaUrl(profile.cover_photo),
       friendCount: profile.friend_count ?? friends.rowCount ?? 0,
