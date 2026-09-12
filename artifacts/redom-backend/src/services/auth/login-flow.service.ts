@@ -14,13 +14,19 @@ import { loginHistoryService } from "./login-history.service";
 import { loginNotificationService } from "./login-notification.service";
 import { totpService } from "./totp.service";
 
-export interface LoginRequest { identifier: string; password: string; ipAddress?: string; country?: string; region?: string; city?: string; userAgent?: string; platform?: string; browser?: string; deviceName?: string; deviceId?: string; deviceType?: string; loginSource?: string; appVersion?: string; }
+export interface LoginRequest { identifier: string; password: string; networkIp?: string; ipAddress?: string; country?: string; region?: string; city?: string; userAgent?: string; platform?: string; browser?: string; deviceName?: string; deviceId?: string; deviceType?: string; loginSource?: string; appVersion?: string; }
 export interface LoginFlowResult { success: true; message: string; requiresVerification: boolean; requiresTwoFactor?: boolean; user?: PublicUser; session?: LoginSession; verification?: LoginVerification; twoFactorVerification?: LoginVerification; }
 type PublicUser = { id: string; username: string; publicId: string; profileId: string; firstName: string; lastName: string; email: string | null; phoneNumber: string | null; emailVerified: boolean; phoneVerified: boolean; accountStatus: string; };
 type LoginSession = { sessionId: string; accessToken: string; refreshToken: string; expiresAt: Date };
 type LoginVerification = { challengeId: string; channel: "sms" | "email" | "whatsapp" | "authenticator"; target: string; maskedTarget: string; codeLength: number; expiresAt: Date };
 function maskPhone(phone: string) { const n = phone.trim(); return n.length <= 4 ? n : n.slice(0, 3) + "*".repeat(Math.max(0, n.length - 5)) + n.slice(-2); }
 function maskEmail(email: string) { const n = email.trim(); const at = n.indexOf("@"); if (at <= 0) return "***"; const local = n.slice(0, at), domain = n.slice(at); if (local.length === 1) return `*${domain}`; if (local.length === 2) return `${local[0]}*${domain}`; return local[0] + "*".repeat(Math.max(1, local.length - 2)) + local.slice(-1) + domain; }
+function phoneCandidates(identifier: string): string[] {
+  const compact = identifier.trim().replace(/[\s().-]/g, "");
+  if (!compact.startsWith("+")) return [compact];
+  return [compact, compact.slice(1)];
+}
+
 function publicUser(user: typeof users.$inferSelect): PublicUser { return { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email, phoneNumber: user.phoneNumber, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus }; }
 
 export class LoginFlowService {
@@ -53,15 +59,27 @@ export class LoginFlowService {
   async login(data: LoginRequest): Promise<LoginFlowResult> {
     const identifier = data.identifier.trim(); if (!identifier) throw new Error("Login identifier is required.");
     if (/^\d{15}$/.test(identifier)) throw new Error("Please use your mobile number or email address to log in.");
-    const user = await db.query.users.findFirst({ where: or(eq(users.email, identifier.toLowerCase()), eq(users.phoneNumber, identifier)) });
+    const phoneValues = /^\+/.test(identifier) ? phoneCandidates(identifier) : [identifier];
+    const user = await db.query.users.findFirst({
+      where: or(
+        eq(users.email, identifier.toLowerCase()),
+        ...phoneValues.map((phone) => eq(users.phoneNumber, phone)),
+      ),
+    });
     if (!user) throw new Error("Please create an account if you're not a ReDom user.");
     if (!await passwordService.verify(data.password, user.passwordHash)) throw new Error("Invalid credentials.");
     if (user.accountStatus === "suspended") throw new Error("Your account has been suspended.");
     if (user.accountStatus === "banned") throw new Error("Your account has been banned.");
     if (user.accountStatus === "pending") throw new Error("Your account is pending verification. Please verify your email address or phone number before logging in.");
     const ipapi = await this.inspectIp(data.ipAddress); await fraudService.checkLogin({ userId: user.id, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, userAgent: data.userAgent });
-    const deviceId = data.deviceId?.trim(); const knownDevice = Boolean(deviceId) && Boolean(await db.query.sessions.findFirst({ where: and(eq(sessions.userId, user.id), eq(sessions.deviceId, deviceId!)) }));
-    if (!knownDevice) {
+    const deviceId = data.deviceId?.trim();
+    const knownDevice = Boolean(deviceId) && Boolean(await db.query.sessions.findFirst({ where: and(eq(sessions.userId, user.id), eq(sessions.deviceId, deviceId!)) }));
+    const ipHistoryCount = await loginHistoryService.countByIp(user.id, data.ipAddress);
+    const trustedIp = Boolean(data.ipAddress) && ipHistoryCount >= 3;
+
+    // These checks run only after account/password validation above.
+    // Three or more successful logins from this user/IP bypass new-device verification.
+    if (!knownDevice && !trustedIp) {
       const channel = user.phoneNumber && user.phoneVerified ? "sms" : "email"; const target = channel === "sms" ? user.phoneNumber! : user.email!;
       if (channel === "email" && (!user.email || !user.emailVerified)) throw new Error("A verified email address or phone number is required to verify this device.");
       const challenge = await verificationService.createVerification({ userId: user.id, purpose: "LOGIN_DEVICE_VERIFICATION", target, channel, requestedLength: 6, firstName: user.firstName, requestIp: data.ipAddress, userAgent: data.userAgent, deviceId });

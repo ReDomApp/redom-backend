@@ -177,6 +177,12 @@ export const loginSchema =
         1,
         "Password is required.",
       ),
+
+    networkIp: z
+      .string()
+      .trim()
+      .max(45)
+      .optional(),
   });
 
 export type RegisterInput =

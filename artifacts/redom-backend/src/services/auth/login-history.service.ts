@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { loginHistory } from "../../database/loginHistory";
@@ -55,6 +55,15 @@ export class LoginHistoryService {
 
   async getHistory(userId: string) {
     return db.select().from(loginHistory).where(eq(loginHistory.userId, userId));
+  }
+
+  async countByIp(userId: string, ipAddress?: string): Promise<number> {
+    if (!ipAddress) return 0;
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(loginHistory)
+      .where(and(eq(loginHistory.userId, userId), eq(loginHistory.ipAddress, ipAddress)));
+    return Number(row?.count ?? 0);
   }
 }
 
