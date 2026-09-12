@@ -58,6 +58,7 @@ import { videoCaptions } from "./videoCaptions";
 import { videoComments } from "./videoComments";
 import { videoQuality } from "./videoQuality";
 import { videoViews } from "./videoViews";
+import { comments } from "./comments";
 import { registrationChallenges } from "./registration-challenges.schema";
 import { registrationFlowReservations } from "./registration-flow-reservations.schema";
 
@@ -77,6 +78,6 @@ export const db = drizzle(pool, { schema: {
   shares, stories, storyViewers, feedPreferences, notifications, searchHistory,
   marketplaceCategories, marketplaceListings, marketplaceInteractions, marketplaceReviews,
   marketplaceTransactions, videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
-  registrationChallenges, registrationFlowReservations,
+  comments, registrationChallenges, registrationFlowReservations,
 } });
 export { pool };
