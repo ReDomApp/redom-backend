@@ -11,6 +11,8 @@ import { postMedia } from "../../database/postMedia";
 import { polls } from "../../database/polls";
 import { checkIP } from "../../lib/ipapi";
 import { feedIndexingService } from "./feed-indexing.service";
+import { postFeedActionService } from "./post-feed-action.service";
+import { postReactionService } from "./post-reaction.service";
 
 const PAGE_SIZE = 40;
 const STORY_HOURS = 24;
@@ -48,9 +50,6 @@ export class HomeFeedService {
     const rankedPosts = await feedIndexingService.rankPosts(params.userId, index, 500);
     const rankedPostIds = rankedPosts.map((post) => post.id);
 
-    // A recommendation is allowed to reach a user twice. The second delivery is
-    // intentionally retained as the final permitted exposure; after that the same
-    // specific recommended post is removed from future Home Feed recommendations.
     let impressionCounts = new Map<string, number>();
     if (rankedPostIds.length) {
       const impressions = await db.select({ targetId: activityLog.targetId })
@@ -68,53 +67,34 @@ export class HomeFeedService {
       }, new Map<string, number>());
     }
 
+    const hiddenPostIds = await postFeedActionService.getHiddenPostIds(params.userId);
     const allRankedPosts = rankedPosts.filter((post) =>
-      !post.recommended || (impressionCounts.get(post.id) ?? 0) < MAX_RECOMMENDED_IMPRESSIONS,
+      !hiddenPostIds.has(post.id) && (!post.recommended || (impressionCounts.get(post.id) ?? 0) < MAX_RECOMMENDED_IMPRESSIONS),
     );
 
     const postStart = (page - 1) * PAGE_SIZE;
     const pagePosts = allRankedPosts.slice(postStart, postStart + PAGE_SIZE);
     const postIds = pagePosts.map((post) => post.id);
 
-    const [mediaRows, pollRows] = await Promise.all([
+    const [mediaRows, pollRows, reactionSummaries] = await Promise.all([
       postIds.length
         ? db.select({
-            id: postMedia.id,
-            postId: postMedia.postId,
-            shareId: postMedia.shareId,
-            mediaType: postMedia.mediaType,
-            objectKey: postMedia.objectKey,
-            thumbnailKey: postMedia.thumbnailKey,
-            fileName: postMedia.fileName,
-            mimeType: postMedia.mimeType,
-            fileSize: postMedia.fileSize,
-            width: postMedia.width,
-            height: postMedia.height,
-            duration: postMedia.duration,
-            caption: postMedia.caption,
-            altText: postMedia.altText,
-            displayOrder: postMedia.displayOrder,
-            isPrimary: postMedia.isPrimary,
+            id: postMedia.id, postId: postMedia.postId, shareId: postMedia.shareId,
+            mediaType: postMedia.mediaType, objectKey: postMedia.objectKey, thumbnailKey: postMedia.thumbnailKey,
+            fileName: postMedia.fileName, mimeType: postMedia.mimeType, fileSize: postMedia.fileSize,
+            width: postMedia.width, height: postMedia.height, duration: postMedia.duration,
+            caption: postMedia.caption, altText: postMedia.altText, displayOrder: postMedia.displayOrder, isPrimary: postMedia.isPrimary,
           }).from(postMedia).where(inArray(postMedia.postId, postIds)).orderBy(postMedia.displayOrder)
         : [],
       postIds.length
         ? db.select({
-            id: polls.id,
-            postId: polls.postId,
-            question: polls.question,
-            options: polls.options,
-            optionVoteCounts: polls.optionVoteCounts,
-            totalVotes: polls.totalVotes,
-            votingType: polls.votingType,
-            anonymousVoting: polls.anonymousVoting,
-            allowVoteRemoval: polls.allowVoteRemoval,
-            duration: polls.duration,
-            expiresAt: polls.expiresAt,
-            manuallyClosed: polls.manuallyClosed,
-            closed: polls.closed,
-            expired: polls.expired,
+            id: polls.id, postId: polls.postId, question: polls.question, options: polls.options,
+            optionVoteCounts: polls.optionVoteCounts, totalVotes: polls.totalVotes, votingType: polls.votingType,
+            anonymousVoting: polls.anonymousVoting, allowVoteRemoval: polls.allowVoteRemoval, duration: polls.duration,
+            expiresAt: polls.expiresAt, manuallyClosed: polls.manuallyClosed, closed: polls.closed, expired: polls.expired,
           }).from(polls).where(inArray(polls.postId, postIds))
         : [],
+      postReactionService.getSummaries(params.userId, postIds),
     ]);
 
     const mediaByPost = new Map<string, typeof mediaRows>();
@@ -127,8 +107,10 @@ export class HomeFeedService {
 
     const posts = pagePosts.map((post) => ({
       ...post,
+      verified: Boolean(post.verified),
       media: mediaByPost.get(post.id) ?? [],
       poll: pollByPost.get(post.id) ?? null,
+      reactionSummary: reactionSummaries.get(post.id) ?? { total: 0, top: [], counts: { like: 0, haha: 0, sad: 0, love: 0 }, myReaction: null, visibleReactors: [], hiddenReactorCount: 0 },
       relationship: post.source === "friend"
         ? { type: "friend", label: `${post.firstName} is your friend` }
         : post.source === "following"
@@ -139,8 +121,6 @@ export class HomeFeedService {
         : null,
     }));
 
-    // Count each recommended delivery once. This is an indexing impression, not a
-    // content view, and is deliberately separate from the unique post-view signal.
     const recommendedPagePosts = pagePosts.filter((post) => post.recommended);
     if (recommendedPagePosts.length) {
       await Promise.all(recommendedPagePosts.map((post) => db.insert(activityLog).values({
@@ -159,8 +139,6 @@ export class HomeFeedService {
       }).catch(() => undefined)));
     }
 
-    // Stories live for 24 hours. Expired rows are never returned to the active feed.
-    // They remain stored; no archive field or archive migration is used.
     const storySince = new Date(Date.now() - STORY_HOURS * 60 * 60 * 1000);
     const storyVisibility = [
       eq(stories.privacy, "public"),
@@ -170,40 +148,21 @@ export class HomeFeedService {
 
     const storyCandidates = await db
       .select({
-        id: stories.id,
-        shareId: stories.shareId,
-        storyText: stories.storyText,
-        storyType: stories.storyType,
-        mediaId: stories.mediaId,
-        hasMusic: stories.hasMusic,
-        musicTitle: stories.musicTitle,
-        musicArtist: stories.musicArtist,
-        hasStickers: stories.hasStickers,
-        privacy: stories.privacy,
-        professionalMode: stories.professionalMode,
-        expiresAt: stories.expiresAt,
-        createdAt: stories.createdAt,
-        authorId: users.id,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        username: users.username,
-        publicId: users.publicId,
-        profileId: users.profileId,
+        id: stories.id, shareId: stories.shareId, storyText: stories.storyText, storyType: stories.storyType,
+        mediaId: stories.mediaId, hasMusic: stories.hasMusic, musicTitle: stories.musicTitle, musicArtist: stories.musicArtist,
+        hasStickers: stories.hasStickers, privacy: stories.privacy, professionalMode: stories.professionalMode,
+        expiresAt: stories.expiresAt, createdAt: stories.createdAt, authorId: users.id, firstName: users.firstName,
+        lastName: users.lastName, username: users.username, publicId: users.publicId, profileId: users.profileId,
         profilePhoto: userProfiles.profilePhoto,
       })
       .from(stories)
       .innerJoin(userProfiles, eq(stories.authorId, userProfiles.id))
       .innerJoin(users, eq(userProfiles.userId, users.id))
       .where(and(
-        eq(stories.deleted, false),
-        eq(stories.moderationStatus, "approved"),
-        gt(stories.expiresAt, new Date()),
-        gt(stories.createdAt, storySince),
-        eq(users.accountStatus, "active"),
-        or(...storyVisibility),
+        eq(stories.deleted, false), eq(stories.moderationStatus, "approved"), gt(stories.expiresAt, new Date()),
+        gt(stories.createdAt, storySince), eq(users.accountStatus, "active"), or(...storyVisibility),
       ))
-      .orderBy(desc(stories.createdAt))
-      .limit(200);
+      .orderBy(desc(stories.createdAt)).limit(200);
 
     const interestMap = new Map(index.interests.map((interest) => [interest.token, interest.score]));
     const scoredStories = storyCandidates.map((story) => {
@@ -236,9 +195,7 @@ export class HomeFeedService {
     }));
 
     const suggestedProfiles = (await feedIndexingService.rankProfiles(params.userId, index, 10)).map((profile) => ({
-      ...profile,
-      placement: "stories",
-      label: "Friend suggestion",
+      ...profile, placement: "stories", label: "Friend suggestion",
     }));
 
     return {
@@ -252,12 +209,9 @@ export class HomeFeedService {
         locationSource: index.anchorLogin.loginTime ? "first_login_history" : params.ipAddress ? "current_ip_fallback" : "unavailable",
         approximate: true,
         location,
-        weights: {
-          firstLoginHistory: 0.7,
-          laterLoginHistory: 0.3,
-        },
+        weights: { firstLoginHistory: 0.7, laterLoginHistory: 0.3 },
         behaviorSignals: {
-          actions: ["comment", "share", "save", "like", "reaction", "watch_video", "follow", "search", "post_view"],
+          actions: ["comment", "share", "save", "like", "reaction", "watch_video", "follow", "search", "post_view", "not_interested"],
           interestsIndexed: index.interests.length,
           contentTypesIndexed: index.contentTypePreferences.length,
         },
