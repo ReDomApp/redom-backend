@@ -1,8 +1,9 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { pool } from "../database/db";
 import { env } from "../config/env";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 const router = Router();
 const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -22,26 +23,24 @@ function expiryFor(value: string | undefined) {
   const hours = value === "1h" ? 1 : value === "24h" ? 24 : value === "7d" ? 168 : null;
   return hours ? new Date(Date.now() + hours * 3600000) : undefined;
 }
-function hmac(key: Buffer | string, data: string) { return createHmac("sha256", key).update(data).digest(); }
-async function signedRequest(method: string, key: string, body?: Buffer) {
-  const endpoint = env.cloudflare.r2.endpoint.replace(/\/$/, "");
-  const url = new URL(`${endpoint}/${key.split("/").map(encodeURIComponent).join("/")}`);
-  const now = new Date(); const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, ""); const dateStamp = amzDate.slice(0, 8);
-  const payloadHash = createHash("sha256").update(body ?? "").digest("hex"); const host = url.host; const canonicalUri = url.pathname || "/";
-  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
-  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
-  const canonicalRequest = `${method}\n${canonicalUri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-  const scope = `${dateStamp}/auto/s3/aws4_request`;
-  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${createHash("sha256").update(canonicalRequest).digest("hex")}`;
-  const kDate = hmac(`AWS4${env.cloudflare.r2.secretAccessKey}`, dateStamp); const kRegion = hmac(kDate, "auto"); const kService = hmac(kRegion, "s3"); const kSigning = hmac(kService, "aws4_request");
-  const signature = createHmac("sha256", kSigning).update(stringToSign).digest("hex");
-  return { url, headers: { Host: host, "x-amz-content-sha256": payloadHash, "x-amz-date": amzDate, Authorization: `AWS4-HMAC-SHA256 Credential=${env.cloudflare.r2.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}` } };
-}
+const r2 = new S3Client({
+  region: env.cloudflare.r2.region || "auto",
+  endpoint: env.cloudflare.r2.endpoint,
+  credentials: {
+    accessKeyId: env.cloudflare.r2.accessKeyId,
+    secretAccessKey: env.cloudflare.r2.secretAccessKey,
+  },
+});
+
 async function putR2(key: string, body: Buffer, contentType: string) {
-  const signed = await signedRequest("PUT", key, body);
-  const response = await fetch(signed.url, { method: "PUT", headers: { ...signed.headers, "Content-Type": contentType }, body });
-  if (!response.ok) throw new Error(`R2 upload failed (${response.status}).`);
+  await r2.send(new PutObjectCommand({
+    Bucket: env.cloudflare.r2.bucketName,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  }));
 }
+
 async function restoreExpiredProfiles() {
   await pool.query(`UPDATE user_profiles SET profile_photo=COALESCE(profile_photo_previous,$1), profile_photo_previous=NULL, profile_photo_expires_at=NULL, updated_at=NOW() WHERE profile_photo_expires_at IS NOT NULL AND profile_photo_expires_at <= NOW()`, [DEFAULT_KEY]);
   await pool.query(`UPDATE profile_media_history SET archived_at=NOW() WHERE temporary_until IS NOT NULL AND temporary_until <= NOW() AND archived_at IS NULL`);
@@ -55,12 +54,17 @@ router.get(/^\/file\/(.+)$/, async (req: Request, res: Response) => {
   try {
     const key = String(req.params[0] || "");
     if (!key.startsWith("profiles/") || key.includes("..")) return res.status(400).end();
-    const signed = await signedRequest("GET", key);
-    const response = await fetch(signed.url, { headers: signed.headers });
-    if (!response.ok || !response.body) return res.status(response.status === 404 ? 404 : 502).end();
+    const object = await r2.send(new GetObjectCommand({
+      Bucket: env.cloudflare.r2.bucketName,
+      Key: key,
+    }));
+
+    if (!object.Body) return res.status(404).end();
+
     res.setHeader("Cache-Control", "public, max-age=300");
-    res.setHeader("Content-Type", response.headers.get("content-type") || "image/jpeg");
-    const buffer = Buffer.from(await response.arrayBuffer());
+    res.setHeader("Content-Type", object.ContentType || "image/jpeg");
+
+    const buffer = Buffer.from(await object.Body.transformToByteArray());
     return res.end(buffer);
   } catch { return res.status(404).end(); }
 });
