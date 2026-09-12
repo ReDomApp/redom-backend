@@ -1,0 +1,36 @@
+name: Wire Edit Profile entry
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wire profile edit button
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('artifacts/redom-frontend/src/screens/ProfileScreen.tsx')
+          text = path.read_text()
+          old = '<Pressable style={ui.secondaryButton} accessibilityLabel="Edit profile">'
+          new = '<Pressable style={ui.secondaryButton} onPress={() => navigation.navigate("EditProfile")} accessibilityLabel="Edit profile">'
+          if old not in text:
+              raise SystemExit('Edit profile button target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit button wiring and remove one-time workflow
+        run: |
+          git config user.name "ReDom"
+          git config user.email "jessicasanchez89965@gmail.com"
+          git add artifacts/redom-frontend/src/screens/ProfileScreen.tsx
+          git commit -m "Open Edit Profile from profile button"
+          git rm .github/workflows/wire-edit-profile.yml
+          git commit -m "Remove one-time edit profile wiring workflow"
+          git push
