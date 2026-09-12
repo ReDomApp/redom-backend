@@ -77,7 +77,7 @@ export function HomeFeedScreenV3() {
 
   return <SafeAreaView style={ui.root}>
     <View style={ui.topHeader}>
-      <View style={ui.brand}><ReDomLogo width={n(116, scale)} height={n(34, scale)} /></View>
+      <View style={ui.brandRow}><Pressable style={ui.menuButton} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu"><MenuIcon width={25} height={25} /></Pressable><View style={ui.brand}><ReDomLogo width={n(116, scale)} height={n(34, scale)} /></View></View>
       <View style={ui.topActions}>
         <Pressable style={ui.topButton} accessibilityLabel="Create"><CreateIcon width={24} height={24} /></Pressable>
         <Pressable style={ui.topButton} accessibilityLabel="Search"><SearchIcon width={24} height={24} /></Pressable>
@@ -161,7 +161,9 @@ function makeStyles(scale: number) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: "#F0F2F5" },
     topHeader: { height: s(56), paddingHorizontal: s(12), backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    brand: { flex: 1, justifyContent: "center" },
+    brandRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: s(8) },
+    menuButton: { width: s(38), height: s(38), borderRadius: s(19), alignItems: "center", justifyContent: "center" },
+    brand: { justifyContent: "center" },
     topActions: { flexDirection: "row", alignItems: "center", gap: s(7) },
     topButton: { width: s(38), height: s(38), borderRadius: s(19), backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
     navigationBar: { height: s(52), backgroundColor: "#FFFFFF", flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
@@ -204,6 +206,5 @@ function makeStyles(scale: number) {
     divider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: s(5) },
     logoutRow: { minHeight: s(50), justifyContent: "center", borderTopWidth: 1, borderTopColor: "#E4E6EB", marginTop: s(6) },
     logoutText: { color: "#050505", fontSize: s(16), fontWeight: "700" },
-    hiddenMenuTrigger: { position: "absolute", top: s(6), left: s(6), width: s(1), height: s(1), opacity: 0 },
   });
 }
