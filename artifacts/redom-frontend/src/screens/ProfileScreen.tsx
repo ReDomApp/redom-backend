@@ -87,6 +87,7 @@ export function ProfileScreen({ navigation, route }: Props) {
   const [searchText, setSearchText] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [promptIndex, setPromptIndex] = useState(0);
+  const [visitorPreview, setVisitorPreview] = useState(false);
   const requestedUserId = route.params?.userId;
 
   const refreshProfile = useCallback(async () => {
@@ -105,11 +106,14 @@ export function ProfileScreen({ navigation, route }: Props) {
   }, [requestedUserId]);
 
   useEffect(() => {
+    setVisitorPreview(false);
     void refreshProfile();
   }, [refreshProfile]);
 
   const p = profile;
-  const isOwner = !!p && (p.isOwner || p.profileId === user?.profileId);
+  const owner = !!p && (p.isOwner || p.profileId === user?.profileId);
+  const isVisitorView = !owner || visitorPreview;
+  const canEdit = owner && !visitorPreview;
   const name = p ? `${p.firstName} ${p.lastName}`.trim() : user ? `${user.firstName} ${user.lastName}`.trim() : "Profile";
   const firstName = p?.firstName || user?.firstName || "";
   const profileIdentifier = p?.profileId || p?.publicId || p?.userId || "";
@@ -134,6 +138,15 @@ export function ProfileScreen({ navigation, route }: Props) {
     Alert.alert("Copied", `${firstName || name}'s ReDom profile identifier was copied.`);
   };
 
+  const enterVisitorPreview = () => {
+    setSheet(null);
+    setVisitorPreview(true);
+  };
+
+  const leaveVisitorPreview = () => {
+    setVisitorPreview(false);
+  };
+
   return (
     <SafeAreaView style={ui.root}>
       <View style={ui.nav}>
@@ -151,12 +164,22 @@ export function ProfileScreen({ navigation, route }: Props) {
         </Pressable>
         <Pressable
           style={[ui.navItem, ui.activeNav]}
-          onPress={() => (isOwner ? void refreshProfile() : navigation.navigate("Profile"))}
-          accessibilityLabel={isOwner ? "Refresh current profile" : "Open my profile"}
+          onPress={() => (canEdit ? void refreshProfile() : navigation.navigate("Profile"))}
+          accessibilityLabel={canEdit ? "Refresh current profile" : "Open my profile"}
         >
           <Avatar uri={p?.profilePhoto || user?.profilePhoto} size={ui.navAvatar} />
         </Pressable>
       </View>
+
+      {visitorPreview ? (
+        <View style={ui.previewBanner}>
+          <EyeIcon width={ui.previewBannerIcon} height={ui.previewBannerIcon} />
+          <Text style={ui.previewBannerText}>Viewing your profile as a visitor</Text>
+          <Pressable onPress={leaveVisitorPreview} style={ui.previewDone}>
+            <Text style={ui.previewDoneText}>Exit</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -174,14 +197,14 @@ export function ProfileScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {isOwner ? (
+          {canEdit ? (
             <Pressable style={ui.menuButton} accessibilityLabel="Open profile navigation">
               <MenuIcon width={ui.coverToolIcon} height={ui.coverToolIcon} />
             </Pressable>
           ) : null}
 
           <View style={ui.coverTools}>
-            {isOwner ? (
+            {canEdit ? (
               <Pressable accessibilityLabel="Edit cover photo">
                 <CoverEditIcon width={ui.coverToolIcon} height={ui.coverToolIcon} />
               </Pressable>
@@ -191,7 +214,7 @@ export function ProfileScreen({ navigation, route }: Props) {
             </Pressable>
             <Pressable
               accessibilityLabel="More profile options"
-              onPress={() => setSheet(isOwner ? "owner" : "visitor")}
+              onPress={() => setSheet(owner ? "owner" : "visitor")}
             >
               <CoverMoreIcon width={ui.coverToolIcon} height={ui.coverToolIcon} />
             </Pressable>
@@ -201,7 +224,7 @@ export function ProfileScreen({ navigation, route }: Props) {
             <Text style={ui.songText}>{PROFILE_PROMPTS[promptIndex]}</Text>
           </Pressable>
 
-          {isOwner ? (
+          {canEdit ? (
             <Pressable style={ui.coverCamera} onPress={() => setSheet("cover")} accessibilityLabel="Change cover photo">
               <CoverCameraIcon width={ui.cameraIcon} height={ui.cameraIcon} />
             </Pressable>
@@ -211,7 +234,7 @@ export function ProfileScreen({ navigation, route }: Props) {
             <View style={ui.avatarRing}>
               <Avatar uri={p?.profilePhoto || user?.profilePhoto} size={ui.profileAvatar} />
             </View>
-            {isOwner ? (
+            {canEdit ? (
               <Pressable style={ui.profileCamera} onPress={() => setSheet("avatar")} accessibilityLabel="Change profile picture">
                 <CameraIcon width={ui.cameraIcon} height={ui.cameraIcon} />
               </Pressable>
@@ -242,7 +265,7 @@ export function ProfileScreen({ navigation, route }: Props) {
           ) : null}
 
           <View style={ui.mainButtons}>
-            {isOwner ? (
+            {canEdit ? (
               <>
                 <Pressable style={ui.primaryButton} accessibilityLabel="Add to story">
                   <AddStoryIcon width={ui.buttonIcon} height={ui.buttonIcon} />
@@ -252,6 +275,15 @@ export function ProfileScreen({ navigation, route }: Props) {
                   <EditIcon width={ui.buttonIcon} height={ui.buttonIcon} />
                   <Text style={ui.secondaryText}>Edit profile</Text>
                 </Pressable>
+              </>
+            ) : owner ? (
+              <>
+                <View style={[ui.primaryButton, ui.disabledButton]} accessibilityLabel="Cannot add yourself">
+                  <Text style={ui.disabledButtonText}>Add Friend</Text>
+                </View>
+                <View style={[ui.secondaryButton, ui.disabledButton]} accessibilityLabel="Cannot message yourself">
+                  <Text style={ui.disabledButtonText}>Message</Text>
+                </View>
               </>
             ) : (
               <>
@@ -266,7 +298,7 @@ export function ProfileScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        {isOwner && p && p.suggestions.length > 0 ? (
+        {canEdit && p && p.suggestions.length > 0 ? (
           <View style={ui.suggestionSection}>
             <View style={ui.sectionTitleRow}>
               <Text style={ui.sectionTitle}>People you may know</Text>
@@ -317,7 +349,7 @@ export function ProfileScreen({ navigation, route }: Props) {
                 ))}
               </View>
             ) : (
-              <Text style={ui.emptyText}>{isOwner ? "Please Upload a reel ....." : "No reels to show."}</Text>
+              <Text style={ui.emptyText}>{canEdit ? "Please Upload a reel ....." : "No reels to show."}</Text>
             )}
           </View>
         ) : null}
@@ -329,7 +361,7 @@ export function ProfileScreen({ navigation, route }: Props) {
               <View style={ui.photoGrid}>
                 {p.photos.map((photo) => <Image key={photo.id} source={{ uri: photo.thumbnail || photo.url || "" }} style={ui.photoCard} />)}
               </View>
-            ) : <Text style={ui.emptyText}>{isOwner ? "You haven't uploaded anything on ReDom yet" : "No photos to show."}</Text>}
+            ) : <Text style={ui.emptyText}>{canEdit ? "You haven't uploaded anything on ReDom yet" : "No photos to show."}</Text>}
           </View>
         ) : null}
 
@@ -345,9 +377,7 @@ export function ProfileScreen({ navigation, route }: Props) {
             <View style={ui.detailsSection}>
               <View style={ui.sectionTitleRow}>
                 <Text style={ui.sectionTitle}>Personal details</Text>
-                <Pressable accessibilityLabel="Edit personal details">
-                  <EditIcon width={ui.editIcon} height={ui.editIcon} />
-                </Pressable>
+                {canEdit ? <Pressable accessibilityLabel="Edit personal details"><EditIcon width={ui.editIcon} height={ui.editIcon} /></Pressable> : null}
               </View>
               {p?.location ? (
                 <View style={ui.detailRow}>
@@ -392,7 +422,7 @@ export function ProfileScreen({ navigation, route }: Props) {
               ) : null}
             </View>
 
-            {isOwner ? (
+            {canEdit ? (
               <>
                 <View style={ui.postsHeader}>
                   <Text style={ui.sectionTitle}>All posts</Text>
@@ -443,8 +473,10 @@ export function ProfileScreen({ navigation, route }: Props) {
         kind={sheet}
         name={name}
         firstName={firstName}
+        visitorPreview={visitorPreview}
         onClose={() => setSheet(null)}
         onCopy={copyProfileIdentifier}
+        onViewAsVisitor={owner ? enterVisitorPreview : undefined}
         ui={ui}
       />
 
@@ -481,25 +513,29 @@ function ProfileSheet({
   kind,
   name,
   firstName,
+  visitorPreview,
   onClose,
   onCopy,
+  onViewAsVisitor,
   ui,
 }: {
   kind: SheetKind;
   name: string;
   firstName: string;
+  visitorPreview: boolean;
   onClose: () => void;
   onCopy: () => Promise<void>;
+  onViewAsVisitor?: () => void;
   ui: ReturnType<typeof makeStyles>;
 }) {
   if (!kind) return null;
-  const owner = kind === "owner";
-  const visitor = kind === "visitor";
+  const owner = kind === "owner" && !visitorPreview;
+  const visitor = kind === "visitor" || (kind === "owner" && visitorPreview);
   const cover = kind === "cover";
   const avatar = kind === "avatar";
 
   const rows = owner ? [
-    [EyeIcon, "View As Visitor"],
+    [EyeIcon, "Switch to visitor view", onViewAsVisitor],
     [SettingsIcon, "Profile Status"],
     [SettingsIcon, "Lock Profile"],
     [SessionIcon, "Activity Log"],
@@ -507,9 +543,6 @@ function ProfileSheet({
     [FollowIcon, "Follow settings"],
     [SettingsIcon, "Reactivate your verified badge"],
     [SettingsIcon, "Archive"],
-    [SettingsIcon, "View as Visitor"],
-    [SettingsIcon, "Lock profile"],
-    [SessionIcon, "Activity log"],
     [SettingsIcon, "Manage posts"],
     [SettingsIcon, "Review posts and tags"],
     [PrivacyIcon, "Privacy Center"],
@@ -540,11 +573,18 @@ function ProfileSheet({
             </Text>
             <Pressable onPress={onClose}><Text style={ui.modalClose}>×</Text></Pressable>
           </View>
-          {rows.map(([Icon, label], index) => (
-            <View key={`${label}-${index}`} style={[ui.sheetRow, index === 16 && owner ? ui.sheetDividerTop : null]}>
+          {rows.map(([Icon, label, action], index) => (
+            <Pressable
+              key={`${label}-${index}`}
+              style={ui.sheetRow}
+              onPress={action ? action : undefined}
+              disabled={!action}
+              accessibilityRole={action ? "button" : undefined}
+              accessibilityLabel={label}
+            >
               <Icon width={ui.sheetIcon} height={ui.sheetIcon} />
               <Text style={ui.sheetRowText}>{label}</Text>
-            </View>
+            </Pressable>
           ))}
           {!cover && !avatar ? (
             <>
@@ -580,6 +620,8 @@ function makeStyles(width: number) {
     navItem: { width: n(58), height: n(56), alignItems: "center", justifyContent: "center" },
     activeNav: { borderBottomWidth: n(3), borderBottomColor: "#1877F2" },
     icon: n(25), navAvatar: n(34), content: { paddingBottom: n(36) },
+    previewBanner: { minHeight: n(42), paddingHorizontal: horizontal, backgroundColor: "#F0F2F5", flexDirection: "row", alignItems: "center", gap: n(8), borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
+    previewBannerIcon: n(19), previewBannerText: { flex: 1, color: "#050505", fontSize: n(13), fontWeight: "700" }, previewDone: { paddingHorizontal: n(10), paddingVertical: n(6) }, previewDoneText: { color: "#1877F2", fontSize: n(13), fontWeight: "800" },
     coverWrap: { height: n(218), position: "relative" },
     cover: { height: n(185), backgroundColor: "#D8D8D8", overflow: "hidden" },
     coverShade: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,.10)" },
@@ -600,6 +642,7 @@ function makeStyles(width: number) {
     locationLine: { flexDirection: "row", alignItems: "center", gap: n(8), marginTop: n(12) }, detailIcon: n(25), locationText: { fontSize: n(17), fontWeight: "700", color: "#050505" },
     mainButtons: { flexDirection: "row", gap: n(10), marginTop: n(14) }, primaryButton: { flex: 1, minHeight: n(48), borderRadius: n(9), backgroundColor: "#1877F2", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: n(8) },
     secondaryButton: { flex: 1, minHeight: n(48), borderRadius: n(9), backgroundColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: n(8) }, buttonIcon: n(24), primaryText: { color: "#fff", fontSize: n(16), fontWeight: "700" }, secondaryText: { color: "#050505", fontSize: n(16), fontWeight: "700" },
+    disabledButton: { opacity: 0.6 }, disabledButtonText: { color: "#65676B", fontSize: n(16), fontWeight: "700" },
     suggestionSection: { paddingHorizontal: horizontal, paddingTop: n(12), paddingBottom: n(8) }, sectionTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, sectionTitle: { fontSize: n(20), fontWeight: "800", color: "#050505" }, closeSuggestion: { fontSize: n(28), color: "#65676B" }, suggestionRail: { gap: n(10), paddingVertical: n(12) },
     suggestionCard: { width: n(132), padding: n(10), borderRadius: n(10), borderWidth: 1, borderColor: "#E4E6EB", backgroundColor: "#fff" }, suggestionAvatarWrap: { alignItems: "center" }, suggestionAvatar: n(68), suggestionName: { fontSize: n(14), fontWeight: "700", marginTop: n(7), textAlign: "center" }, addButton: { marginTop: n(8), borderRadius: n(7), backgroundColor: "#E7F3FF", paddingVertical: n(7), alignItems: "center" }, addText: { color: "#1877F2", fontWeight: "700" }, addAll: { alignItems: "center", paddingVertical: n(6) }, addAllText: { color: "#1877F2", fontWeight: "700", fontSize: n(15) },
     tabs: { flexDirection: "row", paddingHorizontal: horizontal, marginTop: n(6), borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, tab: { flex: 1, alignItems: "center", paddingVertical: n(13), borderRadius: n(22) }, tabActive: { backgroundColor: "#E7F3FF" }, tabText: { color: "#65676B", fontSize: n(16), fontWeight: "700" }, tabTextActive: { color: "#1877F2" },
@@ -609,6 +652,6 @@ function makeStyles(width: number) {
     postsHeader: { paddingHorizontal: horizontal, paddingTop: n(20), paddingBottom: n(10), flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, composer: { marginHorizontal: horizontal, flexDirection: "row", alignItems: "center", gap: n(10) }, composerAvatar: n(44), composerBox: { flex: 1, borderWidth: 1, borderColor: "#E4E6EB", borderRadius: n(22), paddingHorizontal: n(16), paddingVertical: n(11) }, composerText: { color: "#65676B", fontSize: n(15) }, creationRow: { flexDirection: "row", gap: n(10), marginHorizontal: horizontal, marginTop: n(10) }, creationButton: { flex: 1, minHeight: n(42), borderRadius: n(21), borderWidth: 1, borderColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: n(7) }, creationText: { fontSize: n(14), fontWeight: "700", color: "#050505" },
     post: { marginHorizontal: horizontal, marginTop: n(14), padding: n(14), borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#E4E6EB" }, postHead: { flexDirection: "row", alignItems: "center", gap: n(10) }, postAvatar: n(42), postName: { fontWeight: "800", fontSize: n(15) }, postTime: { color: "#65676B", fontSize: n(12), marginTop: n(2) }, postContent: { fontSize: n(16), color: "#050505", marginTop: n(12), lineHeight: n(22) }, postMedia: { width: "100%", height: n(230), marginTop: n(10), borderRadius: n(8) }, loading: { padding: n(20), alignItems: "center" },
     modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,.45)", justifyContent: "center", padding: horizontal }, searchPanel: { backgroundColor: "#fff", borderRadius: n(16), padding: n(18), maxHeight: "85%" }, modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: n(12) }, modalTitle: { fontSize: n(19), fontWeight: "800" }, modalClose: { fontSize: n(30), color: "#65676B", lineHeight: n(30) }, searchInput: { borderWidth: 1, borderColor: "#CCD0D5", borderRadius: n(22), paddingHorizontal: n(16), paddingVertical: n(11), fontSize: n(15), color: "#050505" }, searchHint: { color: "#65676B", marginTop: n(10), fontSize: n(13) }, dateRow: { flexDirection: "row", flexWrap: "wrap", gap: n(8), marginTop: n(14) }, dateChip: { paddingHorizontal: n(11), paddingVertical: n(8), borderRadius: n(18), backgroundColor: "#F0F2F5" }, dateChipText: { fontSize: n(12), fontWeight: "700", color: "#050505" }, filterPanel: { backgroundColor: "#fff", borderTopLeftRadius: n(18), borderTopRightRadius: n(18), padding: n(18), position: "absolute", bottom: 0, left: 0, right: 0 }, disabledRow: { paddingVertical: n(15), borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, disabledText: { color: "#65676B", fontSize: n(15) },
-    sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,.42)", justifyContent: "flex-end" }, sheet: { backgroundColor: "#fff", borderTopLeftRadius: n(20), borderTopRightRadius: n(20), paddingHorizontal: horizontal, paddingTop: n(8), paddingBottom: n(22), maxHeight: "88%" }, sheetHandle: { alignSelf: "center", width: n(42), height: n(4), borderRadius: n(2), backgroundColor: "#CCD0D5", marginBottom: n(10) }, sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingBottom: n(10) }, sheetTitle: { fontSize: n(19), fontWeight: "800" }, sheetRow: { minHeight: n(48), flexDirection: "row", alignItems: "center", gap: n(13) }, sheetIcon: n(23), sheetRowText: { fontSize: n(15), color: "#050505", fontWeight: "600", flex: 1 }, sheetDivider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: n(8) }, sheetDividerTop: { borderTopWidth: 1, borderTopColor: "#F0F2F5", marginTop: n(5) }, linkIntro: { flexDirection: "row", alignItems: "flex-start", gap: n(12), paddingVertical: n(8) }, linkCopy: { flex: 1 }, linkDescription: { color: "#65676B", fontSize: n(13), marginTop: n(4) }, copyButton: { minHeight: n(48), marginTop: n(8), borderRadius: n(9), backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: n(8) }, copyButtonText: { color: "#050505", fontSize: n(15), fontWeight: "800" },
+    sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,.42)", justifyContent: "flex-end" }, sheet: { backgroundColor: "#fff", borderTopLeftRadius: n(20), borderTopRightRadius: n(20), paddingHorizontal: horizontal, paddingTop: n(8), paddingBottom: n(22), maxHeight: "88%" }, sheetHandle: { alignSelf: "center", width: n(42), height: n(4), borderRadius: n(2), backgroundColor: "#CCD0D5", marginBottom: n(10) }, sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingBottom: n(10) }, sheetTitle: { fontSize: n(19), fontWeight: "800" }, sheetRow: { minHeight: n(48), flexDirection: "row", alignItems: "center", gap: n(13) }, sheetIcon: n(23), sheetRowText: { fontSize: n(15), color: "#050505", fontWeight: "600", flex: 1 }, sheetDivider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: n(8) }, linkIntro: { flexDirection: "row", alignItems: "flex-start", gap: n(12), paddingVertical: n(8) }, linkCopy: { flex: 1 }, linkDescription: { color: "#65676B", fontSize: n(13), marginTop: n(4) }, copyButton: { minHeight: n(48), marginTop: n(8), borderRadius: n(9), backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: n(8) }, copyButtonText: { color: "#050505", fontSize: n(15), fontWeight: "800" },
   });
 }
