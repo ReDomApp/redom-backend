@@ -50,14 +50,9 @@ export function EditProfileScreen({ navigation }: Props) {
 
   const birthday = data.birthday ? new Date(data.birthday).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "";
   const toggle = (section: SectionName) => setOpen(current => ({ ...current, [section]: !current[section] }));
-  const row = (icon: IconComponent, title: string, value: string | undefined, action?: () => void, disabled = false, privacy?: string) => (
-    <Pressable
-      style={styles.row}
-      onPress={disabled ? unavailable : action}
-      disabled={!action && !disabled}
-      accessibilityRole={action || disabled ? "button" : undefined}
-    >
-      <View style={styles.leading}><icon width={22} height={22} /></View>
+  const row = (Icon: IconComponent, title: string, value: string | undefined, action?: () => void, disabled = false, privacy?: string) => (
+    <Pressable style={styles.row} onPress={disabled ? unavailable : action} disabled={!action && !disabled} accessibilityRole={action || disabled ? "button" : undefined}>
+      <View style={styles.leading}><Icon width={22} height={22} /></View>
       <View style={styles.rowCopy}>
         <Text style={[styles.rowTitle, (!value || disabled) && styles.muted]} numberOfLines={1}>{title}</Text>
         {value ? <Text style={styles.value} numberOfLines={1}>{value}</Text> : null}
@@ -67,34 +62,30 @@ export function EditProfileScreen({ navigation }: Props) {
     </Pressable>
   );
 
-  return (
-    <SafeAreaView style={styles.root}>
-      <Header styles={styles} onBack={() => navigation.goBack()} />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <Section title="Intro" open={open.intro} onPress={() => toggle("intro")} styles={styles} />
-        {open.intro ? <>
-          {row(AboutIcon, "About you", data.bio || undefined, () => navigation.navigate("EditBio"), false, data.bioPrivacy)}
-          {row(PinIcon, "Pinned details", data.currentCity || data.hometown || undefined, unavailable, false, data.currentCity ? data.currentCityPrivacy : data.hometownPrivacy)}
-        </> : null}
-
-        <Section title="Personal details" open={open.personal} onPress={() => toggle("personal")} styles={styles} />
-        {open.personal ? <>
-          {row(LocationIcon, "Current city", data.currentCity || undefined, () => navigation.navigate("EditLocationSearch", { kind: "location" }), false, data.currentCityPrivacy)}
-          {row(HometownIcon, "Hometown", data.hometown || undefined, () => navigation.navigate("EditLocationSearch", { kind: "hometown" }), false, data.hometownPrivacy)}
-          {row(BirthdayIcon, birthday || "Birthday", birthday ? undefined : undefined, () => navigation.navigate("EditBirthday"), false, `${privacyLabel(data.birthdayMonthDayPrivacy as Privacy)} / ${privacyLabel(data.birthdayYearPrivacy as Privacy)}`)}
-          {row(RelationshipIcon, "Relationship status", undefined, unavailable)}
-          {row(FamilyIcon, "Family", undefined, unavailable)}
-          {row(GenderIcon, data.gender ? String(data.gender) : "Gender", undefined, undefined, true)}
-          {row(LanguagesIcon, "Languages", undefined, unavailable)}
-        </> : null}
-
-        <Section title="Work" open={open.work} onPress={() => toggle("work")} styles={styles} />
-        {open.work ? row(WorkIcon, "Work experience", undefined, unavailable) : null}
-        <Section title="Education" open={open.education} onPress={() => toggle("education")} styles={styles} />
-        {open.education ? row(EducationIcon, "High school or college", undefined, unavailable) : null}
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <SafeAreaView style={styles.root}>
+    <Header styles={styles} onBack={() => navigation.goBack()} />
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <Section title="Intro" open={open.intro} onPress={() => toggle("intro")} styles={styles} />
+      {open.intro ? <>
+        {row(AboutIcon, "About you", data.bio || undefined, () => navigation.navigate("EditBio"), false, data.bioPrivacy)}
+        {row(PinIcon, "Pinned details", data.currentCity || data.hometown || undefined, unavailable, false, data.currentCity ? data.currentCityPrivacy : data.hometownPrivacy)}
+      </> : null}
+      <Section title="Personal details" open={open.personal} onPress={() => toggle("personal")} styles={styles} />
+      {open.personal ? <>
+        {row(LocationIcon, "Current city", data.currentCity || undefined, () => navigation.navigate("EditLocationSearch", { kind: "location" }), false, data.currentCityPrivacy)}
+        {row(HometownIcon, "Hometown", data.hometown || undefined, () => navigation.navigate("EditLocationSearch", { kind: "hometown" }), false, data.hometownPrivacy)}
+        {row(BirthdayIcon, birthday || "Birthday", birthday || undefined, () => navigation.navigate("EditBirthday"), false, `${privacyLabel(data.birthdayMonthDayPrivacy as Privacy)} / ${privacyLabel(data.birthdayYearPrivacy as Privacy)}`)}
+        {row(RelationshipIcon, "Relationship status", undefined, unavailable)}
+        {row(FamilyIcon, "Family", undefined, unavailable)}
+        {row(GenderIcon, data.gender ? String(data.gender) : "Gender", undefined, undefined, true)}
+        {row(LanguagesIcon, "Languages", undefined, unavailable)}
+      </> : null}
+      <Section title="Work" open={open.work} onPress={() => toggle("work")} styles={styles} />
+      {open.work ? row(WorkIcon, "Work experience", undefined, unavailable) : null}
+      <Section title="Education" open={open.education} onPress={() => toggle("education")} styles={styles} />
+      {open.education ? row(EducationIcon, "High school or college", undefined, unavailable) : null}
+    </ScrollView>
+  </SafeAreaView>;
 }
 
 function Header({ onBack, styles }: { onBack: () => void; styles: ReturnType<typeof makeStyles> }) {
