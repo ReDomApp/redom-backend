@@ -1,0 +1,48 @@
+name: Finish profile details
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  update:
+    if: github.event.head_commit.message != 'Finish profile privacy display'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add saved profile details to profile UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('artifacts/redom-frontend/src/profile/service.ts')
+          s = p.read_text()
+          s = s.replace('location:string|null; birthday:string|null;', 'bio:string|null; location:string|null; hometown:string|null; birthday:string|null;')
+          p.write_text(s)
+
+          p = Path('artifacts/redom-frontend/src/screens/ProfileScreen.tsx')
+          s = p.read_text()
+          old = '{p?.location ? <View style={ui.locationLine}><LocationIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.locationText}>{p.location}</Text></View> : null}'
+          new = '''{p?.bio ? <Text style={ui.bioText}>{p.bio}</Text> : null}\n          {p?.location ? <View style={ui.locationLine}><LocationIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.locationText}>{p.location}</Text></View> : null}'''
+          s = s.replace(old, new, 1)
+          old2 = '<View style={ui.detailsSection}><View style={ui.sectionTitleRow}><Text style={ui.sectionTitle}>Personal details</Text>{canEdit ? <Pressable accessibilityLabel="Edit personal details"><EditIcon width={ui.editIcon} height={ui.editIcon} /></Pressable> : null}</View>{p?.location ? <View style={ui.detailRow}><LocationIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.location}</Text></View> : null}{p?.birthday ? <View style={ui.detailRow}><CalendarIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.birthday}</Text></View> : null}</View>'
+          new2 = '''<View style={ui.detailsSection}><View style={ui.sectionTitleRow}><Text style={ui.sectionTitle}>Personal details</Text>{canEdit ? <Pressable accessibilityLabel="Edit personal details"><EditIcon width={ui.editIcon} height={ui.editIcon} /></Pressable> : null}</View>{p?.location ? <View style={ui.detailRow}><LocationIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.location}</Text></View> : null}{p?.hometown ? <View style={ui.detailRow}><ReDomRecordIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.hometown}</Text></View> : null}{p?.birthday ? <View style={ui.detailRow}><CalendarIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.birthday}</Text></View> : null}</View>'''
+          s = s.replace(old2, new2, 1)
+          anchor = '  emptyText: {'
+          insert = '  bioText: { fontSize: 18, lineHeight: 24, color: "#050505", marginTop: 8, marginBottom: 8 },\n'
+          s = s.replace(anchor, insert + anchor, 1)
+          p.write_text(s)
+          PY
+          git config user.name 'ReDom'
+          git config user.email 'jessicasanchez89965@gmail.com'
+          git add artifacts/redom-frontend/src/profile/service.ts artifacts/redom-frontend/src/screens/ProfileScreen.tsx
+          git commit -m 'Finish profile privacy display'
+          git push origin main
+          rm -f .github/workflows/finish-profile-details.yml
+          git add .github/workflows/finish-profile-details.yml
+          git commit -m 'Remove temporary profile details workflow'
+          git push origin main
