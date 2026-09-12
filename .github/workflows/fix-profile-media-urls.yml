@@ -1,7 +1,8 @@
 name: Fix profile media delivery
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   fix-profile-media:
@@ -43,17 +44,12 @@ jobs:
           path.write_text(text)
           PY
 
-      - name: Commit fix
+      - name: Commit fix and remove workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add artifacts/redom-backend/src/routes/profile.routes.ts
           git diff --cached --quiet || git commit -m "Route profile media through backend proxy"
-          git push
-
-      - name: Remove temporary workflow
-        if: success()
-        run: |
           git rm .github/workflows/fix-profile-media-urls.yml
           git commit -m "Remove temporary profile media fix workflow"
           git push
