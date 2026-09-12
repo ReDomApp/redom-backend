@@ -1,14 +1,78 @@
 import { useEffect, useState } from "react";
-import { Alert, Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { api } from "../api/client";
-import Globe from "../assets/home-feed/profile-audience-globe.svg";
-import Group from "../assets/home-feed/profile-audience-group.svg";
-import Friends from "../assets/home-feed/profile-audience-friends.svg";
+import BackIcon from "../assets/edit-profile/back.svg";
+import BirthdayIcon from "../assets/edit-profile/birthday.svg";
+import GlobeIcon from "../assets/edit-profile/globe.svg";
+import { EditProfileAudienceModal, type Privacy, privacyLabel } from "./edit-profile/EditProfileAudienceModal";
+import { SavingOverlay } from "./edit-profile/SavingOverlay";
 
-type Props=NativeStackScreenProps<RootStackParamList,"EditBirthday">;type Privacy="public"|"friends_of_friends"|"friends"|"only_me"|"custom";
-const label=(v:Privacy)=>({public:"Public",friends_of_friends:"Friends of friends",friends:"Friends",only_me:"Only Me",custom:"Custom"}[v]);
-export function EditBirthdayScreen({navigation}:Props){const[birthday,setBirthday]=useState<string|null>(null);const[monthDay,setMonthDay]=useState<Privacy>("friends_of_friends");const[year,setYear]=useState<Privacy>("friends_of_friends");const[target,setTarget]=useState<"month"|"year"|null>(null);useEffect(()=>{void api.get<any>("/profile/edit").then(r=>{setBirthday(r.profile.birthday);setMonthDay(r.profile.birthdayMonthDayPrivacy||"friends_of_friends");setYear(r.profile.birthdayYearPrivacy||"friends_of_friends")})},[]);const save=async()=>{try{await api.patch("/profile/edit/details",{birthday_month_day_privacy:monthDay,birthday_year_privacy:year});navigation.goBack()}catch{Alert.alert("Birthday","Unable to save birthday privacy right now.")}};const d=birthday?new Date(birthday):null;return <SafeAreaView style={s.root}><View style={s.header}><Pressable onPress={()=>navigation.goBack()}><Text style={s.back}>‹</Text></Pressable><Text style={s.title}>Birthday</Text><View style={{width:40}}/></View><View style={s.content}><Text style={s.heading}>Month and day</Text><Pressable style={s.selector} onPress={()=>setTarget("month")}><Text style={s.selectorText}>{label(monthDay)} ▾</Text></Pressable><View style={s.locked}><Text style={s.lockedTitle}>Month and day</Text><Text style={s.lockedValue}>{d?d.toLocaleDateString("en-US",{month:"long",day:"numeric"}):""}</Text></View><Text style={s.heading}>Year</Text><Pressable style={s.selector} onPress={()=>setTarget("year")}><Text style={s.selectorText}>{label(year)} ▾</Text></Pressable><View style={s.locked}><Text style={s.lockedTitle}>Year</Text><Text style={s.lockedValue}>{d?d.getFullYear():""}</Text></View><Pressable style={s.editRow} onPress={()=>Alert.alert("Edit your birthday","You can edit your birthday in Accounts Center.")}><Text style={s.editText}>Edit your birthday?</Text><Text style={s.arrow}>›</Text></Pressable><Pressable style={s.save} onPress={()=>void save()}><Text style={s.saveText}>Save</Text></Pressable></View><Audience visible={!!target} value={target==="year"?year:monthDay} onChange={v=>target==="year"?setYear(v):setMonthDay(v)} onClose={()=>setTarget(null)}/></SafeAreaView>}
-function Audience({visible,value,onChange,onClose}:{visible:boolean;value:Privacy;onChange:(v:Privacy)=>void;onClose:()=>void}){const opts:[Privacy,string,any][]=[["public","Public",Globe],["friends_of_friends","Friends of friends",Group],["friends","Friends",Friends],["only_me","Only Me",Globe],["custom","Custom",Group]];return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={s.backdrop}><View style={s.modal}><Text style={s.modalTitle}>Choose audience</Text>{opts.map(([v,t,I])=><Pressable key={v} style={s.option} onPress={()=>{if(v==="custom"){onClose();return}onChange(v)}}><I width={25} height={25}/><Text style={s.opt}>{t}</Text><Text style={[s.radio,value===v&&s.radioOn]}>{value===v?"●":"○"}</Text></Pressable>)}<Pressable style={s.done} onPress={onClose}><Text style={s.doneText}>Done</Text></Pressable></View></View></Modal>}
-const s=StyleSheet.create({root:{flex:1,backgroundColor:"#fff"},header:{height:64,flexDirection:"row",justifyContent:"space-between",alignItems:"center",paddingHorizontal:20},back:{fontSize:44,fontWeight:"300"},title:{fontSize:24,fontWeight:"800"},content:{padding:23},heading:{fontSize:17,fontWeight:"800",marginTop:18},selector:{height:48,justifyContent:"center"},selectorText:{fontSize:15,fontWeight:"700",color:"#65676B"},locked:{borderWidth:1,borderColor:"#E4E6EB",backgroundColor:"#F0F2F5",borderRadius:9,padding:14,marginTop:4},lockedTitle:{fontSize:14,color:"#65676B"},lockedValue:{fontSize:18,fontWeight:"700",marginTop:4,color:"#65676B"},editRow:{minHeight:58,flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:24},editText:{fontSize:17,fontWeight:"700"},arrow:{fontSize:30,color:"#65676B"},save:{height:50,borderRadius:9,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center",marginTop:18},saveText:{color:"#fff",fontSize:17,fontWeight:"800"},backdrop:{flex:1,backgroundColor:"rgba(0,0,0,.45)",justifyContent:"flex-end"},modal:{backgroundColor:"#fff",borderTopLeftRadius:20,borderTopRightRadius:20,padding:22},modalTitle:{fontSize:21,fontWeight:"800",marginBottom:12},option:{minHeight:62,flexDirection:"row",alignItems:"center",gap:12},opt:{flex:1,fontSize:16,fontWeight:"700"},radio:{fontSize:25,color:"#65676B"},radioOn:{color:"#1877F2"},done:{height:48,borderRadius:9,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center",marginTop:10},doneText:{color:"#fff",fontWeight:"800",fontSize:16}});
+type Props = NativeStackScreenProps<RootStackParamList, "EditBirthday">;
+
+export function EditBirthdayScreen({ navigation }: Props) {
+  const [birthday, setBirthday] = useState<string | null>(null);
+  const [monthDay, setMonthDay] = useState<Privacy>("friends_of_friends");
+  const [year, setYear] = useState<Privacy>("friends_of_friends");
+  const [initialMonthDay, setInitialMonthDay] = useState<Privacy>("friends_of_friends");
+  const [initialYear, setInitialYear] = useState<Privacy>("friends_of_friends");
+  const [target, setTarget] = useState<"month" | "year" | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void api.get<any>("/profile/edit").then((response) => {
+      const md = response.profile.birthdayMonthDayPrivacy || "friends_of_friends";
+      const yr = response.profile.birthdayYearPrivacy || "friends_of_friends";
+      setBirthday(response.profile.birthday); setMonthDay(md); setYear(yr); setInitialMonthDay(md); setInitialYear(yr);
+    }).catch(() => Alert.alert("Birthday", "Unable to load birthday settings right now."));
+  }, []);
+
+  const save = async () => {
+    if (saving || (monthDay === initialMonthDay && year === initialYear)) return;
+    setSaving(true);
+    try {
+      await api.patch("/profile/edit/details", { birthday_month_day_privacy: monthDay, birthday_year_privacy: year });
+      navigation.navigate("Profile");
+    } catch {
+      Alert.alert("Birthday", "Your changes could not be saved. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const date = birthday ? new Date(birthday) : null;
+  const dayMonthValue = date ? date.toLocaleDateString("en-US", { month: "long", day: "numeric" }) : "";
+  const yearValue = date ? String(date.getFullYear()) : "";
+  const changed = monthDay !== initialMonthDay || year !== initialYear;
+
+  return <SafeAreaView style={styles.root}>
+    <View style={styles.header}><Pressable onPress={() => navigation.goBack()} hitSlop={12}><BackIcon width={34} height={34} /></Pressable><Text style={styles.title}>Birthday</Text><View style={styles.spacer} /></View>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <View style={styles.lockedHeader}><BirthdayIcon width={32} height={32} /><Text style={styles.lockedHeaderText}>Birthday</Text></View>
+      <Text style={styles.sectionLabel}>Month and day</Text>
+      <Pressable style={styles.audience} onPress={() => setTarget("month")}><GlobeIcon width={25} height={25} /><Text style={styles.audienceText}>{privacyLabel(monthDay)}</Text><Text style={styles.down}>▾</Text></Pressable>
+      <View style={styles.locked}><Text style={styles.lockedTitle}>Month and day</Text><Text style={styles.lockedValue}>{dayMonthValue}</Text></View>
+      <Text style={styles.sectionLabel}>Year</Text>
+      <Pressable style={styles.audience} onPress={() => setTarget("year")}><GlobeIcon width={25} height={25} /><Text style={styles.audienceText}>{privacyLabel(year)}</Text><Text style={styles.down}>▾</Text></Pressable>
+      <View style={styles.locked}><Text style={styles.lockedTitle}>Year</Text><Text style={styles.lockedValue}>{yearValue}</Text></View>
+      <Pressable style={styles.editBirthday} onPress={() => Alert.alert("Edit your birthday", "You can edit your birthday in Accounts Center.")}><View><Text style={styles.editTitle}>Edit your birthday?</Text><Text style={styles.editDescription}>You can edit your birthday in Accounts Center.</Text></View><Text style={styles.arrow}>›</Text></Pressable>
+      <Pressable disabled={!changed || saving} onPress={() => void save()} style={[styles.save, (!changed || saving) && styles.disabled]}><Text style={styles.saveText}>{saving ? "Saving..." : "Save"}</Text></Pressable>
+    </ScrollView>
+    <EditProfileAudienceModal visible={!!target} value={target === "year" ? year : monthDay} onChange={(value) => target === "year" ? setYear(value) : setMonthDay(value)} onDone={() => setTarget(null)} />
+    <SavingOverlay visible={saving} />
+  </SafeAreaView>;
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#fff" },
+  header: { height: 64, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: 1, borderBottomColor: "#F0F2F5" },
+  title: { fontSize: 25, fontWeight: "800", color: "#050505" }, spacer: { width: 34 },
+  content: { padding: 24, paddingBottom: 40 },
+  lockedHeader: { flexDirection: "row", alignItems: "center", marginBottom: 28 }, lockedHeaderText: { fontSize: 22, fontWeight: "800", marginLeft: 12, color: "#050505" },
+  sectionLabel: { fontSize: 17, fontWeight: "800", color: "#050505", marginTop: 6, marginBottom: 2 },
+  audience: { height: 50, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, audienceText: { flex: 1, fontSize: 16, fontWeight: "700", color: "#65676B", marginLeft: 12 }, down: { fontSize: 19, color: "#65676B" },
+  locked: { minHeight: 70, borderWidth: 1, borderColor: "#E4E6EB", backgroundColor: "#F0F2F5", borderRadius: 9, paddingHorizontal: 14, paddingVertical: 12, marginTop: 12 }, lockedTitle: { fontSize: 13, color: "#65676B" }, lockedValue: { fontSize: 18, fontWeight: "700", color: "#65676B", marginTop: 4 },
+  editBirthday: { minHeight: 76, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", marginTop: 24 }, editTitle: { fontSize: 17, fontWeight: "800", color: "#050505" }, editDescription: { fontSize: 14, color: "#65676B", marginTop: 4, maxWidth: 290 }, arrow: { fontSize: 31, color: "#65676B" },
+  save: { height: 50, borderRadius: 8, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center", marginTop: 28 }, disabled: { opacity: 0.45 }, saveText: { color: "#fff", fontSize: 17, fontWeight: "800" },
+});
