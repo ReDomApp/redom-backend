@@ -1,10 +1,10 @@
 import { api } from "../api/client";
+import { env } from "../config/env";
 
 export type PostReactionType = "like" | "haha" | "sad" | "love";
 export type CommentReactionType = PostReactionType;
 
 export interface PostReactionSummary {
-  // All visual reaction variants are counted together as Likes.
   total: number;
   top: Array<{ type: PostReactionType; count: number }>;
   counts: Record<PostReactionType, number>;
@@ -97,16 +97,53 @@ export interface HomeFeedResult {
   friendStories: HomeFeedFriendStory[];
 }
 
+const mediaUri = (value: unknown): string | null => {
+  if (typeof value !== "string" || !value) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value === "__redom_default__") return `${env.apiBaseUrl}/profile/media/default.svg`;
+  if (value.startsWith("profiles/")) return `${env.apiBaseUrl}/profile/media/file/${value.split("/").map(encodeURIComponent).join("/")}`;
+  return value;
+};
+
+const normalizeReactionSummary = (summary: PostReactionSummary): PostReactionSummary => ({
+  ...summary,
+  visibleReactors: (summary.visibleReactors ?? []).map((reactor) => ({ ...reactor, profilePhoto: mediaUri(reactor.profilePhoto) })),
+});
+
+const normalizeComment = (comment: HomeFeedComment): HomeFeedComment => ({
+  ...comment,
+  author: { ...comment.author, profilePhoto: mediaUri(comment.author?.profilePhoto) },
+  reactionSummary: normalizeReactionSummary(comment.reactionSummary),
+});
+
+const normalizePost = (post: HomeFeedPost): HomeFeedPost => ({
+  ...post,
+  profilePhoto: mediaUri(post.profilePhoto),
+  media: (post.media ?? []).map((item) => ({
+    ...item,
+    objectKey: mediaUri(item.objectKey),
+    thumbnailKey: mediaUri(item.thumbnailKey),
+  })),
+  reactionSummary: post.reactionSummary ? normalizeReactionSummary(post.reactionSummary) : post.reactionSummary,
+});
+
 export const feedService = {
   async getHomeFeed(): Promise<HomeFeedResult> {
     const result = await api.get<HomeFeedApiResponse>(`/feed/home?refresh=${Date.now()}`);
-    return { ...result, posts: result.posts ?? [], suggestedProfiles: result.friendSuggestions ?? [], friendStories: result.stories ?? [] };
+    return {
+      ...result,
+      posts: (result.posts ?? []).map(normalizePost),
+      suggestedProfiles: (result.friendSuggestions ?? []).map((profile) => ({ ...profile, profilePhoto: mediaUri(profile.profilePhoto) })),
+      friendStories: (result.stories ?? []).map((story) => ({ ...story, profilePhoto: mediaUri(story.profilePhoto) })),
+    };
   },
   async reactToPost(postId: string, reactionType: PostReactionType) {
-    return api.post<{ success: boolean; state: string } & PostReactionSummary>("/feed/post-reaction", { postId, reactionType });
+    const result = await api.post<{ success: boolean; state: string } & PostReactionSummary>("/feed/post-reaction", { postId, reactionType });
+    return normalizeReactionSummary(result);
   },
   async getPostReactionSummary(postId: string) {
-    return api.get<{ success: boolean } & PostReactionSummary>(`/feed/post-reaction/${postId}`);
+    const result = await api.get<{ success: boolean } & PostReactionSummary>(`/feed/post-reaction/${postId}`);
+    return normalizeReactionSummary(result);
   },
   async hidePost(postId: string, reason: string) {
     return api.post<{ success: boolean; hidden: boolean }>("/feed/post-hide", { postId, reason });
@@ -125,13 +162,16 @@ export const feedService = {
   },
   async getComments(postId: string, limit = 50, before?: string) {
     const suffix = before ? `&before=${encodeURIComponent(before)}` : "";
-    return api.get<{ success: boolean; comments: HomeFeedComment[]; hasMore: boolean }>(`/comments/post/${postId}?limit=${limit}${suffix}`);
+    const result = await api.get<{ success: boolean; comments: HomeFeedComment[]; hasMore: boolean }>(`/comments/post/${postId}?limit=${limit}${suffix}`);
+    return { ...result, comments: (result.comments ?? []).map(normalizeComment) };
   },
   async createComment(postId: string, content: string, parentCommentId?: string | null) {
-    return api.post<{ success: boolean; comment: HomeFeedComment }>(`/comments/post/${postId}`, { content, parentCommentId: parentCommentId ?? null });
+    const result = await api.post<{ success: boolean; comment: HomeFeedComment }>(`/comments/post/${postId}`, { content, parentCommentId: parentCommentId ?? null });
+    return { ...result, comment: normalizeComment(result.comment) };
   },
   async reactToComment(commentId: string, reactionType: CommentReactionType) {
-    return api.post<{ success: boolean } & CommentReactionSummary>(`/comments/${commentId}/reaction`, { reactionType });
+    const result = await api.post<{ success: boolean } & CommentReactionSummary>(`/comments/${commentId}/reaction`, { reactionType });
+    return normalizeReactionSummary(result);
   },
   async pinComment(commentId: string, pinned: boolean) {
     return api.post<{ success: boolean; pinned: boolean }>(`/comments/${commentId}/pin`, { pinned });
