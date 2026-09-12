@@ -11,12 +11,11 @@ const DEFAULT_KEY = "__redom_default__";
 function shareId() { let out = ""; for (let i = 0; i < 10; i += 1) out += chars[Math.floor(Math.random() * chars.length)]; return out; }
 function wordCount(value: string) { return value.trim() ? value.trim().split(/\s+/).filter(Boolean).length : 0; }
 function parseDataUri(value: string) {
-  const match = /^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value);
-  if (!match) throw new Error("Only JPEG, PNG, or WebP images are supported.");
-  const mime = match[1] === "image/jpg" ? "image/jpeg" : match[1];
-  const body = Buffer.from(match[2], "base64");
-  if (!body.length || body.length > 8 * 1024 * 1024) throw new Error("Profile media must be 8 MB or smaller.");
-  return { mime, body };
+  const raster = /^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value);
+  if (raster) { const mime = raster[1] === "image/jpg" ? "image/jpeg" : raster[1]; const body = Buffer.from(raster[2], "base64"); if (!body.length || body.length > 8 * 1024 * 1024) throw new Error("Profile media must be 8 MB or smaller."); return { mime, body }; }
+  const svg = /^data:image\/svg\+xml(?:;charset=utf-8)?,(.+)$/s.exec(value);
+  if (svg) { const body = Buffer.from(decodeURIComponent(svg[1]), "utf8"); if (!body.length || body.length > 8 * 1024 * 1024) throw new Error("Profile media must be 8 MB or smaller."); if (/<script|<foreignObject|javascript:/i.test(body.toString("utf8"))) throw new Error("Invalid profile media."); return { mime: "image/svg+xml", body }; }
+  throw new Error("Only JPEG, PNG, WebP, or ReDom captioned SVG images are supported.");
 }
 function expiryFor(value: string | undefined) {
   if (!value || value === "permanent") return null;
