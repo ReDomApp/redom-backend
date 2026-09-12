@@ -1,0 +1,34 @@
+name: Fix login phone normalization dependency
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Fix login phone normalization dependency'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fix callback dependency
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('artifacts/redom-frontend/src/screens/LoginScreen.tsx')
+          s = p.read_text()
+          old = '[deviceId,identifier,loading,login,navigation,password,uiMessage,openPendingRegistration]);'
+          new = '[deviceId,identifier,loading,login,navigation,password,uiMessage,openPendingRegistration,networkSecurity]);'
+          if old not in s:
+              raise SystemExit('Expected LoginScreen dependency list was not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/redom-frontend/src/screens/LoginScreen.tsx
+          git commit -m "Fix login phone normalization dependency"
+          git push
