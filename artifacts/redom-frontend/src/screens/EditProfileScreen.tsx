@@ -16,6 +16,7 @@ import LanguagesIcon from "../assets/edit-profile/languages.svg";
 import WorkIcon from "../assets/edit-profile/work.svg";
 import EducationIcon from "../assets/edit-profile/education.svg";
 import PencilIcon from "../assets/edit-profile/pencil.svg";
+import ChevronIcon from "../assets/edit-profile/chevron.svg";
 import { privacyLabel, type Privacy } from "./edit-profile/EditProfileAudienceModal";
 
 type Props = NativeStackScreenProps<RootStackParamList, "EditProfile">;
@@ -93,7 +94,7 @@ function Header({ onBack, styles }: { onBack: () => void; styles: ReturnType<typ
 }
 
 function Section({ title, open, onPress, styles }: { title: string; open: boolean; onPress: () => void; styles: ReturnType<typeof makeStyles> }) {
-  return <Pressable style={styles.section} onPress={onPress} accessibilityRole="button"><Text style={styles.sectionTitle}>{title}</Text><Text style={styles.chevron}>{open ? "⌃" : "⌄"}</Text></Pressable>;
+  return <Pressable style={styles.section} onPress={onPress} accessibilityRole="button"><Text style={styles.sectionTitle}>{title}</Text><ChevronIcon width={16} height={16} style={open ? undefined : { transform: [{ rotate: "180deg" }] }} /></Pressable>;
 }
 
 function makeStyles(scale: number) {
@@ -106,7 +107,6 @@ function makeStyles(scale: number) {
     content: { paddingBottom: n(30) },
     section: { minHeight: n(55), paddingHorizontal: n(22), paddingTop: n(13), paddingBottom: n(5), flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     sectionTitle: { fontSize: n(18), lineHeight: n(23), fontWeight: "700", color: "#050505" },
-    chevron: { width: n(20), textAlign: "center", fontSize: n(25), lineHeight: n(22), fontWeight: "700", color: "#050505" },
     row: { minHeight: n(74), paddingHorizontal: n(22), paddingVertical: n(10), flexDirection: "row", alignItems: "center" },
     leading: { width: n(40), marginRight: n(12), alignItems: "flex-start", justifyContent: "center" },
     rowCopy: { flex: 1, minWidth: 0, paddingRight: n(8) },
