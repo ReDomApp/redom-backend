@@ -15,6 +15,36 @@ const escapeHtml = (value: string) =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 
+router.get("/.well-known/assetlinks.json", (_req: Request, res: Response) => {
+  const fingerprints = String(process.env.REDOM_ANDROID_SHA256_CERT_FINGERPRINTS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return res.json(
+    fingerprints.map((sha256_cert_fingerprint) => ({
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: "com.redom.app",
+        sha256_cert_fingerprints: [sha256_cert_fingerprint],
+      },
+    })),
+  );
+});
+
+router.get("/.well-known/apple-app-site-association", (_req: Request, res: Response) => {
+  const teamId = String(process.env.REDOM_IOS_TEAM_ID || "").trim();
+  const details = teamId
+    ? [{
+        appIDs: [`${teamId}.com.redom.app`],
+        components: [{ "/": "/profile/username/*" }],
+      }]
+    : [];
+
+  return res.type("application/json").send(JSON.stringify({ applinks: { details } }));
+});
+
 router.get("/profile/username/:shareCode", async (req: Request, res: Response) => {
   try {
     const shareCode = String(req.params.shareCode || "").trim();
