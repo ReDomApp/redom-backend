@@ -8,10 +8,25 @@
     "scheme": "redom",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.redom.app"
+      "bundleIdentifier": "com.redom.app",
+      "associatedDomains": ["applinks:redom.app"]
     },
     "android": {
       "package": "com.redom.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [
+            {
+              "scheme": "https",
+              "host": "redom.app",
+              "pathPrefix": "/profile/username/"
+            }
+          ]
+        }
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#1877F2"
       }
