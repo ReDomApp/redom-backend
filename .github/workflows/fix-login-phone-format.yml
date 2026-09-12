@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   fix:
-    if: github.event.head_commit.message != 'Run login phone format patch'
+    if: github.event.head_commit.message != 'Apply strict login phone normalization'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           root = Path('.')
 
           p = root / 'artifacts/redom-frontend/src/auth/types.ts'
@@ -40,7 +39,7 @@ jobs:
           p.write_text(s)
 
           p = root / 'artifacts/redom-frontend/src/auth/validation.ts'
-          p.write_text('''export function validateLoginIdentifier(\n  identifier: string,\n): string | null {\n  const value = identifier.trim();\n\n  if (!value) return "Enter your mobile number or email.";\n\n  // Phone input is deliberately strict: + followed by digits for international\n  // numbers, or digits only for a local number. No spaces, brackets, dots or hyphens.\n  if (value.startsWith("+")) {\n    if (!/^\\+[1-9]\\d{7,14}$/.test(value)) {\n      return "Enter your mobile number with + and the country code.";\n    }\n    return null;\n  }\n\n  if (/^\\d+$/.test(value)) {\n    if (value.length < 7 || value.length > 20) return "Enter a valid mobile number.";\n    return null;\n  }\n\n  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)) {\n    return "Enter a valid mobile number or email address.";\n  }\n\n  return null;\n}\n\n/** Converts a local number such as 09133140501 to E.164 using the startup IP check. */\nexport function normalizeLoginIdentifier(identifier: string, callingCode?: string | null): string {\n  const value = identifier.trim();\n  if (!/^\\d+$/.test(value) || !value.startsWith("0")) return value;\n  const code = String(callingCode ?? "").replace(/^\\+/, "").replace(/\\D/g, "");\n  return code ? `+${code}${value.slice(1)}` : value;\n}\n\nexport function validatePassword(\n  password: string,\n): string | null {\n  if (!password) {\n    return "Enter your password.";\n  }\n\n  return null;\n}\n''')
+          p.write_text('''export function validateLoginIdentifier(\n  identifier: string,\n): string | null {\n  const value = identifier.trim();\n  if (!value) return "Enter your mobile number or email.";\n  // Phone input is strict: + followed by digits internationally, or digits only locally.\n  // Spaces, brackets, dots and hyphens are intentionally rejected.\n  if (value.startsWith("+")) {\n    if (!/^\\+[1-9]\\d{7,14}$/.test(value)) return "Enter your mobile number with + and the country code.";\n    return null;\n  }\n  if (/^\\d+$/.test(value)) {\n    if (value.length < 7 || value.length > 20) return "Enter a valid mobile number.";\n    return null;\n  }\n  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)) return "Enter a valid mobile number or email address.";\n  return null;\n}\n\n/** Converts a local number such as 09133140501 to E.164 using the startup IP check. */\nexport function normalizeLoginIdentifier(identifier: string, callingCode?: string | null): string {\n  const value = identifier.trim();\n  if (!/^\\d+$/.test(value) || !value.startsWith("0")) return value;\n  const code = String(callingCode ?? "").replace(/^\\+/, "").replace(/\\D/g, "");\n  return code ? `+${code}${value.slice(1)}` : value;\n}\n\nexport function validatePassword(\n  password: string,\n): string | null {\n  if (!password) return "Enter your password.";\n  return null;\n}\n''')
 
           p = root / 'artifacts/redom-frontend/src/screens/LoginScreen.tsx'
           s = p.read_text()
@@ -55,9 +54,8 @@ jobs:
           s = s.replace('function phoneCandidates(identifier: string): string[] {\n  const compact = identifier.trim().replace(/[\\s().-]/g, "");\n  if (!compact.startsWith("+")) return [compact];\n  return [compact, compact.slice(1)];\n}', 'function phoneCandidates(identifier: string): string[] {\n  const value = identifier.trim();\n  if (!value.startsWith("+")) return [value];\n  if (!/^\\+[1-9]\\d{7,14}$/.test(value)) return [value];\n  return [value, value.slice(1)];\n}')
           p.write_text(s)
           PY
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add artifacts/redom-frontend/src/auth/types.ts artifacts/redom-frontend/src/auth/networkProvider.ts artifacts/redom-frontend/src/auth/validation.ts artifacts/redom-frontend/src/auth/service.ts artifacts/redom-frontend/src/screens/LoginScreen.tsx artifacts/redom-backend/src/services/auth/network-provider.service.ts artifacts/redom-backend/src/services/auth/login-flow.service.ts
+          git add artifacts/redom-frontend/src/auth/types.ts artifacts/redom-frontend/src/auth/networkProvider.ts artifacts/redom-frontend/src/auth/validation.ts artifacts/redom-frontend/src/screens/LoginScreen.tsx artifacts/redom-backend/src/services/auth/network-provider.service.ts artifacts/redom-backend/src/services/auth/login-flow.service.ts
           git commit -m "Apply strict login phone normalization"
           git push
