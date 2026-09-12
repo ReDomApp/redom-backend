@@ -1,13 +1,63 @@
-import { useState } from "react";
-import { Modal, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { api } from "../api/client";
-import Globe from "../assets/home-feed/profile-audience-globe.svg";
-import Group from "../assets/home-feed/profile-audience-group.svg";
-import Friends from "../assets/home-feed/profile-audience-friends.svg";
-type Props=NativeStackScreenProps<RootStackParamList,"EditLocationConfirm">;type Privacy="public"|"friends_of_friends"|"friends"|"only_me"|"custom";
-const label=(v:Privacy)=>({public:"Public",friends_of_friends:"Friends of friends",friends:"Friends",only_me:"Only Me",custom:"Custom"}[v]);
-export function EditLocationConfirmScreen({navigation,route}:Props){const[location,setLocation]=useState(route.params.result);const[privacy,setPrivacy]=useState<Privacy>("public");const[modal,setModal]=useState(false);const[saving,setSaving]=useState(false);const save=async()=>{setSaving(true);try{await api.patch("/profile/edit/details",route.params.kind==="hometown"?{hometown:location,hometown_privacy:privacy}:{current_city:location,current_city_privacy:privacy});navigation.goBack()}finally{setSaving(false)}};return <SafeAreaView style={s.root}><View style={s.header}><Pressable onPress={()=>navigation.goBack()}><Text style={s.back}>‹</Text></Pressable><Text style={s.title}>{route.params.kind==="hometown"?"Hometown":"Location"}</Text><View style={{width:40}}/></View><View style={s.content}><TextInput value={location} onChangeText={setLocation} style={s.input}/><Pressable style={s.audience} onPress={()=>setModal(true)}><Globe width={24} height={24}/><View style={{flex:1}}><Text style={s.audienceTitle}>Who can see this?</Text><Text style={s.audienceValue}>{label(privacy)}</Text></View><Text style={s.arrow}>›</Text></Pressable><Pressable disabled={!location.trim()||saving} onPress={()=>void save()} style={[s.save,(!location.trim()||saving)&&s.disabled]}><Text style={s.saveText}>{saving?"Saving...":"Save"}</Text></Pressable></View><Audience visible={modal} value={privacy} onChange={setPrivacy} onClose={()=>setModal(false)}/></SafeAreaView>}
-function Audience({visible,value,onChange,onClose}:{visible:boolean;value:Privacy;onChange:(v:Privacy)=>void;onClose:()=>void}){const opts:[Privacy,string,any][]=[["public","Public",Globe],["friends_of_friends","Friends of friends",Group],["friends","Friends",Friends],["only_me","Only Me",Globe],["custom","Custom",Group]];return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={s.backdrop}><View style={s.modal}><Text style={s.modalTitle}>Choose audience</Text>{opts.map(([v,t,I])=><Pressable key={v} style={s.option} onPress={()=>{if(v==="custom"){onClose();return}onChange(v)}}><I width={25} height={25}/><View style={{flex:1}}><Text style={s.optTitle}>{t}</Text><Text style={s.optDesc}>{v==="public"?"Anyone on or off ReDom":v==="friends_of_friends"?"Your friends of friends":v==="friends"?"Your friends on ReDom":"Private"}</Text></View><Text style={[s.radio,value===v&&s.radioOn]}>{value===v?"●":"○"}</Text></Pressable>)}<Pressable style={s.done} onPress={onClose}><Text style={s.doneText}>Done</Text></Pressable></View></View></Modal>}
-const s=StyleSheet.create({root:{flex:1,backgroundColor:"#fff"},header:{height:64,flexDirection:"row",justifyContent:"space-between",alignItems:"center",paddingHorizontal:20},back:{fontSize:44,fontWeight:"300"},title:{fontSize:23,fontWeight:"800"},content:{padding:22},input:{borderWidth:1,borderColor:"#CCD0D5",borderRadius:9,minHeight:52,paddingHorizontal:14,fontSize:18,color:"#050505"},audience:{minHeight:64,flexDirection:"row",alignItems:"center",gap:12,borderBottomWidth:1,borderBottomColor:"#E4E6EB",marginTop:22},audienceTitle:{fontSize:16,fontWeight:"800"},audienceValue:{fontSize:14,color:"#65676B",marginTop:3},arrow:{fontSize:30,color:"#65676B"},save:{height:50,borderRadius:9,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center",marginTop:26},disabled:{opacity:.45},saveText:{color:"#fff",fontWeight:"800",fontSize:17},backdrop:{flex:1,backgroundColor:"rgba(0,0,0,.45)",justifyContent:"flex-end"},modal:{backgroundColor:"#fff",borderTopLeftRadius:20,borderTopRightRadius:20,padding:22},modalTitle:{fontSize:21,fontWeight:"800",marginBottom:12},option:{minHeight:62,flexDirection:"row",alignItems:"center",gap:12},optTitle:{fontSize:16,fontWeight:"800"},optDesc:{fontSize:13,color:"#65676B",marginTop:2},radio:{fontSize:25,color:"#65676B"},radioOn:{color:"#1877F2"},done:{height:48,borderRadius:9,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center",marginTop:10},doneText:{color:"#fff",fontWeight:"800",fontSize:16}});
+import BackIcon from "../assets/edit-profile/back.svg";
+import GlobeIcon from "../assets/edit-profile/globe.svg";
+import { EditProfileAudienceModal, type Privacy, privacyLabel } from "./edit-profile/EditProfileAudienceModal";
+import { SavingOverlay } from "./edit-profile/SavingOverlay";
+
+type Props = NativeStackScreenProps<RootStackParamList, "EditLocationConfirm">;
+
+export function EditLocationConfirmScreen({ navigation, route }: Props) {
+  const [location, setLocation] = useState(route.params.result);
+  const [privacy, setPrivacy] = useState<Privacy>("public");
+  const [audience, setAudience] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const isHometown = route.params.kind === "hometown";
+
+  useEffect(() => {
+    void api.get<any>("/profile/edit").then((response) => {
+      setPrivacy(isHometown ? (response.profile.hometownPrivacy || "public") : (response.profile.currentCityPrivacy || "public"));
+    }).catch(() => undefined);
+  }, [isHometown]);
+
+  const save = async () => {
+    if (!location.trim() || saving) return;
+    setSaving(true);
+    try {
+      await api.patch("/profile/edit/details", isHometown
+        ? { hometown: location.trim(), hometown_privacy: privacy }
+        : { current_city: location.trim(), current_city_privacy: privacy });
+      navigation.navigate("Profile");
+    } catch {
+      Alert.alert(isHometown ? "Hometown" : "Location", "Your changes could not be saved. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <SafeAreaView style={styles.root}>
+    <View style={styles.header}><Pressable onPress={() => navigation.goBack()} hitSlop={12}><BackIcon width={34} height={34} /></Pressable><Text style={styles.title}>{isHometown ? "Hometown" : "Location"}</Text><View style={styles.spacer} /></View>
+    <View style={styles.content}>
+      <Text style={styles.label}>{isHometown ? "Hometown" : "Location"}</Text>
+      <TextInput value={location} onChangeText={setLocation} style={styles.input} autoFocus selectTextOnFocus placeholder={isHometown ? "Hometown" : "Location"} placeholderTextColor="#8A8D91" />
+      <Pressable style={styles.audience} onPress={() => setAudience(true)}><GlobeIcon width={27} height={27} /><View style={styles.audienceCopy}><Text style={styles.audienceTitle}>Who can see this?</Text><Text style={styles.audienceValue}>{privacyLabel(privacy)}</Text></View><Text style={styles.arrow}>›</Text></Pressable>
+      <Pressable disabled={!location.trim() || saving} onPress={() => void save()} style={[styles.save, (!location.trim() || saving) && styles.disabled]}><Text style={styles.saveText}>{saving ? "Saving..." : "Save"}</Text></Pressable>
+    </View>
+    <EditProfileAudienceModal visible={audience} value={privacy} onChange={setPrivacy} onDone={() => setAudience(false)} />
+    <SavingOverlay visible={saving} />
+  </SafeAreaView>;
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#fff" },
+  header: { height: 64, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: 1, borderBottomColor: "#F0F2F5" },
+  title: { fontSize: 25, fontWeight: "800", color: "#050505" }, spacer: { width: 34 },
+  content: { padding: 24 }, label: { fontSize: 17, fontWeight: "800", color: "#050505", marginBottom: 10 },
+  input: { height: 54, borderWidth: 1, borderColor: "#CCD0D5", borderRadius: 9, paddingHorizontal: 14, fontSize: 19, color: "#050505" },
+  audience: { minHeight: 72, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", marginTop: 20 },
+  audienceCopy: { flex: 1, marginLeft: 13 }, audienceTitle: { fontSize: 16, fontWeight: "800", color: "#050505" }, audienceValue: { fontSize: 14, color: "#65676B", marginTop: 3 }, arrow: { fontSize: 31, color: "#65676B" },
+  save: { height: 50, borderRadius: 8, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center", marginTop: 28 }, disabled: { opacity: 0.45 }, saveText: { color: "#fff", fontSize: 17, fontWeight: "800" },
+});
