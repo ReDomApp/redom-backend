@@ -31,9 +31,6 @@ async function getProfile(req: Request, res: Response) {
     const viewerProfileId = req.user.profileId;
     const requestedId = req.params.userId || viewerId;
 
-    // Joined ReDom is derived exclusively from the account's login history.
-    // Country and login date come from the same first login-history record so
-    // the two fields always describe the account's actual first recorded login.
     const profileResult = await pool.query(
       `SELECT
          u.id,
@@ -76,7 +73,13 @@ async function getProfile(req: Request, res: Response) {
     }
 
     const profile = profileResult.rows[0];
-    const owner = profile.profile_id === viewerProfileId;
+
+    // The account row is the final authority for ownership. Support both
+    // identifiers so a profile opened without an explicit route parameter,
+    // with a public ID, or with a profile ID cannot be misclassified as a visitor.
+    const owner =
+      profile.id === viewerId ||
+      profile.profile_id === viewerProfileId;
 
     if (!owner && profile.profile_visibility === "private") {
       return res.json({
