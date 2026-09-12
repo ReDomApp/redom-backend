@@ -5,31 +5,30 @@ import { env } from "../config/env";
 
 const router = Router();
 const PRIVACY = new Set(["public", "friends_of_friends", "friends", "only_me", "custom"]);
-
 router.use(authMiddleware);
 
 router.get("/", async (req: Request, res: Response) => {
-  const result = await pool.query(
-    `SELECT u.first_name,u.last_name,u.date_of_birth,u.gender,
-            p.bio,p.current_city,p.hometown,p.bio_privacy,p.current_city_privacy,
-            p.hometown_privacy,p.birthday_month_day_privacy,p.birthday_year_privacy
-       FROM users u LEFT JOIN user_profiles p ON p.user_id=u.id WHERE u.id=$1 LIMIT 1`,
-    [req.user.userId],
-  );
-  if (!result.rows.length) return res.status(404).json({ success: false, message: "Profile not found." });
-  const p = result.rows[0];
-  return res.json({
-    success: true,
-    profile: {
+  try {
+    const result = await pool.query(
+      `SELECT u.first_name,u.last_name,u.date_of_birth,u.gender,
+              p.bio,p.current_city,p.hometown,p.bio_privacy,p.current_city_privacy,
+              p.hometown_privacy,p.birthday_month_day_privacy,p.birthday_year_privacy
+         FROM users u LEFT JOIN user_profiles p ON p.user_id=u.id
+        WHERE u.id=$1 LIMIT 1`,
+      [req.user.userId],
+    );
+    if (!result.rows.length) return res.status(404).json({ success: false, message: "Profile not found." });
+    const p = result.rows[0];
+    return res.json({ success: true, profile: {
       firstName: p.first_name, lastName: p.last_name, bio: p.bio || "",
-      currentCity: p.current_city || "", hometown: p.hometown || "",
-      birthday: p.date_of_birth, gender: p.gender,
-      bioPrivacy: p.bio_privacy, currentCityPrivacy: p.current_city_privacy,
-      hometownPrivacy: p.hometown_privacy,
-      birthdayMonthDayPrivacy: p.birthday_month_day_privacy,
-      birthdayYearPrivacy: p.birthday_year_privacy,
-    },
-  });
+      currentCity: p.current_city || "", hometown: p.hometown || "", birthday: p.date_of_birth, gender: p.gender,
+      bioPrivacy: p.bio_privacy || "public", currentCityPrivacy: p.current_city_privacy || "public",
+      hometownPrivacy: p.hometown_privacy || "public", birthdayMonthDayPrivacy: p.birthday_month_day_privacy || "friends_of_friends",
+      birthdayYearPrivacy: p.birthday_year_privacy || "friends_of_friends",
+    }});
+  } catch {
+    return res.status(500).json({ success: false, message: "Unable to load edit profile data." });
+  }
 });
 
 router.patch("/details", async (req: Request, res: Response) => {
@@ -40,13 +39,43 @@ router.patch("/details", async (req: Request, res: Response) => {
     if (!allowed.has(key)) continue;
     if (key.endsWith("privacy") && (typeof value !== "string" || !PRIVACY.has(value))) continue;
     if (["bio", "current_city", "hometown"].includes(key) && typeof value !== "string") continue;
-    fields.push(`${key}=$${values.length + 1}`); values.push(typeof value === "string" ? value.trim() : value);
+    if (key === "bio" && String(value).length > 101) return res.status(400).json({ success: false, message: "Bio must be 101 characters or fewer." });
+    fields.push(`${key}=$${values.length + 1}`);
+    values.push(typeof value === "string" ? value.trim() : value);
   }
   if (!fields.length) return res.status(400).json({ success: false, message: "No editable profile fields were supplied." });
-  fields.push(`updated_at=NOW()`);
-  const result = await pool.query(`UPDATE user_profiles SET ${fields.join(",")} WHERE user_id=$${values.length + 1} RETURNING user_id`, [...values, req.user.userId]);
-  if (!result.rowCount) return res.status(404).json({ success: false, message: "Profile not found." });
-  return res.json({ success: true });
+
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO user_profiles (user_id, display_name)
+         SELECT id, trim(concat_ws(' ', first_name, last_name)) FROM users WHERE id=$1
+         ON CONFLICT (user_id) DO NOTHING`,
+        [req.user.userId],
+      );
+      fields.push("updated_at=NOW()");
+      const result = await client.query(
+        `UPDATE user_profiles SET ${fields.join(",")} WHERE user_id=$${values.length + 1}
+         RETURNING user_id,bio,current_city,hometown,bio_privacy,current_city_privacy,hometown_privacy,birthday_month_day_privacy,birthday_year_privacy,updated_at`,
+        [...values, req.user.userId],
+      );
+      if (!result.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ success: false, message: "Profile not found." });
+      }
+      await client.query("COMMIT");
+      return res.json({ success: true, profile: result.rows[0] });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch {
+    return res.status(500).json({ success: false, message: "Unable to save your profile changes." });
+  }
 });
 
 router.get("/locations", async (req: Request, res: Response) => {
