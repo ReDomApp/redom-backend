@@ -1,56 +1,18 @@
-import {
-  Router,
-  type IRouter,
-} from "express";
+import { Router, type IRouter } from "express";
+import healthRouter from "./health";
+import authRoutes from "./auth.routes";
+import sessionRoutes from "./session.routes";
+import aiRoutes from "./ai.routes";
+import feedRoutes from "./feed.routes";
+import commentRoutes from "./comment.routes";
+import profileRoutes from "./profile.routes";
 
-import healthRouter
-  from "./health";
-
-import authRoutes
-  from "./auth.routes";
-
-import sessionRoutes
-  from "./session.routes";
-
-import aiRoutes
-  from "./ai.routes";
-
-import feedRoutes
-  from "./feed.routes";
-
-import commentRoutes
-  from "./comment.routes";
-
-const router: IRouter =
-  Router();
-
-router.use(
-  healthRouter,
-);
-
-router.use(
-  "/auth",
-  authRoutes,
-);
-
-router.use(
-  "/sessions",
-  sessionRoutes,
-);
-
-router.use(
-  "/ai",
-  aiRoutes,
-);
-
-router.use(
-  "/feed",
-  feedRoutes,
-);
-
-router.use(
-  "/comments",
-  commentRoutes,
-);
-
+const router: IRouter = Router();
+router.use(healthRouter);
+router.use("/auth", authRoutes);
+router.use("/sessions", sessionRoutes);
+router.use("/ai", aiRoutes);
+router.use("/feed", feedRoutes);
+router.use("/comments", commentRoutes);
+router.use("/profile", profileRoutes);
 export default router;
