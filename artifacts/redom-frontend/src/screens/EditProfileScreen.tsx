@@ -3,13 +3,117 @@ import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } fr
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { api } from "../api/client";
-import BioIcon from "../assets/home-feed/profile-bio.svg";
-import PinIcon from "../assets/home-feed/profile-pin.svg";
-import LocationIcon from "../assets/home-feed/profile-location.svg";
-import HometownIcon from "../assets/home-feed/profile-hometown.svg";
-import BirthdayIcon from "../assets/home-feed/profile-birthday.svg";
+import BackIcon from "../assets/edit-profile/back.svg";
+import AboutIcon from "../assets/edit-profile/about.svg";
+import PinIcon from "../assets/edit-profile/pin.svg";
+import LocationIcon from "../assets/edit-profile/location.svg";
+import HometownIcon from "../assets/edit-profile/hometown.svg";
+import BirthdayIcon from "../assets/edit-profile/birthday.svg";
+import RelationshipIcon from "../assets/edit-profile/relationship.svg";
+import FamilyIcon from "../assets/edit-profile/family.svg";
+import GenderIcon from "../assets/edit-profile/gender.svg";
+import LanguagesIcon from "../assets/edit-profile/languages.svg";
+import WorkIcon from "../assets/edit-profile/work.svg";
+import EducationIcon from "../assets/edit-profile/education.svg";
+import PencilIcon from "../assets/edit-profile/pencil.svg";
+
 type Props = NativeStackScreenProps<RootStackParamList, "EditProfile">;
-type EditData = { firstName:string; lastName:string; bio:string; currentCity:string; hometown:string; birthday:string|null; gender:string|null; bioPrivacy:string; currentCityPrivacy:string; hometownPrivacy:string; birthdayMonthDayPrivacy:string; birthdayYearPrivacy:string };
+type EditData = { firstName: string; lastName: string; bio: string; currentCity: string; hometown: string; birthday: string | null; gender: string | null; bioPrivacy: string; currentCityPrivacy: string; hometownPrivacy: string; birthdayMonthDayPrivacy: string; birthdayYearPrivacy: string };
+type SectionName = "intro" | "personal" | "work" | "education";
+
 const unavailable = () => Alert.alert("Feature unavailable", "This feature is unavailable in your location for now.");
-export function EditProfileScreen({ navigation }: Props) { const[data,setData]=useState<EditData|null>(null);const[loading,setLoading]=useState(true);const load=useCallback(async()=>{try{const r=await api.get<{success:boolean;profile:EditData}>("/profile/edit");setData(r.profile)}catch{Alert.alert("Edit profile","Unable to load your profile right now.")}finally{setLoading(false)}},[]);useEffect(()=>{void load()},[load]);if(loading||!data)return <SafeAreaView style={s.root}><Header onBack={()=>navigation.goBack()}/><Text style={s.loading}>Loading...</Text></SafeAreaView>;const row=(icon:React.ReactNode,title:string,value?:string,action?:()=>void,disabled=false)=><Pressable style={s.row} onPress={disabled?unavailable:action} accessibilityRole={disabled?undefined:"button"}><View style={s.icon}>{icon}</View><View style={s.rowBody}><Text style={[s.rowTitle,(!value||disabled)&&s.muted]}>{title}</Text>{value?<Text style={s.value}>{value}</Text>:null}</View>{action&&!disabled?<Text style={s.pencil}>✎</Text>:null}</Pressable>;return <SafeAreaView style={s.root}><Header onBack={()=>navigation.goBack()}/><ScrollView contentContainerStyle={s.content}><Section title="Intro"/>{row(<BioIcon width={30} height={30}/> ,"About you",data.bio||undefined,()=>navigation.navigate("EditBio"))}{row(<PinIcon width={30} height={30}/> ,"Pinned details",data.currentCity||data.hometown||undefined,()=>Alert.alert("Pinned details","This Setting Will be available in your region soon....."))}<Section title="Personal details"/>{row(<LocationIcon width={30} height={30}/> ,"Current city",data.currentCity||undefined,()=>navigation.navigate("EditLocationSearch",{kind:"location"}))}{row(<HometownIcon width={30} height={30}/> ,"Hometown",data.hometown||undefined,()=>navigation.navigate("EditLocationSearch",{kind:"hometown"}))}{row(<BirthdayIcon width={30} height={30}/> ,data.birthday?new Date(data.birthday).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"Birthday",undefined,()=>navigation.navigate("EditBirthday"))}{row(<Text style={s.heart}>♡</Text>,"Relationship status",undefined,unavailable)}{row(<Text style={s.family}>♧</Text>,"Family",undefined,unavailable)}{row(<Text style={s.gender}>♂</Text>,data.gender?String(data.gender):"Gender",undefined,undefined,true)}{row(<Text style={s.language}>◈</Text>,"Languages",undefined,unavailable)}<Section title="Work"/>{row(<Text style={s.work}>▣</Text>,"Work experience",undefined,unavailable)}<Section title="Education"/>{row(<Text style={s.education}>♜</Text>,"High school or college",undefined,unavailable)}</ScrollView></SafeAreaView> }
-function Header({onBack}:{onBack:()=>void}){return <View style={s.header}><Pressable onPress={onBack} accessibilityLabel="Back"><Text style={s.back}>‹</Text></Pressable><Text style={s.headerTitle}>Edit profile</Text><View style={{width:42}}/></View>};function Section({title}:{title:string}){return <View style={s.section}><Text style={s.sectionTitle}>{title}</Text><Text style={s.chevron}>⌃</Text></View>};const s=StyleSheet.create({root:{flex:1,backgroundColor:"#fff"},header:{height:64,flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:20},back:{fontSize:44,lineHeight:44,color:"#050505",fontWeight:"300"},headerTitle:{fontSize:25,fontWeight:"800",color:"#050505"},content:{paddingBottom:30},section:{paddingHorizontal:23,paddingTop:26,paddingBottom:12,flexDirection:"row",justifyContent:"space-between",alignItems:"center"},sectionTitle:{fontSize:23,fontWeight:"800",color:"#050505"},chevron:{fontSize:31,fontWeight:"800"},row:{minHeight:72,paddingHorizontal:23,flexDirection:"row",alignItems:"center"},icon:{width:54,alignItems:"flex-start"},rowBody:{flex:1},rowTitle:{fontSize:20,fontWeight:"800",color:"#050505"},muted:{color:"#65676B"},value:{fontSize:18,color:"#050505",marginTop:3},pencil:{fontSize:29,color:"#65676B",paddingLeft:12},loading:{padding:24,color:"#65676B",fontSize:16},heart:{fontSize:38,color:"#050505"},family:{fontSize:34,color:"#050505"},gender:{fontSize:34,color:"#050505"},language:{fontSize:30,color:"#050505"},work:{fontSize:31,color:"#050505"},education:{fontSize:31,color:"#050505"}});
+
+export function EditProfileScreen({ navigation }: Props) {
+  const [data, setData] = useState<EditData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState<Record<SectionName, boolean>>({ intro: true, personal: true, work: true, education: true });
+
+  const load = useCallback(async () => {
+    try {
+      const response = await api.get<{ success: boolean; profile: EditData }>("/profile/edit");
+      setData(response.profile);
+    } catch {
+      Alert.alert("Edit profile", "Unable to load your profile right now.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  if (loading || !data) {
+    return <SafeAreaView style={styles.root}><Header onBack={() => navigation.goBack()} /><Text style={styles.loading}>Loading...</Text></SafeAreaView>;
+  }
+
+  const birthday = data.birthday
+    ? new Date(data.birthday).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    : "";
+
+  const toggle = (section: SectionName) => setOpen((current) => ({ ...current, [section]: !current[section] }));
+  const row = (icon: JSX.Element, title: string, value: string | undefined, action?: () => void, disabled = false) => (
+    <Pressable style={styles.row} onPress={disabled ? unavailable : action} disabled={!action && !disabled} accessibilityRole={action || disabled ? "button" : undefined}>
+      <View style={styles.iconBox}>{icon}</View>
+      <View style={styles.rowText}>
+        <Text style={[styles.rowTitle, (!value || disabled) && styles.muted]} numberOfLines={1}>{title}</Text>
+        {value ? <Text style={styles.value} numberOfLines={1}>{value}</Text> : null}
+      </View>
+      {action && !disabled ? <PencilIcon width={28} height={28} /> : null}
+    </Pressable>
+  );
+
+  return (
+    <SafeAreaView style={styles.root}>
+      <Header onBack={() => navigation.goBack()} />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        <Section title="Intro" open={open.intro} onPress={() => toggle("intro")} />
+        {open.intro ? <>
+          {row(<AboutIcon width={38} height={38} />, "About you", data.bio || undefined, () => navigation.navigate("EditBio"))}
+          {row(<PinIcon width={38} height={38} />, "Pinned details", data.currentCity || data.hometown || undefined, unavailable)}
+        </> : null}
+
+        <Section title="Personal details" open={open.personal} onPress={() => toggle("personal")} />
+        {open.personal ? <>
+          {row(<LocationIcon width={38} height={38} />, "Current city", data.currentCity || undefined, () => navigation.navigate("EditLocationSearch", { kind: "location" }))}
+          {row(<HometownIcon width={38} height={38} />, "Hometown", data.hometown || undefined, () => navigation.navigate("EditLocationSearch", { kind: "hometown" }))}
+          {row(<BirthdayIcon width={38} height={38} />, birthday || "Birthday", undefined, () => navigation.navigate("EditBirthday"))}
+          {row(<RelationshipIcon width={38} height={38} />, "Relationship status", undefined, unavailable)}
+          {row(<FamilyIcon width={38} height={38} />, "Family", undefined, unavailable)}
+          {row(<GenderIcon width={38} height={38} />, data.gender ? String(data.gender) : "Gender", undefined, undefined, true)}
+          {row(<LanguagesIcon width={38} height={38} />, "Languages", undefined, unavailable)}
+        </> : null}
+
+        <Section title="Work" open={open.work} onPress={() => toggle("work")} />
+        {open.work ? row(<WorkIcon width={38} height={38} />, "Work experience", undefined, unavailable) : null}
+
+        <Section title="Education" open={open.education} onPress={() => toggle("education")} />
+        {open.education ? row(<EducationIcon width={38} height={38} />, "High school or college", undefined, unavailable) : null}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function Header({ onBack }: { onBack: () => void }) {
+  return <View style={styles.header}><Pressable onPress={onBack} hitSlop={12} accessibilityLabel="Back"><BackIcon width={34} height={34} /></Pressable><Text style={styles.headerTitle}>Edit profile</Text><View style={styles.headerSpacer} /></View>;
+}
+
+function Section({ title, open, onPress }: { title: string; open: boolean; onPress: () => void }) {
+  return <Pressable style={styles.section} onPress={onPress} accessibilityRole="button"><Text style={styles.sectionTitle}>{title}</Text><Text style={styles.chevron}>{open ? "⌃" : "⌄"}</Text></Pressable>;
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#fff" },
+  header: { height: 64, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22 },
+  headerTitle: { fontSize: 27, lineHeight: 32, fontWeight: "800", color: "#050505" },
+  headerSpacer: { width: 34 },
+  content: { paddingBottom: 32 },
+  section: { minHeight: 72, paddingHorizontal: 24, paddingTop: 18, paddingBottom: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionTitle: { fontSize: 25, lineHeight: 31, fontWeight: "800", color: "#050505" },
+  chevron: { fontSize: 32, lineHeight: 32, fontWeight: "800", color: "#050505", marginRight: 2 },
+  row: { minHeight: 86, paddingHorizontal: 24, flexDirection: "row", alignItems: "center" },
+  iconBox: { width: 58, alignItems: "flex-start", justifyContent: "center" },
+  rowText: { flex: 1, paddingRight: 12 },
+  rowTitle: { fontSize: 21, lineHeight: 26, fontWeight: "800", color: "#050505" },
+  value: { marginTop: 3, fontSize: 18, lineHeight: 23, color: "#050505" },
+  muted: { color: "#65676B" },
+  loading: { padding: 24, color: "#65676B", fontSize: 16 },
+});
