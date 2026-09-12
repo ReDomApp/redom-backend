@@ -1,0 +1,165 @@
+name: Implement login phone and IP trust layers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/implement-login-security.yml'
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply login changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+
+          # Frontend login validation: allow international + phone identifiers.
+          p = root/'artifacts/redom-frontend/src/auth/validation.ts'
+          s = p.read_text()
+          start = s.index('export function validateLoginIdentifier')
+          end = s.index('\n\nexport function validatePassword')
+          fn = '''export function validateLoginIdentifier(identifier: string): string | null {
+            const value = identifier.trim();
+            if (!value) return "Enter your mobile number or email.";
+
+            // International/E.164-style phone input, including the leading +.
+            if (/^\\+[1-9]\\d{7,14}$/.test(value.replace(/[\\s().-]/g, ""))) return null;
+
+            // ReDom Public ID values must not be used as login identifiers.
+            if (/^234\\d{12}$/.test(value)) return "Please use your mobile number or email address to log in.";
+
+            if (/^\\d+$/.test(value)) {
+              if (value.length < 7 || value.length > 20) return "Enter a valid mobile number.";
+              return null;
+            }
+
+            if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)) return "Enter a valid mobile number or email address.";
+            return null;
+          }'''
+          p.write_text(s[:start] + fn + s[end:])
+
+          # Backend login schema accepts the IP discovered on the startup/loading screen.
+          p = root/'artifacts/redom-backend/src/validators/auth.validator.ts'
+          s = p.read_text()
+          needle = '''    password: z
+      .string()
+      .min(
+        1,
+        "Password is required.",
+      ),'''
+          repl = needle + '''
+
+    // Supplied by the loading-screen network check for correlation only.
+    // The backend still derives the authoritative request IP itself.
+    networkIp: z
+      .string()
+      .trim()
+      .max(45)
+      .optional(),'''
+          if needle not in s: raise SystemExit('login schema anchor missing')
+          p.write_text(s.replace(needle, repl, 1))
+
+          # Login history count used to decide whether device verification is necessary.
+          p = root/'artifacts/redom-backend/src/services/auth/login-history.service.ts'
+          s = p.read_text().replace('import { and, eq } from "drizzle-orm";', 'import { and, eq, sql } from "drizzle-orm";')
+          anchor = '''  async getHistory(userId: string) {
+    return db.select().from(loginHistory).where(eq(loginHistory.userId, userId));
+  }
+'''
+          addition = anchor + '''
+  async countByIp(userId: string, ipAddress?: string): Promise<number> {
+    if (!ipAddress) return 0;
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(loginHistory)
+      .where(and(eq(loginHistory.userId, userId), eq(loginHistory.ipAddress, ipAddress)));
+    return Number(row?.count ?? 0);
+  }
+'''
+          if anchor not in s: raise SystemExit('history anchor missing')
+          p.write_text(s.replace(anchor, addition, 1))
+
+          # Login flow: normalize + phone lookup internally, then password, then IP/device layers.
+          p = root/'artifacts/redom-backend/src/services/auth/login-flow.service.ts'
+          s = p.read_text()
+          s = s.replace(
+              'export interface LoginRequest { identifier: string; password: string; ipAddress?: string;',
+              'export interface LoginRequest { identifier: string; password: string; networkIp?: string; ipAddress?: string;',
+              1,
+          )
+          marker = 'function publicUser(user: typeof users.$inferSelect): PublicUser {'
+          helper = '''function phoneCandidates(identifier: string): string[] {
+            const compact = identifier.trim().replace(/[\\s().-]/g, "");
+            if (!compact.startsWith("+")) return [compact];
+            return [compact, compact.slice(1)];
+          }
+
+          '''
+          if marker not in s: raise SystemExit('login helper anchor missing')
+          s = s.replace(marker, helper + marker, 1)
+
+          old_lookup = '''    if (/^\\d{15}$/.test(identifier)) throw new Error("Please use your mobile number or email address to log in.");
+    const user = await db.query.users.findFirst({ where: or(eq(users.email, identifier.toLowerCase()), eq(users.phoneNumber, identifier)) });'''
+          new_lookup = '''    if (/^\\d{15}$/.test(identifier)) throw new Error("Please use your mobile number or email address to log in.");
+    const phoneValues = /^\\+/.test(identifier) ? phoneCandidates(identifier) : [identifier];
+    const user = await db.query.users.findFirst({
+      where: or(
+        eq(users.email, identifier.toLowerCase()),
+        ...phoneValues.map((phone) => eq(users.phoneNumber, phone)),
+      ),
+    });'''
+          if old_lookup not in s: raise SystemExit('login lookup anchor missing')
+          s = s.replace(old_lookup, new_lookup, 1)
+
+          old_device = '''    const deviceId = data.deviceId?.trim(); const knownDevice = Boolean(deviceId) && Boolean(await db.query.sessions.findFirst({ where: and(eq(sessions.userId, user.id), eq(sessions.deviceId, deviceId!)) }));
+    if (!knownDevice) {'''
+          new_device = '''    const deviceId = data.deviceId?.trim();
+    const knownDevice = Boolean(deviceId) && Boolean(await db.query.sessions.findFirst({ where: and(eq(sessions.userId, user.id), eq(sessions.deviceId, deviceId!)) }));
+    const ipHistoryCount = await loginHistoryService.countByIp(user.id, data.ipAddress);
+    const trustedIp = Boolean(data.ipAddress) && ipHistoryCount >= 3;
+
+    // Password/account checks above must succeed before either new security layer runs.
+    // A previously used IP becomes trusted for device verification after 3 successful logins.
+    if (!knownDevice && !trustedIp) {'''
+          if old_device not in s: raise SystemExit('device anchor missing')
+          s = s.replace(old_device, new_device, 1)
+          s = s.replace('message: "New device detected. Verification is required."', 'message: "New device detected. Verification is required for this network."', 1)
+          p.write_text(s)
+
+          # Controller preserves the startup-screen IP as non-authoritative telemetry.
+          p = root/'artifacts/redom-backend/src/controllers/auth.controller.ts'
+          s = p.read_text()
+          old = 'appVersion: req.body?.appVersion, country: req.body?.country,'
+          new = 'appVersion: req.body?.appVersion, networkIp: req.body?.networkIp, country: req.body?.country,'
+          if old not in s: raise SystemExit('controller anchor missing')
+          p.write_text(s.replace(old, new, 1))
+
+          # Login screen carries the cached startup IP into the login request and switches
+          # to a phone keyboard when the identifier begins as a phone number.
+          p = root/'artifacts/redom-frontend/src/screens/LoginScreen.tsx'
+          s = p.read_text()
+          old = 'appVersion:"1.0.0"});if(result.requiresVerification'
+          new = 'appVersion:"1.0.0",networkIp:networkSecurity?.ip ?? undefined} as any);if(result.requiresVerification'
+          if old not in s: raise SystemExit('login screen submit anchor missing')
+          s = s.replace(old, new, 1)
+          old = 'keyboardType="email-address" autoComplete="username"'
+          new = 'keyboardType={/^[+0-9]/.test(identifier) ? "phone-pad" : "email-address"} autoComplete="username"'
+          if old not in s: raise SystemExit('keyboard anchor missing')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add artifacts/redom-frontend/src/auth/validation.ts artifacts/redom-frontend/src/screens/LoginScreen.tsx artifacts/redom-backend/src/validators/auth.validator.ts artifacts/redom-backend/src/controllers/auth.controller.ts artifacts/redom-backend/src/services/auth/login-history.service.ts artifacts/redom-backend/src/services/auth/login-flow.service.ts
+          git diff --cached --check
+          git commit -m 'Add phone login and trusted IP device verification'
+          git push
