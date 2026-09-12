@@ -32,26 +32,179 @@ export function ProfileScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"All" | "Reels" | "Photos" | "Events">("All");
   const [adding, setAdding] = useState<string | null>(null);
-  useEffect(() => { let mounted = true; setLoading(true); profileService.getProfile(route.params?.userId).then((result) => { if (mounted) setProfile(result.profile); }).catch(() => { if (mounted) Alert.alert("Profile", "Unable to load this profile right now."); }).finally(() => { if (mounted) setLoading(false); }); return () => { mounted = false; }; }, [route.params?.userId]);
+
+  const requestedUserId = route.params?.userId;
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    profileService.getProfile(requestedUserId)
+      .then((result) => { if (mounted) setProfile(result.profile); })
+      .catch(() => { if (mounted) Alert.alert("Profile", "Unable to load this profile right now."); })
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
+  }, [requestedUserId]);
+
   const p = profile;
+  // No userId means the authenticated user's own profile. If a userId is supplied,
+  // compare the returned profile identity with the authenticated user as a second,
+  // server-backed owner check. Never treat another user's profile as the owner view.
+  const isOwner = !!p && (p.userId === user?.userId || (!requestedUserId && p.isOwner));
   const name = p ? `${p.firstName} ${p.lastName}`.trim() : user ? `${user.firstName} ${user.lastName}`.trim() : "Profile";
-  const add = async (suggestion: ProfileSuggestion) => { if (adding) return; setAdding(suggestion.userId); try { const result = await profileService.addSuggestion(suggestion.userId); Alert.alert(result.success ? "Friend request sent" : "Couldn't add this person", result.success ? "Your friend request was sent." : (result.reason || "We couldn't send the request right now.")); } finally { setAdding(null); } };
+
+  const add = async (suggestion: ProfileSuggestion) => {
+    if (adding) return;
+    setAdding(suggestion.userId);
+    try {
+      const result = await profileService.addSuggestion(suggestion.userId);
+      Alert.alert(result.success ? "Friend request sent" : "Couldn't add this person", result.success ? "Your friend request was sent." : (result.reason || "We couldn't send the request right now."));
+    } finally { setAdding(null); }
+  };
+
   return <SafeAreaView style={styles.root}>
-    <View style={styles.nav}><Pressable style={styles.navItem} onPress={() => navigation.navigate("HomeFeed")}><HomeIcon width={27} height={27} /></Pressable><Pressable style={styles.navItem}><VideoIcon width={27} height={27} /></Pressable><Pressable style={styles.navItem}><MarketplaceIcon width={27} height={27} /></Pressable><Pressable style={styles.navItem}><NotificationsIcon width={27} height={27} /></Pressable><Pressable style={[styles.navItem, styles.activeNav]}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={31} /></Pressable></View>
+    <View style={styles.nav}>
+      <Pressable style={styles.navItem} onPress={() => navigation.navigate("HomeFeed")}><HomeIcon width={27} height={27} /></Pressable>
+      <Pressable style={styles.navItem}><VideoIcon width={27} height={27} /></Pressable>
+      <Pressable style={styles.navItem}><MarketplaceIcon width={27} height={27} /></Pressable>
+      <Pressable style={styles.navItem}><NotificationsIcon width={27} height={27} /></Pressable>
+      <Pressable style={[styles.navItem, styles.activeNav]}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={31} /></Pressable>
+    </View>
+
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-      <View style={styles.coverWrap}>{p?.coverPhoto ? <ImageBackground source={{ uri: p.coverPhoto }} style={styles.cover} resizeMode="cover"><View style={styles.coverShade} /></ImageBackground> : <View style={styles.cover}><View style={styles.coverShade} /></View>}<View style={styles.coverTools}><Pressable accessibilityLabel="Edit cover photo"><CoverEditIcon width={34} height={34} /></Pressable><Pressable accessibilityLabel="Search profile"><CoverSearchIcon width={32} height={32} /></Pressable><Pressable accessibilityLabel="More profile options"><CoverMoreIcon width={32} height={32} /></Pressable></View><Pressable style={styles.songBubble} accessibilityLabel="Share a song"><Text style={styles.songText}>Share a song...</Text></Pressable><Pressable style={styles.coverCamera} accessibilityLabel="Change cover photo"><CoverCameraIcon width={38} height={38} /></Pressable><View style={styles.avatarPosition}><View style={styles.avatarRing}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={150} /></View><Pressable style={styles.profileCamera} accessibilityLabel="Change profile picture"><CameraIcon width={38} height={38} /></Pressable></View></View>
-      <View style={styles.identityBlock}><View style={styles.identityTop}><View style={styles.identityText}><Text style={styles.name}>{name}</Text><Text style={styles.countLine}>{p?.friendCount ?? 0} Friends <Text style={styles.dot}>•</Text> {p?.postCount ?? 0} posts</Text></View><Pressable style={styles.dropdown} accessibilityLabel="Profile options"><DropdownIcon width={52} height={52} /></Pressable></View>{p?.location ? <View style={styles.locationLine}><LocationIcon width={30} height={30} /><Text style={styles.locationText}>{p.location}</Text></View> : null}<View style={styles.mainButtons}>{p?.isOwner ? <><Pressable style={styles.primaryButton}><AddStoryIcon width={28} height={28} /><Text style={styles.primaryText}>Add to story</Text></Pressable><Pressable style={styles.secondaryButton}><EditIcon width={27} height={27} /><Text style={styles.secondaryText}>Edit profile</Text></Pressable></> : <Pressable style={styles.primaryButton}><Text style={styles.primaryText}>Add Friend</Text></Pressable>}</View></View>
-      {p && p.suggestions.length > 0 ? <View style={styles.suggestionSection}><View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>People you may know</Text><Pressable accessibilityLabel="Dismiss suggestions"><Text style={styles.closeSuggestion}>×</Text></Pressable></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRail}>{p.suggestions.map((suggestion) => <View key={suggestion.userId} style={styles.suggestionCard}><Avatar uri={suggestion.profilePhoto} size={158} /><Text style={styles.suggestionName} numberOfLines={1}>{suggestion.firstName} {suggestion.lastName}</Text><Pressable style={styles.addButton} onPress={() => void add(suggestion)} disabled={adding === suggestion.userId}><Text style={styles.addText}>{adding === suggestion.userId ? "Adding..." : "Add"}</Text></Pressable></View>)}</ScrollView><Pressable style={styles.addAll} onPress={() => p.suggestions.forEach((suggestion) => void add(suggestion))}><Text style={styles.addAllText}>Add All</Text></Pressable></View> : null}
+      <View style={styles.coverWrap}>
+        {p?.coverPhoto ? <ImageBackground source={{ uri: p.coverPhoto }} style={styles.cover} resizeMode="cover"><View style={styles.coverShade} /></ImageBackground> : <View style={styles.cover}><View style={styles.coverShade} /></View>}
+        <View style={styles.coverTools}>
+          {isOwner ? <Pressable accessibilityLabel="Edit cover photo"><CoverEditIcon width={34} height={34} /></Pressable> : null}
+          <Pressable accessibilityLabel="Search profile"><CoverSearchIcon width={32} height={32} /></Pressable>
+          <Pressable accessibilityLabel="More profile options"><CoverMoreIcon width={32} height={32} /></Pressable>
+        </View>
+        <Pressable style={styles.songBubble} accessibilityLabel="Share a song"><Text style={styles.songText}>Share a song...</Text></Pressable>
+        {isOwner ? <Pressable style={styles.coverCamera} accessibilityLabel="Change cover photo"><CoverCameraIcon width={38} height={38} /></Pressable> : null}
+        <View style={styles.avatarPosition}>
+          <View style={styles.avatarRing}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={150} /></View>
+          {isOwner ? <Pressable style={styles.profileCamera} accessibilityLabel="Change profile picture"><CameraIcon width={38} height={38} /></Pressable> : null}
+        </View>
+      </View>
+
+      <View style={styles.identityBlock}>
+        <View style={styles.identityTop}>
+          <View style={styles.identityText}>
+            <Text style={styles.name} numberOfLines={2}>{name}</Text>
+            <Text style={styles.countLine}>{p?.friendCount ?? 0} Friends <Text style={styles.dot}>•</Text> {p?.postCount ?? 0} posts</Text>
+          </View>
+          <Pressable style={styles.dropdown} accessibilityLabel="Profile options"><DropdownIcon width={52} height={52} /></Pressable>
+        </View>
+        {p?.location ? <View style={styles.locationLine}><LocationIcon width={30} height={30} /><Text style={styles.locationText}>{p.location}</Text></View> : null}
+        <View style={styles.mainButtons}>
+          {isOwner ? <>
+            <Pressable style={styles.primaryButton}><AddStoryIcon width={28} height={28} /><Text style={styles.primaryText}>Add to story</Text></Pressable>
+            <Pressable style={styles.secondaryButton}><EditIcon width={27} height={27} /><Text style={styles.secondaryText}>Edit profile</Text></Pressable>
+          </> : <Pressable style={styles.primaryButton}><Text style={styles.primaryText}>Add Friend</Text></Pressable>}
+        </View>
+      </View>
+
+      {isOwner && p && p.suggestions.length > 0 ? <View style={styles.suggestionSection}>
+        <View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>People you may know</Text><Pressable accessibilityLabel="Dismiss suggestions"><Text style={styles.closeSuggestion}>×</Text></Pressable></View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRail}>{p.suggestions.map((suggestion) => <View key={suggestion.userId} style={styles.suggestionCard}><Avatar uri={suggestion.profilePhoto} size={158} /><Text style={styles.suggestionName} numberOfLines={1}>{suggestion.firstName} {suggestion.lastName}</Text><Pressable style={styles.addButton} onPress={() => void add(suggestion)} disabled={adding === suggestion.userId}><Text style={styles.addText}>{adding === suggestion.userId ? "Adding..." : "Add"}</Text></Pressable></View>)}</ScrollView>
+        <Pressable style={styles.addAll} onPress={() => p.suggestions.forEach((suggestion) => void add(suggestion))}><Text style={styles.addAllText}>Add All</Text></Pressable>
+      </View> : null}
+
       <View style={styles.tabs}>{(["All", "Reels", "Photos", "Events"] as const).map((item) => <Pressable key={item} style={[styles.tab, tab === item && styles.tabActive]} onPress={() => setTab(item)}><Text style={[styles.tabText, tab === item && styles.tabTextActive]}>{item}</Text></Pressable>)}</View>
-      {tab === "Reels" ? <View style={styles.mediaSection}><Text style={styles.sectionTitle}>Reels</Text>{p?.reels.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRail}>{p.reels.map((reel) => <View key={reel.id} style={styles.reelCard}>{reel.thumbnail ? <Image source={{ uri: reel.thumbnail }} style={styles.mediaImage} /> : <View style={styles.mediaImage} />}<View style={styles.viewOverlay}><EyeIcon width={24} height={24} /><Text style={styles.viewText}>{compact(reel.viewCount)}</Text></View></View>)}</ScrollView> : <><Text style={styles.emptyText}>Please Upload a reel ..... </Text><Pressable style={styles.uploadButton}><Text style={styles.uploadText}>Upload</Text></Pressable></>}</View> : null}
+
+      {tab === "Reels" ? <View style={styles.mediaSection}><Text style={styles.sectionTitle}>Reels</Text>{p?.reels.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRail}>{p.reels.map((reel) => <View key={reel.id} style={styles.reelCard}>{reel.thumbnail ? <Image source={{ uri: reel.thumbnail }} style={styles.mediaImage} /> : <View style={styles.mediaImage} />}<View style={styles.viewOverlay}><EyeIcon width={24} height={24} /><Text style={styles.viewText}>{compact(reel.viewCount)}</Text></View></View>)}</ScrollView> : <><Text style={styles.emptyText}>Please Upload a reel ..... </Text>{isOwner ? <Pressable style={styles.uploadButton}><Text style={styles.uploadText}>Upload</Text></Pressable> : null}</>}</View> : null}
       {tab === "Photos" ? <View style={styles.mediaSection}><Text style={styles.sectionTitle}>Photos</Text>{p?.photos.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRail}>{p.photos.map((photo) => <Image key={photo.id} source={{ uri: photo.thumbnail || photo.url || "" }} style={styles.photoCard} />)}</ScrollView> : <Text style={styles.emptyText}>You haven't uploaded anything on ReDom yet</Text>}</View> : null}
       {tab === "Events" ? <View style={styles.mediaSection}><Text style={styles.sectionTitle}>Events</Text><Text style={styles.emptyText}>No events to show.</Text></View> : null}
-      {tab === "All" ? <><View style={styles.detailsSection}><View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>Personal details</Text>{p?.isOwner ? <Pressable><EditIcon width={32} height={32} /></Pressable> : null}</View>{p?.location ? <View style={styles.detailRow}><LocationIcon width={34} height={34} /><Text style={styles.detailText}>{p.location}</Text></View> : null}{p?.birthday ? <View style={styles.detailRow}><CalendarIcon width={34} height={34} /><Text style={styles.detailText}>{p.birthday}</Text></View> : null}</View><View style={styles.detailsSection}><Text style={styles.sectionTitle}>ReDom</Text><View style={styles.detailRow}><ReDomRecordIcon width={34} height={34} /><View><Text style={styles.detailText}>Joined ReDom</Text>{p?.joinedAt ? <Text style={styles.subDetail}>{p.joinedAt}</Text> : null}<Text style={styles.subDetail}>{p?.joinedCountry || "Unavailable"}</Text></View></View></View><View style={styles.friendsSection}><View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>Friends</Text><Pressable><Text style={styles.seeAll}>See all</Text></Pressable></View>{p?.friends.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.friendRail}>{p.friends.slice(0, 12).map((friend) => <View key={friend.userId} style={styles.friendCard}><Avatar uri={friend.profilePhoto} size={82} /><Text style={styles.friendName} numberOfLines={1}>{friend.firstName}</Text></View>)}</ScrollView> : null}</View><View style={styles.postsHeader}><Text style={styles.sectionTitle}>All posts</Text><Text style={styles.seeAll}>Filters</Text></View><View style={styles.composer}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={48} /><View style={styles.composerBox}><Text style={styles.composerText}>What's on your mind?</Text></View></View>{p?.posts.length ? p.posts.map((post) => <View key={post.id} style={styles.post}><View style={styles.postHead}><Avatar uri={p.profilePhoto} size={42} /><View><Text style={styles.postName}>{name}</Text><Text style={styles.postTime}>{new Date(post.publishedAt).toLocaleDateString()}</Text></View></View>{post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}{post.thumbnail ? <Image source={{ uri: post.thumbnail }} style={styles.postMedia} /> : null}</View>) : null}</> : null}
+
+      {tab === "All" ? <>
+        <View style={styles.detailsSection}>
+          <View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>Personal details</Text>{isOwner ? <Pressable><EditIcon width={32} height={32} /></Pressable> : null}</View>
+          {p?.location ? <View style={styles.detailRow}><LocationIcon width={34} height={34} /><Text style={styles.detailText}>{p.location}</Text></View> : null}
+          {p?.birthday ? <View style={styles.detailRow}><CalendarIcon width={34} height={34} /><Text style={styles.detailText}>{p.birthday}</Text></View> : null}
+        </View>
+        <View style={styles.detailsSection}><Text style={styles.sectionTitle}>ReDom</Text><View style={styles.detailRow}><ReDomRecordIcon width={34} height={34} /><View><Text style={styles.detailText}>Joined ReDom</Text>{p?.joinedAt ? <Text style={styles.subDetail}>{p.joinedAt}</Text> : null}<Text style={styles.subDetail}>{p?.joinedCountry || "Unavailable"}</Text></View></View></View>
+        <View style={styles.friendsSection}><View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>Friends</Text><Pressable><Text style={styles.seeAll}>See all</Text></Pressable></View>{p?.friends.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.friendRail}>{p.friends.slice(0, 12).map((friend) => <View key={friend.userId} style={styles.friendCard}><Avatar uri={friend.profilePhoto} size={82} /><Text style={styles.friendName} numberOfLines={1}>{friend.firstName}</Text></View>)}</ScrollView> : null}</View>
+        {isOwner ? <><View style={styles.postsHeader}><Text style={styles.sectionTitle}>All posts</Text><Text style={styles.seeAll}>Filters</Text></View><View style={styles.composer}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={48} /><View style={styles.composerBox}><Text style={styles.composerText}>What's on your mind?</Text></View></View></> : null}
+        {p?.posts.length ? p.posts.map((post) => <View key={post.id} style={styles.post}><View style={styles.postHead}><Avatar uri={p.profilePhoto} size={42} /><View><Text style={styles.postName}>{name}</Text><Text style={styles.postTime}>{new Date(post.publishedAt).toLocaleDateString()}</Text></View></View>{post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}{post.thumbnail ? <Image source={{ uri: post.thumbnail }} style={styles.postMedia} /> : null}</View>) : null}
+      </> : null}
       {loading ? <View style={styles.loading}><Text style={styles.emptyText}>Loading profile...</Text></View> : null}
     </ScrollView>
   </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#fff" }, nav: { height: 62, backgroundColor: "#fff", flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, navItem: { width: 62, height: 62, alignItems: "center", justifyContent: "center" }, activeNav: { borderBottomWidth: 4, borderBottomColor: "#1877F2" }, content: { paddingBottom: 40 }, coverWrap: { height: 290, position: "relative" }, cover: { height: 255, backgroundColor: "#D8D8D8", overflow: "hidden" }, coverShade: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,.12)" }, coverTools: { position: "absolute", right: 14, top: 28, flexDirection: "row", alignItems: "center", gap: 14 }, songBubble: { position: "absolute", left: 116, top: 158, backgroundColor: "#fff", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12, elevation: 2 }, songText: { fontSize: 16, color: "#65676B" }, coverCamera: { position: "absolute", right: 12, top: 177, width: 50, height: 50, alignItems: "center", justifyContent: "center" }, avatarPosition: { position: "absolute", left: 20, top: 178 }, avatarRing: { borderWidth: 5, borderColor: "#fff", borderRadius: 84, backgroundColor: "#D9F0FF", padding: 2 }, profileCamera: { position: "absolute", right: -4, bottom: 0, width: 50, height: 50, borderRadius: 25, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center" }, identityBlock: { paddingHorizontal: 22, paddingBottom: 12 }, identityTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: -10 }, identityText: { paddingLeft: 206, flex: 1 }, name: { fontSize: 27, fontWeight: "800", color: "#050505", lineHeight: 31 }, countLine: { fontSize: 16, fontWeight: "700", marginTop: 5, color: "#424242" }, dot: { color: "#65676B" }, dropdown: { marginLeft: 8 }, locationLine: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 20 }, locationText: { fontSize: 18, fontWeight: "700" }, mainButtons: { flexDirection: "row", gap: 14, marginTop: 20 }, primaryButton: { height: 54, flex: 1, borderRadius: 11, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }, primaryText: { fontSize: 18, fontWeight: "700", color: "#fff" }, secondaryButton: { height: 54, flex: 1, borderRadius: 11, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }, secondaryText: { fontSize: 18, fontWeight: "700", color: "#111" }, suggestionSection: { borderTopWidth: 6, borderBottomWidth: 6, borderColor: "#E4E6EB", paddingVertical: 15 }, sectionTitleRow: { paddingHorizontal: 22, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, sectionTitle: { fontSize: 23, fontWeight: "800", color: "#101010" }, closeSuggestion: { fontSize: 38, color: "#65676B", lineHeight: 35 }, suggestionRail: { paddingHorizontal: 14, gap: 12, paddingTop: 12 }, suggestionCard: { width: 164, borderWidth: 1, borderColor: "#D8D8D8", borderRadius: 15, overflow: "hidden", backgroundColor: "#fff" }, suggestionName: { fontSize: 19, fontWeight: "800", paddingHorizontal: 9, paddingTop: 10 }, addButton: { margin: 10, height: 43, borderRadius: 10, backgroundColor: "#DCEBFA", alignItems: "center", justifyContent: "center" }, addText: { fontSize: 18, fontWeight: "700", color: "#1877F2" }, addAll: { margin: 14, height: 46, borderRadius: 10, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center" }, addAllText: { fontSize: 18, fontWeight: "800" }, tabs: { height: 76, flexDirection: "row", justifyContent: "space-around", alignItems: "flex-end", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, tab: { height: 62, paddingHorizontal: 14, justifyContent: "center" }, tabActive: { borderBottomWidth: 4, borderBottomColor: "#1877F2", backgroundColor: "#E8F3FF", borderRadius: 30 }, tabText: { fontSize: 18, color: "#65676B", fontWeight: "700" }, tabTextActive: { color: "#1877F2" }, mediaSection: { paddingVertical: 18, borderBottomWidth: 6, borderBottomColor: "#E4E6EB" }, mediaRail: { paddingHorizontal: 14, gap: 10, paddingTop: 12 }, reelCard: { width: 155, height: 210, position: "relative", borderRadius: 10, overflow: "hidden", backgroundColor: "#D8D8D8" }, mediaImage: { width: "100%", height: "100%" }, photoCard: { width: 150, height: 150, borderRadius: 8, backgroundColor: "#E4E6EB" }, viewOverlay: { position: "absolute", left: 8, bottom: 8, flexDirection: "row", alignItems: "center", gap: 3 }, viewText: { color: "#fff", fontSize: 16, fontWeight: "800", textShadowColor: "#000", textShadowRadius: 3 }, emptyText: { padding: 18, fontSize: 17, color: "#65676B" }, uploadButton: { marginHorizontal: 18, height: 48, borderRadius: 9, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" }, uploadText: { color: "#fff", fontSize: 17, fontWeight: "700" }, detailsSection: { paddingHorizontal: 22, paddingVertical: 22, borderBottomWidth: 6, borderBottomColor: "#E4E6EB" }, detailRow: { flexDirection: "row", alignItems: "center", gap: 13, marginTop: 22 }, detailText: { fontSize: 18, fontWeight: "700", color: "#111" }, subDetail: { marginTop: 3, color: "#65676B", fontSize: 15 }, friendsSection: { paddingVertical: 20, borderBottomWidth: 6, borderBottomColor: "#E4E6EB" }, seeAll: { color: "#1877F2", fontSize: 17, fontWeight: "600" }, friendRail: { paddingHorizontal: 22, gap: 12, paddingTop: 15 }, friendCard: { width: 86, alignItems: "center" }, friendName: { marginTop: 5, fontSize: 14, fontWeight: "700" }, postsHeader: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 12, flexDirection: "row", justifyContent: "space-between" }, composer: { paddingHorizontal: 22, paddingBottom: 14, flexDirection: "row", alignItems: "center", gap: 10 }, composerBox: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 22, paddingHorizontal: 16, paddingVertical: 12 }, composerText: { color: "#65676B", fontSize: 15 }, post: { padding: 16, borderTopWidth: 6, borderTopColor: "#E4E6EB" }, postHead: { flexDirection: "row", alignItems: "center", gap: 10 }, postName: { fontSize: 16, fontWeight: "800" }, postTime: { color: "#65676B", fontSize: 12, marginTop: 2 }, postContent: { fontSize: 16, marginTop: 12, lineHeight: 23 }, postMedia: { width: "100%", height: 280, marginTop: 12, borderRadius: 8 }, loading: { padding: 20, alignItems: "center" },
+  root: { flex: 1, backgroundColor: "#fff" },
+  nav: { height: 62, backgroundColor: "#fff", flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
+  navItem: { width: 62, height: 62, alignItems: "center", justifyContent: "center" },
+  activeNav: { borderBottomWidth: 4, borderBottomColor: "#1877F2" },
+  content: { paddingBottom: 40 },
+  coverWrap: { height: 290, position: "relative" },
+  cover: { height: 255, backgroundColor: "#D8D8D8", overflow: "hidden" },
+  coverShade: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,.12)" },
+  coverTools: { position: "absolute", right: 14, top: 28, flexDirection: "row", alignItems: "center", gap: 14 },
+  songBubble: { position: "absolute", left: 116, top: 158, backgroundColor: "#fff", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12, elevation: 2 },
+  songText: { fontSize: 16, color: "#65676B" },
+  coverCamera: { position: "absolute", right: 12, top: 177, width: 50, height: 50, alignItems: "center", justifyContent: "center" },
+  avatarPosition: { position: "absolute", left: 20, top: 178 },
+  avatarRing: { borderWidth: 5, borderColor: "#fff", borderRadius: 84, backgroundColor: "#D9F0FF", padding: 2 },
+  profileCamera: { position: "absolute", right: -4, bottom: 0, width: 50, height: 50, borderRadius: 25, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center" },
+  identityBlock: { paddingHorizontal: 22, paddingBottom: 12 },
+  identityTop: { flexDirection: "row", alignItems: "flex-start", marginTop: -10 },
+  identityText: { marginLeft: 106, flex: 1, minWidth: 0 },
+  name: { fontSize: 27, fontWeight: "800", color: "#050505", lineHeight: 31 },
+  countLine: { fontSize: 16, fontWeight: "700", marginTop: 5, color: "#424242" },
+  dot: { color: "#65676B" },
+  dropdown: { marginLeft: 8 },
+  locationLine: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 20 },
+  locationText: { fontSize: 18, fontWeight: "700" },
+  mainButtons: { flexDirection: "row", gap: 14, marginTop: 20 },
+  primaryButton: { height: 54, flex: 1, borderRadius: 11, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+  primaryText: { fontSize: 18, fontWeight: "700", color: "#fff" },
+  secondaryButton: { height: 54, flex: 1, borderRadius: 11, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+  secondaryText: { fontSize: 18, fontWeight: "700", color: "#111" },
+  suggestionSection: { borderTopWidth: 6, borderBottomWidth: 6, borderColor: "#E4E6EB", paddingVertical: 15 },
+  sectionTitleRow: { paddingHorizontal: 22, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionTitle: { fontSize: 23, fontWeight: "800", color: "#101010" },
+  closeSuggestion: { fontSize: 38, color: "#65676B", lineHeight: 35 },
+  suggestionRail: { paddingHorizontal: 14, gap: 12, paddingTop: 12 },
+  suggestionCard: { width: 164, borderWidth: 1, borderColor: "#D8D8D8", borderRadius: 15, overflow: "hidden", backgroundColor: "#fff" },
+  suggestionName: { fontSize: 19, fontWeight: "800", paddingHorizontal: 9, paddingTop: 10 },
+  addButton: { margin: 10, height: 43, borderRadius: 10, backgroundColor: "#DCEBFA", alignItems: "center", justifyContent: "center" },
+  addText: { fontSize: 18, fontWeight: "700", color: "#1877F2" },
+  addAll: { margin: 14, height: 46, borderRadius: 10, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center" },
+  addAllText: { fontSize: 18, fontWeight: "800" },
+  tabs: { height: 76, flexDirection: "row", justifyContent: "space-around", alignItems: "flex-end", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
+  tab: { height: 62, paddingHorizontal: 14, justifyContent: "center" },
+  tabActive: { borderBottomWidth: 4, borderBottomColor: "#1877F2", backgroundColor: "#E8F3FF", borderRadius: 30 },
+  tabText: { fontSize: 18, color: "#65676B", fontWeight: "700" },
+  tabTextActive: { color: "#1877F2" },
+  mediaSection: { paddingVertical: 18, borderBottomWidth: 6, borderBottomColor: "#E4E6EB" },
+  mediaRail: { paddingHorizontal: 14, gap: 10, paddingTop: 12 },
+  reelCard: { width: 155, height: 210, position: "relative", borderRadius: 10, overflow: "hidden", backgroundColor: "#D8D8D8" },
+  mediaImage: { width: "100%", height: "100%" },
+  photoCard: { width: 150, height: 150, borderRadius: 8, backgroundColor: "#E4E6EB" },
+  viewOverlay: { position: "absolute", left: 8, bottom: 8, flexDirection: "row", alignItems: "center", gap: 3 },
+  viewText: { color: "#fff", fontSize: 16, fontWeight: "800", textShadowColor: "#000", textShadowRadius: 3 },
+  emptyText: { padding: 18, fontSize: 17, color: "#65676B" },
+  uploadButton: { marginHorizontal: 18, height: 48, borderRadius: 9, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" },
+  uploadText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  detailsSection: { paddingHorizontal: 22, paddingVertical: 22, borderBottomWidth: 6, borderBottomColor: "#E4E6EB" },
+  detailRow: { flexDirection: "row", alignItems: "center", gap: 13, marginTop: 22 },
+  detailText: { fontSize: 18, fontWeight: "700", color: "#111" },
+  subDetail: { marginTop: 3, color: "#65676B", fontSize: 15 },
+  friendsSection: { paddingVertical: 20, borderBottomWidth: 6, borderBottomColor: "#E4E6EB" },
+  seeAll: { color: "#1877F2", fontSize: 17, fontWeight: "600" },
+  friendRail: { paddingHorizontal: 22, gap: 12, paddingTop: 15 },
+  friendCard: { width: 86, alignItems: "center" },
+  friendName: { marginTop: 5, fontSize: 14, fontWeight: "700" },
+  postsHeader: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 12, flexDirection: "row", justifyContent: "space-between" },
+  composer: { paddingHorizontal: 22, paddingBottom: 14, flexDirection: "row", alignItems: "center", gap: 10 },
+  composerBox: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 22, paddingHorizontal: 16, paddingVertical: 12 },
+  composerText: { color: "#65676B", fontSize: 15 },
+  post: { padding: 16, borderTopWidth: 6, borderTopColor: "#E4E6EB" },
+  postHead: { flexDirection: "row", alignItems: "center", gap: 10 },
+  postName: { fontSize: 16, fontWeight: "800" },
+  postTime: { color: "#65676B", fontSize: 12, marginTop: 2 },
+  postContent: { fontSize: 16, marginTop: 12, lineHeight: 23 },
+  postMedia: { width: "100%", height: 280, marginTop: 12, borderRadius: 8 },
+  loading: { padding: 20, alignItems: "center" },
 });
