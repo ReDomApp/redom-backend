@@ -7,54 +7,13 @@ import BackIcon from "../assets/edit-profile/back.svg";
 import CropIcon from "../assets/profile-media/crop.svg";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ProfilePictureAdjust">;
-
 export function ProfilePictureAdjustScreen({ navigation, route }: Props) {
-  const { width } = useWindowDimensions();
-  const cropSize = Math.min(width - 32, 360);
-  const sourceW = route.params.width || cropSize;
-  const sourceH = route.params.height || cropSize;
-  const fit = cropSize / Math.min(sourceW, sourceH);
-  const displayW = sourceW * fit;
-  const displayH = sourceH * fit;
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const start = useRef(offset);
-  const pan = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => { start.current = offset; },
-    onPanResponderMove: (_, g) => {
-      const maxX = Math.max(0, (displayW - cropSize) / 2);
-      const maxY = Math.max(0, (displayH - cropSize) / 2);
-      setOffset({ x: Math.max(-maxX, Math.min(maxX, start.current.x + g.dx)), y: Math.max(-maxY, Math.min(maxY, start.current.y + g.dy)) });
-    },
-  }), [cropSize, displayW, displayH, offset]);
-
-  const done = async () => {
-    const cropX = Math.max(0, Math.min(sourceW - sourceH, ((sourceW - cropSize / fit) / 2) - offset.x / fit));
-    const cropY = Math.max(0, Math.min(sourceH - sourceW, ((sourceH - cropSize / fit) / 2) - offset.y / fit));
-    const cropSide = Math.min(sourceW, sourceH);
-    const result = await manipulateAsync(route.params.uri, [{ crop: { originX: Math.round(cropX), originY: Math.round(cropY), width: Math.round(cropSide), height: Math.round(cropSide) } }], { compress: 0.88, format: SaveFormat.JPEG, base64: true });
-    navigation.replace("ProfilePicturePreview", { uri: result.uri, base64: result.base64 || route.params.base64, width: cropSide, height: cropSide });
-  };
-
-  return <SafeAreaView style={styles.root}>
-    <View style={styles.header}><Pressable onPress={() => navigation.goBack()}><BackIcon width={26} height={26} /></Pressable><Text style={styles.title}>Drag to adjust</Text><Pressable style={styles.save} onPress={() => void done()}><Text style={styles.saveText}>DONE</Text></Pressable></View>
-    <View style={styles.stage}>
-      <View style={[styles.imageFrame, { width: cropSize, height: cropSize }]}>{/* The image is deliberately larger than the crop window so dragging controls the visible portion. */}<Image source={{ uri: route.params.uri }} style={{ width: displayW, height: displayH, transform: [{ translateX: offset.x }, { translateY: offset.y }] }} resizeMode="contain" {...pan.panHandlers} /></View>
-      <View pointerEvents="none" style={[styles.cropOverlay, { width: cropSize, height: cropSize, borderRadius: cropSize / 2 }]} />
-      <View style={styles.hint}><CropIcon width={20} height={20} /><Text style={styles.hintText}>Drag the photo until it appears exactly how you want it on your profile.</Text></View>
-    </View>
-  </SafeAreaView>;
+  const { width } = useWindowDimensions(); const cropSize = Math.min(width - 32, 360);
+  const sourceW = route.params.width || cropSize; const sourceH = route.params.height || cropSize; const side = Math.min(sourceW, sourceH);
+  const fit = cropSize / side; const displayW = sourceW * fit; const displayH = sourceH * fit;
+  const [offset,setOffset]=useState({x:0,y:0}); const start=useRef(offset);
+  const pan=useMemo(()=>PanResponder.create({onStartShouldSetPanResponder:()=>true,onPanResponderGrant:()=>{start.current=offset;},onPanResponderMove:(_,g)=>{const maxX=Math.max(0,(displayW-cropSize)/2),maxY=Math.max(0,(displayH-cropSize)/2);setOffset({x:Math.max(-maxX,Math.min(maxX,start.current.x+g.dx)),y:Math.max(-maxY,Math.min(maxY,start.current.y+g.dy))});}}),[cropSize,displayW,displayH,offset]);
+  const done=async()=>{const x=Math.max(0,Math.min(sourceW-side,(sourceW-side)/2-offset.x/fit));const y=Math.max(0,Math.min(sourceH-side,(sourceH-side)/2-offset.y/fit));const result=await manipulateAsync(route.params.uri,[{crop:{originX:Math.round(x),originY:Math.round(y),width:Math.round(side),height:Math.round(side)}}],{compress:.88,format:SaveFormat.JPEG,base64:true});navigation.replace("ProfilePicturePreview",{uri:result.uri,base64:result.base64||route.params.base64,width:side,height:side});};
+  return <SafeAreaView style={styles.root}><View style={styles.header}><Pressable onPress={()=>navigation.goBack()}><BackIcon width={26} height={26}/></Pressable><Text style={styles.title}>Drag to adjust</Text><Pressable style={styles.save} onPress={()=>void done()}><Text style={styles.saveText}>DONE</Text></Pressable></View><View style={styles.stage}><View style={[styles.frame,{width:cropSize,height:cropSize}]}><Image source={{uri:route.params.uri}} style={{width:displayW,height:displayH,transform:[{translateX:offset.x},{translateY:offset.y}]}} resizeMode="contain" {...pan.panHandlers}/></View><View pointerEvents="none" style={[styles.overlay,{width:cropSize,height:cropSize,borderRadius:cropSize/2}]}/><View style={styles.hint}><CropIcon width={20} height={20}/><Text style={styles.hintText}>Drag to position your photo inside the profile circle.</Text></View></View></SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#fff" },
-  header: { height: 64, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-  title: { fontSize: 20, fontWeight: "600", color: "#050505" },
-  save: { backgroundColor: "#1877F2", borderRadius: 10, paddingHorizontal: 17, paddingVertical: 11 },
-  saveText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  stage: { flex: 1, backgroundColor: "#000", alignItems: "center", paddingTop: 44 },
-  imageFrame: { overflow: "hidden", alignItems: "center", justifyContent: "center" },
-  cropOverlay: { position: "absolute", top: 44, borderWidth: 2, borderColor: "#fff" },
-  hint: { marginTop: 28, paddingHorizontal: 24, flexDirection: "row", alignItems: "center", gap: 9 },
-  hintText: { flex: 1, color: "#fff", fontSize: 14, lineHeight: 20 },
-});
+const styles=StyleSheet.create({root:{flex:1,backgroundColor:"#fff"},header:{height:64,paddingHorizontal:16,flexDirection:"row",alignItems:"center",justifyContent:"space-between",borderBottomWidth:1,borderBottomColor:"#E4E6EB"},title:{fontSize:20,fontWeight:"600",color:"#050505"},save:{backgroundColor:"#1877F2",borderRadius:10,paddingHorizontal:17,paddingVertical:11},saveText:{color:"#fff",fontSize:15,fontWeight:"700"},stage:{flex:1,backgroundColor:"#000",alignItems:"center",paddingTop:44},frame:{overflow:"hidden",alignItems:"center",justifyContent:"center"},overlay:{position:"absolute",top:44,borderWidth:2,borderColor:"#fff"},hint:{marginTop:28,paddingHorizontal:24,flexDirection:"row",alignItems:"center",gap:9},hintText:{flex:1,color:"#fff",fontSize:14,lineHeight:20}});
