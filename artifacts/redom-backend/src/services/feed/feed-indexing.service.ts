@@ -57,17 +57,9 @@ export interface FeedIndex {
   contentTypePreferences: Array<{ type: string; score: number }>;
   authorAffinity: Array<{ userId: string; score: number; likes: number; qualifyingVideoWatches: number }>;
   preferences: {
-    homeFeedEnabled: boolean;
-    followingFeedEnabled: boolean;
-    videosFeedEnabled: boolean;
-    personalizedRecommendationsEnabled: boolean;
-    recommendationEligible: boolean;
-    recommendationRestricted: boolean;
-    friendsPriority: number;
-    followingPriority: number;
-    trendingPriority: number;
-    newestPriority: number;
-    infiniteFeedEnabled: boolean;
+    homeFeedEnabled: boolean; followingFeedEnabled: boolean; videosFeedEnabled: boolean;
+    personalizedRecommendationsEnabled: boolean; recommendationEligible: boolean; recommendationRestricted: boolean;
+    friendsPriority: number; followingPriority: number; trendingPriority: number; newestPriority: number; infiniteFeedEnabled: boolean;
   };
   source: "login_history_and_activity";
 }
@@ -85,16 +77,11 @@ export class FeedIndexingService {
 
     const profile = await db.select({ id: userProfiles.id }).from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
     const preferencesRow = profile.length ? await db.select({
-      homeFeedEnabled: feedPreferences.homeFeedEnabled,
-      followingFeedEnabled: feedPreferences.followingFeedEnabled,
-      videosFeedEnabled: feedPreferences.videosFeedEnabled,
-      personalizedRecommendationsEnabled: feedPreferences.personalizedRecommendationsEnabled,
-      recommendationEligible: feedPreferences.recommendationEligible,
-      recommendationRestricted: feedPreferences.recommendationRestricted,
-      friendsPriority: feedPreferences.friendsPriority,
-      followingPriority: feedPreferences.followingPriority,
-      trendingPriority: feedPreferences.trendingPriority,
-      newestPriority: feedPreferences.newestPriority,
+      homeFeedEnabled: feedPreferences.homeFeedEnabled, followingFeedEnabled: feedPreferences.followingFeedEnabled,
+      videosFeedEnabled: feedPreferences.videosFeedEnabled, personalizedRecommendationsEnabled: feedPreferences.personalizedRecommendationsEnabled,
+      recommendationEligible: feedPreferences.recommendationEligible, recommendationRestricted: feedPreferences.recommendationRestricted,
+      friendsPriority: feedPreferences.friendsPriority, followingPriority: feedPreferences.followingPriority,
+      trendingPriority: feedPreferences.trendingPriority, newestPriority: feedPreferences.newestPriority,
       infiniteFeedEnabled: feedPreferences.infiniteFeedEnabled,
     }).from(feedPreferences).where(eq(feedPreferences.userId, profile[0].id)).limit(1) : [];
 
@@ -111,10 +98,8 @@ export class FeedIndexingService {
       targetId: activityLog.targetId, targetType: activityLog.targetType, activityTime: activityLog.activityTime,
     }).from(activityLog).where(and(eq(activityLog.userId, userId), eq(activityLog.hidden, false), eq(activityLog.archived, false), gt(activityLog.activityTime, since))).orderBy(desc(activityLog.activityTime)).limit(2000);
 
-    const searches = await db.select({
-      searchQuery: searchHistory.searchQuery, searchType: searchHistory.searchType,
-      searchCount: searchHistory.searchCount, createdAt: searchHistory.createdAt,
-    }).from(searchHistory).innerJoin(userProfiles, eq(searchHistory.userId, userProfiles.id))
+    const searches = await db.select({ searchQuery: searchHistory.searchQuery, searchType: searchHistory.searchType, searchCount: searchHistory.searchCount, createdAt: searchHistory.createdAt })
+      .from(searchHistory).innerJoin(userProfiles, eq(searchHistory.userId, userProfiles.id))
       .where(and(eq(userProfiles.userId, userId), eq(searchHistory.active, true), eq(searchHistory.deleted, false), gt(searchHistory.createdAt, since)))
       .orderBy(desc(searchHistory.createdAt)).limit(500);
 
@@ -132,24 +117,17 @@ export class FeedIndexingService {
       if (search.searchType && search.searchType !== "all") contentTypeScores.set(search.searchType.toLowerCase(), (contentTypeScores.get(search.searchType.toLowerCase()) ?? 0) + weight);
     }
 
-    // Build persistent behavioral affinity toward the authors of posts the user actually engages with.
-    // A like is a strong signal; a video watch of >=10 seconds is an explicit sustained-interest signal.
     const affinity = new Map<string, { likes: number; qualifyingVideoWatches: number }>();
     const addAffinity = (authorId: string, kind: "like" | "watch") => {
       const current = affinity.get(authorId) ?? { likes: 0, qualifyingVideoWatches: 0 };
-      if (kind === "like") current.likes += 1;
-      else current.qualifyingVideoWatches += 1;
+      if (kind === "like") current.likes += 1; else current.qualifyingVideoWatches += 1;
       affinity.set(authorId, current);
     };
 
-    const postIdsFromActivities = activities
-      .filter((activity) => activity.targetId && ["post", "video", "reel", "page_post"].includes((activity.targetType ?? "").toLowerCase()))
-      .map((activity) => activity.targetId as string);
+    const postIdsFromActivities = activities.filter((activity) => activity.targetId && ["post", "video", "reel", "page_post"].includes((activity.targetType ?? "").toLowerCase())).map((activity) => activity.targetId as string);
     const uniqueActivityPostIds = [...new Set(postIdsFromActivities)];
-
     if (uniqueActivityPostIds.length) {
-      const engagedPosts = await db.select({ id: posts.id, authorId: posts.userId })
-        .from(posts).where(inArray(posts.id, uniqueActivityPostIds));
+      const engagedPosts = await db.select({ id: posts.id, authorId: posts.userId }).from(posts).where(inArray(posts.id, uniqueActivityPostIds));
       const authorByPostId = new Map(engagedPosts.map((post) => [post.id, post.authorId]));
       for (const activity of activities) {
         if (!activity.targetId) continue;
@@ -157,42 +135,29 @@ export class FeedIndexingService {
         if (!authorId) continue;
         const type = activity.activityType.toLowerCase();
         if (["like", "liked", "reaction"].includes(type)) addAffinity(authorId, "like");
-        if (["watch_video", "video_view"].includes(type) && watchedForAtLeastTenSeconds(`${activity.activityTitle} ${activity.activityDescription ?? ""}`)) {
-          addAffinity(authorId, "watch");
-        }
+        if (["watch_video", "video_view"].includes(type) && watchedForAtLeastTenSeconds(`${activity.activityTitle} ${activity.activityDescription ?? ""}`)) addAffinity(authorId, "watch");
       }
     }
 
-    // Reactions are the source of truth for active likes, including page/profile posts.
-    const activeLikes = await db.select({ contentId: reactions.contentId })
-      .from(reactions).innerJoin(userProfiles, eq(reactions.reactorId, userProfiles.id))
-      .where(and(eq(userProfiles.userId, userId), eq(reactions.active, true), eq(reactions.reactionType, "like"), inArray(reactions.contentType, ["post", "video", "photo", "reel", "page_post"])))
-      .limit(5000);
+    const activeLikes = await db.select({ contentId: reactions.contentId }).from(reactions).innerJoin(userProfiles, eq(reactions.reactorId, userProfiles.id))
+      .where(and(eq(userProfiles.userId, userId), eq(reactions.active, true), eq(reactions.reactionType, "like"), inArray(reactions.contentType, ["post", "video", "photo", "reel", "page_post"]))).limit(5000);
     const likedPostIds = [...new Set(activeLikes.map((row) => row.contentId))];
     if (likedPostIds.length) {
       const likedPosts = await db.select({ id: posts.id, authorId: posts.userId }).from(posts).where(inArray(posts.id, likedPostIds));
       for (const post of likedPosts) addAffinity(post.authorId, "like");
     }
 
-    const authorAffinity = [...affinity.entries()]
-      .map(([authorId, signals]) => ({
-        userId: authorId,
-        likes: signals.likes,
-        qualifyingVideoWatches: signals.qualifyingVideoWatches,
-        score: Math.min(1, signals.likes * 0.18 + signals.qualifyingVideoWatches * 0.22 + (signals.likes > 0 && signals.qualifyingVideoWatches > 0 ? 0.15 : 0)),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 300);
+    const authorAffinity = [...affinity.entries()].map(([authorId, signals]) => ({
+      userId: authorId, likes: signals.likes, qualifyingVideoWatches: signals.qualifyingVideoWatches,
+      score: Math.min(1, signals.likes * 0.18 + signals.qualifyingVideoWatches * 0.22 + (signals.likes > 0 && signals.qualifyingVideoWatches > 0 ? 0.15 : 0)),
+    })).sort((a, b) => b.score - a.score).slice(0, 300);
 
     return {
       anchorLogin: { country: anchor?.country ?? null, region: anchor?.region ?? null, city: anchor?.city ?? null, loginTime: anchor?.loginTime ?? null },
-      laterLocations,
-      locationMix: { anchorWeight: 0.7, explorationWeight: 0.3 },
+      laterLocations, locationMix: { anchorWeight: 0.7, explorationWeight: 0.3 },
       interests: [...interestScores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 80).map(([token, score]) => ({ token, score })),
       contentTypePreferences: [...contentTypeScores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([type, score]) => ({ type, score })),
-      authorAffinity,
-      preferences,
-      source: "login_history_and_activity",
+      authorAffinity, preferences, source: "login_history_and_activity",
     };
   }
 
@@ -207,16 +172,17 @@ export class FeedIndexingService {
   async rankProfiles(userId: string, index: FeedIndex, limit = 10) {
     const candidates = await db.select({
       userId: users.id, firstName: users.firstName, lastName: users.lastName, username: users.username,
-      publicId: users.publicId, profileId: users.profileId, profilePhoto: userProfiles.profilePhoto,
-      currentCity: userProfiles.currentCity, bio: userProfiles.bio, occupation: userProfiles.occupation,
-      education: userProfiles.education, friendCount: userProfiles.friendCount, followerCount: userProfiles.followerCount,
+      publicId: users.publicId, profileId: users.profileId, profilePhoto: userProfiles.profilePhoto, currentCity: userProfiles.currentCity,
+      bio: userProfiles.bio, occupation: userProfiles.occupation, education: userProfiles.education,
+      friendCount: userProfiles.friendCount, followerCount: userProfiles.followerCount,
     }).from(userProfiles).innerJoin(users, eq(userProfiles.userId, users.id))
       .where(and(ne(userProfiles.userId, userId), eq(userProfiles.profileVisibility, "public"), eq(users.accountStatus, "active")))
       .orderBy(desc(userProfiles.friendCount), desc(userProfiles.followerCount), desc(userProfiles.createdAt)).limit(300);
     if (!candidates.length) return [];
 
     const candidateIds = candidates.map((candidate) => candidate.userId);
-    const candidateLogins = await db.select({ userId: loginHistory.userId, country: loginHistory.country, region: loginHistory.region, city: loginHistory.city, loginTime: loginHistory.loginTime }).from(loginHistory).where(and(inArray(loginHistory.userId, candidateIds), eq(loginHistory.hiddenByUser, false))).orderBy(loginHistory.loginTime);
+    const candidateLogins = await db.select({ userId: loginHistory.userId, country: loginHistory.country, region: loginHistory.region, city: loginHistory.city, loginTime: loginHistory.loginTime })
+      .from(loginHistory).where(and(inArray(loginHistory.userId, candidateIds), eq(loginHistory.hiddenByUser, false))).orderBy(loginHistory.loginTime);
     const firstLocationByUser = new Map<string, typeof candidateLogins[number]>();
     for (const login of candidateLogins) if (!firstLocationByUser.has(login.userId) && (login.country || login.region || login.city)) firstLocationByUser.set(login.userId, login);
 
@@ -257,12 +223,19 @@ export class FeedIndexingService {
       commentsEnabled: posts.commentsEnabled, sharingEnabled: posts.sharingEnabled, publishedAt: posts.publishedAt,
       createdAt: posts.createdAt, updatedAt: posts.updatedAt, authorId: users.id, firstName: users.firstName,
       lastName: users.lastName, username: users.username, publicId: users.publicId, profileId: users.profileId,
-      profilePhoto: userProfiles.profilePhoto, authorCity: userProfiles.currentCity, profileType: userProfiles.profileType,
+      profilePhoto: userProfiles.profilePhoto, verified: userProfiles.verified, authorCity: userProfiles.currentCity, profileType: userProfiles.profileType,
     }).from(posts).innerJoin(users, eq(posts.userId, users.id)).leftJoin(userProfiles, eq(userProfiles.userId, users.id))
       .where(and(eq(posts.deleted, false), eq(users.accountStatus, "active"), or(...visibilityConditions)))
       .orderBy(desc(posts.publishedAt), desc(posts.createdAt)).limit(500);
 
-    const interacted = await db.select({ contentId: reactions.contentId }).from(reactions).innerJoin(userProfiles, eq(reactions.reactorId, userProfiles.id)).where(and(eq(userProfiles.userId, userId), eq(reactions.active, true))).limit(2000);
+    const candidateIds = [...new Set(candidates.map((post) => post.authorId))];
+    const authorLogins = candidateIds.length ? await db.select({ userId: loginHistory.userId, country: loginHistory.country, region: loginHistory.region, city: loginHistory.city, loginTime: loginHistory.loginTime })
+      .from(loginHistory).where(and(inArray(loginHistory.userId, candidateIds), eq(loginHistory.hiddenByUser, false))).orderBy(loginHistory.loginTime) : [];
+    const firstAuthorLocation = new Map<string, typeof authorLogins[number]>();
+    for (const login of authorLogins) if (!firstAuthorLocation.has(login.userId) && (login.country || login.region || login.city)) firstAuthorLocation.set(login.userId, login);
+
+    const interacted = await db.select({ contentId: reactions.contentId }).from(reactions).innerJoin(userProfiles, eq(reactions.reactorId, userProfiles.id))
+      .where(and(eq(userProfiles.userId, userId), eq(reactions.active, true))).limit(2000);
     const interactedIds = new Set(interacted.map((row) => row.contentId));
     const interestMap = new Map(index.interests.map((interest) => [interest.token, interest.score]));
     const typeMap = new Map(index.contentTypePreferences.map((item) => [item.type, item.score]));
@@ -273,9 +246,10 @@ export class FeedIndexingService {
     const scored = candidates.map((post) => {
       const behavior = (typeMap.get(post.type.toLowerCase()) ?? 0) + tokens(post.content).reduce((sum, token) => sum + (interestMap.get(token) ?? 0), 0);
       const behaviorScore = Math.min(1, behavior / 30);
-      // Geographic ranking uses the author's current city only for city-level matching; the 70/30 anchor remains authoritative.
-      const anchorGeo = (anchorCity && locationMatch(post.authorCity, anchorCity) ? 0.25 : 0) + (anchorRegion && locationMatch(post.authorCity, anchorRegion) ? 0.20 : 0) + (anchorCountry && locationMatch(post.authorCity, anchorCountry) ? 0.55 : 0);
-      const laterGeo = laterCountries.has(normalizeLocation(post.authorCity) ?? "") ? 1 : 0;
+      const location = firstAuthorLocation.get(post.authorId);
+      const authorCountry = normalizeLocation(location?.country), authorRegion = normalizeLocation(location?.region), authorCity = normalizeLocation(location?.city);
+      const anchorGeo = (anchorCountry && authorCountry === anchorCountry ? 0.55 : 0) + (anchorRegion && authorRegion === anchorRegion ? 0.20 : 0) + (anchorCity && authorCity === anchorCity ? 0.25 : 0);
+      const laterGeo = laterCountries.has(authorCountry ?? "") ? 1 : authorCountry && authorCountry !== anchorCountry ? 0.5 : 0;
       const geoScore = anchorGeo * 0.7 + laterGeo * 0.3;
       const freshnessHours = Math.max(0, (Date.now() - post.publishedAt.getTime()) / 3600000);
       const freshnessScore = Math.max(0, 1 - freshnessHours / 168);
@@ -289,11 +263,7 @@ export class FeedIndexingService {
         score: geoScore * 0.7 + behaviorScore * 0.3 + freshnessScore * 0.25 + relationshipScore + authorAffinity * 1.25,
         recommended,
         source: friendSet.has(post.authorId) ? "friend" : followingSet.has(post.authorId) ? "following" : recommended ? "recommended" : "public",
-        sourceLabel: friendSet.has(post.authorId)
-          ? `${post.firstName} is your friend`
-          : followingSet.has(post.authorId)
-            ? (post.profileType === "page" ? "You follow this page" : `You follow ${post.firstName}`)
-            : recommended ? "Suggested post that matches your preferences" : null,
+        sourceLabel: friendSet.has(post.authorId) ? `${post.firstName} is your friend` : followingSet.has(post.authorId) ? (post.profileType === "page" ? "You follow this page" : `You follow ${post.firstName}`) : recommended ? "Suggested post that matches your preferences" : null,
         alreadyInteracted: interactedIds.has(post.id),
       };
     });
