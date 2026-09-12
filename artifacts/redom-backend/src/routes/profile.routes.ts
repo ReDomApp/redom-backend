@@ -1,12 +1,19 @@
 import { Router, type Request, type Response } from "express";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { pool } from "../database/db";
-import { env } from "../config/env";
 
 const router = Router();
 
-const mediaUrl = (key: string | null) =>
-  key ? `${env.cloudflare.r2.bucketEndpoint.replace(/\/$/, "")}/${key}` : null;
+const mediaUrl = (req: Request, key: string | null) => {
+  if (!key) return null;
+  if (/^https?:\/\//i.test(key)) return key;
+  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwardedProto || req.protocol;
+  const host = req.get("host");
+  if (!host) return key;
+  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  return `${protocol}://${host}/profile/media/file/${encodedKey}`;
+};
 
 const formatDate = (value: string | Date | null) =>
   value
@@ -114,8 +121,8 @@ async function getProfile(req: Request, res: Response) {
           profileId: null,
           shareCode: profile.profile_share_code,
           shareUrl: `https://redom.app/profile/username/${profile.profile_share_code}`,
-          profilePhoto: mediaUrl(profile.profile_photo),
-          coverPhoto: mediaUrl(profile.cover_photo),
+          profilePhoto: mediaUrl(req, profile.profile_photo),
+          coverPhoto: mediaUrl(req, profile.cover_photo),
           friendCount: profile.friend_count ?? 0,
           followerCount: profile.follower_count ?? 0,
           postCount: profile.post_count ?? 0,
@@ -206,8 +213,8 @@ async function getProfile(req: Request, res: Response) {
       profileId: profile.profile_id,
       shareCode: profile.profile_share_code,
       shareUrl: `https://redom.app/profile/username/${profile.profile_share_code}`,
-      profilePhoto: mediaUrl(profile.profile_photo),
-      coverPhoto: mediaUrl(profile.cover_photo),
+      profilePhoto: mediaUrl(req, profile.profile_photo),
+      coverPhoto: mediaUrl(req, profile.cover_photo),
       friendCount: profile.friend_count ?? friends.rowCount ?? 0,
       followerCount: profile.follower_count ?? 0,
       postCount: profile.post_count ?? posts.rowCount ?? 0,
@@ -232,25 +239,25 @@ async function getProfile(req: Request, res: Response) {
         firstName: f.first_name,
         lastName: f.last_name,
         username: f.username,
-        profilePhoto: mediaUrl(f.profile_photo),
+        profilePhoto: mediaUrl(req, f.profile_photo),
       })),
       reels: reels.rows.map((r) => ({
         id: r.id,
-        thumbnail: mediaUrl(r.thumbnail_key || r.object_key),
+        thumbnail: mediaUrl(req, r.thumbnail_key || r.object_key),
         viewCount: r.view_count || 0,
       })),
       photos: photos.rows.map((r) => ({
         id: r.id,
-        url: mediaUrl(r.object_key),
-        thumbnail: mediaUrl(r.thumbnail_key || r.object_key),
+        url: mediaUrl(req, r.object_key),
+        thumbnail: mediaUrl(req, r.thumbnail_key || r.object_key),
       })),
       posts: posts.rows.map((r) => ({
         id: r.id,
         type: r.type,
         content: r.content,
         publishedAt: r.published_at,
-        mediaUrl: mediaUrl(r.object_key),
-        thumbnail: mediaUrl(r.thumbnail_key || r.object_key),
+        mediaUrl: mediaUrl(req, r.object_key),
+        thumbnail: mediaUrl(req, r.thumbnail_key || r.object_key),
       })),
       suggestions: suggestions.rows.map((s) => ({
         userId: s.id,
@@ -259,7 +266,7 @@ async function getProfile(req: Request, res: Response) {
         username: s.username,
         publicId: s.public_id,
         profileId: s.profile_id,
-        profilePhoto: mediaUrl(s.profile_photo),
+        profilePhoto: mediaUrl(req, s.profile_photo),
         currentCity: s.current_city,
         friendCount: s.friend_count || 0,
       })),
