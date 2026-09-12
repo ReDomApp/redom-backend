@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, Image, ImageBackground, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import HomeIcon from "../assets/home-feed/home.svg";
 import VideoIcon from "../assets/home-feed/video.svg";
@@ -32,19 +32,31 @@ export function ProfileScreen({ navigation, route }: Props) {
   const ui = useMemo(() => makeStyles(width), [width]);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<"All" | "Reels" | "Photos" | "Events">("All");
   const [adding, setAdding] = useState<string | null>(null);
   const requestedUserId = route.params?.userId;
 
-  useEffect(() => {
-    let mounted = true;
+  const refreshProfile = useCallback(async () => {
+    setRefreshing(true);
     setLoading(true);
-    profileService.getProfile(requestedUserId).then((result) => { if (mounted) setProfile(result.profile); }).catch(() => { if (mounted) Alert.alert("Profile", "Unable to load this profile right now."); }).finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; };
+    try {
+      const result = await profileService.getProfile(requestedUserId);
+      setProfile(result.profile);
+    } catch {
+      Alert.alert("Profile", "Unable to load this profile right now.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [requestedUserId]);
 
+  useEffect(() => {
+    void refreshProfile();
+  }, [refreshProfile]);
+
   const p = profile;
-  const isOwner = !!p && (p.userId === user?.userId || (!requestedUserId && p.isOwner));
+  const isOwner = !!p && p.profileId === user?.profileId;
   const name = p ? `${p.firstName} ${p.lastName}`.trim() : user ? `${user.firstName} ${user.lastName}`.trim() : "Profile";
 
   const add = async (suggestion: ProfileSuggestion) => {
@@ -65,7 +77,7 @@ export function ProfileScreen({ navigation, route }: Props) {
       <Pressable style={[ui.navItem, ui.activeNav]}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={ui.navAvatar} /></Pressable>
     </View>
 
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ui.content}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ui.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProfile} />}>
       <View style={ui.coverWrap}>
         {p?.coverPhoto ? <ImageBackground source={{ uri: p.coverPhoto }} style={ui.cover} resizeMode="cover"><View style={ui.coverShade} /></ImageBackground> : <View style={ui.cover}><View style={ui.coverShade} /></View>}
         <View style={ui.coverTools}>
@@ -92,7 +104,7 @@ export function ProfileScreen({ navigation, route }: Props) {
       {tab === "Photos" ? <View style={ui.mediaSection}><Text style={ui.sectionTitle}>Photos</Text>{p?.photos.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ui.mediaRail}>{p.photos.map((photo) => <Image key={photo.id} source={{ uri: photo.thumbnail || photo.url || "" }} style={ui.photoCard} />)}</ScrollView> : <Text style={ui.emptyText}>You haven't uploaded anything on ReDom yet</Text>}</View> : null}
       {tab === "Events" ? <View style={ui.mediaSection}><Text style={ui.sectionTitle}>Events</Text><Text style={ui.emptyText}>No events to show.</Text></View> : null}
 
-      {tab === "All" ? <><View style={ui.detailsSection}><View style={ui.sectionTitleRow}><Text style={ui.sectionTitle}>Personal details</Text>{isOwner ? <Pressable><EditIcon width={ui.editIcon} height={ui.editIcon} /></Pressable> : null}</View>{p?.location ? <View style={ui.detailRow}><LocationIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.location}</Text></View> : null}{p?.birthday ? <View style={ui.detailRow}><CalendarIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.birthday}</Text></View> : null}</View><View style={ui.detailsSection}><Text style={ui.sectionTitle}>ReDom</Text><View style={ui.detailRow}><ReDomRecordIcon width={ui.detailIcon} height={ui.detailIcon} /><View style={ui.redomValue}><Text style={ui.detailText}>Joined ReDom</Text>{p?.joinedAt ? <Text style={ui.subDetail}>{p.joinedAt}</Text> : null}<Text style={ui.subDetail}>{p?.joinedCountry || "Unavailable"}</Text></View></View></View><View style={ui.friendsSection}><View style={ui.sectionTitleRow}><Text style={ui.sectionTitle}>Friends</Text><Pressable><Text style={ui.seeAll}>See all</Text></Pressable></View>{p?.friends.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ui.friendRail}>{p.friends.slice(0, 12).map((friend) => <View key={friend.userId} style={ui.friendCard}><Avatar uri={friend.profilePhoto} size={ui.friendAvatar} /><Text style={ui.friendName} numberOfLines={1}>{friend.firstName}</Text></View>)}</ScrollView> : null}</View>{isOwner ? <><View style={ui.postsHeader}><Text style={ui.sectionTitle}>All posts</Text><Text style={ui.seeAll}>Filters</Text></View><View style={ui.composer}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={ui.composerAvatar} /><View style={ui.composerBox}><Text style={ui.composerText}>What's on your mind?</Text></View></View></> : null}{p?.posts.length ? p.posts.map((post) => <View key={post.id} style={ui.post}><View style={ui.postHead}><Avatar uri={p.profilePhoto} size={ui.postAvatar} /><View><Text style={ui.postName}>{name}</Text><Text style={ui.postTime}>{new Date(post.publishedAt).toLocaleDateString()}</Text></View></View>{post.content ? <Text style={ui.postContent}>{post.content}</Text> : null}{post.thumbnail ? <Image source={{ uri: post.thumbnail }} style={ui.postMedia} /> : null}</View>) : null}</> : null}
+      {tab === "All" ? <><View style={ui.detailsSection}><View style={ui.sectionTitleRow}><Text style={ui.sectionTitle}>Personal details</Text>{isOwner ? <Pressable><EditIcon width={ui.editIcon} height={ui.editIcon} /></Pressable> : null}</View>{p?.location ? <View style={ui.detailRow}><LocationIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.location}</Text></View> : null}{p?.birthday ? <View style={ui.detailRow}><CalendarIcon width={ui.detailIcon} height={ui.detailIcon} /><Text style={ui.detailText}>{p.birthday}</Text></View> : null}</View><View style={ui.detailsSection}><Text style={ui.sectionTitle}>ReDom</Text><View style={ui.detailRow}><ReDomRecordIcon width={ui.detailIcon} height={ui.detailIcon} /><View style={ui.redomValue}><Text style={ui.detailText}>Joined ReDom</Text>{p?.joinedAt ? <Text style={ui.subDetail}>{p.joinedAt}</Text> : null}<Text style={ui.subDetail}>{p?.joinedCountry || ""}</Text></View></View></View><View style={ui.friendsSection}><View style={ui.sectionTitleRow}><Text style={ui.sectionTitle}>Friends</Text><Pressable><Text style={ui.seeAll}>See all</Text></Pressable></View>{p?.friends.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ui.friendRail}>{p.friends.slice(0, 12).map((friend) => <View key={friend.userId} style={ui.friendCard}><Avatar uri={friend.profilePhoto} size={ui.friendAvatar} /><Text style={ui.friendName} numberOfLines={1}>{friend.firstName}</Text></View>)}</ScrollView> : null}</View>{isOwner ? <><View style={ui.postsHeader}><Text style={ui.sectionTitle}>All posts</Text><Text style={ui.seeAll}>Filters</Text></View><View style={ui.composer}><Avatar uri={p?.profilePhoto || user?.profilePhoto} size={ui.composerAvatar} /><View style={ui.composerBox}><Text style={ui.composerText}>What's on your mind?</Text></View></View></> : null}{p?.posts.length ? p.posts.map((post) => <View key={post.id} style={ui.post}><View style={ui.postHead}><Avatar uri={p.profilePhoto} size={ui.postAvatar} /><View><Text style={ui.postName}>{name}</Text><Text style={ui.postTime}>{new Date(post.publishedAt).toLocaleDateString()}</Text></View></View>{post.content ? <Text style={ui.postContent}>{post.content}</Text> : null}{post.thumbnail ? <Image source={{ uri: post.thumbnail }} style={ui.postMedia} /> : null}</View>) : null}</> : null}
       {loading ? <View style={ui.loading}><Text style={ui.emptyText}>Loading profile...</Text></View> : null}
     </ScrollView>
   </SafeAreaView>;
