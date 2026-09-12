@@ -29,184 +29,74 @@ export async function authMiddleware(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const authorization =
-      req.headers.authorization;
+    const authorization = req.headers.authorization;
 
-    if (
-      !authorization ||
-      !authorization.startsWith(
-        "Bearer ",
-      )
-    ) {
-      res.status(401).json({
-        success: false,
-        message:
-          "Authentication required.",
-      });
-
+    if (!authorization || !authorization.startsWith("Bearer ")) {
+      res.status(401).json({ success: false, message: "Authentication required." });
       return;
     }
 
-    const token =
-      authorization.slice(7).trim();
-
+    const token = authorization.slice(7).trim();
     if (!token) {
-      res.status(401).json({
-        success: false,
-        message:
-          "Authentication required.",
-      });
-
+      res.status(401).json({ success: false, message: "Authentication required." });
       return;
     }
 
-    const payload =
-      verifyAccessToken(token);
+    const payload = verifyAccessToken(token);
 
-    if (
-      !payload.userId ||
-      !payload.profileId ||
-      !payload.sessionId
-    ) {
-      res.status(401).json({
-        success: false,
-        message:
-          "Invalid authentication session.",
-      });
-
+    // userId and sessionId identify the authenticated account/session.
+    // profileId is deliberately not trusted from the access token for ownership.
+    if (!payload.userId || !payload.sessionId) {
+      res.status(401).json({ success: false, message: "Invalid authentication session." });
       return;
     }
 
-    const user =
-      await db.query.users.findFirst({
-        where: eq(
-          users.id,
-          payload.userId,
-        ),
-      });
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, payload.userId),
+    });
 
     if (!user) {
-      res.status(401).json({
-        success: false,
-        message:
-          "User not found.",
-      });
-
+      res.status(401).json({ success: false, message: "User not found." });
       return;
     }
 
-    /*
-     * The JWT profileId is a claim.
-     *
-     * The database remains authoritative.
-     *
-     * Never allow a stale or manipulated claim
-     * to become the active profile identity.
-     */
-    if (
-      user.profileId !==
-      payload.profileId
-    ) {
-      res.status(401).json({
-        success: false,
-        message:
-          "Authentication identity is no longer valid.",
-      });
-
+    if (user.accountStatus === "suspended") {
+      res.status(403).json({ success: false, message: "This account has been suspended." });
       return;
     }
 
-    /*
-     * Authentication must respect account lifecycle.
-     */
-    if (
-      user.accountStatus ===
-      "suspended"
-    ) {
-      res.status(403).json({
-        success: false,
-        message:
-          "This account has been suspended.",
-      });
-
+    if (user.accountStatus === "banned") {
+      res.status(403).json({ success: false, message: "This account has been banned." });
       return;
     }
 
-    if (
-      user.accountStatus ===
-      "banned"
-    ) {
-      res.status(403).json({
-        success: false,
-        message:
-          "This account has been banned.",
-      });
-
-      return;
-    }
-
-    /*
-     * The access token is only valid when the exact
-     * server-created session remains active.
-     */
-    const session =
-      await db.query.sessions.findFirst({
-        where: and(
-          eq(
-            sessions.id,
-            payload.sessionId,
-          ),
-
-          eq(
-            sessions.userId,
-            payload.userId,
-          ),
-
-          isNull(
-            sessions.revokedAt,
-          ),
-
-          gt(
-            sessions.expiresAt,
-            new Date(),
-          ),
-        ),
-      });
+    const session = await db.query.sessions.findFirst({
+      where: and(
+        eq(sessions.id, payload.sessionId),
+        eq(sessions.userId, payload.userId),
+        isNull(sessions.revokedAt),
+        gt(sessions.expiresAt, new Date()),
+      ),
+    });
 
     if (!session) {
-      res.status(401).json({
-        success: false,
-        message:
-          "Session is invalid, revoked, or expired.",
-      });
-
+      res.status(401).json({ success: false, message: "Session is invalid, revoked, or expired." });
       return;
     }
 
-    /*
-     * Keep active-session state synchronized.
-     */
-    await sessionService.touch(
-      session.id,
-    );
+    await sessionService.touch(session.id);
 
+    // The database user row is authoritative. Every protected endpoint receives
+    // the current profile identity even when an older access token has no
+    // profileId claim or carries a stale profileId claim.
     req.user = {
-      userId:
-        user.id,
-
-      profileId:
-        user.profileId,
-
-      sessionId:
-        session.id,
+      userId: user.id,
+      profileId: user.profileId,
+      sessionId: session.id,
     };
 
     next();
   } catch {
-    res.status(401).json({
-      success: false,
-      message:
-        "Invalid access token.",
-    });
+    res.status(401).json({ success: false, message: "Invalid access token." });
   }
 }
