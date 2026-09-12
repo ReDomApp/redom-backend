@@ -51,9 +51,9 @@ router.get("/default.svg", (_req, res) => {
   res.type("image/svg+xml").send(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect width="256" height="256" rx="128" fill="#E4E6EB"/><circle cx="128" cy="96" r="48" fill="#65676B"/><path d="M45 224c9-48 43-72 83-72s74 24 83 72" fill="#65676B"/></svg>`);
 });
 
-router.get("/file/:key(*)", async (req: Request, res: Response) => {
+router.get(/^\/file\/(.+)$/, async (req: Request, res: Response) => {
   try {
-    const key = String(req.params.key || "");
+    const key = String(req.params[0] || "");
     if (!key.startsWith("profiles/") || key.includes("..")) return res.status(400).end();
     const signed = await signedRequest("GET", key);
     const response = await fetch(signed.url, { headers: signed.headers });
