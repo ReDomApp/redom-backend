@@ -1,11 +1,10 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "../../database/db";
 import { activityLog } from "../../database/activityLog";
 import { following } from "../../database/following";
 import { posts } from "../../database/posts";
 import { userProfiles } from "../../database/userProfiles";
-import { users } from "../../database/schema";
 
 export const NOT_INTERESTED_REASONS = [
   "doesnt_match_my_interests",
@@ -22,7 +21,7 @@ export class PostFeedActionService {
   async hidePost(userId: string, postId: string, reason: NotInterestedReason) {
     const post = await db.query.posts.findFirst({
       where: and(eq(posts.id, postId), eq(posts.deleted, false)),
-      columns: { id: true, userId: true },
+      columns: { id: true },
     });
     if (!post) throw new Error("Post not found.");
 
@@ -48,8 +47,6 @@ export class PostFeedActionService {
       });
     }
 
-    // This choice is an explicit recommendation signal and is intentionally
-    // stronger than a passive impression.
     await db.insert(activityLog).values({
       userId,
       activityType: "not_interested",
