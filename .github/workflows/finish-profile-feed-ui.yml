@@ -1,0 +1,36 @@
+name: Finish profile feed UI
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: github.event.head_commit.message != 'Refine profile feed navigation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Refine profile feed navigation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('artifacts/redom-frontend/src/screens/HomeFeedScreenV3.tsx')
+          s=p.read_text()
+          old='<View style={ui.topHeader}>\n      <View style={ui.brand}><ReDomLogo width={n(116, scale)} height={n(34, scale)} /></View>'
+          new='<View style={ui.topHeader}>\n      <View style={ui.brandRow}><Pressable style={ui.menuButton} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu"><MenuIcon width={25} height={25} /></Pressable><View style={ui.brand}><ReDomLogo width={n(116, scale)} height={n(34, scale)} /></View></View>'
+          if old not in s: raise SystemExit('top header marker not found')
+          s=s.replace(old,new,1)
+          s=s.replace('brand: { flex: 1, justifyContent: "center" },','brandRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: s(8) },\n    menuButton: { width: s(38), height: s(38), borderRadius: s(19), alignItems: "center", justifyContent: "center" },\n    brand: { justifyContent: "center" },',1)
+          s=s.replace('    hiddenMenuTrigger: { position: "absolute", top: s(6), left: s(6), width: s(1), height: s(1), opacity: 0 },\n','',1)
+          p.write_text(s)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/redom-frontend/src/screens/HomeFeedScreenV3.tsx
+          git commit -m "Refine profile feed navigation"
+          git push
