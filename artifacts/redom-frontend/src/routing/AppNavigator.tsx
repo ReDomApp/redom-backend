@@ -5,7 +5,7 @@ import { DeviceVerificationScreen } from "../screens/DeviceVerificationScreen";
 import { LoginTwoFactorScreen } from "../screens/LoginTwoFactorScreen";
 import { FindAccountScreen } from "../screens/FindAccountScreen";
 import { FoundationScreen } from "../screens/FoundationScreen";
-import { HomeFeedScreenV2 } from "../screens/HomeFeedScreenV2";
+import { HomeFeedScreenV3 } from "../screens/HomeFeedScreenV3";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { CustomizingExperienceScreen } from "../screens/CustomizingExperienceScreen";
 import { LoginScreen } from "../screens/LoginScreen";
@@ -35,7 +35,7 @@ export function AppNavigator() {
 
   return <Stack.Navigator initialRouteName={status === "authenticated" ? "HomeFeed" : "Login"} screenOptions={{ headerShown: false, animation: "fade", contentStyle: { backgroundColor: "#FFFFFF" } }}>
     {status === "authenticated" ? <>
-      <Stack.Screen name="HomeFeed" component={HomeFeedScreenV2} />
+      <Stack.Screen name="HomeFeed" component={HomeFeedScreenV3} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Foundation" component={FoundationScreen} />
     </> : <>
