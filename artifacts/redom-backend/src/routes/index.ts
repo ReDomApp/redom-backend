@@ -18,6 +18,9 @@ import aiRoutes
 import feedRoutes
   from "./feed.routes";
 
+import commentRoutes
+  from "./comment.routes";
+
 const router: IRouter =
   Router();
 
@@ -43,6 +46,11 @@ router.use(
 router.use(
   "/feed",
   feedRoutes,
+);
+
+router.use(
+  "/comments",
+  commentRoutes,
 );
 
 export default router;
