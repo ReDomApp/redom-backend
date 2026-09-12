@@ -3,7 +3,6 @@ import type { ComponentType } from "react";
 import { Animated, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import MoreIcon from "../assets/navigation/more.svg";
 import CloseIcon from "../assets/navigation/close.svg";
-import LikeIcon from "../assets/home-feed/like.svg";
 import CommentIcon from "../assets/home-feed/comment.svg";
 import ShareIcon from "../assets/home-feed/share.svg";
 import FollowIcon from "../assets/home-feed/follow.svg";
@@ -168,7 +167,7 @@ export function PostCardV2({ post, onHidden, onUnhidden }: { post: HomeFeedPost;
         <View style={styles.actionWrap}>
           <ReactionTray visible={trayOpen} onSelect={(type) => void react(type)} />
           <Pressable style={styles.action} onPress={() => void react(summary.myReaction ?? "like")} onLongPress={() => setTrayOpen(true)} delayLongPress={280} accessibilityLabel="Like">
-            {summary.myReaction ? <AnimatedReaction type={summary.myReaction} size={22} pulse /> : <LikeIcon width={22} height={22} />}
+            <AnimatedReaction type={summary.myReaction ?? "like"} size={22} pulse />
             <Text style={[styles.actionLabel, summary.myReaction ? styles.activeAction : null]}>Like</Text>
           </Pressable>
         </View>
