@@ -150,7 +150,7 @@ export function HomeFeedScreenV3() {
       </View>
     </Modal>
 
-    <Pressable style={ui.hiddenMenuTrigger} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu"><MenuIcon width={1} height={1} /></Pressable>
+    
   </SafeAreaView>;
 }
 
