@@ -1,6 +1,7 @@
 import { api } from "../api/client";
 
 export type PostReactionType = "like" | "haha" | "sad" | "love";
+export type CommentReactionType = PostReactionType;
 
 export interface PostReactionSummary {
   // All visual reaction variants are counted together as Likes.
@@ -17,6 +18,39 @@ export interface PostReactionSummary {
     reactionType: string;
   }>;
   hiddenReactorCount: number;
+}
+
+export interface CommentReactionSummary {
+  total: number;
+  top: Array<{ type: CommentReactionType; count: number }>;
+  counts: Record<CommentReactionType, number>;
+  myReaction: CommentReactionType | null;
+  visibleReactors: Array<{
+    userId: string;
+    firstName: string;
+    lastName: string;
+    username: string;
+    profilePhoto: string | null;
+    reactionType: string;
+  }>;
+  hiddenReactorCount: number;
+}
+
+export interface HomeFeedComment {
+  id: string;
+  postId: string;
+  parentCommentId: string | null;
+  publicId: string;
+  content: string;
+  edited: boolean;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+  author: { userId: string; firstName: string; lastName: string; username: string; profilePhoto: string | null; verified: boolean };
+  isCreatorComment: boolean;
+  creatorBadge: string | null;
+  reactionSummary: CommentReactionSummary;
+  replyCount: number;
 }
 
 export interface HomeFeedPost {
@@ -66,12 +100,7 @@ export interface HomeFeedResult {
 export const feedService = {
   async getHomeFeed(): Promise<HomeFeedResult> {
     const result = await api.get<HomeFeedApiResponse>(`/feed/home?refresh=${Date.now()}`);
-    return {
-      ...result,
-      posts: result.posts ?? [],
-      suggestedProfiles: result.friendSuggestions ?? [],
-      friendStories: result.stories ?? [],
-    };
+    return { ...result, posts: result.posts ?? [], suggestedProfiles: result.friendSuggestions ?? [], friendStories: result.stories ?? [] };
   },
   async reactToPost(postId: string, reactionType: PostReactionType) {
     return api.post<{ success: boolean; state: string } & PostReactionSummary>("/feed/post-reaction", { postId, reactionType });
@@ -93,5 +122,27 @@ export const feedService = {
   },
   async recordPostView(postId: string) {
     return api.post<{ success: boolean; counted: boolean }>("/feed/post-view", { postId });
+  },
+  async getComments(postId: string, limit = 50, before?: string) {
+    const suffix = before ? `&before=${encodeURIComponent(before)}` : "";
+    return api.get<{ success: boolean; comments: HomeFeedComment[]; hasMore: boolean }>(`/comments/post/${postId}?limit=${limit}${suffix}`);
+  },
+  async createComment(postId: string, content: string, parentCommentId?: string | null) {
+    return api.post<{ success: boolean; comment: HomeFeedComment }>(`/comments/post/${postId}`, { content, parentCommentId: parentCommentId ?? null });
+  },
+  async reactToComment(commentId: string, reactionType: CommentReactionType) {
+    return api.post<{ success: boolean } & CommentReactionSummary>(`/comments/${commentId}/reaction`, { reactionType });
+  },
+  async pinComment(commentId: string, pinned: boolean) {
+    return api.post<{ success: boolean; pinned: boolean }>(`/comments/${commentId}/pin`, { pinned });
+  },
+  async editComment(commentId: string, content: string) {
+    return api.patch<{ success: boolean }>(`/comments/${commentId}`, { content });
+  },
+  async deleteComment(commentId: string) {
+    return api.delete<{ success: boolean }>(`/comments/${commentId}`);
+  },
+  async shareComment(commentId: string, destination = "external", externalPlatform?: string) {
+    return api.post<{ success: boolean; shareId: string; url: string }>(`/comments/${commentId}/share`, { destination, externalPlatform });
   },
 };
