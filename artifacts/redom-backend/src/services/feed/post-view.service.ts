@@ -40,7 +40,9 @@ export class PostViewService {
       status: "success",
       triggeredBy: "user",
       undoSupported: false,
-      hidden: true,
+      // Keep the signal visible to the indexing query; it is a single deduplicated
+      // event even if the client opens the same post repeatedly.
+      hidden: false,
       archived: false,
     });
 
