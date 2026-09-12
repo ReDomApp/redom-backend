@@ -60,7 +60,9 @@ async function getProfile(req: Request, res: Response) {
          ORDER BY login_time ASC
          LIMIT 1
        ) lh ON true
-       WHERE u.id = $1 OR u.public_id = $1 OR u.profile_id = $1
+       WHERE u.id::text = $1::text
+          OR u.public_id::text = $1::text
+          OR u.profile_id::text = $1::text
        LIMIT 1`,
       [requestedId],
     );
@@ -73,10 +75,6 @@ async function getProfile(req: Request, res: Response) {
     }
 
     const profile = profileResult.rows[0];
-
-    // The account row is the final authority for ownership. Support both
-    // identifiers so a profile opened without an explicit route parameter,
-    // with a public ID, or with a profile ID cannot be misclassified as a visitor.
     const owner =
       profile.id === viewerId ||
       profile.profile_id === viewerProfileId;
