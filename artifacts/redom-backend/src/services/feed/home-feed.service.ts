@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, inArray, or } from "drizzle-orm";
 
 import { db } from "../../database/db";
+import { activityLog } from "../../database/activityLog";
 import { stories } from "../../database/stories";
 import { friends } from "../../database/friends";
 import { following } from "../../database/following";
@@ -13,6 +14,7 @@ import { feedIndexingService } from "./feed-indexing.service";
 
 const PAGE_SIZE = 40;
 const STORY_HOURS = 24;
+const MAX_RECOMMENDED_IMPRESSIONS = 2;
 
 export class HomeFeedService {
   async generate(params: { userId: string; ipAddress?: string; page?: number }) {
@@ -43,7 +45,33 @@ export class HomeFeedService {
       }
     }
 
-    const allRankedPosts = await feedIndexingService.rankPosts(params.userId, index, 500);
+    const rankedPosts = await feedIndexingService.rankPosts(params.userId, index, 500);
+    const rankedPostIds = rankedPosts.map((post) => post.id);
+
+    // A recommendation is allowed to reach a user twice. The second delivery is
+    // intentionally retained as the final permitted exposure; after that the same
+    // specific recommended post is removed from future Home Feed recommendations.
+    let impressionCounts = new Map<string, number>();
+    if (rankedPostIds.length) {
+      const impressions = await db.select({ targetId: activityLog.targetId })
+        .from(activityLog)
+        .where(and(
+          eq(activityLog.userId, params.userId),
+          eq(activityLog.activityType, "feed_post_impression"),
+          eq(activityLog.targetType, "post"),
+          eq(activityLog.hidden, true),
+          inArray(activityLog.targetId, rankedPostIds),
+        ));
+      impressionCounts = impressions.reduce((map, row) => {
+        if (row.targetId) map.set(row.targetId, (map.get(row.targetId) ?? 0) + 1);
+        return map;
+      }, new Map<string, number>());
+    }
+
+    const allRankedPosts = rankedPosts.filter((post) =>
+      !post.recommended || (impressionCounts.get(post.id) ?? 0) < MAX_RECOMMENDED_IMPRESSIONS,
+    );
+
     const postStart = (page - 1) * PAGE_SIZE;
     const pagePosts = allRankedPosts.slice(postStart, postStart + PAGE_SIZE);
     const postIds = pagePosts.map((post) => post.id);
@@ -111,8 +139,28 @@ export class HomeFeedService {
         : null,
     }));
 
+    // Count each recommended delivery once. This is an indexing impression, not a
+    // content view, and is deliberately separate from the unique post-view signal.
+    const recommendedPagePosts = pagePosts.filter((post) => post.recommended);
+    if (recommendedPagePosts.length) {
+      await Promise.all(recommendedPagePosts.map((post) => db.insert(activityLog).values({
+        userId: params.userId,
+        activityType: "feed_post_impression",
+        activityCategory: "feed",
+        activityTitle: "Recommended post delivered",
+        activityDescription: "Recommendation exposure counted toward the two-delivery limit.",
+        targetId: post.id,
+        targetType: "post",
+        status: "success",
+        triggeredBy: "system",
+        undoSupported: false,
+        hidden: true,
+        archived: false,
+      }).catch(() => undefined)));
+    }
+
     // Stories live for 24 hours. Expired rows are never returned to the active feed.
-    // They remain stored so the future archive worker can retain them as history.
+    // They remain stored; no archive field or archive migration is used.
     const storySince = new Date(Date.now() - STORY_HOURS * 60 * 60 * 1000);
     const storyVisibility = [
       eq(stories.privacy, "public"),
@@ -209,12 +257,17 @@ export class HomeFeedService {
           laterLoginHistory: 0.3,
         },
         behaviorSignals: {
-          actions: ["comment", "share", "save", "like", "reaction", "watch_video", "follow", "search"],
+          actions: ["comment", "share", "save", "like", "reaction", "watch_video", "follow", "search", "post_view"],
           interestsIndexed: index.interests.length,
           contentTypesIndexed: index.contentTypePreferences.length,
         },
         friendsIndexed: relationships.friendUserIds.length,
         followingIndexed: relationships.followingUserIds.length,
+        recommendationPolicy: {
+          maxRecommendedPostDeliveries: MAX_RECOMMENDED_IMPRESSIONS,
+          repeatedPostViewsCountAsOneSignal: true,
+          duplicateLikeOrShareSignals: false,
+        },
       },
       stories: activeStories,
       friendSuggestions: suggestedProfiles,
