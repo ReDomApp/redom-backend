@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ComponentType } from "react";
 import { Animated, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import MoreIcon from "../assets/navigation/more.svg";
 import CloseIcon from "../assets/navigation/close.svg";
@@ -25,17 +26,10 @@ const REASONS = [
   ["other", "Other"],
 ] as const;
 
-const EMPTY: PostReactionSummary = {
-  total: 0,
-  top: [],
-  counts: { like: 0, haha: 0, sad: 0, love: 0 },
-  myReaction: null,
-  visibleReactors: [],
-  hiddenReactorCount: 0,
-};
+const EMPTY: PostReactionSummary = { total: 0, top: [], counts: { like: 0, haha: 0, sad: 0, love: 0 }, myReaction: null, visibleReactors: [], hiddenReactorCount: 0 };
 
 type ReactionGraphicProps = { width?: number; height?: number };
-type ReactionGraphic = React.ComponentType<ReactionGraphicProps>;
+type ReactionGraphic = ComponentType<ReactionGraphicProps>;
 
 const REACTION_GRAPHICS: Record<PostReactionType, ReactionGraphic> = {
   like: ReactionLike,
@@ -76,9 +70,7 @@ function AnimatedReaction({ type, size = 32, pulse = false }: { type: PostReacti
     return () => loop.stop();
   }, [pulse, scale]);
 
-  return <Animated.View style={{ width: size, height: size, opacity, transform: [{ translateY }, { scale }] }}>
-    <Graphic width={size} height={size} />
-  </Animated.View>;
+  return <Animated.View style={{ width: size, height: size, opacity, transform: [{ translateY }, { scale }] }}><Graphic width={size} height={size} /></Animated.View>;
 }
 
 function ReactionTray({ visible, onSelect }: { visible: boolean; onSelect: (type: PostReactionType) => void }) {
@@ -124,29 +116,25 @@ export function PostCardV2({ post, onHidden, onUnhidden }: { post: HomeFeedPost;
 
   const openNotInterested = async () => {
     setNotInterestedOpen(true);
-    try { setFollowing((await feedService.isFollowing(post.authorId)).following); }
-    catch { setFollowing(false); }
+    try { setFollowing((await feedService.isFollowing(post.authorId)).following); } catch { setFollowing(false); }
   };
 
   const hideForReason = async (reason: string) => {
     if (busy) return;
     setBusy(true);
-    try { await feedService.hidePost(post.id, reason); onHidden(post.id); }
-    finally { setBusy(false); }
+    try { await feedService.hidePost(post.id, reason); onHidden(post.id); } finally { setBusy(false); }
   };
 
   const unfollow = async () => {
     if (busy) return;
     setBusy(true);
-    try { const result = await feedService.unfollowCreator(post.authorId); setFollowing(result.following); }
-    finally { setBusy(false); }
+    try { const result = await feedService.unfollowCreator(post.authorId); setFollowing(result.following); } finally { setBusy(false); }
   };
 
   const unhide = async () => {
     if (busy) return;
     setBusy(true);
-    try { await feedService.unhidePost(post.id); setNotInterestedOpen(false); onUnhidden(post.id); }
-    finally { setBusy(false); }
+    try { await feedService.unhidePost(post.id); setNotInterestedOpen(false); onUnhidden(post.id); } finally { setBusy(false); }
   };
 
   return <View style={styles.card}>
@@ -154,10 +142,7 @@ export function PostCardV2({ post, onHidden, onUnhidden }: { post: HomeFeedPost;
       <View style={styles.header}>
         <Avatar uri={post.profilePhoto} />
         <View style={styles.identity}>
-          <View style={styles.nameRow}>
-            <Text style={styles.name}>{author}</Text>
-            {post.verified ? <VerifiedBadge width={18} height={18} /> : null}
-          </View>
+          <View style={styles.nameRow}><Text style={styles.name}>{author}</Text>{post.verified ? <VerifiedBadge width={18} height={18} /> : null}</View>
           <Text style={styles.meta}>{relativeTime(post.publishedAt)} · Public</Text>
         </View>
         <View style={styles.headerActions}>
@@ -182,13 +167,7 @@ export function PostCardV2({ post, onHidden, onUnhidden }: { post: HomeFeedPost;
       <View style={styles.actionRow}>
         <View style={styles.actionWrap}>
           <ReactionTray visible={trayOpen} onSelect={(type) => void react(type)} />
-          <Pressable
-            style={styles.action}
-            onPress={() => void react(summary.myReaction ?? "like")}
-            onLongPress={() => setTrayOpen(true)}
-            delayLongPress={280}
-            accessibilityLabel="Like"
-          >
+          <Pressable style={styles.action} onPress={() => void react(summary.myReaction ?? "like")} onLongPress={() => setTrayOpen(true)} delayLongPress={280} accessibilityLabel="Like">
             {summary.myReaction ? <AnimatedReaction type={summary.myReaction} size={22} pulse /> : <LikeIcon width={22} height={22} />}
             <Text style={[styles.actionLabel, summary.myReaction ? styles.activeAction : null]}>Like</Text>
           </Pressable>
@@ -214,11 +193,12 @@ export function PostCardV2({ post, onHidden, onUnhidden }: { post: HomeFeedPost;
           {summary.top.map((reaction) => <View key={reaction.type} style={styles.countLine}><AnimatedReaction type={reaction.type} size={30} pulse /><Text style={styles.countValue}>{reaction.count}</Text></View>)}
           <Text style={styles.privacyNote}>Only your friends or profiles you follow who liked this post are shown. Other people remain hidden.</Text>
           {summary.visibleReactors.slice(0, 20).map((reactor) => {
-            const type = (reactor.reactionType as PostReactionType);
+            const reactionType = reactor.reactionType as PostReactionType;
+            const visualType = reactionType in REACTION_GRAPHICS ? reactionType : "like";
             return <View key={`${reactor.userId}-${reactor.reactionType}`} style={styles.reactorRow}>
               <Avatar uri={reactor.profilePhoto} size={38} />
               <Text style={styles.reactorName}>{reactor.firstName} {reactor.lastName}</Text>
-              <AnimatedReaction type={type in REACTION_GRAPHICS ? type : "like"} size={24} />
+              <AnimatedReaction type={visualType} size={24} />
             </View>;
           })}
         </View>
