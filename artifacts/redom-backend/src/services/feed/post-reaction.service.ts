@@ -19,12 +19,18 @@ const REACTION_EMOJIS: Record<PostReactionType, string> = {
   love: "❤️",
 };
 
+export interface PostReactionSummary {
+  total: number;
+  top: Array<{ type: PostReactionType; emoji: string; count: number }>;
+  counts: Record<PostReactionType, number>;
+  myReaction: PostReactionType | null;
+  visibleReactors: Array<{ userId: string; firstName: string; lastName: string; username: string; profilePhoto: string | null; reactionType: string; emoji: string }>;
+  hiddenReactorCount: number;
+}
+
 export class PostReactionService {
   private async getProfileId(userId: string): Promise<string> {
-    const profile = await db.query.userProfiles.findFirst({
-      where: eq(userProfiles.userId, userId),
-      columns: { id: true },
-    });
+    const profile = await db.query.userProfiles.findFirst({ where: eq(userProfiles.userId, userId), columns: { id: true } });
     if (!profile) throw new Error("User profile not found.");
     return profile.id;
   }
@@ -32,33 +38,17 @@ export class PostReactionService {
   async react(userId: string, postId: string, reactionType: PostReactionType) {
     if (!POST_REACTION_TYPES.includes(reactionType)) throw new Error("Unsupported post reaction.");
 
-    const post = await db.query.posts.findFirst({
-      where: and(eq(posts.id, postId), eq(posts.deleted, false)),
-      columns: { id: true },
-    });
+    const post = await db.query.posts.findFirst({ where: and(eq(posts.id, postId), eq(posts.deleted, false)), columns: { id: true } });
     if (!post) throw new Error("Post not found.");
 
     const reactorId = await this.getProfileId(userId);
     const existing = await db.query.reactions.findFirst({
-      where: and(
-        eq(reactions.reactorId, reactorId),
-        eq(reactions.contentType, "post"),
-        eq(reactions.contentId, postId),
-      ),
+      where: and(eq(reactions.reactorId, reactorId), eq(reactions.contentType, "post"), eq(reactions.contentId, postId)),
     });
 
     let state: "added" | "switched" | "removed";
-
     if (!existing) {
-      await db.insert(reactions).values({
-        reactorId,
-        contentType: "post",
-        contentId: postId,
-        reactionType,
-        active: true,
-        spamDetected: false,
-        aiReviewed: false,
-      });
+      await db.insert(reactions).values({ reactorId, contentType: "post", contentId: postId, reactionType, active: true, spamDetected: false, aiReviewed: false });
       state = "added";
     } else if (existing.active && existing.reactionType === reactionType) {
       await db.update(reactions).set({ active: false, updatedAt: new Date() }).where(eq(reactions.id, existing.id));
@@ -83,64 +73,47 @@ export class PostReactionService {
       archived: false,
     });
 
-    return this.getSummary(userId, postId);
+    return { state, ...(await this.getSummary(userId, postId)) };
   }
 
-  async getSummary(userId: string, postId: string) {
-    const reactorProfileId = await this.getProfileId(userId);
-    const rows = await db.select({
-      id: reactions.id,
-      reactorId: reactions.reactorId,
-      reactionType: reactions.reactionType,
-      firstName: users.firstName,
-      lastName: users.lastName,
-      username: users.username,
-      profilePhoto: userProfiles.profilePhoto,
-      userId: users.id,
-    })
-      .from(reactions)
-      .innerJoin(userProfiles, eq(reactions.reactorId, userProfiles.id))
-      .innerJoin(users, eq(userProfiles.userId, users.id))
-      .where(and(
-        eq(reactions.contentType, "post"),
-        eq(reactions.contentId, postId),
-        eq(reactions.active, true),
-        eq(reactions.spamDetected, false),
-      ));
-
+  private buildSummary(userId: string, rows: Array<{ userId: string; firstName: string; lastName: string; username: string; profilePhoto: string | null; reactionType: string }>, visibleUserIds: Set<string>): PostReactionSummary {
     const counts: Record<PostReactionType, number> = { like: 0, haha: 0, sad: 0, love: 0 };
     for (const row of rows) {
       if (POST_REACTION_TYPES.includes(row.reactionType as PostReactionType)) counts[row.reactionType as PostReactionType] += 1;
     }
-
-    const relationshipRows = await Promise.all([
-      db.select({ userId: friends.friendUserId }).from(friends).where(and(eq(friends.userId, userId), eq(friends.friendshipStatus, "active"))).limit(500),
-      db.select({ userId: following.followingId }).from(following).where(eq(following.userId, userId)).limit(500),
-    ]);
-    const visibleUserIds = new Set([...relationshipRows[0].map((r) => r.userId), ...relationshipRows[1].map((r) => r.userId), userId]);
-
-    const orderedTypes = POST_REACTION_TYPES
-      .filter((type) => counts[type] > 0)
-      .sort((a, b) => counts[b] - counts[a])
-      .slice(0, 3);
-
+    const orderedTypes = POST_REACTION_TYPES.filter((type) => counts[type] > 0).sort((a, b) => counts[b] - counts[a]).slice(0, 3);
     return {
       total: rows.length,
       top: orderedTypes.map((type) => ({ type, emoji: REACTION_EMOJIS[type], count: counts[type] })),
       counts,
-      myReaction: rows.find((row) => row.userId === userId)?.reactionType ?? null,
-      visibleReactors: rows
-        .filter((row) => visibleUserIds.has(row.userId))
-        .slice(0, 100)
-        .map((row) => ({ userId: row.userId, firstName: row.firstName, lastName: row.lastName, username: row.username, profilePhoto: row.profilePhoto, reactionType: row.reactionType, emoji: REACTION_EMOJIS[row.reactionType as PostReactionType] ?? "" })),
+      myReaction: (rows.find((row) => row.userId === userId)?.reactionType as PostReactionType | undefined) ?? null,
+      visibleReactors: rows.filter((row) => visibleUserIds.has(row.userId)).slice(0, 100).map((row) => ({ ...row, emoji: REACTION_EMOJIS[row.reactionType as PostReactionType] ?? "" })),
       hiddenReactorCount: rows.filter((row) => !visibleUserIds.has(row.userId)).length,
-      reactorProfileId,
     };
   }
 
+  async getSummary(userId: string, postId: string): Promise<PostReactionSummary> {
+    const summaries = await this.getSummaries(userId, [postId]);
+    return summaries.get(postId) ?? { total: 0, top: [], counts: { like: 0, haha: 0, sad: 0, love: 0 }, myReaction: null, visibleReactors: [], hiddenReactorCount: 0 };
+  }
+
   async getSummaries(userId: string, postIds: string[]) {
-    const result = new Map<string, Awaited<ReturnType<PostReactionService["getSummary"]>>>();
-    for (const postId of postIds) result.set(postId, await this.getSummary(userId, postId));
+    const result = new Map<string, PostReactionSummary>();
+    if (!postIds.length) return result;
+
+    const [rows, friendRows, followingRows] = await Promise.all([
+      db.select({ contentId: reactions.contentId, userId: users.id, firstName: users.firstName, lastName: users.lastName, username: users.username, profilePhoto: userProfiles.profilePhoto, reactionType: reactions.reactionType })
+        .from(reactions).innerJoin(userProfiles, eq(reactions.reactorId, userProfiles.id)).innerJoin(users, eq(userProfiles.userId, users.id))
+        .where(and(eq(reactions.contentType, "post"), inArray(reactions.contentId, postIds), eq(reactions.active, true), eq(reactions.spamDetected, false))),
+      db.select({ userId: friends.friendUserId }).from(friends).where(and(eq(friends.userId, userId), eq(friends.friendshipStatus, "active"))).limit(500),
+      db.select({ userId: following.followingId }).from(following).where(eq(following.userId, userId)).limit(500),
+    ]);
+
+    const visibleUserIds = new Set([...friendRows.map((row) => row.userId), ...followingRows.map((row) => row.userId), userId]);
+    for (const postId of postIds) {
+      const postRows = rows.filter((row) => row.contentId === postId).map(({ contentId: _contentId, ...row }) => row);
+      result.set(postId, this.buildSummary(userId, postRows, visibleUserIds));
+    }
     return result;
   }
 }
