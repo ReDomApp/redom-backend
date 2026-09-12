@@ -22,9 +22,10 @@ type LoginVerification = { challengeId: string; channel: "sms" | "email" | "what
 function maskPhone(phone: string) { const n = phone.trim(); return n.length <= 4 ? n : n.slice(0, 3) + "*".repeat(Math.max(0, n.length - 5)) + n.slice(-2); }
 function maskEmail(email: string) { const n = email.trim(); const at = n.indexOf("@"); if (at <= 0) return "***"; const local = n.slice(0, at), domain = n.slice(at); if (local.length === 1) return `*${domain}`; if (local.length === 2) return `${local[0]}*${domain}`; return local[0] + "*".repeat(Math.max(1, local.length - 2)) + local.slice(-1) + domain; }
 function phoneCandidates(identifier: string): string[] {
-  const compact = identifier.trim().replace(/[\s().-]/g, "");
-  if (!compact.startsWith("+")) return [compact];
-  return [compact, compact.slice(1)];
+  const value = identifier.trim();
+  if (!value.startsWith("+")) return [value];
+  if (!/^\+[1-9]\d{7,14}$/.test(value)) return [value];
+  return [value, value.slice(1)];
 }
 
 function publicUser(user: typeof users.$inferSelect): PublicUser { return { id: user.id, username: user.username, publicId: user.publicId, profileId: user.profileId, firstName: user.firstName, lastName: user.lastName, email: user.email, phoneNumber: user.phoneNumber, emailVerified: user.emailVerified, phoneVerified: user.phoneVerified, accountStatus: user.accountStatus }; }

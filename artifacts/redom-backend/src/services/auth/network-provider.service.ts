@@ -5,6 +5,7 @@ export interface NetworkSecurityResult {
   connection: string;
   country: string | null;
   countryCode: string | null;
+  callingCode: string | null;
   region: string | null;
   city: string | null;
   timezone: string | null;
@@ -77,6 +78,7 @@ export async function getNetworkProvider(ip: string | undefined): Promise<Networ
     connection: connectionType(result),
     country: result.location?.country ?? null,
     countryCode: result.location?.country_code?.toUpperCase() ?? null,
+    callingCode: result.location?.calling_code ? String(result.location.calling_code).replace(/^\+/, "") : null,
     region: result.location?.state ?? null,
     city: result.location?.city ?? null,
     timezone: result.location?.timezone ?? null,

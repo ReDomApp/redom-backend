@@ -6,6 +6,7 @@ export interface NetworkSecurity {
   connection: string;
   country: string | null;
   countryCode: string | null;
+  callingCode: string | null;
   region: string | null;
   city: string | null;
   timezone: string | null;
