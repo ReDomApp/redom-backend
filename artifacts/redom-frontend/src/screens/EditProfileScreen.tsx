@@ -94,7 +94,7 @@ function Header({ onBack, styles }: { onBack: () => void; styles: ReturnType<typ
 }
 
 function Section({ title, open, onPress, styles }: { title: string; open: boolean; onPress: () => void; styles: ReturnType<typeof makeStyles> }) {
-  return <Pressable style={styles.section} onPress={onPress} accessibilityRole="button"><Text style={styles.sectionTitle}>{title}</Text><ChevronIcon width={16} height={16} style={open ? undefined : { transform: [{ rotate: "180deg" }] }} /></Pressable>;
+  return <Pressable style={styles.section} onPress={onPress} accessibilityRole="button"><Text style={styles.sectionTitle}>{title}</Text><View style={open ? styles.chevron : styles.chevronClosed}><ChevronIcon width={16} height={16} /></View></Pressable>;
 }
 
 function makeStyles(scale: number) {
@@ -107,6 +107,8 @@ function makeStyles(scale: number) {
     content: { paddingBottom: n(30) },
     section: { minHeight: n(55), paddingHorizontal: n(22), paddingTop: n(13), paddingBottom: n(5), flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     sectionTitle: { fontSize: n(18), lineHeight: n(23), fontWeight: "700", color: "#050505" },
+    chevron: { width: n(16), height: n(16), alignItems: "center", justifyContent: "center" },
+    chevronClosed: { width: n(16), height: n(16), alignItems: "center", justifyContent: "center", transform: [{ rotate: "180deg" }] },
     row: { minHeight: n(74), paddingHorizontal: n(22), paddingVertical: n(10), flexDirection: "row", alignItems: "center" },
     leading: { width: n(40), marginRight: n(12), alignItems: "flex-start", justifyContent: "center" },
     rowCopy: { flex: 1, minWidth: 0, paddingRight: n(8) },
