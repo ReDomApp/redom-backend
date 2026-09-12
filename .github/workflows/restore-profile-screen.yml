@@ -1,0 +1,31 @@
+name: Restore Profile Screen safely
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  restore:
+    if: github.event.head_commit.message != 'Restore Profile Screen with focus refresh'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore full profile screen from known-good parent
+        run: |
+          git checkout 01f4a3aed61354bf4f4f27ab8285ba7b23e0769c -- artifacts/redom-frontend/src/screens/ProfileScreen.tsx
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('artifacts/redom-frontend/src/screens/ProfileScreen.tsx')
+          s = p.read_text()
+          s = s.replace('import { useCallback, useEffect, useMemo, useState } from "react";', 'import { useCallback, useMemo, useState } from "react";\nimport { useFocusEffect } from "@react-navigation/native";')
+          s = s.replace('  useEffect(() => { setVisitorPreview(false); void refreshProfile(); }, [refreshProfile]);', '  useFocusEffect(useCallback(() => { setVisitorPreview(false); void refreshProfile(); }, [refreshProfile]));')
+          p.write_text(s)
+          PY
+          rm -f .github/workflows/restore-profile-screen.yml
+          git config user.name 'ReDom'
+          git config user.email 'jessicasanchez89965@gmail.com'
+          git add artifacts/redom-frontend/src/screens/ProfileScreen.tsx .github/workflows/restore-profile-screen.yml
+          git commit -m 'Restore Profile Screen with focus refresh'
+          git push origin main
