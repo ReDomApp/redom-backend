@@ -7,6 +7,7 @@ import feedRoutes from "./feed.routes";
 import commentRoutes from "./comment.routes";
 import profileRoutes from "./profile.routes";
 import profileEditRoutes from "./profile-edit.routes";
+import profileMediaRoutes from "./profile-media.routes";
 
 const router: IRouter = Router();
 router.use(healthRouter);
@@ -16,5 +17,6 @@ router.use("/ai", aiRoutes);
 router.use("/feed", feedRoutes);
 router.use("/comments", commentRoutes);
 router.use("/profile/edit", profileEditRoutes);
+router.use("/profile/media", profileMediaRoutes);
 router.use("/profile", profileRoutes);
 export default router;
