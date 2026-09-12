@@ -1,0 +1,33 @@
+name: Fix profile media style names
+on:
+  push:
+    branches:
+      - main
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix style references
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p=Path('artifacts/redom-frontend/src/screens/ProfileScreen.tsx')
+          s=p.read_text()
+          s=s.replace('ui.sheetBackdrop','ui.backdrop').replace('ui.sheetHandle','ui.sheetHead').replace('ui.sheetHeader','ui.sheetHead').replace('ui.modalClose','ui.close')
+          p.write_text(s)
+          h=Path('artifacts/redom-frontend/src/screens/HomeFeedScreenV3.tsx')
+          t=h.read_text()
+          t=t.replace('<Pressable style={ui.hiddenMenuTrigger} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu"><MenuIcon width={1} height={1} /></Pressable>','')
+          h.write_text(t)
+          PY
+      - name: Commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add artifacts/redom-frontend/src/screens/ProfileScreen.tsx artifacts/redom-frontend/src/screens/HomeFeedScreenV3.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix profile media UI style references"
+          git push
