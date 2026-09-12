@@ -1,5 +1,6 @@
 export type RegistrationFlowReservationRouteParams = { reservationId: string; flowId: string; expiresAt: string };
 export type RegistrationRouteParams = { challengeId: string; flowId: string; maskedTarget: string; expiresAt: string };
+export type MediaPickerRouteParams = { uri: string; base64: string; width: number; height: number };
 export type RootStackParamList = {
   Login: undefined; FindAccount: undefined;
   DeviceVerification: { challengeId: string; channel: "sms" | "email" | "whatsapp"; maskedTarget: string; expiresAt: string };
@@ -14,5 +15,11 @@ export type RootStackParamList = {
   EditLocationSearch: { kind: "location" | "hometown" };
   EditLocationConfirm: { kind: "location" | "hometown"; result: string };
   EditBirthday: undefined;
+  ProfilePictureAdjust: MediaPickerRouteParams;
+  ProfilePicturePreview: MediaPickerRouteParams;
+  ProfilePictureViewer: undefined;
+  CoverPhotoAdjust: MediaPickerRouteParams;
+  CoverPhotoPreview: MediaPickerRouteParams;
+  CoverPhotoViewer: undefined;
   Foundation: undefined;
 };
