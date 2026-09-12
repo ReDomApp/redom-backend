@@ -1,0 +1,76 @@
+name: Finish profile media UI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply exact profile media sheets and upload controls
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('artifacts/redom-frontend/src/screens/ProfileScreen.tsx')
+          s = p.read_text()
+          if 'PROFILE_MEDIA_SHEET_V2' in s:
+              raise SystemExit(0)
+
+          start = s.index('function ProfileMediaSheet')
+          end = s.index('function ProfileManagementSheet', start)
+          replacement = r'''function ProfileMediaSheet({kind,onClose,onView,onChoose,ui}:{kind:"avatar"|"cover";onClose:()=>void;onView:()=>void;onChoose:()=>void;ui:ReturnType<typeof makeStyles>}){
+  const avatar=kind==="avatar";
+  return <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <View style={ui.sheetBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={onClose}/><View style={ui.sheet}>
+      <View style={ui.sheetHandle}/>
+      <View style={ui.sheetHeader}><Text style={ui.sheetTitle}>{avatar?"Profile picture":"Cover photo"}</Text><Pressable onPress={onClose}><Text style={ui.modalClose}>×</Text></Pressable></View>
+      {avatar ? <>
+        <MediaRow Icon={RestylePictureIcon} label="Restyle profile picture with AI" onPress={()=>Alert.alert("Service Unavailable right now","Restyle profile picture with AI is unavailable right now.")} ui={ui}/>
+        <MediaRow Icon={ViewPictureIcon} label="See profile picture" onPress={onView} ui={ui}/>
+        <MediaRow Icon={ChoosePictureIcon} label="Choose profile picture" onPress={onChoose} ui={ui}/>
+        <MediaRow Icon={ImportInstagramIcon} label="Import from Instagram" onPress={()=>Alert.alert("Import from Instagram","Instagram import is unavailable right now.")} ui={ui}/>
+      </> : <>
+        <MediaRow Icon={CoverMediaIcon} label="See cover photo" onPress={onView} ui={ui}/>
+        <MediaRow Icon={UploadMediaIcon} label="Upload photo" onPress={onChoose} ui={ui}/>
+        <MediaRow Icon={CoverMediaIcon} label="Choose cover photo" onPress={()=>Alert.alert("Unavailable","Choose cover photo is not supported on ReDom right now.")} ui={ui}/>
+      </>}
+    </View></View>
+  </Modal>;
+}
+
+'''
+          s = s[:start] + replacement + s[end:]
+          s = s.replace('function ProfileMediaSheet', 'function PROFILE_MEDIA_SHEET_V2', 1).replace('function PROFILE_MEDIA_SHEET_V2', 'function ProfileMediaSheet', 1)
+          p.write_text(s)
+
+          q = Path('artifacts/redom-frontend/src/screens/ProfilePicturePreviewScreen.tsx')
+          t = q.read_text()
+          t = t.replace('import InfoIcon from "../assets/profile-media/info.svg";', 'import InfoIcon from "../assets/profile-media/info.svg";\nimport FrameIcon from "../assets/profile-media/frame.svg";')
+          t = t.replace('<Pressable style={styles.actionButton} onPress={()=>navigation.replace("ProfilePictureAdjust",route.params)}><CropIcon width={22} height={22}/><Text style={styles.actionText}>Adjust</Text></Pressable>', '<Pressable style={styles.actionButton} onPress={()=>navigation.replace("ProfilePictureAdjust",route.params)}><CropIcon width={22} height={22}/><Text style={styles.actionText}>Crop</Text></Pressable><Pressable style={styles.actionButton} onPress={()=>Alert.alert("Frames","Add frame is unavailable right now.")}><FrameIcon width={22} height={22}/><Text style={styles.actionText}>Add frame</Text></Pressable>')
+          q.write_text(t)
+
+          r = Path('artifacts/redom-frontend/src/screens/ProfilePictureViewerScreen.tsx')
+          u = r.read_text()
+          u = u.replace('import ShareIcon from "../assets/home-feed/share.svg";', 'import ShareIcon from "../assets/home-feed/share.svg";\nimport LinkIcon from "../assets/home-feed/profile-link.svg";')
+          u = u.replace('const [liked,setLiked]=useState(false);', 'const [liked,setLiked]=useState(false); const [profileName,setProfileName]=useState("Profile picture"); const [shareId,setShareId]=useState<string|null>(null);')
+          u = u.replace('setMedia(m.media);setUri(p.profile.profilePhoto);', 'setMedia(m.media);setUri(p.profile.profilePhoto);setProfileName(`${p.profile.firstName} ${p.profile.lastName}`.trim() || "Profile picture");setShareId(m.media?.shareId ?? null);')
+          u = u.replace('<Text style={styles.name}>Profile picture</Text>', '<Text style={styles.name}>{profileName}</Text><Text style={styles.shareId}><LinkIcon width={15} height={15}/> {shareId ? `ReDom share ID: ${shareId}` : ""}</Text>')
+          u = u.replace('date:{color:"#fff",fontSize:12,marginTop:3}', 'date:{color:"#fff",fontSize:12,marginTop:3},shareId:{color:"#fff",fontSize:12,marginTop:5,flexDirection:"row",alignItems:"center"}')
+          u = u.replace('Share.share({message:`Profile picture on ReDom${media?.postId?` — ${media.postId}`:""}`})', 'Share.share({message:`${profileName} profile picture on ReDom${shareId?` — Share ID: ${shareId}`:""}`})')
+          r.write_text(u)
+
+          print('profile media UI patched')
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/redom-frontend/src/screens/ProfileScreen.tsx artifacts/redom-frontend/src/screens/ProfilePicturePreviewScreen.tsx artifacts/redom-frontend/src/screens/ProfilePictureViewerScreen.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "Complete profile media interaction UI"
+          git push
