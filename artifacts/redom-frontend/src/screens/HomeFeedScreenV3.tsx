@@ -1,0 +1,58 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Image, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import ReDomLogo from "../assets/brand/redom-logo.svg";
+import HomeIcon from "../assets/home-feed/home.svg";
+import SearchIcon from "../assets/home-feed/search.svg";
+import MessengerIcon from "../assets/home-feed/messenger.svg";
+import NotificationsIcon from "../assets/home-feed/notifications.svg";
+import MenuIcon from "../assets/home-feed/menu.svg";
+import MarketplaceIcon from "../assets/home-feed/marketplace.svg";
+import CreateIcon from "../assets/home-feed/create.svg";
+import VideoIcon from "../assets/home-feed/video.svg";
+import UploadStoryIcon from "../assets/home-feed/upload-story.svg";
+import AddMediaIcon from "../assets/home-feed/add-media.svg";
+import ProfilePlaceholder from "../assets/home-feed/profile-placeholder.svg";
+import CloseIcon from "../assets/navigation/close.svg";
+import { useAuthContext } from "../auth/context";
+import { feedService, type HomeFeedFriendStory, type HomeFeedPost, type HomeFeedProfileSuggestion } from "../feed/service";
+import { PostCardV3 } from "./PostCardV3";
+
+function Avatar({ uri, size = 46 }: { uri?: string | null; size?: number }) { return uri ? <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} /> : <ProfilePlaceholder width={size} height={size} />; }
+
+export function HomeFeedScreenV3() {
+  const { user, logout } = useAuthContext();
+  const scrollRef = useRef<ScrollView>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [posts, setPosts] = useState<HomeFeedPost[]>([]);
+  const [suggestions, setSuggestions] = useState<HomeFeedProfileSuggestion[]>([]);
+  const [stories, setStories] = useState<HomeFeedFriendStory[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const refreshFeed = useCallback(async () => {
+    setRefreshing(true);
+    try { const result = await feedService.getHomeFeed(); setPosts(result.posts); setSuggestions(result.suggestedProfiles); setStories(result.friendStories); }
+    finally { setRefreshing(false); }
+  }, []);
+  useEffect(() => { void refreshFeed(); }, [refreshFeed]);
+
+  return <SafeAreaView style={styles.root}>
+    <View style={styles.topHeader}><ReDomLogo width={116} height={34} /><View style={styles.topActions}><Pressable style={styles.topIcon}><SearchIcon width={23} height={23} /></Pressable><Pressable style={styles.topIcon}><MessengerIcon width={24} height={24} /></Pressable><Pressable style={styles.topIcon} onPress={() => setMenuOpen(true)}><MenuIcon width={24} height={24} /></Pressable></View></View>
+    <View style={styles.navigationBar}><Pressable style={[styles.navItem, styles.activeNav]} onPress={() => { scrollRef.current?.scrollTo({ y: 0, animated: true }); void refreshFeed(); }}><HomeIcon width={27} height={27} /></Pressable><Pressable style={styles.navItem}><VideoIcon width={27} height={27} /></Pressable><Pressable style={styles.navItem}><MarketplaceIcon width={27} height={27} /></Pressable><Pressable style={styles.navItem}><NotificationsIcon width={27} height={27} /></Pressable><Pressable style={styles.navItem}><Avatar size={31} /></Pressable></View>
+
+    <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshFeed} />} contentContainerStyle={styles.feed}>
+      <View style={styles.composer}><Avatar size={42} /><View style={styles.composerInput}><Text style={styles.composerHint}>What's on your mind{user?.firstName ? `, ${user.firstName}` : ""}?</Text></View><Pressable><AddMediaIcon width={27} height={27} /></Pressable></View>
+      <View style={styles.quickActions}><Pressable style={styles.quick}><CreateIcon width={24} height={24} /><Text>Create post</Text></Pressable><Pressable style={styles.quick}><VideoIcon width={24} height={24} /><Text>Photo/video</Text></Pressable><Pressable style={styles.quick}><UploadStoryIcon width={24} height={24} /><Text>Story</Text></Pressable></View>
+      <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Stories</Text><Text style={styles.seeAll}>See all</Text></View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}><Pressable style={styles.story}><Avatar size={70} /><Text style={styles.storyName}>Create story</Text></Pressable>{stories.slice(0, 12).map((story) => <Pressable key={story.id} style={styles.story}><View style={styles.storyRing}><Avatar uri={story.profilePhoto} size={64} /></View><Text style={styles.storyName} numberOfLines={1}>{story.firstName}</Text></Pressable>)}</ScrollView>
+      {suggestions.length > 0 ? <><View style={styles.sectionHeader}><Text style={styles.sectionTitle}>People you may know</Text></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>{suggestions.map((profile) => <Pressable key={profile.userId} style={styles.suggestion}><Avatar uri={profile.profilePhoto} size={68} /><Text style={styles.suggestionName} numberOfLines={1}>{profile.firstName} {profile.lastName}</Text><Text style={styles.handle}>@{profile.username.replace(/^@/, "")}</Text></Pressable>)}</ScrollView></> : null}
+      {posts.map((post) => <PostCardV3 key={post.id} post={post} onHidden={(id) => setPosts((current) => current.filter((item) => item.id !== id))} onUnhidden={() => undefined} />)}
+      {!posts.length ? <View style={styles.empty}><Text style={styles.emptyTitle}>Your Home Feed is ready</Text><Text style={styles.emptyText}>Posts from people, pages and recommendations will appear here.</Text></View> : null}
+    </ScrollView>
+
+    {menuOpen ? <View style={styles.menuOverlay}><Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} /><View style={styles.menuSheet}><View style={styles.menuTop}><ReDomLogo width={108} height={31} /><Pressable onPress={() => setMenuOpen(false)}><CloseIcon width={27} height={27} /></Pressable></View><Pressable style={styles.menuRow}><Text style={styles.menuText}>Settings and privacy</Text></Pressable><Pressable style={styles.menuRow}><Text style={styles.menuText}>Help and support</Text></Pressable><Pressable style={styles.menuRow} onPress={() => { setMenuOpen(false); void logout(); }}><Text style={styles.logout}>Log out</Text></Pressable></View></View> : null}
+  </SafeAreaView>;
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#F0F2F5" }, topHeader: { height: 58, paddingHorizontal: 10, backgroundColor: "#FFF", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, topActions: { flexDirection: "row", gap: 8 }, topIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center" }, navigationBar: { height: 52, backgroundColor: "#FFF", flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, navItem: { width: 58, height: 46, alignItems: "center", justifyContent: "center" }, activeNav: { borderBottomWidth: 3, borderBottomColor: "#1877F2" }, feed: { paddingBottom: 24 }, composer: { backgroundColor: "#FFF", padding: 10, flexDirection: "row", alignItems: "center", gap: 9 }, composerInput: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 22, paddingHorizontal: 15, paddingVertical: 11 }, composerHint: { color: "#65676B", fontSize: 15 }, quickActions: { backgroundColor: "#FFF", borderTopWidth: 1, borderTopColor: "#E4E6EB", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", height: 48, flexDirection: "row", justifyContent: "space-around", alignItems: "center" }, quick: { flexDirection: "row", alignItems: "center", gap: 6 }, sectionHeader: { paddingHorizontal: 12, paddingTop: 15, paddingBottom: 8, backgroundColor: "#F0F2F5", flexDirection: "row", justifyContent: "space-between" }, sectionTitle: { fontSize: 19, fontWeight: "700" }, seeAll: { color: "#1877F2", fontSize: 14, fontWeight: "600" }, rail: { paddingHorizontal: 10, gap: 10, backgroundColor: "#F0F2F5" }, story: { width: 78, alignItems: "center", paddingBottom: 5 }, storyRing: { borderWidth: 3, borderColor: "#1877F2", borderRadius: 38, padding: 2 }, storyName: { fontSize: 12, marginTop: 5, maxWidth: 75, textAlign: "center" }, suggestion: { width: 120, backgroundColor: "#FFF", borderRadius: 10, padding: 8, alignItems: "center", marginBottom: 5 }, suggestionName: { fontWeight: "600", marginTop: 5, maxWidth: 108 }, handle: { color: "#65676B", fontSize: 12, marginTop: 2 }, empty: { backgroundColor: "#FFF", marginTop: 8, padding: 28, alignItems: "center" }, emptyTitle: { fontSize: 18, fontWeight: "700" }, emptyText: { color: "#65676B", textAlign: "center", marginTop: 7 }, menuOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" }, menuSheet: { backgroundColor: "#FFF", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18 }, menuTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }, menuRow: { paddingVertical: 17, borderTopWidth: 1, borderTopColor: "#E4E6EB" }, menuText: { fontSize: 16, fontWeight: "600" }, logout: { fontSize: 16, fontWeight: "700" },
+});
