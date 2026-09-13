@@ -80,6 +80,8 @@ export class PhoneService {
         params.expiresAt,
     };
 
+    // WhatsApp remains on the provider that currently supports
+    // ReDom's WhatsApp delivery channel.
     if (
       request.channel === "whatsapp"
     ) {
@@ -87,16 +89,17 @@ export class PhoneService {
         .sendOtp(request);
     }
 
+    // SMS provider order: MSG91 first, Twilio only as fallback.
     try {
-      return await twilioSmsProvider
+      return await msg91SmsProvider
         .sendOtp(request);
-    } catch (twilioError) {
+    } catch (msg91Error) {
       console.warn(
-        "Twilio SMS delivery failed; falling back to MSG91.",
-        twilioError,
+        "Primary SMS delivery failed; attempting fallback SMS provider.",
+        msg91Error,
       );
 
-      return msg91SmsProvider
+      return twilioSmsProvider
         .sendOtp(request);
     }
   }
@@ -114,9 +117,9 @@ export class PhoneService {
     }
 
     return (
-      twilioSmsProvider
-        .supportsChannel(channel) ||
       msg91SmsProvider
+        .supportsChannel(channel) ||
+      twilioSmsProvider
         .supportsChannel(channel)
     );
   }
