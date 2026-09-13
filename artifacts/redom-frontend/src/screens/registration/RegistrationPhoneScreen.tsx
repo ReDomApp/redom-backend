@@ -120,7 +120,7 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
     try {
       await authService.consentRegistrationFlowSecurity({ reservationId, flowId, deviceId, ip: publicIp });
       setSecurityOpen(false);
-      navigation.replace("Login");
+      navigation.replace("RegistrationPassword", route.params);
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save network security details."); }
     finally { setChecking(false); }
   }
