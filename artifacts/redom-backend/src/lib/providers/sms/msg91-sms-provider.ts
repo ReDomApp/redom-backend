@@ -6,7 +6,7 @@ import type {
   SmsProvider,
 } from "./sms-provider";
 
-const MSG91_SMS_URL = "https://api.msg91.com/api/v2/sendsms";
+const MSG91_SMS_FLOW_URL = "https://control.msg91.com/api/v5/flow";
 
 export class Msg91SmsProvider implements SmsProvider {
   readonly name = "msg91";
@@ -26,27 +26,33 @@ export class Msg91SmsProvider implements SmsProvider {
       );
     }
 
-    const body =
-      `Your ReDom verification code is ${request.code}. ` +
-      `This code expires at ${request.expiresAt.toISOString()}.`;
+    if (!env.msg91.flowId) {
+      throw new Error(
+        "MSG91 SMS Flow ID is not configured. Set MSG91_FLOW_ID to the approved ReDom OTP SMS flow.",
+      );
+    }
 
-    const payload = new URLSearchParams({
-      authkey: env.msg91.authKey,
-      mobiles: request.to,
-      message: body,
+    const mobiles = request.to.replace(/^\+/, "");
+    const recipient = {
+      mobiles,
+      [env.msg91.otpVariable]: request.code,
+    };
+
+    const payload = {
+      template_id: env.msg91.flowId,
       sender: env.msg91.senderId,
-      route: "default",
-      country: "0",
-      response: "json",
-    });
+      short_url: "0",
+      recipients: [recipient],
+    };
 
-    const response = await fetch(MSG91_SMS_URL, {
+    const response = await fetch(MSG91_SMS_FLOW_URL, {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
+        accept: "application/json",
+        authkey: env.msg91.authKey,
+        "content-type": "application/json",
       },
-      body: payload.toString(),
+      body: JSON.stringify(payload),
     });
 
     const raw = await response.text();
