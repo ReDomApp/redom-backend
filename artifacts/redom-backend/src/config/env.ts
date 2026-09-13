@@ -36,6 +36,9 @@ export const env = {
   twilio: {
     accountSid: required("TWILIO_ACCOUNT_SID"), authToken: required("TWILIO_AUTH_TOKEN"), verifyServiceSid: required("TWILIO_VERIFY_SERVICE_SID"), phoneNumber: required("TWILIO_PHONE_NUMBER"), whatsappFrom: optional("TWILIO_WHATSAPP_FROM"),
   },
+  msg91: {
+    authKey: required("MSG91_AUTH_KEY"), senderId: required("MSG91_SENDER_ID"),
+  },
   cloudflare: {
     r2: {
       accountId: required("R2_ACCOUNT_ID"), apiToken: required("R2_API_TOKEN"), accessKeyId: required("R2_ACCESS_KEY_ID"), secretAccessKey: required("R2_SECRET_ACCESS_KEY"), bucketName: required("R2_BUCKET_NAME"), endpoint: required("R2_ENDPOINT"), bucketEndpoint: required("R2_BUCKET_ENDPOINT"), region: required("R2_REGION"),
