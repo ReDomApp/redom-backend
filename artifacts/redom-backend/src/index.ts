@@ -1,32 +1,23 @@
 import dotenv from "dotenv";
-
 dotenv.config();
 import app from "./app";
 import { pool } from "./database/db";
 import { logger } from "./lib/logger";
-import {
-  startRegistrationChallengeCleanup,
-  stopRegistrationChallengeCleanup,
-} from "./services/auth/registration-challenge-cleanup.service";
-import {
-  startRegistrationFlowReservationCleanup,
-  stopRegistrationFlowReservationCleanup,
-} from "./services/auth/registration-flow-reservation-cleanup.service";
+import { startRegistrationChallengeCleanup, stopRegistrationChallengeCleanup } from "./services/auth/registration-challenge-cleanup.service";
+import { startRegistrationFlowReservationCleanup, stopRegistrationFlowReservationCleanup } from "./services/auth/registration-flow-reservation-cleanup.service";
 import { startProfilePhotoExpiryCleanup, stopProfilePhotoExpiryCleanup } from "./services/profile-photo-expiry.service";
+import { startSupportCaseCleanup, stopSupportCaseCleanup } from "./services/support-case-cleanup.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
-
-if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
+if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error(`Invalid PORT value: "${rawPort}"`);
 const host = "0.0.0.0";
 
 const server = app.listen(port, host, () => {
   startRegistrationChallengeCleanup();
   startRegistrationFlowReservationCleanup();
   startProfilePhotoExpiryCleanup();
+  startSupportCaseCleanup();
   logger.info({ host, port }, "Server listening");
 });
 
@@ -45,15 +36,11 @@ async function shutdown(signal: string): Promise<void> {
   stopRegistrationChallengeCleanup();
   stopRegistrationFlowReservationCleanup();
   stopProfilePhotoExpiryCleanup();
+  stopSupportCaseCleanup();
   server.close(async (error) => {
-    if (error) {
-      logger.error({ error: serializeError(error) }, "Error closing HTTP server");
-      process.exitCode = 1;
-    }
-    try { await pool.end(); } catch (poolError) {
-      logger.error({ error: serializeError(poolError) }, "Error closing database pool");
-      process.exitCode = 1;
-    } finally { process.exit(); }
+    if (error) { logger.error({ error: serializeError(error) }, "Error closing HTTP server"); process.exitCode = 1; }
+    try { await pool.end(); } catch (poolError) { logger.error({ error: serializeError(poolError) }, "Error closing database pool"); process.exitCode = 1; }
+    finally { process.exit(); }
   });
 }
 
