@@ -63,14 +63,19 @@ router.post("/email/webhook", async (req, res) => {
     if (!id || !timestamp || !signature) return res.status(400).send("Missing webhook signature headers.");
     const event = resend.webhooks.verify({ payload, headers: { id, timestamp, signature }, webhookSecret: env.email.resend.webhookSecret });
     if (event.type !== "email.received") return res.status(200).json({ received: true });
-    const emailId = event.data.email_id; if (!await markInboundEvent(id, emailId)) return res.status(200).json({ received: true, duplicate: true });
-    const { data: email, error } = await resend.emails.receiving.get(emailId); if (error || !email) throw new Error(error?.message || "Inbound email could not be retrieved.");
+
+    // Do not mark the event as complete until the entire support pipeline succeeds.
+    // If Gemini/Resend temporarily fails, Resend can retry the webhook and the message will be processed again.
+    const emailId = event.data.email_id;
+    const { data: email, error } = await resend.emails.receiving.get(emailId);
+    if (error || !email) throw new Error(error?.message || "Inbound email could not be retrieved.");
     const senderEmail = extractEmailAddress(email.from ?? ""); const supportAddress = env.email.supportFrom.toLowerCase(); if (!senderEmail || senderEmail === supportAddress || senderEmail === "noreply@wnncompany.com") return res.status(200).json({ received: true, ignored: true });
     const message = emailBody(email); if (!message) return res.status(200).json({ received: true, ignored: true });
     const account = await getAccountContextByEmail(senderEmail); const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
     const result = await processSupportMessage({ message, userId: account?.userId ?? null, senderEmail, subject: email.subject ?? "ReDom Support", caseNumber: referenced });
-    await linkInboundEvent(id, result.supportCase.id);
     if (result.isSafe && result.reply) await sendGeneratedSupportEmail({ to: senderEmail, subject: `Re: ${email.subject || "ReDom Support"} [${result.supportCase.caseNumber}]`, caseNumber: result.supportCase.caseNumber, category: result.supportCase.category, supportReply: result.reply });
+    await linkInboundEvent(id, result.supportCase.id);
+    await markInboundEvent(id, emailId);
     return res.status(200).json({ received: true, caseNumber: result.supportCase.caseNumber, is_safe: result.isSafe });
   } catch (error) { req.log?.error?.({ err: error }, "Support email webhook failed"); return res.status(500).send("Support email processing failed."); }
 });
