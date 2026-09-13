@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { REFUND_FEATURE_ENABLED } from "../services/refund/refund.service";
@@ -19,7 +19,7 @@ const verificationSchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 });
 
-function unavailable(res: Parameters<typeof router.post>[1] extends never ? never : any) {
+function unavailable(res: Response) {
   return res.status(503).json({
     success: false,
     code: "REFUNDS_NOT_AVAILABLE",
