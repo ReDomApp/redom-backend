@@ -42,8 +42,9 @@ export type SupportMessage = {
 export type SupportAiResult = { is_safe: boolean; support_reply: string | null };
 
 const resend = new Resend(env.email.resend.apiKey);
-const GEMINI_MODEL = "gemini-3.8-flash";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
+// 3.8 is preferred, but support must remain available if a single model is under temporary load.
+const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"] as const;
 const CASE_PATTERN = /\bR\d{11}\b/i;
 
 function mapCase(row: Record<string, unknown>): SupportCase {
@@ -218,6 +219,22 @@ function parseGeminiSupportResult(text: string): SupportAiResult {
   return { is_safe: value.is_safe, support_reply: value.support_reply as string | null };
 }
 
+async function requestGeminiSupport(model: string, requestContext: object): Promise<SupportAiResult> {
+  const response = await fetch(GEMINI_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": env.gemini.apiKey },
+    body: JSON.stringify({ model, system_instruction: REDOM_SUPPORT_SYSTEM_PROMPT, input: JSON.stringify(requestContext), response_format: { type: "text", mime_type: "application/json", schema: SUPPORT_JSON_SCHEMA } }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    const error = new Error(`Gemini support request failed (${response.status}): ${body.slice(0, 500)}`) as Error & { status?: number; body?: string };
+    error.status = response.status;
+    error.body = body;
+    throw error;
+  }
+  return parseGeminiSupportResult(extractGeminiText(await response.json()));
+}
+
 export async function generateSupportReply(input: { message: string; account: SupportAccountContext | null; supportCase: SupportCase; history: SupportMessage[] }): Promise<SupportAiResult> {
   const requestContext = {
     account: input.account,
@@ -225,16 +242,19 @@ export async function generateSupportReply(input: { message: string; account: Su
     recentConversation: input.history.map((message) => ({ sender: message.senderType, message: message.body })),
     currentUserMessage: input.message,
   };
-  const response = await fetch(GEMINI_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": env.gemini.apiKey },
-    body: JSON.stringify({ model: GEMINI_MODEL, system_instruction: REDOM_SUPPORT_SYSTEM_PROMPT, input: JSON.stringify(requestContext), response_format: { type: "text", mime_type: "application/json", schema: SUPPORT_JSON_SCHEMA } }),
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Gemini support request failed (${response.status}): ${body.slice(0, 500)}`);
+
+  let lastError: unknown;
+  for (const model of GEMINI_MODELS) {
+    try {
+      return await requestGeminiSupport(model, requestContext);
+    } catch (error) {
+      lastError = error;
+      // A temporary provider/model overload should fail over immediately. Do not make the customer wait through long retries.
+      const status = (error as { status?: number }).status;
+      if (status !== 429 && status !== 500 && status !== 502 && status !== 503) throw error;
+    }
   }
-  return parseGeminiSupportResult(extractGeminiText(await response.json()));
+  throw lastError instanceof Error ? lastError : new Error("All Gemini support models are temporarily unavailable.");
 }
 
 export function formatCaseReply(caseNumber: string, reply: string): string {
