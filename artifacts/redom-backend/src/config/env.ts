@@ -22,6 +22,12 @@ function requiredNumber(name: string): number {
   return value;
 }
 
+function optionalBoolean(name: string, defaultValue: boolean): boolean {
+  const value = optional(name);
+  if (value === undefined) return defaultValue;
+  return value.toLowerCase() === "true";
+}
+
 export const env = {
   application: { nodeEnv: required("NODE_ENV"), port: requiredNumber("PORT") },
   database: { url: required("DATABASE_URL"), neonApiKey: required("NEON_API_KEY") },
@@ -32,6 +38,10 @@ export const env = {
       webhookSecret: optional("RESEND_WEBHOOK_SECRET"),
     },
     supportFrom: optional("SUPPORT_EMAIL_FROM") ?? "support@wnncompany.com",
+  },
+  refunds: {
+    enabled: optionalBoolean("REDOM_REFUNDS_ENABLED", false),
+    from: optional("REFUND_EMAIL_FROM") ?? "refund@wnncompany.com",
   },
   twilio: {
     accountSid: required("TWILIO_ACCOUNT_SID"), authToken: required("TWILIO_AUTH_TOKEN"), verifyServiceSid: required("TWILIO_VERIFY_SERVICE_SID"), phoneNumber: required("TWILIO_PHONE_NUMBER"), whatsappFrom: optional("TWILIO_WHATSAPP_FROM"),
