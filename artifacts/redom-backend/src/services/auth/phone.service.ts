@@ -11,6 +11,16 @@ import type {
   SmsDeliveryResult,
 } from "../../lib/providers/sms/sms-provider";
 
+function providerErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message
+      .replace(/^MSG91\s*/i, "")
+      .replace(/^Twilio\s*/i, "");
+  }
+
+  return "SMS delivery failed.";
+}
+
 export class PhoneService {
   normalize(
     phoneNumber: string,
@@ -89,7 +99,7 @@ export class PhoneService {
         .sendOtp(request);
     }
 
-    // SMS provider order: MSG91 first, Twilio only as fallback.
+    // SMS provider order: ReDom 1 (MSG91) first, ReDom 2 (Twilio) only as fallback.
     try {
       return await msg91SmsProvider
         .sendOtp(request);
@@ -99,8 +109,14 @@ export class PhoneService {
         msg91Error,
       );
 
-      return twilioSmsProvider
-        .sendOtp(request);
+      try {
+        return await twilioSmsProvider
+          .sendOtp(request);
+      } catch (twilioError) {
+        throw new Error(
+          `ReDom 1: ${providerErrorMessage(msg91Error)}\nReDom 2 (Fallback): ${providerErrorMessage(twilioError)}`,
+        );
+      }
     }
   }
 
