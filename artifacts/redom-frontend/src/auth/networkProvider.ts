@@ -1,5 +1,4 @@
 import { api } from "../api/client";
-import { getPublicIp } from "../lib/ipapi";
 
 export interface NetworkSecurity {
   ip: string | null;
@@ -50,15 +49,12 @@ export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
   loaded = false;
 
   try {
-    // Get the public IP directly from IPAPI using the device's CURRENT
-    // Wi-Fi/mobile connection. The shared IPAPI client owns the endpoint,
-    // timeout, response validation, and error handling.
-    const publicIp = await getPublicIp();
-
-    // Send only the discovered public IP to ReDom. The backend performs the
-    // authenticated IPAPI security lookup; IPAPI_API_KEY never ships in Expo.
+    // The backend receives the handset's client address through the trusted
+    // reverse proxy and performs the authenticated IPAPI lookup server-side.
+    // Do not call IPAPI directly from Expo: that added a second network
+    // dependency and could leave Startup stuck behind a raw 503 response.
     const result = await api.get<NetworkProviderResponse>(
-      `/auth/network-provider?ip=${encodeURIComponent(publicIp)}`,
+      "/auth/network-provider",
     );
 
     cached = result.success && result.security
@@ -67,7 +63,7 @@ export async function fetchNetworkProvider(): Promise<NetworkProviderResponse> {
   } catch (error) {
     const message = error instanceof Error && error.message
       ? error.message
-      : "We could not determine the current network IP or complete the security check.";
+      : "We could not complete the network security check.";
     cached = emptyNetworkProvider(message);
   }
 
