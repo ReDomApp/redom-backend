@@ -81,12 +81,12 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
         <View style={styles.backdrop}>
           <View style={styles.card}>
             <View style={styles.iconCircle}><WarningBlack width={30} height={30} /></View>
-            <Text style={styles.title}>{checking ? "Detecting Your Network" : termsTitle}</Text>
+            <Text style={styles.title}>{checking ? "Checking Your Network" : termsTitle}</Text>
             <Text style={styles.subtitle}>
               {checking
-                ? "IPAPI is detecting your public IP address and network before ReDom opens Login."
+                ? "ReDom is checking your current network before Login opens."
                 : failed
-                  ? (profile?.warning ?? "IPAPI could not complete the network security check.")
+                  ? (profile?.warning ?? "ReDom could not complete the network security check.")
                   : profile?.networkProvider
                     ? `${profile.networkProvider} connection detected.`
                     : "Your connection has been checked."}
