@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { getReDomKnowledge, getReDomKnowledgeVersion } from "../services/redomKnowledge";
+import { getReDomSystemMap, getReDomSystemMapVersion } from "../services/redomSystemMap";
 
 const router: IRouter = Router();
 
@@ -14,7 +15,9 @@ router.get("/knowledge", (_req, res) => {
     ok: true,
     source: "redom-backend",
     ...getReDomKnowledgeVersion(),
+    ...getReDomSystemMapVersion(),
     knowledge: getReDomKnowledge(),
+    systemMap: getReDomSystemMap(),
   });
 });
 
