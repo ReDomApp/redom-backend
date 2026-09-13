@@ -6,7 +6,7 @@ import type {
   SmsProvider,
 } from "./sms-provider";
 
-const MSG91_SMS_FLOW_URL = "https://control.msg91.com/api/v5/flow";
+const MSG91_SMS_URL = "https://api.msg91.com/api/v2/sendsms";
 
 export class Msg91SmsProvider implements SmsProvider {
   readonly name = "msg91";
@@ -26,33 +26,28 @@ export class Msg91SmsProvider implements SmsProvider {
       );
     }
 
-    if (!env.msg91.flowId) {
-      throw new Error(
-        "MSG91 SMS Flow ID is not configured. Set MSG91_FLOW_ID to the approved ReDom OTP SMS flow.",
-      );
-    }
+    // ReDom owns the SMS content. This is a direct MSG91 SMS API request,
+    // not an MSG91 Flow/template. MSG91 requires multipart/form-data for
+    // this endpoint; FormData lets fetch generate the correct boundary.
+    const body =
+      `Your ReDom verification code is ${request.code}. ` +
+      `This code expires at ${request.expiresAt.toISOString()}.`;
 
-    const mobiles = request.to.replace(/^\+/, "");
-    const recipient = {
-      mobiles,
-      [env.msg91.otpVariable]: request.code,
-    };
+    const payload = new FormData();
+    payload.append("mobiles", request.to);
+    payload.append("message", body);
+    payload.append("sender", env.msg91.senderId);
+    payload.append("route", "default");
+    payload.append("country", "0");
+    payload.append("response", "json");
 
-    const payload = {
-      template_id: env.msg91.flowId,
-      sender: env.msg91.senderId,
-      short_url: "0",
-      recipients: [recipient],
-    };
-
-    const response = await fetch(MSG91_SMS_FLOW_URL, {
+    const response = await fetch(MSG91_SMS_URL, {
       method: "POST",
       headers: {
-        accept: "application/json",
         authkey: env.msg91.authKey,
-        "content-type": "application/json",
+        Accept: "application/json",
       },
-      body: JSON.stringify(payload),
+      body: payload,
     });
 
     const raw = await response.text();
