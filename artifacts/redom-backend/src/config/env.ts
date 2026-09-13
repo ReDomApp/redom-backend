@@ -186,7 +186,7 @@ export const env = {
         required(
           "TURNSTILE_SECRET_KEY",
         ),
-    },
+  },
   },
 
   oneSignal: {
@@ -335,6 +335,13 @@ export const env = {
     apiKey:
       required(
         "OPENAI_API_KEY",
+      ),
+  },
+
+  gemini: {
+    apiKey:
+      required(
+        "GEMINI_API_KEY",
       ),
   },
 } as const;
