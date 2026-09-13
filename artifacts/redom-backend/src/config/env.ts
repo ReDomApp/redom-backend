@@ -47,10 +47,7 @@ export const env = {
     accountSid: required("TWILIO_ACCOUNT_SID"), authToken: required("TWILIO_AUTH_TOKEN"), verifyServiceSid: required("TWILIO_VERIFY_SERVICE_SID"), phoneNumber: required("TWILIO_PHONE_NUMBER"), whatsappFrom: optional("TWILIO_WHATSAPP_FROM"),
   },
   msg91: {
-    authKey: required("MSG91_AUTH_KEY"),
-    senderId: required("MSG91_SENDER_ID"),
-    flowId: optional("MSG91_FLOW_ID"),
-    otpVariable: optional("MSG91_OTP_VARIABLE") ?? "var1",
+    authKey: required("MSG91_AUTH_KEY"), senderId: required("MSG91_SENDER_ID"),
   },
   cloudflare: {
     r2: {
@@ -62,7 +59,7 @@ export const env = {
   oneSignal: { appId: required("ONESIGNAL_APP_ID"), restApiKey: required("ONESIGNAL_REST_API_KEY") },
   redis: { url: required("REDIS_URL"), token: required("REDIS_TOKEN"), endpoint: required("REDIS_ENDPOINT"), port: requiredNumber("REDIS_PORT") },
   qstash: { url: required("QSTASH_URL"), token: required("QSTASH_TOKEN"), currentSigningKey: required("QSTASH_CURRENT_SIGNING_KEY"), nextSigningKey: required("QSTASH_NEXT_SIGNING_KEY") },
-  meilisearch: { host: required("MEILISEARCH_HOST"), masterKey: required("MEILISEARCH_MASTER_KEY"), adminApiKey: required("MEILISEARCH_ADMIN_API_KEY"), searchApiKey: required("MEILISEARCH_SEARCH_API_KEY"), chatApiKey: required("MEILISEARCH_CHAT_API_KEY") },
+  meilisearch: { host: required("MEILISEARCH_HOST"), masterKey: required("MEILISEARCH_MASTER_KEY"), adminApiKey: required("MEILISEARCH_ADMIN_API_KEY"), searchApiKey: required("MEILISEARCH_SEARCH_API_KEY"), readonlyApiKey: required("MEILISEARCH_READONLY_API_KEY"), chatApiKey: required("MEILISEARCH_CHAT_API_KEY") },
   ipApi: { apiKey: required("IPAPI_API_KEY") },
   abstract: { apiKey: optional("ABSTRACT_API_KEY") },
   maxMind: { accountId: required("MAXMIND_ACCOUNT_ID"), licenseKey: required("MAXMIND_LICENSE_KEY") },
