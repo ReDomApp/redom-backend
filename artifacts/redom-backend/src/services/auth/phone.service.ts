@@ -1,4 +1,8 @@
 import {
+  msg91SmsProvider,
+} from "../../lib/providers/sms/msg91-sms-provider";
+
+import {
   twilioSmsProvider,
 } from "../../lib/providers/sms/twilio-sms-provider";
 
@@ -76,10 +80,25 @@ export class PhoneService {
         params.expiresAt,
     };
 
-    return twilioSmsProvider
-      .sendOtp(
-        request,
+    if (
+      request.channel === "whatsapp"
+    ) {
+      return twilioSmsProvider
+        .sendOtp(request);
+    }
+
+    try {
+      return await twilioSmsProvider
+        .sendOtp(request);
+    } catch (twilioError) {
+      console.warn(
+        "Twilio SMS delivery failed; falling back to MSG91.",
+        twilioError,
       );
+
+      return msg91SmsProvider
+        .sendOtp(request);
+    }
   }
 
   supportsChannel(
@@ -87,10 +106,19 @@ export class PhoneService {
       | "sms"
       | "whatsapp",
   ): boolean {
-    return twilioSmsProvider
-      .supportsChannel(
-        channel,
-      );
+    if (
+      channel === "whatsapp"
+    ) {
+      return twilioSmsProvider
+        .supportsChannel(channel);
+    }
+
+    return (
+      twilioSmsProvider
+        .supportsChannel(channel) ||
+      msg91SmsProvider
+        .supportsChannel(channel)
+    );
   }
 }
 
