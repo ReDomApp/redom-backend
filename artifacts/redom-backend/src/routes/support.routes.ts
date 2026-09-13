@@ -10,8 +10,10 @@ const router = Router();
 const resend = new Resend(env.email.resend.apiKey);
 const chatSchema = z.object({ message: z.string().trim().min(1).max(12_000), caseNumber: z.string().trim().regex(/^R\d{11}$/i).optional() });
 function extractEmailAddress(value: string): string { const angle = value.match(/<([^>]+)>/); if (angle?.[1]) return angle[1].trim().toLowerCase(); const plain = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i); return plain?.[0]?.toLowerCase() ?? value.trim().toLowerCase(); }
+function extractEmailDisplayName(value: string): string | null { const angle = value.match(/^\s*["']?(.+?)["']?\s*<[^>]+>\s*$/); if (!angle?.[1]) return null; const name = angle[1].trim().replace(/^['"]|['"]$/g, "").trim(); return name && !/@/.test(name) ? name : null; }
 function stripHtml(value: string): string { return value.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim(); }
 function emailBody(email: { text?: string | null; html?: string | null }): string { return email.text?.trim() || (email.html ? stripHtml(email.html) : ""); }
+function applySenderGreeting(reply: string, senderName?: string | null): string { if (!senderName) return reply.trim(); const normalized = reply.trim(); const greeting = `Hello ${senderName},`; return normalized.replace(/^hello(?:\s+[^,\n]{1,120})?,\s*/i, `${greeting}\n\n`).replace(/^hi(?:\s+[^,\n]{1,120})?,\s*/i, `${greeting}\n\n`); }
 
 async function resolveCaseForMessage(input: { userId?: string | null; senderEmail: string; message: string; subject?: string | null; caseNumber?: string | null }): Promise<{ supportCase: SupportCase; closedCaseNumber?: string }> {
   const referenced = input.caseNumber || extractCaseNumber(`${input.subject ?? ""}\n${input.message}`);
@@ -27,7 +29,7 @@ async function resolveCaseForMessage(input: { userId?: string | null; senderEmai
   return { supportCase: await createSupportCase({ userId: input.userId, requesterEmail: input.senderEmail, subject: input.subject, category: classifySupportCategory(input.message) }) };
 }
 
-async function processSupportMessage(input: { message: string; userId?: string | null; senderEmail: string; subject?: string | null; caseNumber?: string | null }): Promise<{ supportCase: SupportCase; isSafe: boolean; reply: string | null }> {
+async function processSupportMessage(input: { message: string; userId?: string | null; senderEmail: string; senderDisplayName?: string | null; subject?: string | null; caseNumber?: string | null }): Promise<{ supportCase: SupportCase; isSafe: boolean; reply: string | null }> {
   const { supportCase, closedCaseNumber } = await resolveCaseForMessage(input);
   await addSupportMessage({ caseId: supportCase.id, senderType: "user", senderEmail: input.senderEmail, body: input.message });
   if (closedCaseNumber) {
@@ -39,7 +41,7 @@ async function processSupportMessage(input: { message: string; userId?: string |
   const history = await getSupportCaseMessages(supportCase.id, 20);
   const aiResult = await generateSupportReply({ message: input.message, account, supportCase, history });
   if (!aiResult.is_safe || aiResult.support_reply === null) return { supportCase, isSafe: false, reply: null };
-  const reply = formatCaseReply(supportCase.caseNumber, aiResult.support_reply);
+  const reply = formatCaseReply(supportCase.caseNumber, applySenderGreeting(aiResult.support_reply, input.senderDisplayName));
   await addSupportMessage({ caseId: supportCase.id, senderType: "ai", senderEmail: env.email.supportFrom, body: reply });
   return { supportCase, isSafe: true, reply };
 }
@@ -69,10 +71,13 @@ router.post("/email/webhook", async (req, res) => {
     const emailId = event.data.email_id;
     const { data: email, error } = await resend.emails.receiving.get(emailId);
     if (error || !email) throw new Error(error?.message || "Inbound email could not be retrieved.");
-    const senderEmail = extractEmailAddress(email.from ?? ""); const supportAddress = env.email.supportFrom.toLowerCase(); if (!senderEmail || senderEmail === supportAddress || senderEmail === "noreply@wnncompany.com") return res.status(200).json({ received: true, ignored: true });
+    const senderEmail = extractEmailAddress(email.from ?? "");
+    const senderDisplayName = extractEmailDisplayName(email.from ?? "");
+    const supportAddress = env.email.supportFrom.toLowerCase();
+    if (!senderEmail || senderEmail === supportAddress || senderEmail === "noreply@wnncompany.com") return res.status(200).json({ received: true, ignored: true });
     const message = emailBody(email); if (!message) return res.status(200).json({ received: true, ignored: true });
     const account = await getAccountContextByEmail(senderEmail); const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
-    const result = await processSupportMessage({ message, userId: account?.userId ?? null, senderEmail, subject: email.subject ?? "ReDom Support", caseNumber: referenced });
+    const result = await processSupportMessage({ message, userId: account?.userId ?? null, senderEmail, senderDisplayName, subject: email.subject ?? "ReDom Support", caseNumber: referenced });
     if (result.isSafe && result.reply) await sendGeneratedSupportEmail({ to: senderEmail, subject: `Re: ${email.subject || "ReDom Support"} [${result.supportCase.caseNumber}]`, caseNumber: result.supportCase.caseNumber, category: result.supportCase.category, supportReply: result.reply });
     await linkInboundEvent(id, result.supportCase.id);
     await markInboundEvent(id, emailId);
