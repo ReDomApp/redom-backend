@@ -1,0 +1,205 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
+import { File, Paths } from "expo-file-system";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as MediaLibrary from "expo-media-library";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useAuthContext } from "../auth/context";
+import type { RootStackParamList } from "../routing/types";
+import { reDomAiService, type ReDomAiTurn } from "../messages/reDomAiService";
+import { VoiceRecorderButton } from "../messages/voiceRecorder";
+import ReDomAiLogo from "../assets/ai/redom-ai-logo.svg";
+import { AiAttachIcon, AiBackIcon, AiCameraIcon, AiCloseIcon, AiCopyIcon, AiDislikeIcon, AiDocumentIcon, AiEditIcon, AiHistoryIcon, AiImageIcon, AiLikeIcon, AiMoreIcon, AiRetryIcon, AiSearchIcon, AiSendIcon, AiShareIcon, AiSparkIcon } from "../assets/ai/AiIcon";
+import { AiEditImageIcon, AiReportIcon, AiSaveIcon } from "../assets/ai/AiExtraIcon";
+
+type Props = NativeStackScreenProps<RootStackParamList, "ReDomAI">;
+type AiMessage = ReDomAiTurn & { id: string; kind?: "text" | "image" | "file"; imageUri?: string; prompt?: string; fileName?: string; feedback?: "good" | "bad" };
+type AiThread = { id: string; title: string; updatedAt: number; messages: AiMessage[] };
+type FeedbackReason = "Not relevant" | "Not accurate" | "Too repetitive" | "Harmful or offensive" | "Something else";
+
+const STORAGE_PREFIX = "redom.ai.threads.";
+const MAX_THREADS = 30;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+function newThread(): AiThread { return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, title: "New AI chat", updatedAt: Date.now(), messages: [] }; }
+function threadTitle(messages: AiMessage[]) { const first = messages.find((item) => item.role === "user" && item.content.trim()); return first?.content.trim().slice(0, 42) || "New AI chat"; }
+
+async function dataUriToFile(dataUri: string, name: string) {
+  const match = /^data:([^;]+);base64,(.+)$/s.exec(dataUri);
+  if (!match) throw new Error("Invalid image data.");
+  const file = new File(Paths.cache, name);
+  file.create({ overwrite: true });
+  file.write(match[2], { encoding: "base64" });
+  return file;
+}
+
+async function localImageData(uri: string) {
+  const image = await ImageManipulator.manipulateAsync(uri, [], { compress: 0.78, format: ImageManipulator.SaveFormat.JPEG, base64: true });
+  if (!image.base64) throw new Error("The selected image could not be prepared.");
+  return `data:image/jpeg;base64,${image.base64}`;
+}
+
+export function ReDomAiScreenV2({ navigation, route }: Props) {
+  const { user } = useAuthContext();
+  const storageKey = `${STORAGE_PREFIX}${user?.profileId ?? "anonymous"}`;
+  const chatContext = route.params.context?.trim() || "";
+  const [threads, setThreads] = useState<AiThread[]>([]);
+  const [thread, setThread] = useState<AiThread>(newThread());
+  const [input, setInput] = useState("");
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [generatingImage, setGeneratingImage] = useState(false);
+  const [error, setError] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [feedbackMessageId, setFeedbackMessageId] = useState<string | null>(null);
+  const [selectedReason, setSelectedReason] = useState<FeedbackReason | null>(null);
+  const [imagePromptMode, setImagePromptMode] = useState(false);
+  const [editImage, setEditImage] = useState<AiMessage | null>(null);
+  const [editPrompt, setEditPrompt] = useState("");
+
+  const saveThreads = useCallback(async (nextThreads: AiThread[]) => {
+    const sorted = [...nextThreads].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_THREADS);
+    setThreads(sorted);
+    await AsyncStorage.setItem(storageKey, JSON.stringify(sorted));
+  }, [storageKey]);
+
+  useEffect(() => { void (async () => {
+    try {
+      const raw = await AsyncStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) as AiThread[] : [];
+      if (parsed.length) { setThreads(parsed); setThread(parsed[0]); }
+      else { const first = newThread(); setThreads([first]); setThread(first); }
+    } catch { const first = newThread(); setThreads([first]); setThread(first); }
+  })(); }, [storageKey]);
+
+  const turns = useMemo(() => [...(chatContext ? [{ role: "user" as const, content: `Recent conversation context (reference only):\n${chatContext}` }] : []), ...thread.messages.map(({ role, content }) => ({ role, content }))], [chatContext, thread.messages]);
+  const displayName = user?.firstName?.trim() || "there";
+  const persistCurrent = useCallback(async (nextThread: AiThread) => { await saveThreads([nextThread, ...threads.filter((item) => item.id !== nextThread.id)]); }, [saveThreads, threads]);
+
+  const sendText = useCallback(async (forcedText?: string, forcedImage?: string | null) => {
+    const value = (forcedText ?? input).trim();
+    const imageDataUri = forcedImage === undefined ? pendingImage : forcedImage;
+    if (!value || loading || generatingImage) return;
+    setInput(""); setPendingImage(null); setError(""); setLoading(true);
+    const userMessage: AiMessage = { id: `${Date.now()}-u`, role: "user", content: value };
+    const withUser: AiThread = { ...thread, title: thread.messages.length ? thread.title : threadTitle([userMessage]), updatedAt: Date.now(), messages: [...thread.messages, userMessage] };
+    setThread(withUser); await persistCurrent(withUser);
+    try {
+      const response = await reDomAiService.chat(value, turns, undefined, imageDataUri ?? undefined);
+      const assistant: AiMessage = { id: `${Date.now()}-a`, role: "assistant", content: response.reply };
+      const completed: AiThread = { ...withUser, updatedAt: Date.now(), messages: [...withUser.messages, assistant] };
+      setThread(completed); await persistCurrent(completed);
+    } catch (e) { setError(e instanceof Error ? e.message : "ReDom AI is temporarily unavailable."); }
+    finally { setLoading(false); }
+  }, [generatingImage, input, loading, pendingImage, persistCurrent, thread, turns]);
+
+  const createImage = useCallback(async () => {
+    const value = input.trim(); if (!value || generatingImage || loading) return;
+    setInput(""); setError(""); setGeneratingImage(true);
+    const userMessage: AiMessage = { id: `${Date.now()}-u`, role: "user", content: value };
+    const withUser: AiThread = { ...thread, title: thread.messages.length ? thread.title : `Image: ${value.slice(0, 34)}`, updatedAt: Date.now(), messages: [...thread.messages, userMessage] };
+    setThread(withUser); await persistCurrent(withUser);
+    try {
+      const response = await reDomAiService.generateImage(value);
+      const assistant: AiMessage = { id: `${Date.now()}-i`, role: "assistant", content: "Generated image", kind: "image", imageUri: response.image, prompt: value };
+      const completed: AiThread = { ...withUser, updatedAt: Date.now(), messages: [...withUser.messages, assistant] };
+      setThread(completed); await persistCurrent(completed); setImagePromptMode(false);
+    } catch (e) { setError(e instanceof Error ? e.message : "ReDom AI could not create the image right now."); }
+    finally { setGeneratingImage(false); }
+  }, [generatingImage, input, loading, persistCurrent, thread]);
+
+  const onVoice = async (dataUri: string) => { setError(""); try { const result = await reDomAiService.transcribeVoice(dataUri); if (result.text.trim()) await sendText(result.text.trim(), null); } catch (e) { setError(e instanceof Error ? e.message : "Voice prompt could not be understood."); } };
+  const newChat = async () => { const next = newThread(); setThread(next); setInput(""); setPendingImage(null); setError(""); setImagePromptMode(false); setHistoryOpen(false); await saveThreads([next, ...threads]); };
+  const openThread = (selected: AiThread) => { setThread(selected); setPendingImage(null); setHistoryOpen(false); setError(""); };
+  const clearCurrent = async () => { const cleared = { ...thread, title: "New AI chat", updatedAt: Date.now(), messages: [] }; setThread(cleared); setMoreOpen(false); await persistCurrent(cleared); };
+  const deleteCurrent = async () => { const remaining = threads.filter((item) => item.id !== thread.id); const next = remaining[0] ?? newThread(); setThread(next); setMoreOpen(false); await saveThreads(remaining.length ? remaining : [next]); };
+
+  const copyMessage = async (message: AiMessage) => { await Clipboard.setStringAsync(message.kind === "image" ? (message.prompt ?? "") : message.content); Alert.alert("Copied", "The ReDom AI content was copied to your clipboard."); };
+  const shareMessage = async (message: AiMessage) => {
+    if (message.kind === "image" && message.imageUri) {
+      const file = await dataUriToFile(message.imageUri, `redom-ai-${message.id}.png`);
+      await Share.share({ message: message.prompt ?? "ReDom AI image", url: file.uri, title: "ReDom AI image" });
+      return;
+    }
+    await Share.share({ message: message.content, title: "ReDom AI" });
+  };
+  const saveImage = async (message: AiMessage) => {
+    if (!message.imageUri) return;
+    try {
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
+      if (!permission.granted) { Alert.alert("Permission required", "Allow ReDom to save AI images to your photo library."); return; }
+      const file = await dataUriToFile(message.imageUri, `redom-ai-${message.id}.png`);
+      await MediaLibrary.saveToLibraryAsync(file.uri);
+      Alert.alert("Saved", "The AI image was saved to your photo library.");
+    } catch (e) { Alert.alert("Could not save", e instanceof Error ? e.message : "The AI image could not be saved."); }
+  };
+  const feedback = async (messageId: string, value: "good" | "bad") => { if (value === "bad") { setFeedbackMessageId(messageId); setSelectedReason(null); return; } const next = { ...thread, messages: thread.messages.map((item) => item.id === messageId ? { ...item, feedback: "good" as const } : item), updatedAt: Date.now() }; setThread(next); await persistCurrent(next); void reDomAiService.feedback("good").catch(() => undefined); };
+  const submitBadFeedback = async () => { if (!feedbackMessageId || !selectedReason) return; const next = { ...thread, messages: thread.messages.map((item) => item.id === feedbackMessageId ? { ...item, feedback: "bad" as const } : item), updatedAt: Date.now() }; setThread(next); await persistCurrent(next); void reDomAiService.feedback("bad", selectedReason).catch(() => undefined); setFeedbackMessageId(null); setSelectedReason(null); };
+  const reportImage = async (message: AiMessage) => { if (!message.imageUri) return; setFeedbackMessageId(message.id); setSelectedReason("Harmful or offensive"); };
+  const regenerate = async (messageId: string) => { const index = thread.messages.findIndex((item) => item.id === messageId && item.role === "assistant"); if (index < 0) return; const previousUser = [...thread.messages].slice(0, index).reverse().find((item) => item.role === "user"); if (!previousUser) return; const base = { ...thread, messages: thread.messages.slice(0, index), updatedAt: Date.now() }; setThread(base); await persistCurrent(base); setTimeout(() => void sendText(previousUser.content, null), 0); };
+
+  const pickReferenceImage = async () => {
+    setAttachOpen(false); const permission = await ImagePicker.requestMediaLibraryPermissionsAsync(); if (!permission.granted) { setError("Photo access is required to choose an image."); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8, allowsMultipleSelection: false }); if (result.canceled || !result.assets[0]) return;
+    try { setPendingImage(await localImageData(result.assets[0].uri)); } catch (e) { setError(e instanceof Error ? e.message : "The selected image could not be prepared."); }
+  };
+  const takeReferencePhoto = async () => {
+    setAttachOpen(false); const permission = await ImagePicker.requestCameraPermissionsAsync(); if (!permission.granted) { setError("Camera access is required to take an AI photo."); return; }
+    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.8 }); if (result.canceled || !result.assets[0]) return;
+    try { setPendingImage(await localImageData(result.assets[0].uri)); } catch (e) { setError(e instanceof Error ? e.message : "The camera image could not be prepared."); }
+  };
+  const pickDocument = async () => {
+    setAttachOpen(false);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: false });
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0]; const file = new File(asset.uri); if (file.size > MAX_FILE_BYTES) throw new Error("The selected file is larger than 25 MB.");
+      const base64 = await file.base64(); const prompt = input.trim() || "Analyze this file and summarize the important information."; setInput(""); setLoading(true); setError("");
+      const userMessage: AiMessage = { id: `${Date.now()}-u`, role: "user", content: prompt, kind: "file", fileName: asset.name };
+      const withUser: AiThread = { ...thread, title: thread.messages.length ? thread.title : asset.name.slice(0, 42), updatedAt: Date.now(), messages: [...thread.messages, userMessage] }; setThread(withUser); await persistCurrent(withUser);
+      const response = await reDomAiService.analyzeFile(`data:${asset.mimeType || "application/octet-stream"};base64,${base64}`, asset.name, asset.mimeType || "application/octet-stream", prompt);
+      const assistant: AiMessage = { id: `${Date.now()}-a`, role: "assistant", content: response.reply }; const completed = { ...withUser, updatedAt: Date.now(), messages: [...withUser.messages, assistant] }; setThread(completed); await persistCurrent(completed);
+    } catch (e) { setError(e instanceof Error ? e.message : "The selected file could not be analyzed."); }
+    finally { setLoading(false); }
+  };
+  const editGeneratedImage = async () => {
+    if (!editImage?.imageUri || !editPrompt.trim() || generatingImage) return;
+    const source = editImage.imageUri; const prompt = editPrompt.trim(); setEditImage(null); setEditPrompt(""); setGeneratingImage(true); setError("");
+    try {
+      const response = await reDomAiService.editImage(source, prompt);
+      const edited: AiMessage = { id: `${Date.now()}-i`, role: "assistant", content: "Edited image", kind: "image", imageUri: response.image, prompt };
+      const completed = { ...thread, updatedAt: Date.now(), messages: [...thread.messages, edited] }; setThread(completed); await persistCurrent(completed);
+    } catch (e) { setError(e instanceof Error ? e.message : "ReDom AI could not edit the image right now."); }
+    finally { setGeneratingImage(false); }
+  };
+
+  const actionButton = (key: string, label: string, onPress: () => void, icon: React.ReactNode) => <Pressable key={key} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.action}>{icon}</Pressable>;
+
+  return <SafeAreaView style={styles.root}><KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <View style={styles.header}><Pressable onPress={() => navigation.goBack()} style={styles.headerButton}><AiBackIcon size={25}/></Pressable><View style={styles.identity}><ReDomAiLogo width={42} height={42}/><View><Text style={styles.title}>ReDom AI</Text><Text style={styles.subtitle}>{chatContext ? "Chat context shared for this AI request" : "General AI assistant"}</Text></View></View><View style={styles.headerRight}><Pressable onPress={() => setHistoryOpen(true)} style={styles.headerButton}><AiHistoryIcon size={24}/></Pressable><Pressable onPress={() => setMoreOpen(true)} style={styles.headerButton}><AiMoreIcon size={24}/></Pressable></View></View>
+    {thread.messages.length === 0 ? <ScrollView contentContainerStyle={styles.welcome} keyboardShouldPersistTaps="handled"><ReDomAiLogo width={118} height={118}/><Text style={styles.greeting}>Good day, {displayName}</Text><Text style={styles.question}>What do you wanna build today?</Text><View style={styles.suggestions}><Pressable style={styles.suggestion} onPress={() => { setImagePromptMode(true); setInput("Create an image of "); }}><AiImageIcon size={22}/><Text style={styles.suggestionText}>Create image</Text></Pressable><Pressable style={styles.suggestion} onPress={() => setInput("Help me build ")}><AiSparkIcon size={22}/><Text style={styles.suggestionText}>Build something</Text></Pressable><Pressable style={styles.suggestion} onPress={() => setInput("Search the web for ")}><AiSearchIcon size={22}/><Text style={styles.suggestionText}>Search the web</Text></Pressable><Pressable style={styles.suggestion} onPress={() => setInput("Help me write ")}><AiEditIcon size={22}/><Text style={styles.suggestionText}>Write</Text></Pressable></View></ScrollView> : <ScrollView contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled">{thread.messages.map((message) => <View key={message.id} style={[styles.messageWrap, message.role === "user" ? styles.userWrap : styles.aiWrap]}>{message.role === "user" ? <View style={styles.userBubble}>{message.kind === "file" ? <Text style={styles.fileLabel}>{message.fileName}</Text> : null}<Text style={styles.userText}>{message.content}</Text></View> : <View style={styles.aiBubble}>{message.kind === "image" && message.imageUri ? <Image source={{ uri: message.imageUri }} style={styles.generatedImage} /> : <Text style={styles.aiText}>{message.content}</Text>}<View style={styles.responseActions}>{message.kind === "image" && message.imageUri ? <>{actionButton("copy", "Copy image prompt", () => void copyMessage(message), <AiCopyIcon size={19}/>)}{actionButton("share", "Share AI image", () => void shareMessage(message), <AiShareIcon size={19}/>)}{actionButton("save", "Save AI image", () => void saveImage(message), <AiSaveIcon size={19}/>)}{actionButton("edit", "Edit AI image", () => { setEditImage(message); setEditPrompt(""); }, <AiEditImageIcon size={19}/>)}{actionButton("like", "Good response", () => void feedback(message.id, "good"), <AiLikeIcon size={19} color={message.feedback === "good" ? "#1877F2" : "#667085"}/>)}{actionButton("dislike", "Bad response", () => void feedback(message.id, "bad"), <AiDislikeIcon size={19} color={message.feedback === "bad" ? "#B42318" : "#667085"}/>)}{actionButton("retry", "Try again", () => void regenerate(message.id), <AiRetryIcon size={19}/>)}{actionButton("report", "Report AI image", () => void reportImage(message), <AiReportIcon size={19}/>)}</> : <>{actionButton("copy", "Copy response", () => void copyMessage(message), <AiCopyIcon size={19}/>)}{actionButton("share", "Share response", () => void shareMessage(message), <AiShareIcon size={19}/>)}{actionButton("like", "Good response", () => void feedback(message.id, "good"), <AiLikeIcon size={19} color={message.feedback === "good" ? "#1877F2" : "#667085"}/>)}{actionButton("dislike", "Bad response", () => void feedback(message.id, "bad"), <AiDislikeIcon size={19} color={message.feedback === "bad" ? "#B42318" : "#667085"}/>)}{actionButton("retry", "Try again", () => void regenerate(message.id), <AiRetryIcon size={19}/>)}</>}</View></View>}</View>)}{loading || generatingImage ? <View style={styles.aiWrap}><View style={styles.thinking}><ActivityIndicator size="small" color="#1877F2"/><Text style={styles.thinkingText}>{generatingImage ? "Creating image" : "Thinking"}</Text></View></View> : null}{error ? <Pressable onPress={() => setError("")} style={styles.error}><Text style={styles.errorText}>{error}</Text></Pressable> : null}</ScrollView>}
+    {imagePromptMode ? <View style={styles.modeBar}><AiImageIcon size={18}/><Text style={styles.modeText}>Create image mode</Text><Pressable onPress={() => setImagePromptMode(false)}><AiCloseIcon size={18} color="#667085"/></Pressable></View> : null}
+    {pendingImage ? <View style={styles.attachmentPreview}><Image source={{ uri: pendingImage }} style={styles.previewImage}/><Text style={styles.previewText}>Image attached</Text><Pressable onPress={() => setPendingImage(null)}><AiCloseIcon size={18} color="#667085"/></Pressable></View> : null}
+    <View style={styles.composerRow}><Pressable onPress={() => setAttachOpen(true)} style={styles.composerIcon}><AiAttachIcon size={24}/></Pressable><TextInput value={input} onChangeText={setInput} placeholder={imagePromptMode ? "Describe the image" : "Message"} placeholderTextColor="#667085" style={styles.input} multiline maxLength={6000}/>{!input.trim() && !pendingImage ? <VoiceRecorderButton disabled={loading || generatingImage} onRecorded={onVoice}/> : <Pressable onPress={() => void (imagePromptMode ? createImage() : sendText())} style={styles.send}><AiSendIcon size={21}/></Pressable>}</View>
+  </KeyboardAvoidingView>
+
+  <Modal visible={attachOpen} transparent animationType="slide" onRequestClose={() => setAttachOpen(false)}><Pressable style={styles.overlay} onPress={() => setAttachOpen(false)}><View style={styles.sheet}><View style={styles.handle}/><View style={styles.sheetGrid}><Pressable style={styles.tool} onPress={() => { setAttachOpen(false); setImagePromptMode(true); setInput("Create an image of "); }}><View style={styles.toolIcon}><AiSparkIcon size={27}/></View><Text style={styles.toolText}>Create image</Text></Pressable><Pressable style={styles.tool} onPress={() => void pickReferenceImage()}><View style={styles.toolIcon}><AiImageIcon size={27}/></View><Text style={styles.toolText}>Gallery</Text></Pressable><Pressable style={styles.tool} onPress={() => void takeReferencePhoto()}><View style={styles.toolIcon}><AiCameraIcon size={27}/></View><Text style={styles.toolText}>Camera</Text></Pressable><Pressable style={styles.tool} onPress={() => void pickDocument()}><View style={styles.toolIcon}><AiDocumentIcon size={27}/></View><Text style={styles.toolText}>Document</Text></Pressable></View></View></Pressable></Modal>
+
+  <Modal visible={historyOpen} transparent animationType="slide" onRequestClose={() => setHistoryOpen(false)}><Pressable style={styles.overlay} onPress={() => setHistoryOpen(false)}><View style={styles.sheetTall}><View style={styles.sheetHeader}><Text style={styles.sheetTitle}>AI chats</Text><Pressable onPress={() => setHistoryOpen(false)}><AiCloseIcon size={24}/></Pressable></View><Pressable style={styles.newChatRow} onPress={() => void newChat()}><AiEditIcon size={22} color="#1877F2"/><Text style={styles.newChatText}>New AI chat</Text></Pressable><ScrollView>{threads.filter((item) => item.messages.length).map((item) => <Pressable key={item.id} style={[styles.historyRow, item.id === thread.id && styles.historySelected]} onPress={() => openThread(item)}><AiSparkIcon size={21} color="#667085"/><Text numberOfLines={1} style={styles.historyTitle}>{item.title}</Text></Pressable>)}</ScrollView></View></Pressable></Modal>
+
+  <Modal visible={moreOpen} transparent animationType="slide" onRequestClose={() => setMoreOpen(false)}><Pressable style={styles.overlay} onPress={() => setMoreOpen(false)}><View style={styles.sheetTall}><View style={styles.handle}/><Pressable style={styles.menuRow} onPress={() => { setMoreOpen(false); void Share.share({ message: thread.messages.map((m) => `${m.role === "user" ? "You" : "ReDom AI"}: ${m.content}`).join("\n\n"), title: "ReDom AI chat" }); }}><AiShareIcon size={23}/><Text style={styles.menuText}>Share chat</Text></Pressable><Pressable style={styles.menuRow} onPress={() => { setMoreOpen(false); Alert.alert("About ReDom AI", "ReDom AI is a general-purpose AI assistant. It is not ReDom Support. AI responses may be inaccurate; verify important information."); }}><AiSparkIcon size={23}/><Text style={styles.menuText}>About ReDom AI</Text></Pressable><Pressable style={styles.menuRow} onPress={() => void clearCurrent()}><AiRetryIcon size={23}/><Text style={styles.menuText}>Clear chat</Text></Pressable><Pressable style={styles.menuRow} onPress={() => void deleteCurrent()}><AiCloseIcon size={23} color="#D92D20"/><Text style={[styles.menuText, styles.danger]}>Delete chat</Text></Pressable></View></Pressable></Modal>
+
+  <Modal visible={Boolean(editImage)} transparent animationType="slide" onRequestClose={() => setEditImage(null)}><Pressable style={styles.overlayDim} onPress={() => setEditImage(null)}><View style={styles.editSheet}><Text style={styles.sheetTitle}>Edit AI image</Text>{editImage?.imageUri ? <Image source={{ uri: editImage.imageUri }} style={styles.editPreview}/> : null}<TextInput value={editPrompt} onChangeText={setEditPrompt} placeholder="Describe what to change" placeholderTextColor="#667085" style={styles.editInput} multiline/><Pressable disabled={!editPrompt.trim() || generatingImage} onPress={() => void editGeneratedImage()} style={[styles.submit, (!editPrompt.trim() || generatingImage) && styles.submitDisabled]}><Text style={styles.submitText}>Create edit</Text></Pressable></View></Pressable></Modal>
+
+  <Modal visible={Boolean(feedbackMessageId)} transparent animationType="slide" onRequestClose={() => setFeedbackMessageId(null)}><Pressable style={styles.overlayDim} onPress={() => setFeedbackMessageId(null)}><View style={styles.feedbackSheet}><View style={styles.feedbackHeader}><Pressable onPress={() => setFeedbackMessageId(null)}><AiCloseIcon size={27}/></Pressable><Text style={styles.feedbackTitle}>Bad response</Text><View style={{ width: 27 }}/></View><Text style={styles.feedbackLead}>Help us understand what went wrong.</Text><View style={styles.reasonBox}>{(["Not relevant", "Not accurate", "Too repetitive", "Harmful or offensive", "Something else"] as FeedbackReason[]).map((reason) => <Pressable key={reason} style={styles.reasonRow} onPress={() => setSelectedReason(reason)}><Text style={styles.reasonText}>{reason}</Text><View style={[styles.radio, selectedReason === reason && styles.radioSelected]}>{selectedReason === reason ? <View style={styles.radioDot}/> : null}</View></Pressable>)}</View><Pressable disabled={!selectedReason} onPress={() => void submitBadFeedback()} style={[styles.submit, !selectedReason && styles.submitDisabled]}><Text style={styles.submitText}>Submit</Text></Pressable></View></Pressable></Modal>
+  </SafeAreaView>;
+}
+
+const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: "#FFF" }, header: { height: 72, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#FFF" }, headerButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" }, identity: { flex: 1, flexDirection: "row", alignItems: "center", marginLeft: 2 }, title: { color: "#050505", fontSize: 20, fontWeight: "700" }, subtitle: { color: "#667085", fontSize: 12, marginTop: 2 }, headerRight: { flexDirection: "row", alignItems: "center" }, welcome: { flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, paddingBottom: 40 }, greeting: { marginTop: 22, color: "#050505", fontSize: 32, lineHeight: 38, fontWeight: "400", textAlign: "center" }, question: { marginTop: 8, color: "#667085", fontSize: 17, textAlign: "center" }, suggestions: { width: "100%", flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 10, marginTop: 28 }, suggestion: { minWidth: 145, paddingHorizontal: 16, height: 48, borderRadius: 24, borderWidth: 1, borderColor: "#E4E6EB", backgroundColor: "#F7F8FA", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, suggestionText: { color: "#1D2939", fontSize: 14, fontWeight: "600" }, messages: { paddingHorizontal: 12, paddingTop: 18, paddingBottom: 18 }, messageWrap: { width: "100%", marginBottom: 12 }, userWrap: { alignItems: "flex-end" }, aiWrap: { alignItems: "flex-start" }, userBubble: { maxWidth: "84%", backgroundColor: "#1877F2", borderRadius: 18, borderBottomRightRadius: 5, paddingHorizontal: 15, paddingVertical: 11 }, userText: { color: "#FFF", fontSize: 16, lineHeight: 23 }, fileLabel: { color: "#DCEBFF", fontSize: 12, fontWeight: "700", marginBottom: 5 }, aiBubble: { maxWidth: "94%", backgroundColor: "#F0F2F5", borderRadius: 18, borderBottomLeftRadius: 5, paddingHorizontal: 14, paddingVertical: 11 }, aiText: { color: "#101828", fontSize: 16, lineHeight: 24 }, generatedImage: { width: 280, height: 280, borderRadius: 14, backgroundColor: "#E4E7EC" }, responseActions: { flexDirection: "row", alignItems: "center", marginTop: 9, gap: 4, flexWrap: "wrap" }, action: { width: 35, height: 35, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: "#FFF" }, thinking: { minHeight: 42, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18, backgroundColor: "#F0F2F5", flexDirection: "row", alignItems: "center", gap: 9 }, thinkingText: { color: "#667085", fontSize: 14 }, error: { alignSelf: "center", marginTop: 6, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 16, backgroundColor: "#FEF3F2" }, errorText: { color: "#B42318", fontSize: 13 }, modeBar: { height: 38, marginHorizontal: 10, marginBottom: 6, borderRadius: 19, backgroundColor: "#E7F3FF", flexDirection: "row", alignItems: "center", paddingHorizontal: 12, gap: 7 }, modeText: { flex: 1, color: "#1877F2", fontSize: 13, fontWeight: "600" }, attachmentPreview: { height: 54, marginHorizontal: 10, marginBottom: 5, borderRadius: 16, backgroundColor: "#F7F8FA", flexDirection: "row", alignItems: "center", paddingHorizontal: 8, gap: 9 }, previewImage: { width: 40, height: 40, borderRadius: 10 }, previewText: { flex: 1, color: "#344054", fontSize: 13, fontWeight: "600" }, composerRow: { minHeight: 60, marginHorizontal: 10, marginBottom: Platform.OS === "ios" ? 8 : 10, borderRadius: 30, backgroundColor: "#F0F2F5", flexDirection: "row", alignItems: "flex-end", paddingHorizontal: 7, paddingVertical: 7 }, composerIcon: { width: 44, height: 44, alignItems: "center", justifyContent: "center" }, input: { flex: 1, maxHeight: 110, color: "#101828", fontSize: 16, lineHeight: 22, paddingHorizontal: 6, paddingVertical: 10 }, send: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" }, overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.14)" }, overlayDim: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.35)" }, sheet: { backgroundColor: "#FFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 30 }, sheetTall: { maxHeight: "72%", backgroundColor: "#FFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 28 }, handle: { alignSelf: "center", width: 42, height: 5, borderRadius: 3, backgroundColor: "#D0D5DD", marginBottom: 18 }, sheetGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-around", gap: 18 }, tool: { width: 120, alignItems: "center" }, toolIcon: { width: 58, height: 58, borderRadius: 18, backgroundColor: "#F7F8FA", borderWidth: 1, borderColor: "#E4E6EB", alignItems: "center", justifyContent: "center" }, toolText: { marginTop: 8, color: "#344054", fontSize: 13, fontWeight: "600" }, sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4, paddingBottom: 12 }, sheetTitle: { color: "#101828", fontSize: 20, fontWeight: "700" }, newChatRow: { height: 54, borderRadius: 15, backgroundColor: "#E7F3FF", flexDirection: "row", alignItems: "center", paddingHorizontal: 14, gap: 10, marginBottom: 8 }, newChatText: { color: "#1877F2", fontSize: 15, fontWeight: "700" }, historyRow: { height: 54, borderBottomWidth: 1, borderBottomColor: "#F2F4F7", flexDirection: "row", alignItems: "center", paddingHorizontal: 10, gap: 10 }, historySelected: { backgroundColor: "#F7F8FA" }, historyTitle: { flex: 1, color: "#344054", fontSize: 15 }, menuRow: { minHeight: 58, flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 8 }, menuText: { color: "#101828", fontSize: 16 }, danger: { color: "#D92D20" }, editSheet: { backgroundColor: "#FFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 26 }, editPreview: { width: 180, height: 180, alignSelf: "center", borderRadius: 16, marginVertical: 14 }, editInput: { minHeight: 88, borderRadius: 16, borderWidth: 1, borderColor: "#D0D5DD", padding: 12, color: "#101828", fontSize: 16 }, feedbackSheet: { backgroundColor: "#FFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 26 }, feedbackHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }, feedbackTitle: { color: "#101828", fontSize: 22, fontWeight: "500" }, feedbackLead: { color: "#101828", fontSize: 17, marginBottom: 20 }, reasonBox: { borderWidth: 1, borderColor: "#D0D5DD", borderRadius: 22, overflow: "hidden" }, reasonRow: { minHeight: 68, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, reasonText: { color: "#101828", fontSize: 16 }, radio: { width: 25, height: 25, borderRadius: 13, borderWidth: 2, borderColor: "#98A2B3", alignItems: "center", justifyContent: "center" }, radioSelected: { borderColor: "#1877F2" }, radioDot: { width: 13, height: 13, borderRadius: 7, backgroundColor: "#1877F2" }, submit: { height: 52, marginTop: 20, borderRadius: 26, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" }, submitDisabled: { backgroundColor: "#A8C7FA" }, submitText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
+});
