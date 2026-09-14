@@ -17,8 +17,9 @@ export const apiRateLimit = rateLimit({
 /**
  * Authentication rate limiter for completed-account authentication.
  * Registration has its own more generous limiter below because a single
- * registration legitimately performs many API calls while moving through
- * the registration screens.
+ * registration legitimately performs many API calls while moving through the registration screens.
+ * Messaging routes are intentionally excluded: normal chat loading, typing,
+ * receipts, reactions and media can generate many authenticated requests.
  */
 export const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -26,9 +27,29 @@ export const authRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
+  skip: (req) => req.baseUrl === "/messages",
   message: {
     success: false,
     message: "Too many authentication attempts. Please wait before trying again.",
+  },
+});
+
+/**
+ * Messaging traffic limiter.
+ *
+ * Chat is not an authentication attempt. Give normal conversations enough
+ * headroom for message history, reactions, read receipts, drafts, typing,
+ * encrypted media and linked-device operations while still protecting the
+ * messaging surface from accidental or malicious request floods.
+ */
+export const messagingRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many messaging requests. Please try again shortly.",
   },
 });
 
