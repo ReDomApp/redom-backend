@@ -3,7 +3,8 @@ import { Resend } from "resend";
 import { z } from "zod";
 import { env } from "../config/env";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, generateSupportReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, markInboundEvent, type SupportCase } from "../services/support/support.service";
+import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, markInboundEvent, type SupportCase } from "../services/support/support.service";
+import { generatePolicyAwareSupportReply } from "../services/support/policy-aware-support.service";
 import { sendGeneratedSupportEmail } from "../services/support/supportEmail.service";
 
 const router = Router();
@@ -39,7 +40,7 @@ async function processSupportMessage(input: { message: string; userId?: string |
   }
   const account = input.userId ? await getAccountContextById(input.userId) : await getAccountContextByEmail(input.senderEmail);
   const history = await getSupportCaseMessages(supportCase.id, 20);
-  const aiResult = await generateSupportReply({ message: input.message, account, supportCase, history });
+  const aiResult = await generatePolicyAwareSupportReply({ message: input.message, subject: input.subject, account, supportCase, history });
   if (!aiResult.is_safe || aiResult.support_reply === null) return { supportCase, isSafe: false, reply: null };
   const reply = formatCaseReply(supportCase.caseNumber, applySenderGreeting(aiResult.support_reply, input.senderDisplayName));
   await addSupportMessage({ caseId: supportCase.id, senderType: "ai", senderEmail: env.email.supportFrom, body: reply });
