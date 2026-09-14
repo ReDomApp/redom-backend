@@ -2,12 +2,15 @@ import rateLimit from "express-rate-limit";
 
 /**
  * General API rate limiter.
+ * Messaging has its own high-capacity limiter below because ordinary chat
+ * screens can legitimately generate many authenticated requests.
  */
 export const apiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === "/messages" || req.path.startsWith("/messages/"),
   message: {
     success: false,
     message: "Too many requests. Please try again later.",
