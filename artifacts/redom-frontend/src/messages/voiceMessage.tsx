@@ -5,74 +5,16 @@ import { getStoredSession } from "../auth/storage";
 import { env } from "../config/env";
 import type { MessageAttachment } from "./messageService";
 
-function absoluteMediaUrl(fileUrl?: string | null) {
-  if (!fileUrl) return null;
-  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
-  return `${env.apiBaseUrl}${fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`}`;
+function absoluteMediaUrl(fileUrl?: string | null) { if (!fileUrl) return null; if (/^https?:\/\//i.test(fileUrl)) return fileUrl; return `${env.apiBaseUrl}${fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`}`; }
+
+export function VoiceMessagePlayer({ attachment, mine, localUri }: { attachment: MessageAttachment; mine: boolean; localUri?: string | null }) {
+  const player = useAudioPlayer(null, { updateInterval: 250 }); const status = useAudioPlayerStatus(player); const [loading, setLoading] = useState(false); const [rate, setRate] = useState(1); const [ready, setReady] = useState(false);
+  const source = useMemo(() => localUri || absoluteMediaUrl(attachment.fileUrl), [attachment.fileUrl, localUri]);
+  useEffect(() => { let cancelled = false; void (async () => { if (!source) return; const session = localUri ? null : await getStoredSession(); if (cancelled) return; player.replace({ uri: source, headers: session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : undefined }); setReady(true); })(); return () => { cancelled = true; }; }, [player, source, localUri]);
+  const toggle = () => { if (!ready || loading) return; setLoading(true); try { if (status.playing) player.pause(); else { if (status.currentTime >= status.duration && status.duration > 0) void player.seekTo(0); player.play(); } } finally { setLoading(false); } };
+  const cycleRate = () => { const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1; setRate(next); player.playbackRate = next; };
+  const duration = attachment.durationSeconds ?? status.duration ?? 0; const current = Math.min(status.currentTime || 0, duration || status.currentTime || 0); const progress = duration > 0 ? Math.min(1, current / duration) : 0;
+  return <View style={[styles.container, mine ? styles.mine : styles.theirs]}><Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause voice message" : "Play voice message"} onPress={toggle} style={styles.play}>{loading ? <ActivityIndicator size="small" color={mine ? "#FFF" : "#1877F2"} /> : <Text style={[styles.playText, mine && styles.mineText]}>{status.playing ? "Ⅱ" : "▶"}</Text>}</Pressable><View style={styles.body}><View style={styles.wave}>{Array.from({ length: 24 }, (_, index) => <View key={index} style={[styles.bar, mine && styles.mineBar, { height: 5 + ((index * 7) % 13), opacity: index / 24 <= progress ? 1 : 0.35 }]} />)}</View><View style={styles.meta}><Text style={[styles.duration, mine && styles.mineText]}>{Math.floor(current / 60)}:{String(Math.floor(current % 60)).padStart(2, "0")} / {Math.floor(duration / 60)}:{String(Math.floor(duration % 60)).padStart(2, "0")}</Text><Pressable onPress={cycleRate}><Text style={[styles.rate, mine && styles.mineText]}>{rate}×</Text></Pressable></View></View></View>;
 }
 
-export function VoiceMessagePlayer({ attachment, mine }: { attachment: MessageAttachment; mine: boolean }) {
-  const player = useAudioPlayer(null, { updateInterval: 250 });
-  const status = useAudioPlayerStatus(player);
-  const [loading, setLoading] = useState(false);
-  const [rate, setRate] = useState(1);
-  const [ready, setReady] = useState(false);
-  const source = useMemo(() => absoluteMediaUrl(attachment.fileUrl), [attachment.fileUrl]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!source) return;
-      const session = await getStoredSession();
-      if (cancelled) return;
-      player.replace({ uri: source, headers: session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : undefined });
-      setReady(true);
-    })();
-    return () => { cancelled = true; };
-  }, [player, source]);
-
-  const toggle = () => {
-    if (!ready || loading) return;
-    setLoading(true);
-    try {
-      if (status.playing) player.pause();
-      else { if (status.currentTime >= status.duration && status.duration > 0) void player.seekTo(0); player.play(); }
-    } finally { setLoading(false); }
-  };
-
-  const cycleRate = () => {
-    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
-    setRate(next);
-    player.playbackRate = next;
-  };
-
-  const duration = attachment.durationSeconds ?? status.duration ?? 0;
-  const current = Math.min(status.currentTime || 0, duration || status.currentTime || 0);
-  const progress = duration > 0 ? Math.min(1, current / duration) : 0;
-
-  return <View style={[styles.container, mine ? styles.mine : styles.theirs]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause voice message" : "Play voice message"} onPress={toggle} style={styles.play}>
-      {loading ? <ActivityIndicator size="small" color={mine ? "#FFF" : "#1877F2"} /> : <Text style={[styles.playText, mine && styles.mineText]}>{status.playing ? "Ⅱ" : "▶"}</Text>}
-    </Pressable>
-    <View style={styles.body}>
-      <View style={styles.wave}>{Array.from({ length: 24 }, (_, index) => <View key={index} style={[styles.bar, mine && styles.mineBar, { height: 5 + ((index * 7) % 13), opacity: index / 24 <= progress ? 1 : 0.35 }]} />)}</View>
-      <View style={styles.meta}><Text style={[styles.duration, mine && styles.mineText]}>{Math.floor(current / 60)}:{String(Math.floor(current % 60)).padStart(2, "0")} / {Math.floor(duration / 60)}:{String(Math.floor(duration % 60)).padStart(2, "0")}</Text><Pressable onPress={cycleRate}><Text style={[styles.rate, mine && styles.mineText]}>{rate}×</Text></Pressable></View>
-    </View>
-  </View>;
-}
-
-const styles = StyleSheet.create({
-  container: { width: 250, minHeight: 58, borderRadius: 18, paddingHorizontal: 10, paddingVertical: 8, flexDirection: "row", alignItems: "center" },
-  mine: { backgroundColor: "#1877F2" },
-  theirs: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E4E6EB" },
-  play: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.18)" },
-  playText: { color: "#1877F2", fontSize: 17, fontWeight: "800" },
-  mineText: { color: "#FFF" },
-  body: { flex: 1, marginLeft: 9 },
-  wave: { height: 22, flexDirection: "row", alignItems: "center", gap: 2 },
-  bar: { width: 2, borderRadius: 2, backgroundColor: "#1877F2" },
-  mineBar: { backgroundColor: "#FFF" },
-  meta: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 3 },
-  duration: { fontSize: 10, color: "#65676B" },
-  rate: { fontSize: 11, fontWeight: "800", color: "#1877F2" },
-});
+const styles = StyleSheet.create({ container: { width: 250, minHeight: 58, borderRadius: 18, paddingHorizontal: 10, paddingVertical: 8, flexDirection: "row", alignItems: "center" }, mine: { backgroundColor: "#1877F2" }, theirs: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E4E6EB" }, play: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.18)" }, playText: { color: "#1877F2", fontSize: 17, fontWeight: "800" }, mineText: { color: "#FFF" }, body: { flex: 1, marginLeft: 9 }, wave: { height: 22, flexDirection: "row", alignItems: "center", gap: 2 }, bar: { width: 2, borderRadius: 2, backgroundColor: "#1877F2" }, mineBar: { backgroundColor: "#FFF" }, meta: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 3 }, duration: { fontSize: 10, color: "#65676B" }, rate: { fontSize: 11, fontWeight: "800", color: "#1877F2" } });
