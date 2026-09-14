@@ -12,6 +12,6 @@ export type RootStackParamList = {
   EditProfile: undefined; EditBio: undefined; EditLocationSearch: { kind: "location" | "hometown" }; EditLocationConfirm: { kind: "location" | "hometown"; result: string }; EditBirthday: undefined;
   ProfilePictureAdjust: MediaPickerRouteParams; ProfilePicturePreview: MediaPickerRouteParams; ProfilePictureViewer: undefined; CoverPhotoAdjust: MediaPickerRouteParams; CoverPhotoPreview: MediaPickerRouteParams; CoverPhotoViewer: undefined; Foundation: undefined;
   Search: undefined; Notifications: undefined; Messages: undefined; Chat: { conversationId: string }; Call: { conversationId: string; callType: "voice" | "video"; callId?: string }; CreateGroup: undefined; GroupInfo: { conversationId: string };
-  Settings: undefined; NotificationSettings: undefined; PrivacySettings: undefined; SecuritySettings: undefined; BlockedUsers: undefined; Verification: undefined; Support: undefined;
+  Settings: undefined; NotificationSettings: undefined; PrivacySettings: undefined; SecuritySettings: undefined; LinkedDevices: undefined; BlockedUsers: undefined; Verification: undefined; Support: undefined;
   Policy: { slug: "terms" | "privacy" | "community" | "messaging" | "notifications" | "security" | "verification" | "ai" | "regional" | "refunds" | "support" };
 };
