@@ -1,3 +1,4 @@
+import "../messages/forwardedMessageDecorationV2";
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
