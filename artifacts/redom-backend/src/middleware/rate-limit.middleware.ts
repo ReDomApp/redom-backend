@@ -1,139 +1,74 @@
 import rateLimit from "express-rate-limit";
 
-/**
- * General API rate limiter.
- * Messaging has its own high-capacity limiter below because ordinary chat
- * screens can legitimately generate many authenticated requests.
- */
+/** Normal ReDom messaging paths are intentionally not rate limited. */
+export function isMessagingPath(req: { path?: string; originalUrl?: string }): boolean {
+  const value = `${req.path ?? ""} ${req.originalUrl ?? ""}`;
+  return /\/(?:messages|message-reactions|calls)(?:\/|$)/.test(value) || /\/ai\/chat(?:\/|\?|$)/.test(value);
+}
+
+/** General API limiter; chat/messaging is completely excluded. */
 export const apiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === "/messages" || req.path.startsWith("/messages/"),
-  message: {
-    success: false,
-    message: "Too many requests. Please try again later.",
-  },
+  skip: (req) => isMessagingPath(req),
+  message: { success: false, message: "Too many requests. Please try again later." },
 });
 
-/**
- * Authentication rate limiter for completed-account authentication.
- * Registration has its own more generous limiter below because a single
- * registration legitimately performs many API calls while moving through the registration screens.
- * Messaging routes are intentionally excluded: normal chat loading, typing,
- * receipts, reactions and media can generate many authenticated requests.
- */
+/** Authentication limiter; chat/messaging is completely excluded. */
 export const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
-  skip: (req) => req.baseUrl === "/messages",
-  message: {
-    success: false,
-    message: "Too many authentication attempts. Please wait before trying again.",
-  },
+  skip: (req) => isMessagingPath(req),
+  message: { success: false, message: "Too many authentication attempts. Please wait before trying again." },
 });
 
-/**
- * Messaging traffic limiter.
- *
- * Chat is not an authentication attempt. Give normal conversations enough
- * headroom for message history, reactions, read receipts, drafts, typing,
- * encrypted media and linked-device operations while still protecting the
- * messaging surface from accidental or malicious request floods.
- */
-export const messagingRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 600,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: "Too many messaging requests. Please try again shortly.",
-  },
-});
+/** Compatibility export: messaging has no rate limiter. */
+export const messagingRateLimit = (_req: unknown, _res: unknown, next: () => void) => next();
 
-/**
- * Registration-flow limiter.
- *
- * A registration is a multi-screen workflow and legitimately makes many
- * requests (flow reservation, memory, name, birthday, gender, phone/country,
- * security, email, password, completion, etc.). Do not make those calls share
- * the strict completed-account authentication limit.
- */
 export const registrationRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  message: {
-    success: false,
-    message: "Too many registration requests. Please wait a moment before continuing.",
-  },
+  message: { success: false, message: "Too many registration requests. Please wait a moment before continuing." },
 });
 
-/**
- * Registration verification/resend limiter.
- * Keep verification protected, but allow normal users to correct/retry codes
- * during a registration without exhausting the general authentication bucket.
- */
 export const registrationVerificationRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  message: {
-    success: false,
-    message: "Too many registration verification requests. Please wait before trying again.",
-  },
+  message: { success: false, message: "Too many registration verification requests. Please wait before trying again." },
 });
 
-/**
- * Startup network intelligence is not an authentication attempt.
- * Give the Startup screen enough room for retries while still preventing
- * accidental request loops from hammering the endpoint/IPAPI.
- */
 export const networkProviderRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  message: {
-    success: false,
-    message: "Too many network checks. Please wait before trying again.",
-  },
+  message: { success: false, message: "Too many network checks. Please wait before trying again." },
 });
 
-/**
- * Verification code limiter for completed-account verification flows.
- */
 export const verificationRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    message: "Too many verification requests. Please wait before requesting another code.",
-  },
+  message: { success: false, message: "Too many verification requests. Please try again later." },
 });
 
-/**
- * Password reset limiter.
- */
 export const passwordResetRateLimit = rateLimit({
   windowMs: 30 * 60 * 1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    message: "Too many password reset requests. Please try again later.",
-  },
+  message: { success: false, message: "Too many password reset requests. Please try again later." },
 });
