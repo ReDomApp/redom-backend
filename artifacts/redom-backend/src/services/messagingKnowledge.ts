@@ -1,21 +1,24 @@
 /**
  * ReDom Messaging Knowledge Contract
  *
- * AI-facing product knowledge for the messaging surface. This describes
- * navigation and button intent without granting AI authority over account,
- * privacy, moderation, payment, membership, or encryption state.
+ * AI-facing product knowledge for the messaging surface. It follows WhatsApp
+ * public Help Center behavior as a product reference while keeping ReDom's
+ * own authorization, privacy, E2EE and regional rules authoritative.
  */
-export const REDOM_MESSAGING_KNOWLEDGE_VERSION = "2.0.0";
+export const REDOM_MESSAGING_KNOWLEDGE_VERSION = "2.1.0";
 export const REDOM_MESSAGING_KNOWLEDGE = {
   product: "ReDom Messenger",
+  reference: "WhatsApp Help Center behavior is a reference for discoverability and user expectations; ReDom is not a WhatsApp client and does not use WhatsApp as its message transport.",
   privacy: {
     privateMessages: "Message content is intended to remain end-to-end encrypted on supported devices.",
     serverSearchBoundary: "The backend may search users and conversation metadata but must not decrypt or index private message plaintext.",
+    aiSharing: "ReDom AI is optional. Normal private chats are not automatically exposed to ReDom AI. Chat text may be sent to AI only when the user explicitly submits it to the AI experience.",
   },
   navigation: {
     messages: [
       { action: "back", result: "return to the previous authenticated screen" },
       { action: "new-message", result: "open New Message and search eligible people" },
+      { action: "re-dom-ai", result: "open the separate general-purpose ReDom AI conversation" },
       { action: "search-messages", result: "search locally available/decrypted conversation content and conversation metadata without server-side plaintext indexing" },
       { action: "open-conversation", result: "open the authorized chat" },
       { action: "group-info", result: "open Group Info for an authorized group" },
@@ -34,6 +37,7 @@ export const REDOM_MESSAGING_KNOWLEDGE = {
       { action: "back", result: "return to Messages" },
       { action: "conversation-info", result: "open the conversation or Group Info screen" },
       { action: "search", result: "search permitted local conversation content/metadata" },
+      { action: "re-dom-ai", result: "open ReDom AI without automatically exposing the current private conversation" },
       { action: "voice-call", result: "start a backend-authorized voice call" },
       { action: "video-call", result: "start a backend-authorized video call" },
       { action: "text-send", result: "encrypt and send a message" },
@@ -61,6 +65,9 @@ export const REDOM_MESSAGING_KNOWLEDGE = {
   messageCapabilities: [
     "text", "reply", "reaction", "photo", "video", "voice", "audio", "document", "GIF", "sticker", "shared content", "View Once", "disappearing messages",
   ],
+  privacyAndSafetyFeatures: [
+    "block", "report", "read receipts", "typing indicators", "notification controls", "chat mute", "notification previews", "disappearing messages", "View Once", "group join approval", "linked-device security",
+  ],
   limits: {
     editWindow: "15 minutes",
     deleteForEveryoneWindow: "48 hours",
@@ -69,10 +76,12 @@ export const REDOM_MESSAGING_KNOWLEDGE = {
     groupActiveMembers: 1024,
   },
   receipts: ["sent", "delivered", "read", "typing", "missed-call", "call-ended"],
-  privacyControls: ["block", "report", "notification previews", "read state", "disappearing messages", "View Once", "group join approval"],
   aiRules: [
+    "ReDom AI is a general-purpose AI experience, separate from ReDom Support AI.",
+    "ReDom AI can answer general questions, explain concepts, brainstorm, write, translate, reason and use web search for current information.",
     "AI explains navigation and policy; it never fabricates UI state.",
     "AI cannot read private message plaintext merely because a user asks.",
+    "Only content the user explicitly supplies to the AI request may be used as chat context.",
     "AI cannot bypass encryption, blocks, group permissions, regional policy or authentication.",
     "AI cannot approve reports, refunds, verification, membership, ownership changes or security changes.",
     "When a capability is unavailable, AI must say it is unavailable rather than inventing a success state.",
