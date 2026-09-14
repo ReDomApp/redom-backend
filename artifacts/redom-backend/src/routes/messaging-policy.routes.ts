@@ -1,0 +1,34 @@
+import { Router } from "express";
+
+const router = Router();
+
+const document = {
+  title: "ReDom Messaging Policy",
+  summary: "How ReDom private messaging, groups, media, calls, privacy controls and safety features work.",
+  sections: [
+    { heading: "Conversation access", body: "Messaging requires authentication and an active conversation membership. Backend authorization is authoritative; opening a deep link, changing a client value or using an AI request never grants access." },
+    { heading: "End-to-end encryption", body: "ReDom private text messaging is designed so message content is encrypted on supported devices before transmission. Encryption keys and private key material remain device-controlled. ReDom AI, search, notifications and ordinary backend APIs must not be used to bypass message privacy. The current implementation is being hardened toward a production-grade multi-device protocol." },
+    { heading: "Message types", body: "Supported messaging includes text, replies, reactions, photos, video, voice messages, audio, documents, GIFs, stickers and supported shared content. Availability is controlled by platform capability and regional policy." },
+    { heading: "Edit", body: "A sent text message may be edited only inside ReDom's supported edit window. The edit must remain authorized for the sender and must preserve encrypted-message handling; the client cannot extend the window or edit another user's message." },
+    { heading: "Delete", body: "A user can delete their own copy without changing recipients' copies. Supported messages can be deleted for everyone within the applicable window and are replaced with a deletion placeholder. Group admins may remove another member's message when the group permission permits it. Deleted content is not returned as readable message content." },
+    { heading: "Disappearing messages", body: "Conversation message timers apply to new messages only. ReDom supports Off, 24 hours, 7 days and 90 days. Existing messages are not retroactively changed. Group permissions can restrict who may change the timer." },
+    { heading: "View once", body: "Photos, videos and voice messages can be marked View Once. A recipient can open the item once; it is then treated as opened and no longer returned as normal attachment content. View Once content cannot be forwarded, copied, saved or starred through ReDom. It expires if not opened within the supported 14-day window. Device-level recording or another camera can still defeat visual privacy, so ReDom does not promise absolute capture prevention." },
+    { heading: "Replies and reactions", body: "Replies must target a message in the same authorized conversation. Reactions belong to the authenticated user and can be changed or removed. Deleted or inaccessible messages cannot be used to obtain private content through a reply target." },
+    { heading: "Groups", body: "Groups support an owner, admins and members, with backend-enforced permissions for group information, adding members, removing members, admin roles, invite behavior and join approval. ReDom groups support up to 1,024 active members. Group owners cannot be removed and must transfer ownership before leaving." },
+    { heading: "Group calls", body: "Group voice calls are designed around authorized group membership and backend-confirmed call state. The product target follows the documented ReDom call capacity rather than allowing a client to invent participants or bypass call permissions." },
+    { heading: "Calls", body: "Voice and video calls require authorized conversation membership plus operating-system microphone/camera permission. Ringing, connecting, active, ended, declined, missed, cancelled and failed states are backend-confirmed. ReDom does not expose provider credentials or private signaling secrets." },
+    { heading: "Block and report", body: "Blocking stops supported direct messages and calls from the blocked account. Reporting can target a specific message and may optionally block the sender. Reports enter human-review/moderation workflows; AI may assist with explanation or safety signals but cannot silently impose a final moderation decision." },
+    { heading: "Notifications and read state", body: "Delivery, read and typing state come from backend events. Notification previews obey the recipient's preferences and authorization. A client cannot fabricate a read receipt, delivery receipt or notification state." },
+    { heading: "Media privacy", body: "Message media is protected by authenticated conversation access and ReDom Media Storage controls. Media access URLs do not grant conversation membership. Encrypted-media work must keep decryption keys on authorized devices rather than exposing them to the backend." },
+    { heading: "Linked devices", body: "A linked device must establish its own authorized cryptographic identity and receive only the message history and keys it is entitled to receive. Device linking, key changes and session revocation are security-sensitive operations." },
+    { heading: "AI boundaries", body: "ReDom AI cannot read another person's private messages merely because a user asks, cannot bypass encryption, cannot approve reports or refunds, cannot change group ownership, cannot grant membership, cannot override blocks or regional policy, and cannot invent delivery, read, moderation or call states." },
+    { heading: "Regional policy", body: "Messaging, calling, SMS/email notifications, media and other capabilities can vary by country or region. The backend regional policy is authoritative and cannot be overridden by the client, AI or a provider response." },
+    { heading: "Safety and audit", body: "Security-sensitive messaging actions are authorization-checked and may create activity/audit events. ReDom may apply spam, scam, malware and abuse protections without exposing private content outside an explicitly authorized workflow." },
+  ],
+};
+
+router.get("/policies/messaging", (_req, res) => {
+  res.json({ success: true, slug: "messaging", version: "1.2.0", effectiveAt: "2026-09-13T23:05:00.000Z", document });
+});
+
+export default router;
