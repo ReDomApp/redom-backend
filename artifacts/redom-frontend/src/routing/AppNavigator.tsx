@@ -21,6 +21,12 @@ import { CoverPhotoViewerScreen } from "../screens/CoverPhotoViewerScreen";
 import { CustomizingExperienceScreen } from "../screens/CustomizingExperienceScreen";
 import { LoginScreen } from "../screens/LoginScreen";
 import { StartupScreen } from "../screens/StartupScreen";
+import { NotificationsScreen } from "../screens/NotificationsScreen";
+import { MessagesScreen } from "../screens/MessagesScreen";
+import { ChatScreen } from "../screens/ChatScreen";
+import { SettingsScreen } from "../screens/SettingsScreen";
+import { SettingsSubscreen } from "../screens/SettingsSubscreen";
+import { PolicyScreen } from "../screens/PolicyScreen";
 import { RegistrationWelcomeScreen } from "../screens/registration/RegistrationWelcomeScreen";
 import { RegistrationIdentityScreen } from "../screens/registration/RegistrationIdentityScreen";
 import { RegistrationBirthdayScreen } from "../screens/registration/RegistrationBirthdayScreen";
@@ -31,5 +37,55 @@ import { RegistrationPasswordScreen } from "../screens/registration/Registration
 import { RegistrationReviewScreen } from "../screens/registration/RegistrationReviewScreen";
 import { RegistrationVerificationScreen } from "../screens/registration/RegistrationVerificationScreen";
 import type { RootStackParamList } from "./types";
-const Stack=createNativeStackNavigator<RootStackParamList>();
-export function AppNavigator(){const{status}=useAuthContext();const[startupReady,setStartupReady]=useState(false);useEffect(()=>{if(status==="loading")setStartupReady(false)},[status]);if(!startupReady||status==="loading")return <StartupScreen onComplete={()=>setStartupReady(true)}/>;return <Stack.Navigator initialRouteName={status==="authenticated"?"HomeFeed":"Login"} screenOptions={{headerShown:false,animation:"fade",contentStyle:{backgroundColor:"#FFFFFF"}}}>{status==="authenticated"?<><Stack.Screen name="HomeFeed" component={HomeFeedScreenV3}/><Stack.Screen name="Profile" component={ProfileScreen}/><Stack.Screen name="EditProfile" component={EditProfileScreen}/><Stack.Screen name="EditBio" component={EditBioScreen}/><Stack.Screen name="EditLocationSearch" component={EditLocationSearchScreen}/><Stack.Screen name="EditLocationConfirm" component={EditLocationConfirmScreen}/><Stack.Screen name="EditBirthday" component={EditBirthdayScreen}/><Stack.Screen name="ProfilePictureAdjust" component={ProfilePictureAdjustScreen}/><Stack.Screen name="ProfilePicturePreview" component={ProfilePicturePreviewScreen}/><Stack.Screen name="ProfilePictureViewer" component={ProfilePictureViewerScreen}/><Stack.Screen name="CoverPhotoAdjust" component={CoverPhotoAdjustScreen}/><Stack.Screen name="CoverPhotoPreview" component={CoverPhotoPreviewScreen}/><Stack.Screen name="CoverPhotoViewer" component={CoverPhotoViewerScreen}/><Stack.Screen name="Foundation" component={FoundationScreen}/></>:<><Stack.Screen name="Login" component={LoginScreen}/><Stack.Screen name="FindAccount" component={FindAccountScreen}/><Stack.Screen name="DeviceVerification" component={DeviceVerificationScreen}/><Stack.Screen name="LoginTwoFactor" component={LoginTwoFactorScreen}/><Stack.Screen name="RegistrationWelcome" component={RegistrationWelcomeScreen}/><Stack.Screen name="RegistrationIdentity" component={RegistrationIdentityScreen}/><Stack.Screen name="RegistrationBirthday" component={RegistrationBirthdayScreen}/><Stack.Screen name="RegistrationGender" component={RegistrationGenderScreen}/><Stack.Screen name="RegistrationPhone" component={RegistrationPhoneScreen}/><Stack.Screen name="RegistrationEmail" component={RegistrationEmailScreen} options={{presentation:"transparentModal",animation:"slide_from_bottom",contentStyle:{backgroundColor:"transparent"},gestureEnabled:true}}/><Stack.Screen name="RegistrationPassword" component={RegistrationPasswordScreen}/><Stack.Screen name="RegistrationReview" component={RegistrationReviewScreen}/><Stack.Screen name="RegistrationVerification" component={RegistrationVerificationScreen}/><Stack.Screen name="CustomizingExperience" component={CustomizingExperienceScreen}/></>}</Stack.Navigator>}
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+export function AppNavigator() {
+  const { status } = useAuthContext();
+  const [startupReady, setStartupReady] = useState(false);
+  useEffect(() => { if (status === "loading") setStartupReady(false); }, [status]);
+  if (!startupReady || status === "loading") return <StartupScreen onComplete={() => setStartupReady(true)} />;
+  return <Stack.Navigator initialRouteName={status === "authenticated" ? "HomeFeed" : "Login"} screenOptions={{ headerShown: false, animation: "fade", contentStyle: { backgroundColor: "#FFFFFF" } }}>
+    {status === "authenticated" ? <>
+      <Stack.Screen name="HomeFeed" component={HomeFeedScreenV3} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="EditBio" component={EditBioScreen} />
+      <Stack.Screen name="EditLocationSearch" component={EditLocationSearchScreen} />
+      <Stack.Screen name="EditLocationConfirm" component={EditLocationConfirmScreen} />
+      <Stack.Screen name="EditBirthday" component={EditBirthdayScreen} />
+      <Stack.Screen name="ProfilePictureAdjust" component={ProfilePictureAdjustScreen} />
+      <Stack.Screen name="ProfilePicturePreview" component={ProfilePicturePreviewScreen} />
+      <Stack.Screen name="ProfilePictureViewer" component={ProfilePictureViewerScreen} />
+      <Stack.Screen name="CoverPhotoAdjust" component={CoverPhotoAdjustScreen} />
+      <Stack.Screen name="CoverPhotoPreview" component={CoverPhotoPreviewScreen} />
+      <Stack.Screen name="CoverPhotoViewer" component={CoverPhotoViewerScreen} />
+      <Stack.Screen name="Foundation" component={FoundationScreen} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="Messages" component={MessagesScreen} />
+      <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="NotificationSettings" component={SettingsSubscreen} />
+      <Stack.Screen name="PrivacySettings" component={SettingsSubscreen} />
+      <Stack.Screen name="SecuritySettings" component={SettingsSubscreen} />
+      <Stack.Screen name="BlockedUsers" component={SettingsSubscreen} />
+      <Stack.Screen name="Verification" component={SettingsSubscreen} />
+      <Stack.Screen name="Support" component={SettingsSubscreen} />
+      <Stack.Screen name="Policy" component={PolicyScreen} />
+    </> : <>
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="FindAccount" component={FindAccountScreen} />
+      <Stack.Screen name="DeviceVerification" component={DeviceVerificationScreen} />
+      <Stack.Screen name="LoginTwoFactor" component={LoginTwoFactorScreen} />
+      <Stack.Screen name="RegistrationWelcome" component={RegistrationWelcomeScreen} />
+      <Stack.Screen name="RegistrationIdentity" component={RegistrationIdentityScreen} />
+      <Stack.Screen name="RegistrationBirthday" component={RegistrationBirthdayScreen} />
+      <Stack.Screen name="RegistrationGender" component={RegistrationGenderScreen} />
+      <Stack.Screen name="RegistrationPhone" component={RegistrationPhoneScreen} />
+      <Stack.Screen name="RegistrationEmail" component={RegistrationEmailScreen} options={{ presentation: "transparentModal", animation: "slide_from_bottom", contentStyle: { backgroundColor: "transparent" }, gestureEnabled: true }} />
+      <Stack.Screen name="RegistrationPassword" component={RegistrationPasswordScreen} />
+      <Stack.Screen name="RegistrationReview" component={RegistrationReviewScreen} />
+      <Stack.Screen name="RegistrationVerification" component={RegistrationVerificationScreen} />
+      <Stack.Screen name="CustomizingExperience" component={CustomizingExperienceScreen} />
+    </>}
+  </Stack.Navigator>;
+}
