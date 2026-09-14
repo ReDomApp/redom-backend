@@ -1,6 +1,7 @@
 import { env } from "../config/env";
 import { getStoredSession } from "../auth/storage";
 import { decryptMedia, decryptMediaKey } from "./encryptedMedia";
+import { getDeviceId } from "./e2ee";
 import type { ReDomMessage } from "./messageService";
 
 function absoluteUrl(fileUrl: string) { return /^https?:\/\//i.test(fileUrl) ? fileUrl : `${env.apiBaseUrl}${fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`}`; }
@@ -19,8 +20,9 @@ export async function loadViewOnceMedia(message: ReDomMessage) {
   if (response.headers.get("X-ReDom-Media-Encrypted") === "1") {
     const messageId = response.headers.get("X-ReDom-Media-Message-Id") || message.id;
     const conversationId = conversationIdFromFileUrl(fileUrl) || message.conversationId;
-    const keyResult = await fetch(`${env.apiBaseUrl}/messages/messages/${messageId}/media-key`, { headers: { Authorization: `Bearer ${session.accessToken}` } });
-    if (!keyResult.ok) throw new Error("The encrypted View Once key is unavailable.");
+    const deviceId = await getDeviceId();
+    const keyResult = await fetch(`${env.apiBaseUrl}/messages/messages/${messageId}/media-key?deviceId=${encodeURIComponent(deviceId)}`, { headers: { Authorization: `Bearer ${session.accessToken}` } });
+    if (!keyResult.ok) throw new Error("The encrypted View Once key is unavailable for this device.");
     const keyBody = await keyResult.json();
     const mediaKey = await decryptMediaKey(keyBody.envelope, conversationId);
     return decryptMedia(bytesToBase64(bytes), mediaKey, mime);
