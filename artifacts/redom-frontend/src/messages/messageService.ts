@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { api } from "../api/client";
 import { decryptEnvelopeMap, encryptForRecipient, ensureDeviceKey, getDeviceId } from "./e2ee";
 import { encryptMediaForParticipants } from "./encryptedMedia";
@@ -10,12 +11,13 @@ export interface ReDomMessage { id: string; conversationId: string; senderId: st
 export interface ConversationSettings { muted: boolean; pinned: boolean; archived: boolean; notificationsEnabled: boolean; mentionsOnly: boolean; customNotificationSound?: string | null; appWallpaper?: string | null; canJoinCalls: boolean; }
 export interface MessageReactionSummary { reactionType: MessageReactionType; total: number; }
 export interface CryptoParticipant { profile_id: string; device_id: string; public_key: string | null; algorithm?: string | null; key_version?: number | null; primary_device?: boolean; }
+export interface CryptoDevice { device_id: string; public_key: string; algorithm: string; key_version: number; device_label?: string | null; platform?: string | null; primary_device: boolean; created_at: string; updated_at: string; }
 export interface CallRecord { id: string; conversationId: string; callType: "voice" | "video"; callStatus: string; participantCount: number; maxParticipants: number; microphoneEnabled: boolean; speakerEnabled: boolean; cameraEnabled: boolean; usingFrontCamera: boolean; encrypted: boolean; }
 export interface MessageDraft { id: string; draftMessage?: string | null; hasDraft: boolean; discarded?: boolean; updatedAt: string; }
 export interface MessageReadReceipt { readerId: string; read: boolean; readAt?: string | null; delivered: boolean; deliveredAt?: string | null; }
 
 async function hydrateEncryptedMessages(conversationId: string, rows: ReDomMessage[]): Promise<ReDomMessage[]> { return Promise.all(rows.map(async (message) => { if (!message.encryptedPayload || message.message) return message; const plaintext = await decryptEnvelopeMap(message.encryptedPayload, conversationId).catch(() => null); return plaintext === null ? { ...message, message: "Waiting for encrypted message…" } : { ...message, message: plaintext }; })); }
-async function registerCurrentDevice() { const device = await ensureDeviceKey(); await api.put<{ success: boolean; deviceId: string }>("/messages/crypto/device-key", { deviceId: device.deviceId, publicKey: device.publicKey }); return device; }
+async function registerCurrentDevice() { const device = await ensureDeviceKey(); const platform = Platform.OS === "ios" ? "iOS" : Platform.OS === "android" ? "Android" : Platform.OS === "web" ? "Web" : Platform.OS; const deviceLabel = platform === "Web" ? "ReDom web session" : `${platform} device`; await api.put<{ success: boolean; deviceId: string }>("/messages/crypto/device-key", { deviceId: device.deviceId, publicKey: device.publicKey, platform, deviceLabel }); return device; }
 async function buildEncryptedPayload(conversationId: string, message: string) { const device = await registerCurrentDevice(); const participants = await messageService.getCryptoParticipants(conversationId); const envelopes: Record<string, unknown> = {}; for (const participant of participants.participants) { if (!participant.public_key || !participant.device_id) throw new Error("This conversation participant has not enabled ReDom encrypted messaging on all active devices."); envelopes[participant.device_id] = await encryptForRecipient(message, participant.public_key, conversationId); } if (!envelopes[device.deviceId]) throw new Error("This ReDom device is not registered for encrypted messaging."); return envelopes; }
 
 export const messageService = {
@@ -49,6 +51,8 @@ export const messageService = {
   approveGroupJoinRequest(conversationId: string, profileId: string) { return api.post<{ success: boolean; approved: boolean }>(`/messages/groups/${conversationId}/join-requests/${profileId}/approve`); },
   rejectGroupJoinRequest(conversationId: string, profileId: string) { return api.post<{ success: boolean; rejected: boolean }>(`/messages/groups/${conversationId}/join-requests/${profileId}/reject`); },
   async ensureEncryptionKey() { return registerCurrentDevice(); },
+  getCryptoDevices() { return api.get<{ success: boolean; devices: CryptoDevice[] }>("/messages/crypto/devices"); },
+  revokeCryptoDevice(deviceId: string) { return api.delete<{ success: boolean; deviceId: string; revoked: boolean }>(`/messages/crypto/devices/${encodeURIComponent(deviceId)}`); },
   getCryptoParticipants(conversationId: string) { return api.get<{ success: boolean; participants: CryptoParticipant[] }>(`/messages/crypto/conversations/${conversationId}/crypto-participants`); },
   async sendText(conversationId: string, message: string, parentMessageId?: string) { const envelopes = await buildEncryptedPayload(conversationId, message); return api.post<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages`, { encryptedPayload: envelopes, ...(parentMessageId ? { parentMessageId } : {}) }); },
   async editMessage(conversationId: string, messageId: string, message: string) { const encryptedPayload = await buildEncryptedPayload(conversationId, message); return api.patch<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages/${messageId}`, { encryptedPayload }); },
