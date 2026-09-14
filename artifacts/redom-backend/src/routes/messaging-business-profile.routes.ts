@@ -1,9 +1,8 @@
 import { Router } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { db, pool } from "../database/db";
-import { conversations } from "../database/conversations";
 import { conversationParticipants } from "../database/conversationParticipants";
 import { userProfiles } from "../database/userProfiles";
 import { users } from "../database/schema";
