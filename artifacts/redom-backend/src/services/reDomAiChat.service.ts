@@ -54,20 +54,14 @@ export async function generateReDomAiReply(userId: string, request: ReDomAiChatR
   const languageInstruction = languageHint
     ? `The client language hint is ${languageHint}, but always prioritize the language of the latest user message.`
     : "Infer the response language from the latest user message.";
+  const historyText = history.length
+    ? history.map((turn) => `${turn.role === "assistant" ? "ReDom AI" : "User"}: ${turn.content}`).join("\n")
+    : "No previous AI conversation is available.";
 
   const response = await openai.responses.create({
     model: MODEL,
     instructions: `${INSTRUCTIONS}\n${languageInstruction}`,
-    input: [
-      ...history.map((turn) => ({
-        role: turn.role,
-        content: [{ type: turn.role === "user" ? "input_text" as const : "output_text" as const, text: turn.content }],
-      })),
-      {
-        role: "user",
-        content: [{ type: "input_text", text: message }],
-      },
-    ],
+    input: `Previous AI conversation context (reference only):\n${historyText}\n\nLatest user request:\n${message}`,
     safety_identifier: safetyIdentifier(userId),
   });
 
