@@ -1,0 +1,102 @@
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../routing/types";
+import { contactService, type ChatContactInfo } from "../messages/contactService";
+import { messageService } from "../messages/messageService";
+
+function initials(name: string) { return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "R"; }
+
+export function ChatContactInfoScreen({ route }: NativeStackScreenProps<RootStackParamList, "ChatContactInfo">) {
+  const navigation = useNavigation();
+  const [contact, setContact] = useState<ChatContactInfo | null>(null);
+  const [counts, setCounts] = useState({ mediaCount: 0, sharedLinkCount: 0, sharedDocCount: 0 });
+  const [loading, setLoading] = useState(true);
+  const [blocked, setBlocked] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const result = await contactService.getChatContactInfo(route.params.conversationId);
+      setContact(result.contact); setCounts({ mediaCount: result.mediaCount, sharedLinkCount: result.sharedLinkCount, sharedDocCount: result.sharedDocCount });
+      if (result.contact.profileId) { try { const status = await messageService.blockStatus(result.contact.profileId); setBlocked(status.blocked); } catch { setBlocked(false); } }
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to load contact information."); }
+    finally { setLoading(false); }
+  }, [route.params.conversationId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const toggleBlock = () => {
+    if (!contact) return;
+    const action = blocked ? "Unblock" : "Block";
+    Alert.alert(`${action} ${contact.displayName}?`, blocked ? "This contact will be able to message you again." : "You will stop receiving messages and calls from this contact.", [
+      { text: "Cancel", style: "cancel" },
+      { text: action, style: blocked ? "default" : "destructive", onPress: async () => { try { if (blocked) await messageService.unblockProfile(contact.profileId); else await messageService.blockProfile(contact.profileId); setBlocked(!blocked); } catch (e) { setError(e instanceof Error ? e.message : `Unable to ${action.toLowerCase()} this contact.`); } } },
+    ]);
+  };
+  const report = () => { if (!contact) return; Alert.alert("Report contact", "Report this ReDom contact?", [{ text: "Cancel", style: "cancel" }, { text: "Report", style: "destructive", onPress: () => void messageService.reportMessage("00000000-0000-0000-0000-000000000000", "contact_report").catch(() => undefined) }]); };
+  const openWebsite = async () => { if (!contact?.website) return; const value = /^https?:\/\//i.test(contact.website) ? contact.website : `https://${contact.website}`; try { await Linking.openURL(value); } catch { setError("Unable to open this link."); } };
+
+  if (loading) return <SafeAreaView style={styles.root}><View style={styles.center}><ActivityIndicator size="large" color="#1877F2" /></View></SafeAreaView>;
+  if (!contact) return <SafeAreaView style={styles.root}><View style={styles.center}><Text style={styles.error}>{error || "Contact unavailable."}</Text><Pressable onPress={() => navigation.goBack()}><Text style={styles.backLink}>Go back</Text></Pressable></View></SafeAreaView>;
+
+  return <SafeAreaView style={styles.root}>
+    <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable><Text numberOfLines={1} style={styles.headerTitle}>{contact.displayName}</Text><View style={styles.headerActions}><Pressable onPress={() => navigation.navigate("Search")}><Text style={styles.headerIcon}>⌕</Text></Pressable></View></View>
+    <ScrollView contentContainerStyle={styles.content}>
+      <View style={styles.hero}>
+        {contact.profilePhoto ? <Image source={{ uri: contact.profilePhoto }} style={styles.avatar} /> : <View style={styles.avatarFallback}><Text style={styles.avatarText}>{initials(contact.displayName)}</Text></View>}
+        <Text style={styles.name}>{contact.displayName}</Text>
+        {contact.verified ? <Text style={styles.verified}>✓ Verified ReDom profile</Text> : null}
+        <View style={styles.quickActions}><Pressable onPress={() => navigation.goBack()} style={styles.quick}><Text style={styles.quickIcon}>☎</Text><Text style={styles.quickLabel}>Voice</Text></Pressable><Pressable onPress={() => navigation.goBack()} style={styles.quick}><Text style={styles.quickIcon}>▣</Text><Text style={styles.quickLabel}>Video</Text></Pressable><Pressable onPress={() => navigation.navigate("Search")} style={styles.quick}><Text style={styles.quickIcon}>⌕</Text><Text style={styles.quickLabel}>Search</Text></Pressable></View>
+      </View>
+
+      {error ? <View style={styles.errorBox}><Text style={styles.error}>{error}</Text></View> : null}
+      <SectionTitle title="Media, links, and docs" trailing={`${counts.mediaCount + counts.sharedLinkCount + counts.sharedDocCount}`} />
+      <View style={styles.mediaCard}><Text style={styles.mediaText}>{counts.mediaCount} media · {counts.sharedLinkCount} links · {counts.sharedDocCount} documents</Text><Text style={styles.mediaHint}>Shared content stays encrypted and is available from the conversation.</Text></View>
+
+      <SectionTitle title="Chat settings" />
+      <View style={styles.card}>
+        <Row icon="▣" title="Notifications" subtitle="Message notifications are controlled by your chat settings." onPress={() => navigation.goBack()} />
+        <Row icon="▧" title="Media visibility" subtitle="Manage whether received media appears in your device gallery." onPress={() => Alert.alert("Media visibility", "This setting will be available when ReDom adds device-gallery controls.")} />
+      </View>
+
+      <SectionTitle title="Encryption" />
+      <Pressable style={styles.card} onPress={() => Alert.alert("End-to-end encryption", "Messages and calls in ReDom are end-to-end encrypted. Each active device has its own encryption identity. ReDom's servers do not receive the plaintext message body.") }>
+        <Row icon="▢" title="Messages and calls are end-to-end encrypted" subtitle="Tap to learn how ReDom protects this conversation." />
+      </Pressable>
+
+      <SectionTitle title="Privacy" />
+      <View style={styles.card}>
+        <Row icon="◷" title="Disappearing messages" subtitle="Configure this from the chat settings menu." onPress={() => navigation.goBack()} />
+        <View style={styles.row}><Text style={styles.rowIcon}>▣</Text><View style={styles.rowCopy}><Text style={styles.rowTitle}>Chat lock</Text><Text style={styles.rowSubtitle}>Lock and hide this chat on this device.</Text></View><Switch value={false} disabled /></View>
+        <Row icon="◈" title="Advanced chat privacy" subtitle="Additional privacy controls will appear here as they are enabled for ReDom chats." />
+      </View>
+
+      <SectionTitle title="ReDom profile" />
+      <View style={styles.card}>
+        {contact.bio ? <Row icon="ⓘ" title="About" subtitle={contact.bio} /> : null}
+        {contact.occupation ? <Row icon="●" title="Occupation" subtitle={contact.occupation} /> : null}
+        {contact.education ? <Row icon="◆" title="Education" subtitle={contact.education} /> : null}
+        {contact.currentCity ? <Row icon="⌖" title="Current city" subtitle={contact.currentCity} /> : null}
+        {contact.hometown ? <Row icon="⌂" title="Hometown" subtitle={contact.hometown} /> : null}
+        {contact.website ? <Row icon="↗" title="Links" subtitle={contact.website} onPress={() => void openWebsite()} /> : null}
+        <Row icon="@" title="View profile" subtitle="Open this contact's ReDom profile." onPress={() => navigation.navigate("Profile", { userId: contact.profileId })} />
+      </View>
+
+      <View style={styles.actions}>
+        <Pressable style={styles.actionRow} onPress={() => Alert.alert("Favorites", "Favorites for ReDom chats are not enabled yet.")}><Text style={styles.actionIcon}>♡</Text><Text style={styles.actionText}>Add to Favorites</Text></Pressable>
+        <Pressable style={styles.actionRow} onPress={() => Alert.alert("Lists", "Chat lists are not enabled yet.")}><Text style={styles.actionIcon}>▤</Text><Text style={styles.actionText}>Add to list</Text></Pressable>
+        <Pressable style={styles.actionRow} onPress={() => Alert.alert("Clear chat", "Clear chat will remove the conversation from this device when local chat-history controls are enabled.")}><Text style={styles.actionIcon}>⊖</Text><Text style={styles.actionText}>Clear chat</Text></Pressable>
+        <Pressable style={styles.actionRow} onPress={toggleBlock}><Text style={[styles.actionIcon, styles.danger]}>{blocked ? "⊕" : "⊘"}</Text><Text style={[styles.actionText, styles.danger]}>{blocked ? `Unblock ${contact.displayName}` : `Block ${contact.displayName}`}</Text></Pressable>
+        <Pressable style={styles.actionRow} onPress={report}><Text style={[styles.actionIcon, styles.danger]}>☟</Text><Text style={[styles.actionText, styles.danger]}>Report {contact.displayName}</Text></Pressable>
+      </View>
+    </ScrollView>
+  </SafeAreaView>;
+}
+
+function SectionTitle({ title, trailing }: { title: string; trailing?: string }) { return <View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>{title}</Text>{trailing ? <Text style={styles.sectionTrailing}>{trailing} ›</Text> : null}</View>; }
+function Row({ icon, title, subtitle, onPress }: { icon: string; title: string; subtitle?: string; onPress?: () => void }) { const body = <View style={styles.row}><Text style={styles.rowIcon}>{icon}</Text><View style={styles.rowCopy}><Text style={styles.rowTitle}>{title}</Text>{subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}</View>{onPress ? <Text style={styles.chevron}>›</Text> : null}</View>; return onPress ? <Pressable onPress={onPress}>{body}</Pressable> : body; }
+
+const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: "#F0F2F5" }, header: { height: 58, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }, back: { fontSize: 38, color: "#1877F2", lineHeight: 42 }, headerTitle: { flex: 1, marginHorizontal: 14, fontSize: 19, fontWeight: "800", color: "#050505" }, headerActions: { width: 32, alignItems: "flex-end" }, headerIcon: { color: "#1877F2", fontSize: 27 }, content: { paddingBottom: 45 }, hero: { backgroundColor: "#FFF", paddingTop: 22, paddingBottom: 18, alignItems: "center" }, avatar: { width: 94, height: 94, borderRadius: 47, backgroundColor: "#E4E7EC" }, avatarFallback: { width: 94, height: 94, borderRadius: 47, backgroundColor: "#DCEEFF", alignItems: "center", justifyContent: "center" }, avatarText: { color: "#1877F2", fontSize: 31, fontWeight: "800" }, name: { marginTop: 10, fontSize: 23, fontWeight: "800", color: "#050505" }, verified: { marginTop: 4, color: "#1877F2", fontSize: 12, fontWeight: "700" }, quickActions: { flexDirection: "row", marginTop: 18, gap: 34 }, quick: { alignItems: "center", minWidth: 60 }, quickIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#F0F2F5", textAlign: "center", textAlignVertical: "center", fontSize: 23, color: "#050505" }, quickLabel: { marginTop: 5, color: "#344054", fontSize: 12, fontWeight: "600" }, sectionTitleRow: { minHeight: 44, paddingHorizontal: 14, paddingTop: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, sectionTitle: { color: "#667085", fontSize: 14, fontWeight: "800" }, sectionTrailing: { color: "#667085", fontSize: 13 }, card: { backgroundColor: "#FFF", marginHorizontal: 8, borderRadius: 10, overflow: "hidden" }, mediaCard: { backgroundColor: "#FFF", marginHorizontal: 8, padding: 16, borderRadius: 10 }, mediaText: { color: "#101828", fontSize: 15, fontWeight: "700" }, mediaHint: { marginTop: 5, color: "#667085", fontSize: 12, lineHeight: 18 }, row: { minHeight: 58, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#EAECF0" }, rowIcon: { width: 36, color: "#667085", fontSize: 20, textAlign: "center", marginRight: 10 }, rowCopy: { flex: 1, paddingVertical: 8 }, rowTitle: { color: "#101828", fontSize: 15, fontWeight: "600" }, rowSubtitle: { color: "#667085", fontSize: 12, lineHeight: 18, marginTop: 2 }, chevron: { color: "#98A2B3", fontSize: 26, marginLeft: 8 }, actions: { marginTop: 14, backgroundColor: "#FFF", borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#E4E6EB" }, actionRow: { minHeight: 58, paddingHorizontal: 22, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#EAECF0" }, actionIcon: { width: 34, color: "#667085", fontSize: 22 }, actionText: { color: "#101828", fontSize: 15 }, danger: { color: "#B42318" }, errorBox: { margin: 10, padding: 12, backgroundColor: "#FFF1F1", borderRadius: 10 }, error: { color: "#B42318", textAlign: "center", lineHeight: 20 }, center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }, backLink: { color: "#1877F2", fontWeight: "800", marginTop: 12 }
+});
