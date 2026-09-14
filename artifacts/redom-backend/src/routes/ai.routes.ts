@@ -7,7 +7,7 @@ import { db } from "../database/db";
 import { activityLog } from "../database/activityLog";
 import { translateUiTexts } from "../services/aiContent.service";
 import { generateReDomAiReply } from "../services/reDomAiChat.service";
-import { generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
+import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
 
 const router = Router();
 
@@ -15,7 +15,9 @@ const localizationRateLimit = rateLimit({ windowMs: 60_000, max: 30, standardHea
 const localizationSchema = z.object({ language: z.string().trim().min(2).max(32), texts: z.array(z.string().min(1).max(2_000)).min(1).max(100), context: z.string().trim().max(500).optional() });
 const chatSchema = z.object({ message: z.string().trim().min(1).max(6_000), language: z.string().trim().max(64).optional(), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(6_000) })).max(20).optional(), imageDataUri: z.string().trim().max(20_000_000).optional() }).strict();
 const imageSchema = z.object({ prompt: z.string().trim().min(1).max(4_000) }).strict();
+const imageEditSchema = z.object({ imageDataUri: z.string().trim().min(32).max(35_000_000), prompt: z.string().trim().min(1).max(4_000) }).strict();
 const voiceSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000) }).strict();
+const fileSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000), fileName: z.string().trim().min(1).max(160), mimeType: z.string().trim().max(160).default("application/octet-stream"), prompt: z.string().trim().max(4_000).default("Analyze this file and summarize the important information.") }).strict();
 const feedbackSchema = z.object({ rating: z.enum(["good", "bad"]), reason: z.enum(["Not relevant", "Not accurate", "Too repetitive", "Harmful or offensive", "Something else"]).optional() }).strict();
 
 router.post("/localize", localizationRateLimit, async (req, res) => {
@@ -40,11 +42,25 @@ router.post("/image", authMiddleware, async (req, res) => {
   catch (error) { req.log?.error?.({ err: error }, "ReDom AI image generation failed"); return res.status(502).json({ success: false, message: "ReDom AI could not create the image right now." }); }
 });
 
+router.post("/image/edit", authMiddleware, async (req, res) => {
+  const parsed = imageEditSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid AI image edit request." });
+  try { const result = await editReDomAiImage(req.user.userId, parsed.data.imageDataUri, parsed.data.prompt); return res.status(200).json({ success: true, image: result.dataUri, model: result.model }); }
+  catch (error) { req.log?.error?.({ err: error }, "ReDom AI image edit failed"); return res.status(502).json({ success: false, message: "ReDom AI could not edit the image right now." }); }
+});
+
 router.post("/voice/transcribe", authMiddleware, async (req, res) => {
   const parsed = voiceSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid voice prompt." });
   try { const result = await transcribeReDomAiVoice(req.user.userId, parsed.data.dataUri); return res.status(200).json({ success: true, text: result.text, model: result.model }); }
   catch (error) { req.log?.error?.({ err: error }, "ReDom AI voice transcription failed"); return res.status(502).json({ success: false, message: "ReDom AI could not understand that voice prompt." }); }
+});
+
+router.post("/file/analyze", authMiddleware, async (req, res) => {
+  const parsed = fileSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid AI file request." });
+  try { const result = await analyzeReDomAiFile(req.user.userId, parsed.data.dataUri, parsed.data.fileName, parsed.data.mimeType, parsed.data.prompt); return res.status(200).json({ success: true, reply: result.reply, model: result.model }); }
+  catch (error) { req.log?.error?.({ err: error }, "ReDom AI file analysis failed"); return res.status(502).json({ success: false, message: "ReDom AI could not analyze that file right now." }); }
 });
 
 router.post("/feedback", authMiddleware, async (req, res) => {
