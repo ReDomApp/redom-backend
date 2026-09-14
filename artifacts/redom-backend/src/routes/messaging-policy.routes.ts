@@ -1,7 +1,6 @@
 import { Router } from "express";
 
 const router = Router();
-
 const document = {
   title: "ReDom Messaging Policy",
   summary: "How ReDom private messaging, groups, media, calls, privacy controls and safety features work.",
@@ -26,9 +25,5 @@ const document = {
     { heading: "Safety and audit", body: "Security-sensitive messaging actions are authorization-checked and may create activity/audit events. ReDom may apply spam, scam, malware and abuse protections without exposing private content outside an explicitly authorized workflow." },
   ],
 };
-
-router.get("/policies/messaging", (_req, res) => {
-  res.json({ success: true, slug: "messaging", version: "1.2.0", effectiveAt: "2026-09-13T23:05:00.000Z", document });
-});
-
+router.get("/policies/messaging", (_req, res) => { res.json({ success: true, slug: "messaging", version: "1.2.0", effectiveAt: "2026-09-14T04:05:00.000Z", document }); });
 export default router;
