@@ -18,11 +18,12 @@ export interface ReDomAiVoiceResult {
 }
 
 export const reDomAiService = {
-  chat(message: string, history: ReDomAiTurn[] = [], language?: string) {
+  chat(message: string, history: ReDomAiTurn[] = [], language?: string, imageDataUri?: string) {
     return api.post<{ success: boolean; reply: string; model: string }>("/ai/chat", {
       message,
       history: history.slice(-20),
       ...(language ? { language } : {}),
+      ...(imageDataUri ? { imageDataUri } : {}),
     });
   },
 
