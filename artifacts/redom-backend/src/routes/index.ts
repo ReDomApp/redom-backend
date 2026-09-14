@@ -18,6 +18,7 @@ import callsRoutes from "./calls.routes";
 import messageReactionRoutes from "./message-reactions.routes";
 import messagingCompletionRoutes from "./messaging-completion.routes";
 import messagingGuardsRoutes from "./messaging-guards.routes";
+import messagingE2eeRoutes from "./messaging-e2ee.routes";
 import searchRoutes from "./search.routes";
 import { profileMediaExpiryMiddleware } from "../middleware/profile-media-expiry.middleware";
 
@@ -35,6 +36,7 @@ router.use("/product", productRoutes);
 router.use("/messages", messageMediaRoutes);
 router.use("/messages", messagingCompletionRoutes);
 router.use("/messages", messagingGuardsRoutes);
+router.use("/messages", messagingE2eeRoutes);
 router.use("/messages", messagesRoutes);
 router.use("/calls", messagingGuardsRoutes);
 router.use("/calls", callsRoutes);
