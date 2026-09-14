@@ -5,6 +5,7 @@ import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { translateUiTexts } from "../services/aiContent.service";
 import { generateReDomAiReply } from "../services/reDomAiChat.service";
+import { generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
 
 const router = Router();
 
@@ -30,6 +31,14 @@ const chatSchema = z.object({
   })).max(20).optional(),
 }).strict();
 
+const imageSchema = z.object({
+  prompt: z.string().trim().min(1).max(4_000),
+}).strict();
+
+const voiceSchema = z.object({
+  dataUri: z.string().trim().min(32).max(35_000_000),
+}).strict();
+
 router.post("/localize", localizationRateLimit, async (req, res) => {
   const parsed = localizationSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -44,7 +53,7 @@ router.post("/localize", localizationRateLimit, async (req, res) => {
   }
 });
 
-/** ReDom AI is an interactive chat surface, so it has no rate limiter. */
+/** ReDom AI is an interactive chat surface, so normal AI use has no rate limiter. */
 router.post("/chat", authMiddleware, async (req, res) => {
   const parsed = chatSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) {
@@ -56,6 +65,36 @@ router.post("/chat", authMiddleware, async (req, res) => {
   } catch (error) {
     req.log?.error?.({ err: error }, "ReDom AI chat failed");
     return res.status(502).json({ success: false, message: "ReDom AI is temporarily unavailable. Please try again shortly." });
+  }
+});
+
+/** AI image creation is user-initiated and has no ReDom messaging rate limiter. */
+router.post("/image", authMiddleware, async (req, res) => {
+  const parsed = imageSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) {
+    return res.status(400).json({ success: false, message: "Invalid image request." });
+  }
+  try {
+    const result = await generateReDomAiImage(req.user.userId, parsed.data.prompt);
+    return res.status(200).json({ success: true, image: result.dataUri, model: result.model });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "ReDom AI image generation failed");
+    return res.status(502).json({ success: false, message: "ReDom AI could not create the image right now." });
+  }
+});
+
+/** Voice prompts are transcribed server-side; the OpenAI credential never enters the mobile app. */
+router.post("/voice/transcribe", authMiddleware, async (req, res) => {
+  const parsed = voiceSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) {
+    return res.status(400).json({ success: false, message: "Invalid voice prompt." });
+  }
+  try {
+    const result = await transcribeReDomAiVoice(req.user.userId, parsed.data.dataUri);
+    return res.status(200).json({ success: true, text: result.text, model: result.model });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "ReDom AI voice transcription failed");
+    return res.status(502).json({ success: false, message: "ReDom AI could not understand that voice prompt." });
   }
 });
 
