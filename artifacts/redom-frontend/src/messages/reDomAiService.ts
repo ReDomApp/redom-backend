@@ -5,6 +5,18 @@ export interface ReDomAiTurn {
   content: string;
 }
 
+export interface ReDomAiImageResult {
+  success: boolean;
+  image: string;
+  model: string;
+}
+
+export interface ReDomAiVoiceResult {
+  success: boolean;
+  text: string;
+  model: string;
+}
+
 export const reDomAiService = {
   chat(message: string, history: ReDomAiTurn[] = [], language?: string) {
     return api.post<{ success: boolean; reply: string; model: string }>("/ai/chat", {
@@ -12,5 +24,13 @@ export const reDomAiService = {
       history: history.slice(-20),
       ...(language ? { language } : {}),
     });
+  },
+
+  generateImage(prompt: string) {
+    return api.post<ReDomAiImageResult>("/ai/image", { prompt });
+  },
+
+  transcribeVoice(dataUri: string) {
+    return api.post<ReDomAiVoiceResult>("/ai/voice/transcribe", { dataUri });
   },
 };
