@@ -74,14 +74,17 @@ export function HomeFeedScreenV3() {
 
   const firstName = user?.firstName || "";
   const avatar = user?.profilePhoto;
+  const openMessages = useCallback(() => {
+    navigation.push("Messages");
+  }, [navigation]);
 
   return <SafeAreaView style={ui.root}>
     <View style={ui.topHeader}>
       <View style={ui.brandRow}><Pressable style={ui.menuButton} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu"><MenuIcon width={25} height={25} /></Pressable><View style={ui.brand}><ReDomLogo width={n(116, scale)} height={n(34, scale)} /></View></View>
       <View style={ui.topActions}>
-        <Pressable style={ui.topButton} accessibilityLabel="Create"><CreateIcon width={24} height={24} /></Pressable>
-        <Pressable style={ui.topButton} accessibilityLabel="Search"><SearchIcon width={24} height={24} /></Pressable>
-        <Pressable style={ui.topButton} onPress={() => navigation.navigate("Messages")} accessibilityLabel="Messenger"><MessengerIcon width={24} height={24} /></Pressable>
+        <Pressable style={ui.topButton} accessibilityLabel="Create"><CreateIcon width={24} height={24} pointerEvents="none" /></Pressable>
+        <Pressable style={ui.topButton} accessibilityLabel="Search"><SearchIcon width={24} height={24} pointerEvents="none" /></Pressable>
+        <Pressable style={ui.topButton} onPress={openMessages} hitSlop={10} accessibilityRole="button" accessibilityLabel="Messenger" testID="home-feed-messenger-button"><View pointerEvents="none"><MessengerIcon width={24} height={24} /></View></Pressable>
       </View>
     </View>
 
@@ -165,7 +168,7 @@ function makeStyles(scale: number) {
     menuButton: { width: s(38), height: s(38), borderRadius: s(19), alignItems: "center", justifyContent: "center" },
     brand: { justifyContent: "center" },
     topActions: { flexDirection: "row", alignItems: "center", gap: s(7) },
-    topButton: { width: s(38), height: s(38), borderRadius: s(19), backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
+    topButton: { width: s(38), height: s(38), borderRadius: s(19), backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", zIndex: 10, elevation: 10 },
     navigationBar: { height: s(52), backgroundColor: "#FFFFFF", flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
     navItem: { width: s(58), height: s(52), alignItems: "center", justifyContent: "center" },
     activeNav: { borderBottomWidth: 3, borderBottomColor: "#1877F2" },
