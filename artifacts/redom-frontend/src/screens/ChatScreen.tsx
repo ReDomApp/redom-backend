@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
+import { useAuthContext } from "../auth/context";
 import { messageService, type ConversationSettings, type MessageReactionType, type ReDomMessage } from "../messages/messageService";
 import { fadeIn, pressScale } from "../lib/animation";
 
@@ -15,13 +16,23 @@ const QUICK_REACTIONS: Array<{ type: MessageReactionType; label: string }> = [
   { type: "angry", label: "😡" },
 ];
 
+function messagePreview(message: ReDomMessage | undefined) {
+  if (!message) return "Original message unavailable";
+  if (message.deletedForEveryone || message.deletedPlaceholder) return "This message was deleted";
+  return message.message || "Message";
+}
+
 export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList, "Chat">) {
   const navigation = useNavigation();
+  const { user } = useAuthContext();
   const [messages, setMessages] = useState<ReDomMessage[]>([]);
+  const [replyTargets, setReplyTargets] = useState<ReDomMessage[]>([]);
   const [settings, setSettings] = useState<ConversationSettings | null>(null);
   const [myReactions, setMyReactions] = useState<Record<string, MessageReactionType | null>>({});
   const [reactionTotals, setReactionTotals] = useState<Record<string, number>>({});
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ReDomMessage | null>(null);
+  const [editingMessage, setEditingMessage] = useState<ReDomMessage | null>(null);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -29,12 +40,16 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
   const [showSettings, setShowSettings] = useState(false);
   const opacity = useRef(new Animated.Value(0)).current;
   const sendScale = useRef(new Animated.Value(1)).current;
+  const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [r, s] = await Promise.all([messageService.getMessages(route.params.conversationId), messageService.getSettings(route.params.conversationId)]);
-      setMessages(r.messages); setSettings(s.settings);
+      const [r, s] = await Promise.all([
+        messageService.getMessages(route.params.conversationId),
+        messageService.getSettings(route.params.conversationId),
+      ]);
+      setMessages(r.messages); setReplyTargets(r.replyTargets ?? []); setSettings(s.settings);
       const reactionResults = await Promise.all(r.messages.map(async (message) => {
         try { return [message.id, await messageService.getReactions(message.id)] as const; } catch { return [message.id, null] as const; }
       }));
@@ -45,17 +60,80 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
         totals[id] = result?.reactions.reduce((sum, item) => sum + Number(item.total), 0) ?? 0;
       });
       setMyReactions(mine); setReactionTotals(totals);
-      await messageService.markRead(route.params.conversationId); fadeIn(opacity).start();
-    } catch (e) { setError(e instanceof Error ? e.message : "Unable to load this conversation."); } finally { setLoading(false); }
+      await messageService.markRead(route.params.conversationId);
+      fadeIn(opacity).start();
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to load this conversation."); }
+    finally { setLoading(false); }
   }, [route.params.conversationId, opacity]);
 
   useEffect(() => { void load(); }, [load]);
 
+  const openReply = (message: ReDomMessage) => {
+    setEditingMessage(null); setReplyingTo(message); setReactionPicker(null); setText("");
+  };
+
+  const openEdit = (message: ReDomMessage) => {
+    if (!message.message || message.deletedForEveryone || message.deletedPlaceholder) return;
+    setReplyingTo(null); setEditingMessage(message); setReactionPicker(null); setText(message.message);
+  };
+
+  const openDelete = (message: ReDomMessage) => {
+    Alert.alert("Delete message", "Choose how you want to delete this message.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete for me", onPress: () => void deleteMessage(message, "me") },
+      { text: "Delete for everyone", style: "destructive", onPress: () => void deleteMessage(message, "everyone") },
+    ]);
+  };
+
+  const deleteMessage = async (message: ReDomMessage, scope: "me" | "everyone") => {
+    setError("");
+    try {
+      await messageService.deleteMessage(route.params.conversationId, message.id, scope);
+      if (scope === "me") {
+        setMessages((current) => current.filter((item) => item.id !== message.id));
+      } else {
+        setMessages((current) => current.map((item) => item.id === message.id ? { ...item, message: null, deletedForEveryone: true, deletedPlaceholder: true, edited: false, editedLabel: false } : item));
+        setReplyingTo((current) => current?.id === message.id ? null : current);
+        setEditingMessage((current) => current?.id === message.id ? null : current);
+      }
+      setReactionPicker(null);
+    } catch (e) { setError(e instanceof Error ? e.message : "Message could not be deleted."); }
+  };
+
+  const openMessageActions = (message: ReDomMessage) => {
+    const isMine = message.senderId === user?.profileId;
+    const buttons: Array<{ text: string; onPress?: () => void; style?: "cancel" | "destructive" }> = [
+      { text: "Reply", onPress: () => openReply(message) },
+      { text: "React", onPress: () => setReactionPicker(message.id) },
+    ];
+    if (isMine && message.messageType === "text" && !message.deletedForEveryone && !message.deletedPlaceholder) {
+      buttons.push({ text: "Edit", onPress: () => openEdit(message) });
+    }
+    if (isMine && !message.deletedForEveryone) {
+      buttons.push({ text: "Delete", style: "destructive", onPress: () => openDelete(message) });
+    }
+    buttons.push({ text: "Cancel", style: "cancel" });
+    Alert.alert("Message", messagePreview(message), buttons);
+  };
+
   const send = async () => {
     const value = text.trim(); if (!value || sending) return;
     setSending(true); setError(""); pressScale(sendScale, true).start();
-    try { const r = await messageService.sendText(route.params.conversationId, value); setMessages((current) => [...current, r.message]); setReactionTotals((current) => ({ ...current, [r.message.id]: 0 })); setMyReactions((current) => ({ ...current, [r.message.id]: null })); setText(""); }
-    catch (e) { setError(e instanceof Error ? e.message : "Message could not be sent."); }
+    try {
+      if (editingMessage) {
+        const r = await messageService.editMessage(route.params.conversationId, editingMessage.id, value);
+        setMessages((current) => current.map((item) => item.id === editingMessage.id ? r.message : item));
+        setEditingMessage(null);
+      } else {
+        const r = await messageService.sendText(route.params.conversationId, value, replyingTo?.id);
+        setMessages((current) => [...current, r.message]);
+        setReactionTotals((current) => ({ ...current, [r.message.id]: 0 }));
+        setMyReactions((current) => ({ ...current, [r.message.id]: null }));
+        setReplyingTo(null);
+      }
+      setText("");
+      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    } catch (e) { setError(e instanceof Error ? e.message : "Message could not be sent."); }
     finally { pressScale(sendScale, false).start(); setSending(false); }
   };
 
@@ -77,20 +155,58 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
 
   const updateSetting = async (key: keyof ConversationSettings, value: boolean) => {
     if (!settings) return;
-    const next = { ...settings, [key]: value } as ConversationSettings; setSettings(next);
+    const previous = settings;
+    setSettings({ ...settings, [key]: value } as ConversationSettings);
     try { const r = await messageService.updateSettings(route.params.conversationId, { [key]: value }); setSettings(r.settings); }
-    catch (e) { setSettings(settings); setError(e instanceof Error ? e.message : "Setting could not be updated."); }
+    catch (e) { setSettings(previous); setError(e instanceof Error ? e.message : "Setting could not be updated."); }
+  };
+
+  const findReplyTarget = (message: ReDomMessage) => {
+    if (!message.parentMessageId) return null;
+    return messages.find((item) => item.id === message.parentMessageId) ?? replyTargets.find((item) => item.id === message.parentMessageId) ?? null;
   };
 
   return <SafeAreaView style={styles.root}>
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.header}><Pressable onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable><Text style={styles.title}>Conversation</Text><Pressable onPress={() => setShowSettings((v) => !v)}><Text style={styles.more}>⋯</Text></Pressable></View>
-      {showSettings && settings ? <View style={styles.settings}><Text style={styles.settingsTitle}>Conversation settings</Text><View style={styles.settingRow}><Text style={styles.settingText}>Notifications</Text><Switch value={settings.notificationsEnabled} onValueChange={(v) => void updateSetting("notificationsEnabled", v)} /></View><View style={styles.settingRow}><Text style={styles.settingText}>Mute</Text><Switch value={settings.muted} onValueChange={(v) => void updateSetting("muted", v)} /></View><View style={styles.settingRow}><Text style={styles.settingText}>Mentions only</Text><Switch value={settings.mentionsOnly} onValueChange={(v) => void updateSetting("mentionsOnly", v)} /></View></View> : null}
+      <View style={styles.header}>
+        <Pressable onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable>
+        <Text style={styles.title}>Conversation</Text>
+        <Pressable onPress={() => setShowSettings((v) => !v)}><Text style={styles.more}>⋯</Text></Pressable>
+      </View>
+      {showSettings && settings ? <View style={styles.settings}>
+        <Text style={styles.settingsTitle}>Conversation settings</Text>
+        <View style={styles.settingRow}><Text style={styles.settingText}>Notifications</Text><Switch value={settings.notificationsEnabled} onValueChange={(v) => void updateSetting("notificationsEnabled", v)} /></View>
+        <View style={styles.settingRow}><Text style={styles.settingText}>Mute</Text><Switch value={settings.muted} onValueChange={(v) => void updateSetting("muted", v)} /></View>
+        <View style={styles.settingRow}><Text style={styles.settingText}>Mentions only</Text><Switch value={settings.mentionsOnly} onValueChange={(v) => void updateSetting("mentionsOnly", v)} /></View>
+      </View> : null}
       {error ? <Pressable onPress={() => void load()} style={styles.error}><Text style={styles.errorText}>{error}  Tap to retry.</Text></Pressable> : null}
-      {loading ? <View style={styles.center}><ActivityIndicator size="large" color="#1877F2" /></View> : <Animated.ScrollView style={{ opacity }} contentContainerStyle={styles.messages}>{messages.map((m) => <View key={m.id} style={styles.messageBlock}><Pressable onLongPress={() => setReactionPicker((current) => current === m.id ? null : m.id)} style={styles.bubble}><Text style={styles.message}>{m.message || ""}</Text><Text style={styles.time}>{m.read ? "Read" : m.delivered ? "Delivered" : "Sent"} · {new Date(m.createdAt).toLocaleTimeString()}</Text></Pressable>{reactionTotals[m.id] > 0 || myReactions[m.id] ? <Pressable onPress={() => setReactionPicker((current) => current === m.id ? null : m.id)} style={styles.reactionSummary}><Text>{QUICK_REACTIONS.find((r) => r.type === myReactions[m.id])?.label || "👍"} {reactionTotals[m.id] || 0}</Text></Pressable> : null}{reactionPicker === m.id ? <View style={styles.reactionPicker}>{QUICK_REACTIONS.map((reaction) => <Pressable key={reaction.type} onPress={() => void react(m.id, reaction.type)} style={[styles.reactionButton, myReactions[m.id] === reaction.type && styles.reactionSelected]}><Text style={styles.reactionEmoji}>{reaction.label}</Text></Pressable>)}</View> : null}</View>)}{!messages.length ? <View style={styles.empty}><Text style={styles.emptyTitle}>Start the conversation</Text></View> : null}</Animated.ScrollView>}
-      <View style={styles.composer}><TextInput value={text} onChangeText={setText} placeholder="Message" placeholderTextColor="#8A8D91" style={styles.input} multiline /><Animated.View style={{ transform: [{ scale: sendScale }] }}><Pressable onPress={() => void send()} disabled={!text.trim() || sending} style={[styles.send, (!text.trim() || sending) && styles.sendDisabled]}><Text style={styles.sendText}>Send</Text></Pressable></Animated.View></View>
+      {loading ? <View style={styles.center}><ActivityIndicator size="large" color="#1877F2" /></View> : <Animated.ScrollView ref={scrollRef} style={{ opacity }} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled">
+        {messages.map((m) => {
+          const isMine = m.senderId === user?.profileId;
+          const replyTarget = findReplyTarget(m);
+          const deleted = Boolean(m.deletedForEveryone || m.deletedPlaceholder);
+          return <View key={m.id} style={[styles.messageBlock, isMine ? styles.mineBlock : styles.theirBlock]}>
+            <Pressable onLongPress={() => openMessageActions(m)} delayLongPress={350} style={[styles.bubble, isMine ? styles.mineBubble : styles.theirBubble, deleted && styles.deletedBubble]}>
+              {replyTarget ? <View style={[styles.replyPreview, isMine ? styles.mineReplyPreview : styles.theirReplyPreview]}><Text style={styles.replyLabel}>Replying to</Text><Text numberOfLines={1} style={styles.replyText}>{messagePreview(replyTarget)}</Text></View> : null}
+              <Text style={[styles.message, !isMine && styles.theirMessage, deleted && styles.deletedMessage]}>{deleted ? "This message was deleted" : (m.message || "")}</Text>
+              <Text style={[styles.time, !isMine && styles.theirTime]}>{m.read ? "Read" : m.delivered ? "Delivered" : "Sent"} · {new Date(m.createdAt).toLocaleTimeString()} {m.edited ? "· Edited" : ""}</Text>
+            </Pressable>
+            {reactionTotals[m.id] > 0 || myReactions[m.id] ? <Pressable onPress={() => setReactionPicker((current) => current === m.id ? null : m.id)} style={styles.reactionSummary}><Text>{QUICK_REACTIONS.find((r) => r.type === myReactions[m.id])?.label || "👍"} {reactionTotals[m.id] || 0}</Text></Pressable> : null}
+            {reactionPicker === m.id ? <View style={[styles.reactionPicker, isMine ? styles.pickerMine : styles.pickerTheirs]}>{QUICK_REACTIONS.map((reaction) => <Pressable key={reaction.type} onPress={() => void react(m.id, reaction.type)} style={[styles.reactionButton, myReactions[m.id] === reaction.type && styles.reactionSelected]}><Text style={styles.reactionEmoji}>{reaction.label}</Text></Pressable>)}</View> : null}
+          </View>;
+        })}
+        {!messages.length ? <View style={styles.empty}><Text style={styles.emptyTitle}>Start the conversation</Text><Text style={styles.emptyText}>Send a message to begin.</Text></View> : null}
+      </Animated.ScrollView>}
+      {replyingTo ? <View style={styles.composerContext}><View style={styles.contextCopy}><Text style={styles.contextTitle}>Replying to</Text><Text numberOfLines={1} style={styles.contextText}>{messagePreview(replyingTo)}</Text></View><Pressable onPress={() => setReplyingTo(null)}><Text style={styles.contextClose}>×</Text></Pressable></View> : null}
+      {editingMessage ? <View style={styles.composerContext}><View style={styles.contextCopy}><Text style={styles.contextTitle}>Editing message</Text><Text numberOfLines={1} style={styles.contextText}>{messagePreview(editingMessage)}</Text></View><Pressable onPress={() => { setEditingMessage(null); setText(""); }}><Text style={styles.contextClose}>×</Text></Pressable></View> : null}
+      <View style={styles.composer}>
+        <TextInput value={text} onChangeText={setText} placeholder={editingMessage ? "Edit message" : replyingTo ? "Reply" : "Message"} placeholderTextColor="#8A8D91" style={styles.input} multiline />
+        <Animated.View style={{ transform: [{ scale: sendScale }] }}><Pressable onPress={() => void send()} disabled={!text.trim() || sending} style={[styles.send, (!text.trim() || sending) && styles.sendDisabled]}><Text style={styles.sendText}>{editingMessage ? "Save" : "Send"}</Text></Pressable></Animated.View>
+      </View>
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
 
-const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: "#F0F2F5" }, header: { height: 58, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12 }, back: { fontSize: 38, color: "#1877F2" }, title: { fontSize: 19, fontWeight: "800", color: "#050505" }, more: { fontSize: 28, color: "#1877F2", width: 32, textAlign: "center" }, settings: { backgroundColor: "#FFF", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, settingsTitle: { fontWeight: "800", fontSize: 15, marginBottom: 5, color: "#050505" }, settingRow: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, settingText: { fontSize: 15, color: "#050505" }, error: { backgroundColor: "#FFF1F1", padding: 10 }, errorText: { color: "#B42318", textAlign: "center", fontSize: 13 }, messages: { padding: 12, paddingBottom: 20 }, messageBlock: { alignSelf: "flex-end", maxWidth: "88%", marginBottom: 8 }, bubble: { backgroundColor: "#1877F2", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 }, message: { color: "#FFF", fontSize: 15, lineHeight: 21 }, time: { color: "#DDEBFF", fontSize: 10, marginTop: 4 }, reactionSummary: { alignSelf: "flex-start", marginTop: -2, marginLeft: 8, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 12, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E4E6EB" }, reactionPicker: { flexDirection: "row", alignSelf: "flex-end", marginTop: 5, padding: 5, borderRadius: 22, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E4E6EB", elevation: 2 }, reactionButton: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" }, reactionSelected: { backgroundColor: "#E8F1FF" }, reactionEmoji: { fontSize: 21 }, composer: { backgroundColor: "#FFF", borderTopWidth: 1, borderTopColor: "#E4E6EB", padding: 8, flexDirection: "row", alignItems: "flex-end" }, input: { flex: 1, maxHeight: 110, minHeight: 42, backgroundColor: "#F0F2F5", borderRadius: 21, paddingHorizontal: 15, paddingVertical: 10, color: "#050505" }, send: { marginLeft: 8, height: 42, borderRadius: 21, backgroundColor: "#1877F2", paddingHorizontal: 16, alignItems: "center", justifyContent: "center" }, sendDisabled: { opacity: 0.45 }, sendText: { color: "#FFF", fontWeight: "800" }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, empty: { alignItems: "center", paddingTop: 80 }, emptyTitle: { fontSize: 18, fontWeight: "700", color: "#65676B" } });
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#F0F2F5" }, header: { height: 58, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12 }, back: { fontSize: 38, color: "#1877F2" }, title: { fontSize: 19, fontWeight: "800", color: "#050505" }, more: { fontSize: 28, color: "#1877F2", width: 32, textAlign: "center" }, settings: { backgroundColor: "#FFF", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, settingsTitle: { fontWeight: "800", fontSize: 15, marginBottom: 5, color: "#050505" }, settingRow: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, settingText: { fontSize: 15, color: "#050505" }, error: { backgroundColor: "#FFF1F1", padding: 10 }, errorText: { color: "#B42318", textAlign: "center", fontSize: 13 }, messages: { padding: 12, paddingBottom: 20 }, messageBlock: { maxWidth: "88%", marginBottom: 8 }, mineBlock: { alignSelf: "flex-end" }, theirBlock: { alignSelf: "flex-start" }, bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 }, mineBubble: { backgroundColor: "#1877F2" }, theirBubble: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E4E6EB" }, deletedBubble: { backgroundColor: "#F7F7F7" }, message: { color: "#FFF", fontSize: 15, lineHeight: 21 }, theirMessage: { color: "#050505" }, deletedMessage: { color: "#65676B", fontStyle: "italic" }, time: { color: "#DDEBFF", fontSize: 10, marginTop: 4 }, theirTime: { color: "#8A8D91" }, replyPreview: { borderLeftWidth: 3, paddingLeft: 8, marginBottom: 7, paddingVertical: 2 }, mineReplyPreview: { borderLeftColor: "#DDEBFF" }, theirReplyPreview: { borderLeftColor: "#1877F2" }, replyLabel: { fontSize: 10, fontWeight: "800", color: "#8A8D91" }, replyText: { fontSize: 12, color: "#65676B" }, reactionSummary: { alignSelf: "flex-start", marginTop: -2, marginLeft: 8, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 12, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E4E6EB" }, reactionPicker: { flexDirection: "row", marginTop: 5, padding: 5, borderRadius: 22, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E4E6EB", elevation: 2 }, pickerMine: { alignSelf: "flex-end" }, pickerTheirs: { alignSelf: "flex-start" }, reactionButton: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" }, reactionSelected: { backgroundColor: "#E8F1FF" }, reactionEmoji: { fontSize: 21 }, composerContext: { backgroundColor: "#FFF", borderTopWidth: 1, borderTopColor: "#E4E6EB", paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center" }, contextCopy: { flex: 1, borderLeftWidth: 3, borderLeftColor: "#1877F2", paddingLeft: 9 }, contextTitle: { fontSize: 11, fontWeight: "800", color: "#1877F2" }, contextText: { fontSize: 13, color: "#65676B", marginTop: 2 }, contextClose: { fontSize: 26, color: "#65676B", paddingHorizontal: 8 }, composer: { backgroundColor: "#FFF", borderTopWidth: 1, borderTopColor: "#E4E6EB", padding: 8, flexDirection: "row", alignItems: "flex-end" }, input: { flex: 1, maxHeight: 110, minHeight: 42, backgroundColor: "#F0F2F5", borderRadius: 21, paddingHorizontal: 15, paddingVertical: 10, color: "#050505" }, send: { marginLeft: 8, height: 42, borderRadius: 21, backgroundColor: "#1877F2", paddingHorizontal: 16, alignItems: "center", justifyContent: "center" }, sendDisabled: { opacity: 0.45 }, sendText: { color: "#FFF", fontWeight: "800" }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, empty: { alignItems: "center", paddingTop: 80 }, emptyTitle: { fontSize: 18, fontWeight: "700", color: "#65676B" }, emptyText: { marginTop: 5, fontSize: 14, color: "#8A8D91" }
+});
