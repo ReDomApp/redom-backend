@@ -12,7 +12,6 @@ import { EditBioScreen } from "../screens/EditBioScreen";
 import { EditLocationSearchScreen } from "../screens/EditLocationSearchScreen";
 import { EditLocationConfirmScreen } from "../screens/EditLocationConfirmScreen";
 import { EditBirthdayScreen } from "../screens/EditBirthdayScreen";
-import { EditGenderScreen } from "../screens/EditGenderScreen";
 import { ProfilePictureAdjustScreen } from "../screens/ProfilePictureAdjustScreen";
 import { ProfilePicturePreviewScreen } from "../screens/ProfilePicturePreviewScreen";
 import { ProfilePictureViewerScreen } from "../screens/ProfilePictureViewerScreen";
