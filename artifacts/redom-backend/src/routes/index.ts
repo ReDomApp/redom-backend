@@ -17,7 +17,7 @@ import messagingPolicyV24Routes from "./messaging-policy-v24.routes";
 import messagesRoutes from "./messages.routes";
 import messageMediaRoutes from "./message-media.routes";
 import encryptedMediaRoutes from "./encrypted-media.routes";
-import messagingForwardMediaRoutes from "./messaging-forward-media.routes";
+import messagingForwardMediaRoutes from "./messaging-forward-media-v2.routes";
 import callsRoutes from "./calls.routes";
 import callLinksRoutes from "./call-links.routes";
 import messageReactionRoutes from "./message-reactions.routes";
