@@ -51,6 +51,9 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS redom_device_crypto_keys_device_pk ON redom_device_crypto_keys(device_id);
     CREATE INDEX IF NOT EXISTS redom_device_crypto_profile_idx ON redom_device_crypto_keys(profile_id, revoked_at);
 
+    ALTER TABLE message_media_envelopes ADD COLUMN IF NOT EXISTS recipient_device_id uuid;
+    CREATE UNIQUE INDEX IF NOT EXISTS message_media_envelopes_device_unique ON message_media_envelopes(message_id, recipient_device_id) WHERE recipient_device_id IS NOT NULL;
+
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS encrypted_payload jsonb;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS encryption_version integer;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS encrypted_at timestamptz;
