@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import type { ReactNode } from "react";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Call">;
-type CallComponent = (props: Props) => React.ReactNode;
+type CallComponent = (props: Props) => ReactNode;
 
 export function CallScreenLoader(props: Props) {
   const [CallScreen, setCallScreen] = useState<CallComponent | null>(null);
