@@ -39,6 +39,17 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
       key_version integer NOT NULL DEFAULT 1,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+    ALTER TABLE redom_device_crypto_keys ADD COLUMN IF NOT EXISTS device_id uuid DEFAULT gen_random_uuid();
+    ALTER TABLE redom_device_crypto_keys ADD COLUMN IF NOT EXISTS device_label varchar(120);
+    ALTER TABLE redom_device_crypto_keys ADD COLUMN IF NOT EXISTS platform varchar(40);
+    ALTER TABLE redom_device_crypto_keys ADD COLUMN IF NOT EXISTS primary_device boolean NOT NULL DEFAULT false;
+    ALTER TABLE redom_device_crypto_keys ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
+    ALTER TABLE redom_device_crypto_keys ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+    UPDATE redom_device_crypto_keys SET device_id=gen_random_uuid() WHERE device_id IS NULL;
+    ALTER TABLE redom_device_crypto_keys ALTER COLUMN device_id SET NOT NULL;
+    ALTER TABLE redom_device_crypto_keys DROP CONSTRAINT IF EXISTS redom_device_crypto_keys_pkey;
+    CREATE UNIQUE INDEX IF NOT EXISTS redom_device_crypto_keys_device_pk ON redom_device_crypto_keys(device_id);
+    CREATE INDEX IF NOT EXISTS redom_device_crypto_profile_idx ON redom_device_crypto_keys(profile_id, revoked_at);
 
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS encrypted_payload jsonb;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS encryption_version integer;
