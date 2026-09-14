@@ -1,10 +1,11 @@
 import { api } from "../api/client";
 import { decryptEnvelopeMap, encryptForRecipient, ensureDeviceKey } from "./e2ee";
+import { encryptMediaForParticipants } from "./encryptedMedia";
 
 export type MessageReactionType = "like" | "love" | "haha" | "wow" | "sad" | "angry";
 export type DisappearingTimer = 0 | 86400 | 604800 | 7776000;
 export interface ConversationSummary { id: string; type: string; groupName?: string | null; updatedAt: string; messageCount: number; unreadMessageCount: number; muted: boolean; pinned: boolean; archived: boolean; notificationsEnabled: boolean; mentionsOnly: boolean; lastMessage?: { id: string; message?: string | null; messageType: string; senderId: string; createdAt: string } | null; }
-export interface MessageAttachment { id: string; messageId: string; attachmentType: string; fileUrl?: string | null; thumbnailUrl?: string | null; fileName?: string | null; mimeType?: string | null; fileExtension?: string | null; fileSize?: number | null; durationSeconds?: number | null; waveform?: string | null; processingCompleted?: boolean; active?: boolean; }
+export interface MessageAttachment { id: string; messageId: string; attachmentType: string; fileUrl?: string | null; thumbnailUrl?: string | null; fileName?: string | null; mimeType?: string | null; fileExtension?: string | null; fileSize?: number | null; durationSeconds?: number | null; waveform?: string | null; processingCompleted?: boolean; active?: boolean; encrypted?: boolean; encryptionVersion?: number | null; viewOnce?: boolean; viewOnceOpened?: boolean; viewOnceExpiresAt?: string | null; }
 export interface ReDomMessage { id: string; conversationId: string; senderId: string; messageType: string; message?: string | null; caption?: string | null; parentMessageId?: string | null; sent: boolean; delivered: boolean; read: boolean; reactionCount?: number; edited?: boolean; editedLabel?: boolean; editedAt?: string | null; deletedForEveryone?: boolean; deletedPlaceholder?: boolean; deletedAt?: string | null; createdAt: string; attachment?: MessageAttachment | null; lifecycle?: { viewOnce: boolean; opened: boolean; expiresAt?: string | null; kept: boolean }; encrypted?: boolean; encryptedPayload?: Record<string, unknown> | null; }
 export interface ConversationSettings { muted: boolean; pinned: boolean; archived: boolean; notificationsEnabled: boolean; mentionsOnly: boolean; customNotificationSound?: string | null; appWallpaper?: string | null; canJoinCalls: boolean; }
 export interface MessageReactionSummary { reactionType: MessageReactionType; total: number; }
@@ -39,6 +40,19 @@ export const messageService = {
   async editMessage(conversationId: string, messageId: string, message: string) { const encryptedPayload = await buildEncryptedPayload(conversationId, message); return api.patch<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages/${messageId}`, { encryptedPayload }); },
   sendEncryptedText(conversationId: string, encryptedPayload: Record<string, unknown>, parentMessageId?: string) { return api.post<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages`, { encryptedPayload, ...(parentMessageId ? { parentMessageId } : {}) }); },
   sendMedia(conversationId: string, type: "photo" | "voice" | "audio" | "video" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[] }) { return api.post<{ success: boolean; message: ReDomMessage; attachment: MessageAttachment }>(`/messages/conversations/${conversationId}/media`, { type, dataUri, ...options }); },
+  async sendEncryptedMedia(conversationId: string, type: "photo" | "video" | "voice" | "audio" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[]; viewOnce?: boolean }) {
+    await ensureDeviceKey();
+    const participants = await messageService.getCryptoParticipants(conversationId);
+    const encrypted = await encryptMediaForParticipants(dataUri, participants.participants, conversationId);
+    return api.post<{ success: boolean; message: ReDomMessage; attachment: MessageAttachment }>(`/messages/conversations/${conversationId}/encrypted-media`, {
+      type,
+      ciphertextDataUri: encrypted.ciphertextDataUri,
+      mimeType: encrypted.mime,
+      mediaEnvelopes: encrypted.envelopes,
+      ...(options ?? {}),
+    });
+  },
+  getEncryptedMediaKey(messageId: string) { return api.get<{ success: boolean; envelope: { version: 1; algorithm: "X25519-AES-256-GCM"; ephemeralPublicKey: string; encryptedMediaKey: string } }>(`/messages/messages/${messageId}/media-key`); },
   getAttachment(messageId: string) { return api.get<{ success: boolean; attachment: MessageAttachment }>(`/messages/messages/${messageId}/attachment`); },
   deleteMessage(conversationId: string, messageId: string, scope: "me" | "everyone") { return api.delete<{ success: boolean; scope: "me" | "everyone"; messageId: string; placeholder?: string }>(`/messages/conversations/${conversationId}/messages/${messageId}`, { scope }); },
   markRead(conversationId: string) { return api.post<{ success: boolean }>(`/messages/conversations/${conversationId}/read`); },
