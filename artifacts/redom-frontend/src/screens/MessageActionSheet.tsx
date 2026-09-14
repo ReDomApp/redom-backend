@@ -16,7 +16,7 @@ import { ForwardMessageSheet } from "./ForwardMessageSheet";
 interface MessageActionSheetProps {
   visible: boolean;
   message: ReDomMessage | null;
-  sourceConversationId: string;
+  sourceConversationId?: string;
   senderName: string;
   canViewProfile: boolean;
   canEdit: boolean;
@@ -71,7 +71,7 @@ export function MessageActionSheet({ visible, message, sourceConversationId, sen
           </View>
         </View>
       </Modal>
-      <ForwardMessageSheet visible={forwardVisible} message={message} sourceConversationId={sourceConversationId} onClose={() => setForwardVisible(false)} />
+      <ForwardMessageSheet visible={forwardVisible} message={message} sourceConversationId={sourceConversationId || message.conversationId} onClose={() => setForwardVisible(false)} />
     </>
   );
 }
