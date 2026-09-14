@@ -1,0 +1,11 @@
+import Svg, { Circle, Path, Rect } from "react-native-svg";
+
+type Props = { size?: number; color?: string; strokeWidth?: number };
+const base = (size: number) => ({ width: size, height: size, viewBox: "0 0 24 24", fill: "none" as const });
+
+export function AiSaveIcon({ size = 24, color = "#667085", strokeWidth = 1.9 }: Props) { return <Svg {...base(size)}><Path d="M5 3h11l3 3v15H5V3Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round"/><Path d="M8 3v6h8V3M8 21v-6h8v6" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round"/></Svg>; }
+export function AiEditImageIcon({ size = 24, color = "#667085", strokeWidth = 1.9 }: Props) { return <Svg {...base(size)}><Path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round"/><Path d="m13.8 6.2 4 4M18 3v3M15 6h6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round"/></Svg>; }
+export function AiReportIcon({ size = 24, color = "#D92D20", strokeWidth = 1.9 }: Props) { return <Svg {...base(size)}><Path d="M6 3h9l3 3v15H6V3Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round"/><Path d="M9 10h6M9 14h4" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round"/><Circle cx="18.5" cy="18.5" r="3.5" fill="#FFF" stroke={color} strokeWidth={strokeWidth}/><Path d="M18.5 16.8v2.1M18.5 20.2v.1" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round"/></Svg>; }
+export function AiVolumeIcon({ size = 24, color = "#667085", strokeWidth = 1.9 }: Props) { return <Svg {...base(size)}><Path d="M4 10h4l5-4v12l-5-4H4v-4Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round"/><Path d="M16 9a5 5 0 0 1 0 6M18.5 6.5a8.5 8.5 0 0 1 0 11" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round"/></Svg>; }
+export function AiForwardIcon({ size = 24, color = "#667085", strokeWidth = 1.9 }: Props) { return <Svg {...base(size)}><Path d="M14 5l7 7-7 7v-4c-5.5-.2-8.5 1.3-10 4 0-6 2.7-10 10-11V5Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round"/></Svg>; }
+export function AiDownloadIcon({ size = 24, color = "#667085", strokeWidth = 1.9 }: Props) { return <Svg {...base(size)}><Path d="M12 3v11M8 10l4 4 4-4M5 19h14" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"/></Svg>; }
