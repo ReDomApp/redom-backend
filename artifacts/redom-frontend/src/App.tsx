@@ -7,30 +7,11 @@ import { AppNavigator } from "./routing/AppNavigator";
 
 const linking = {
   prefixes: ["redom://", "https://redom.app"],
-  config: {
-    screens: {
-      Profile: "profile/username/:userId",
-      HomeFeed: "home",
-      Notifications: "notifications",
-      Messages: "messages",
-      Chat: "messages/:conversationId",
-      Settings: "settings",
-      Policy: "policy/:slug",
-    },
-  },
+  config: { screens: {
+    Profile: "profile/username/:userId", HomeFeed: "home", Search: "search", Notifications: "notifications", Messages: "messages", Chat: "messages/:conversationId", Settings: "settings", Policy: "policy/:slug",
+  } },
 };
 
 export function App() {
-  return (
-    <SafeAreaProvider>
-      <LanguageContainer>
-        <AuthProvider>
-          <NavigationContainer linking={linking}>
-            <StatusBar style="auto" />
-            <AppNavigator />
-          </NavigationContainer>
-        </AuthProvider>
-      </LanguageContainer>
-    </SafeAreaProvider>
-  );
+  return <SafeAreaProvider><LanguageContainer><AuthProvider><NavigationContainer linking={linking}><StatusBar style="auto" /><AppNavigator /></NavigationContainer></AuthProvider></LanguageContainer></SafeAreaProvider>;
 }
