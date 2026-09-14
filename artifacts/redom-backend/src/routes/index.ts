@@ -36,6 +36,7 @@ router.use("/messages", messageMediaRoutes);
 router.use("/messages", messagingCompletionRoutes);
 router.use("/messages", messagingGuardsRoutes);
 router.use("/messages", messagesRoutes);
+router.use("/calls", messagingGuardsRoutes);
 router.use("/calls", callsRoutes);
 router.use("/message-reactions", messageReactionRoutes);
 router.use("/search", searchRoutes);
