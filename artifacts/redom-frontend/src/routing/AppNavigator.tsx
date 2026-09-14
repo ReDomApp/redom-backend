@@ -5,7 +5,7 @@ import { DeviceVerificationScreen } from "../screens/DeviceVerificationScreen";
 import { LoginTwoFactorScreen } from "../screens/LoginTwoFactorScreen";
 import { FindAccountScreen } from "../screens/FindAccountScreen";
 import { FoundationScreen } from "../screens/FoundationScreen";
-import { HomeFeedScreenV3 as ActiveHomeFeedScreen } from "../screens/HomeFeedScreenV3";
+import { HomeFeedScreenV3SearchOverlay as ActiveHomeFeedScreen } from "../screens/HomeFeedScreenV3SearchOverlay";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { EditProfileScreen } from "../screens/EditProfileScreen";
 import { EditBioScreen } from "../screens/EditBioScreen";
