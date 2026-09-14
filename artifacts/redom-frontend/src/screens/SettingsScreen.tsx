@@ -33,6 +33,7 @@ export function SettingsScreen() {
     <Link label="Notifications" onPress={() => navigation.navigate("NotificationSettings")} />
     <Link label="Privacy" onPress={() => navigation.navigate("PrivacySettings")} />
     <Link label="Security" onPress={() => navigation.navigate("SecuritySettings")} />
+    <Link label="Linked devices" onPress={() => navigation.navigate("LinkedDevices")} />
     <Link label="Blocked people" onPress={() => navigation.navigate("BlockedUsers")} />
     <Text style={styles.sectionTitle}>Account & help</Text>
     <Link label="Verification" onPress={() => navigation.navigate("Verification")} />
