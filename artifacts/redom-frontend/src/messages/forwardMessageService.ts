@@ -1,15 +1,12 @@
+import { Platform } from "react-native";
 import { api } from "../api/client";
 import { encryptForRecipient, ensureDeviceKey } from "./e2ee";
 import { messageService, type CryptoParticipant, type ReDomMessage } from "./messageService";
 
 async function registerCurrentDevice() {
   const device = await ensureDeviceKey();
-  await api.put<{ success: boolean; deviceId: string }>("/messages/crypto/device-key", {
-    deviceId: device.deviceId,
-    publicKey: device.publicKey,
-    platform: "Android",
-    deviceLabel: "ReDom device",
-  });
+  const platform = Platform.OS === "ios" ? "iOS" : Platform.OS === "android" ? "Android" : Platform.OS === "web" ? "Web" : Platform.OS;
+  await api.put<{ success: boolean; deviceId: string }>("/messages/crypto/device-key", { deviceId: device.deviceId, publicKey: device.publicKey, platform, deviceLabel: platform === "Web" ? "ReDom web session" : `${platform} device` });
   return device;
 }
 
@@ -32,16 +29,7 @@ export const forwardMessageService = {
     if (sourceMessage.lifecycle?.viewOnce) throw new Error("View Once messages cannot be forwarded.");
     const uniqueDestinations = [...new Set(destinationConversationIds)];
     if (!uniqueDestinations.length || uniqueDestinations.length > 5) throw new Error("Select between one and five chats.");
-    const forwards = await Promise.all(uniqueDestinations.map(async (conversationId) => ({
-      conversationId,
-      encryptedPayload: await encryptForConversation(conversationId, plaintext),
-    })));
-    return api.post<{
-      success: boolean;
-      sourceMessageId: string;
-      forwardedCount: number;
-      forwardedMany: boolean;
-      messages: ReDomMessage[];
-    }>("/messages/forward", { sourceMessageId: sourceMessage.id, forwards });
+    const forwards = await Promise.all(uniqueDestinations.map(async (conversationId) => ({ conversationId, encryptedPayload: await encryptForConversation(conversationId, plaintext) })));
+    return api.post<{ success: boolean; sourceMessageId: string; forwardedCount: number; forwardedMany: boolean; messages: ReDomMessage[] }>("/messages/forward", { sourceMessageId: sourceMessage.id, forwards });
   },
 };
