@@ -32,9 +32,18 @@ async function requireMember(userId: string, conversationId: string) {
   if (!profile) return null;
   const [member] = await db.select({ id: conversationParticipants.id, role: conversationParticipants.role, active: conversationParticipants.activeMember }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversationId), eq(conversationParticipants.userId, profile.id))).limit(1);
   if (!member?.active) return null;
-  const [conversation] = await db.select({ id: conversations.id, type: conversations.conversationType, advancedChatPrivacy: conversations.advancedChatPrivacy }).from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+  const [conversation] = await db.select({ id: conversations.id, type: conversations.conversationType }).from(conversations).where(eq(conversations.id, conversationId)).limit(1);
   if (!conversation) return null;
   return { profileId: profile.id, member, conversation };
+}
+
+async function readSettings(memberId: string, conversationId: string) {
+  const [memberRow, conversationRow] = await Promise.all([
+    pool.query(`SELECT media_visibility, favorite, chat_list, app_wallpaper, notifications_enabled, muted FROM conversation_participants WHERE id=$1 LIMIT 1`, [memberId]),
+    pool.query(`SELECT advanced_chat_privacy FROM conversations WHERE id=$1 LIMIT 1`, [conversationId]),
+  ]);
+  const values = memberRow.rows[0] ?? {};
+  return { advancedChatPrivacy: Boolean(conversationRow.rows[0]?.advanced_chat_privacy), mediaVisibility: values.media_visibility !== false, favorite: Boolean(values.favorite), listName: values.chat_list ?? null, wallpaper: values.app_wallpaper ?? null, notificationsEnabled: values.notifications_enabled !== false, muted: Boolean(values.muted) };
 }
 
 router.get("/conversations/:conversationId/chat-info-settings", async (req, res) => {
@@ -43,9 +52,7 @@ router.get("/conversations/:conversationId/chat-info-settings", async (req, res)
   if (!id.success || !req.user?.userId) return void res.status(400).json({ success: false, message: "Invalid conversation." });
   const access = await requireMember(req.user.userId, id.data);
   if (!access) return void res.status(403).json({ success: false, message: "You do not have access to this conversation." });
-  const row = await pool.query(`SELECT media_visibility, favorite, chat_list, app_wallpaper, notifications_enabled, muted FROM conversation_participants WHERE id=$1 LIMIT 1`, [access.member.id]);
-  const values = row.rows[0] ?? {};
-  res.json({ success: true, settings: { advancedChatPrivacy: Boolean(access.conversation.advancedChatPrivacy), mediaVisibility: values.media_visibility !== false, favorite: Boolean(values.favorite), listName: values.chat_list ?? null, wallpaper: values.app_wallpaper ?? null, notificationsEnabled: values.notifications_enabled !== false, muted: Boolean(values.muted) } });
+  res.json({ success: true, settings: await readSettings(access.member.id, id.data) });
 });
 
 router.patch("/conversations/:conversationId/chat-info-settings", async (req, res) => {
@@ -58,7 +65,7 @@ router.patch("/conversations/:conversationId/chat-info-settings", async (req, re
   const patch = parsed.data;
   if (patch.advancedChatPrivacy !== undefined) {
     if (access.conversation.type === "group" && !["owner", "admin"].includes(access.member.role)) return void res.status(403).json({ success: false, message: "Only group admins can change Advanced chat privacy." });
-    await pool.query(`UPDATE conversations SET advanced_chat_privacy=$1 WHERE id=$2`, [patch.advancedChatPrivacy, id.data]);
+    await pool.query(`UPDATE conversations SET advanced_chat_privacy=$1, updated_at=now() WHERE id=$2`, [patch.advancedChatPrivacy, id.data]);
   }
   const updates: string[] = [];
   const values: unknown[] = [];
@@ -70,10 +77,7 @@ router.patch("/conversations/:conversationId/chat-info-settings", async (req, re
   if (patch.notificationsEnabled !== undefined) set("notifications_enabled", patch.notificationsEnabled);
   if (patch.muted !== undefined) set("muted", patch.muted);
   if (updates.length) { values.push(access.member.id); await pool.query(`UPDATE conversation_participants SET ${updates.join(", ")}, updated_at=now() WHERE id=$${values.length}`, values); }
-  const row = await pool.query(`SELECT media_visibility, favorite, chat_list, app_wallpaper, notifications_enabled, muted FROM conversation_participants WHERE id=$1 LIMIT 1`, [access.member.id]);
-  const current = row.rows[0] ?? {};
-  const [conversation] = await db.select({ advancedChatPrivacy: conversations.advancedChatPrivacy }).from(conversations).where(eq(conversations.id, id.data)).limit(1);
-  res.json({ success: true, settings: { advancedChatPrivacy: Boolean(conversation?.advancedChatPrivacy), mediaVisibility: current.media_visibility !== false, favorite: Boolean(current.favorite), listName: current.chat_list ?? null, wallpaper: current.app_wallpaper ?? null, notificationsEnabled: current.notifications_enabled !== false, muted: Boolean(current.muted) } });
+  res.json({ success: true, settings: await readSettings(access.member.id, id.data) });
 });
 
 router.post("/messages/:messageId/star", async (req, res) => {
@@ -83,7 +87,7 @@ router.post("/messages/:messageId/star", async (req, res) => {
   const [profile] = await db.select({ id: userProfiles.id }).from(userProfiles).where(eq(userProfiles.userId, req.user.userId)).limit(1);
   const [message] = profile ? await db.select({ id: messages.id, conversationId: messages.conversationId }).from(messages).where(and(eq(messages.id, messageId.data), eq(messages.deletedForEveryone, false))).limit(1) : [];
   if (!profile || !message) return void res.status(404).json({ success: false, message: "Message unavailable." });
-  const member = await requireMember(req.user.userId, message.conversationId); if (!member) return void res.status(403).json({ success: false, message: "You do not have access to this message." });
+  if (!(await requireMember(req.user.userId, message.conversationId))) return void res.status(403).json({ success: false, message: "You do not have access to this message." });
   const lifecycle = await pool.query(`SELECT view_once FROM message_lifecycle WHERE message_id=$1 LIMIT 1`, [message.id]).catch(() => ({ rows: [] as any[] }));
   if (lifecycle.rows[0]?.view_once) return void res.status(409).json({ success: false, message: "View Once messages cannot be starred." });
   await pool.query(`INSERT INTO message_stars(message_id,user_id) VALUES($1,$2) ON CONFLICT(message_id,user_id) DO NOTHING`, [message.id, profile.id]);
