@@ -3,6 +3,7 @@ import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
 import { env } from "../config/env";
 import { getStoredSession } from "../auth/storage";
 import { decryptMedia, decryptMediaKey } from "./encryptedMedia";
+import { getDeviceId } from "./e2ee";
 import { messageService } from "./messageService";
 
 function absoluteUrl(fileUrl: string): string { if (/^https?:\/\//i.test(fileUrl)) return fileUrl; return `${env.apiBaseUrl}${fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`}`; }
@@ -23,8 +24,9 @@ export function SecureMessageImage({ fileUrl, size = 230 }: { fileUrl: string; s
     if (encrypted) {
       if (!messageId) throw new Error("Encrypted media metadata is unavailable.");
       const conversationId = conversationIdFromFileUrl(fileUrl); if (!conversationId) throw new Error("Conversation context is unavailable.");
+      const deviceId = await getDeviceId();
       const keyResult = await messageService.getEncryptedMediaKey(messageId);
-      const mediaKey = await decryptMediaKey(keyResult.envelope, conversationId);
+      const mediaKey = await decryptMediaKey(keyResult.envelope, conversationId, deviceId);
       dataUri = await decryptMedia(bytesToBase64(bytes), mediaKey, mime);
     } else dataUri = `data:${mime};base64,${bytesToBase64(bytes)}`;
     if (!cancelled) setSource(dataUri);
