@@ -24,7 +24,7 @@ export async function loadViewOnceMedia(message: ReDomMessage) {
     const keyResult = await fetch(`${env.apiBaseUrl}/messages/messages/${messageId}/media-key?deviceId=${encodeURIComponent(deviceId)}`, { headers: { Authorization: `Bearer ${session.accessToken}` } });
     if (!keyResult.ok) throw new Error("The encrypted View Once key is unavailable for this device.");
     const keyBody = await keyResult.json();
-    const mediaKey = await decryptMediaKey(keyBody.envelope, conversationId);
+    const mediaKey = await decryptMediaKey(keyBody.envelope, conversationId, deviceId);
     return decryptMedia(bytesToBase64(bytes), mediaKey, mime);
   }
   return `data:${mime};base64,${bytesToBase64(bytes)}`;
