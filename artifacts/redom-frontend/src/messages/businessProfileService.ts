@@ -1,0 +1,3 @@
+import { api } from "../api/client";
+export interface ChatBusinessProfile { isBusiness: boolean; displayName: string; verified: boolean; address?: string | null; email?: string | null; category?: string | null; hours?: string | null; }
+export const businessProfileService = { get(conversationId: string) { return api.get<{ success: boolean; business: ChatBusinessProfile | null }>(`/messages/conversations/${encodeURIComponent(conversationId)}/business-profile`); }, update(patch: { address?: string | null; email?: string | null; category?: string | null; hours?: string | null }) { return api.patch<{ success: boolean }>("/messages/business-profile", patch); } };
