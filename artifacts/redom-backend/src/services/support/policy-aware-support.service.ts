@@ -47,9 +47,7 @@ function parseIntent(text: string): { policy_requested: boolean; policy_slug: st
 }
 
 async function detectPolicyIntent(message: string, subject: string | null, baseReply: string | null) {
-  const policyCatalog = [
-    "terms", "privacy", "community", "messaging", "media", "calls", "notifications", "security", "verification", "ai", "regional", "refunds", "support",
-  ];
+  const policyCatalog = ["terms", "privacy", "community", "messaging", "media", "calls", "notifications", "security", "verification", "ai", "regional", "refunds", "support"];
   const input = JSON.stringify({
     task: "Identify whether this ReDom support request asks for an official policy or a policy-derived explanation. Select only a policy from the supplied catalog. Never invent a policy or section.",
     allowed_policy_slugs: policyCatalog,
@@ -58,7 +56,6 @@ async function detectPolicyIntent(message: string, subject: string | null, baseR
     draft_support_reply: baseReply,
   });
 
-  let lastError: unknown;
   for (const model of GEMINI_MODELS) {
     try {
       const response = await fetch(GEMINI_URL, {
@@ -74,19 +71,19 @@ async function detectPolicyIntent(message: string, subject: string | null, baseR
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         const error = new Error(`Gemini policy routing failed (${response.status}): ${body.slice(0, 400)}`) as Error & { status?: number };
-        error.status = response.status;
+        error.status = statusCode(response.status);
         throw error;
       }
       return parseIntent(extractGeminiText(await response.json()));
     } catch (error) {
-      lastError = error;
       const status = (error as { status?: number }).status;
       if (status !== 429 && status !== 500 && status !== 502 && status !== 503) break;
     }
   }
-  // Policy routing is an enhancement, not a reason to break existing support. The existing Gemini support reply remains authoritative when this classifier is unavailable.
   return { policy_requested: false, policy_slug: null, requested_sections: [] as string[] };
 }
+
+function statusCode(status: number): number { return status; }
 
 export async function generatePolicyAwareSupportReply(input: {
   message: string;
@@ -97,18 +94,10 @@ export async function generatePolicyAwareSupportReply(input: {
 }): Promise<SupportAiResult> {
   const base = await generateSupportReply({ message: input.message, account: input.account, supportCase: input.supportCase, history: input.history });
   if (!base.is_safe || !base.support_reply) return base;
-
   const intent = await detectPolicyIntent(input.message, input.subject ?? input.supportCase.subject, base.support_reply);
   if (!intent.policy_requested || !intent.policy_slug) return base;
-
   const document = getPolicyDocument(intent.policy_slug);
   if (!document) return base;
-
-  // Gemini identifies the relevant policy/sections; the backend supplies the actual policy text.
-  // This prevents the model from inventing or silently changing official policy language.
   const policyText = renderCompletePolicy(document, intent.requested_sections);
-  return {
-    is_safe: true,
-    support_reply: `${base.support_reply.trim()}\n\nOfficial ReDom policy information\n\n${policyText}`,
-  };
+  return { is_safe: true, support_reply: `${base.support_reply.trim()}\n\nOfficial ReDom policy information\n\n${policyText}` };
 }
