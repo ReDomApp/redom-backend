@@ -11,6 +11,7 @@ import commentRoutes from "./comment.routes";
 import profileRoutes from "./profile.routes";
 import profileEditRoutes from "./profile-edit.routes";
 import profileMediaRoutes from "./profile-media.routes";
+import productRoutes from "./product.routes";
 import { profileMediaExpiryMiddleware } from "../middleware/profile-media-expiry.middleware";
 
 const router: IRouter = Router();
@@ -23,6 +24,7 @@ router.use("/refunds", refundRoutes);
 router.use("/ai", knowledgeRoutes);
 router.use("/feed", feedRoutes);
 router.use("/comments", commentRoutes);
+router.use("/product", productRoutes);
 router.use("/profile", profileMediaExpiryMiddleware);
 router.use("/profile/edit", profileEditRoutes);
 router.use("/profile/media", profileMediaRoutes);
