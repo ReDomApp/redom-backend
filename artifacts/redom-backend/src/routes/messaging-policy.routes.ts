@@ -3,11 +3,12 @@ import { Router } from "express";
 const router = Router();
 const document = {
   title: "ReDom Messaging Policy",
-  summary: "The complete ReDom Messenger navigation, actions, permissions, privacy and safety contract.",
+  summary: "The complete ReDom Messenger navigation, actions, permissions, privacy, safety and ReDom AI contract.",
   navigation: [
-    { screen: "Messages", actions: ["Back", "New Group", "New Message", "Search Chats", "Open Conversation", "Group Info", "Voice Call", "Video Call", "Refresh"] },
+    { screen: "Messages", actions: ["Back", "New Group", "New Message", "ReDom AI", "Search Chats", "Ask ReDom AI", "Open Conversation", "Group Info", "Voice Call", "Video Call", "Refresh"] },
     { screen: "New Message", actions: ["Back", "Search People", "Find People", "Open Profile", "Message", "New Group"] },
-    { screen: "Chat", actions: ["Back", "Conversation Info", "Search", "Voice Call", "Video Call", "Send Text", "Reply", "Reaction", "Photo", "Video", "Document", "GIF", "Sticker", "Voice Message", "View Once", "Disappearing Messages", "Edit", "Delete for Me", "Delete for Everyone", "Block", "Report"] },
+    { screen: "ReDom AI", actions: ["Back", "Ask Question", "Send Prompt", "Continue Conversation", "Web Search When Needed"] },
+    { screen: "Chat", actions: ["Back", "Conversation Info", "Search", "ReDom AI", "Voice Call", "Video Call", "Send Text", "Reply", "Reaction", "Photo", "Video", "Document", "GIF", "Sticker", "Voice Message", "View Once", "Disappearing Messages", "Edit", "Delete for Me", "Delete for Everyone", "Block", "Report"] },
     { screen: "Group Info", actions: ["Back", "Members", "Add Members", "Remove Member", "Change Role", "Join Approval", "Group Settings", "Leave Group"] },
   ],
   flows: [
@@ -15,6 +16,7 @@ const document = {
     { name: "Search People", steps: ["Enter at least one search character", "Request is authenticated and rate limited", "Only viewer-eligible public profiles are returned", "Client displays results", "Opening a profile uses normal profile authorization"] },
     { name: "New Group", steps: ["Open Create Group", "Choose eligible members", "Set group information", "Backend enforces membership, role and 1,024 active-member limits", "Group is persisted", "Chat/Group Info opens only after success"] },
     { name: "Message Send", steps: ["Compose locally", "Client encrypts supported private text", "Backend validates membership and encrypted envelope", "Backend persists ciphertext and delivery state", "Recipient receives authorized notification", "Client displays confirmed send state"] },
+    { name: "ReDom AI", steps: ["User deliberately opens ReDom AI or chooses Ask ReDom AI", "Request is authenticated and rate limited", "User prompt is sent to the ReDom AI service", "GPT generates the response and may use web search for current information", "Only user-explicitly-shared chat context may be included", "AI response is displayed with an optional web-search indicator", "AI never changes ReDom backend state by implication"] },
     { name: "Call", steps: ["Tap voice/video", "Backend validates conversation membership and call eligibility", "OS microphone/camera permission is requested", "Call state and signaling are backend controlled", "Client displays ringing/connecting/active/ended/declined/missed/cancelled/failed states"] },
   ],
   sections: [
@@ -32,15 +34,17 @@ const document = {
     { heading: "Notifications and receipts", body: "Message delivery, read state, typing state and call state originate from backend events. Notification previews obey user preferences. A client cannot fabricate a read, delivery or notification state." },
     { heading: "Block and report", body: "Blocking prevents supported direct messaging and calls with the blocked profile. Reports submit only the selected content/account and enter the applicable moderation workflow. AI can explain the process but cannot make the final moderation decision." },
     { heading: "Media privacy", body: "Message media requires authorized conversation access. Encrypted media uses device-controlled decryption keys and protected ReDom Media Storage access. A media URL does not grant conversation membership." },
+    { heading: "ReDom AI", body: "ReDom AI is a separate optional general-purpose AI experience, not the Support AI. It is powered by GPT and can use web search for current information. It can answer questions, explain concepts, brainstorm, write, translate and reason. It does not automatically receive private chat content. A user may explicitly share selected text as context. ReDom AI cannot bypass E2EE, read private messages without user-provided context, perform unauthorized account actions, approve refunds or reports, grant verification or membership, change group ownership, or invent backend state." },
+    { heading: "AI data disclosure", body: "When a user submits a prompt to ReDom AI, the prompt is processed by the AI service to generate the requested response. The UI clearly identifies the feature as AI and warns that AI responses can be inaccurate. Normal private messaging remains separate from AI unless the user deliberately shares content with it." },
+    { heading: "WhatsApp/Meta behavior reference", body: "WhatsApp public Help Center documentation is used as a behavioral reference for optional AI, E2EE boundaries, View Once, disappearing messages, search and group AI concepts. ReDom does not impersonate Meta AI and does not use WhatsApp as ReDom's message transport. ReDom-specific backend authorization and policy always win." },
     { heading: "Linked devices", body: "A linked device must establish its own authorized cryptographic identity. History, keys and sessions are limited to what that device is authorized to receive. Key changes and session revocation are security-sensitive operations." },
-    { heading: "AI boundaries", body: "ReDom AI can explain navigation and official policy, but cannot read private messages on demand, bypass encryption or blocks, grant group membership, change ownership, approve reports/refunds/verification, or invent delivery, read, call or moderation state." },
     { heading: "Regional policy", body: "Messaging, calls, notifications, media and related capabilities may vary by country. Backend regional policy is authoritative and cannot be overridden by the client, AI or vendor response." },
     { heading: "Audit and analytics", body: "Security-sensitive actions may create audit/activity events. Product analytics may measure navigation and reliability events without exposing private message plaintext to ordinary analytics." },
   ],
 };
 
 router.get("/policies/messaging", (_req, res) => {
-  res.json({ success: true, slug: "messaging", version: "2.0.0", effectiveAt: new Date().toISOString(), document });
+  res.json({ success: true, slug: "messaging", version: "2.1.0", effectiveAt: new Date().toISOString(), document });
 });
 
 export default router;
