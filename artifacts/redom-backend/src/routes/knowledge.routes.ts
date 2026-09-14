@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { getReDomKnowledge, getReDomKnowledgeVersion } from "../services/redomKnowledge";
 import { getReDomSystemMap, getReDomSystemMapVersion } from "../services/redomSystemMap";
+import { getReDomMessagingKnowledge, REDOM_MESSAGING_KNOWLEDGE_VERSION } from "../services/messagingKnowledge";
 
 const router: IRouter = Router();
 
@@ -16,8 +17,10 @@ router.get("/knowledge", (_req, res) => {
     source: "redom-backend",
     ...getReDomKnowledgeVersion(),
     ...getReDomSystemMapVersion(),
+    messagingKnowledgeVersion: REDOM_MESSAGING_KNOWLEDGE_VERSION,
     knowledge: getReDomKnowledge(),
     systemMap: getReDomSystemMap(),
+    messaging: getReDomMessagingKnowledge(),
   });
 });
 
