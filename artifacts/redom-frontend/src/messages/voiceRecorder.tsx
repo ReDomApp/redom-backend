@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text } from "react-native";
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import { AiMicIcon, AiTrashIcon } from "../assets/ai/AiIcon";
 
 async function recordingToDataUri(uri: string) {
   const response = await fetch(uri);
@@ -47,9 +48,9 @@ export function VoiceRecorderButton({ disabled, onRecorded }: { disabled?: boole
   };
 
   return <Pressable onPress={state.isRecording ? () => void stop() : () => void start()} disabled={disabled || busy} style={[styles.button, (disabled || busy) && styles.disabled, state.isRecording && styles.recording]} accessibilityRole="button" accessibilityLabel={state.isRecording ? "Stop voice recording" : "Record voice message"}>
-    <Text style={styles.icon}>{state.isRecording ? "■" : "🎙"}</Text>
+    {state.isRecording ? <AiTrashIcon size={20} color="#B42318" /> : <AiMicIcon size={20} color="#667085" />}
     {state.isRecording ? <Text style={styles.timer}>{formatDuration(state.durationMillis / 1000)}</Text> : null}
   </Pressable>;
 }
 
-const styles = StyleSheet.create({ button: { minWidth: 42, height: 42, paddingHorizontal: 8, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "#F0F2F5", flexDirection: "row" }, disabled: { opacity: 0.45 }, recording: { backgroundColor: "#FDECEC" }, icon: { fontSize: 19 }, timer: { marginLeft: 4, color: "#B42318", fontWeight: "700", fontSize: 11 } });
+const styles = StyleSheet.create({ button: { minWidth: 42, height: 42, paddingHorizontal: 8, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "#F0F2F5", flexDirection: "row" }, disabled: { opacity: 0.45 }, recording: { backgroundColor: "#FDECEC" }, timer: { marginLeft: 4, color: "#B42318", fontWeight: "700", fontSize: 11 } });
