@@ -16,97 +16,52 @@ async function profileFor(userId: string) {
   return profile?.id ?? null;
 }
 
+router.get("/conversations/:conversationId/contact-info", async (req, res) => {
+  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." });
+  const profileId = await profileFor(req.user.userId);
+  if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." });
+  const [conversation] = await db.select({ id: conversations.id, type: conversations.conversationType }).from(conversations).where(and(eq(conversations.id, req.params.conversationId), eq(conversations.deleted, false))).limit(1);
+  if (!conversation) return void res.status(404).json({ success: false, message: "Conversation not found." });
+  const [member] = await db.select({ id: conversationParticipants.id }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversation.id), eq(conversationParticipants.userId, profileId), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false))).limit(1);
+  if (!member) return void res.status(403).json({ success: false, message: "You do not have access to this conversation." });
+  if (conversation.type === "group") return void res.status(400).json({ success: false, message: "Use group information for group conversations." });
+  const [peer] = await db.select({
+    profileId: userProfiles.id,
+    displayName: userProfiles.displayName,
+    bio: userProfiles.bio,
+    profilePhoto: userProfiles.profilePhoto,
+    website: userProfiles.website,
+    occupation: userProfiles.occupation,
+    education: userProfiles.education,
+    hometown: userProfiles.hometown,
+    currentCity: userProfiles.currentCity,
+    verified: userProfiles.verified,
+    profileVisibility: userProfiles.profileVisibility,
+  }).from(conversationParticipants).innerJoin(userProfiles, eq(userProfiles.id, conversationParticipants.userId)).where(and(eq(conversationParticipants.conversationId, conversation.id), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false), ne(conversationParticipants.userId, profileId))).limit(1);
+  if (!peer) return void res.status(404).json({ success: false, message: "ReDom contact not found." });
+  const mediaRows = await db.select({ messageType: messages.messageType, attachmentType: messages.messageType }).from(messages).where(and(eq(messages.conversationId, conversation.id), eq(messages.deletedForEveryone, false))).orderBy(desc(messages.createdAt));
+  const mediaCount = mediaRows.filter((m) => ["photo", "video", "voice", "audio", "document", "gif", "sticker"].includes(m.messageType)).length;
+  const sharedLinkCount = 0;
+  const sharedDocCount = mediaRows.filter((m) => m.messageType === "document").length;
+  res.json({ success: true, conversationId: conversation.id, contact: peer, mediaCount, sharedLinkCount, sharedDocCount });
+});
+
 router.get("/inbox", async (req, res) => {
   if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." });
   const profileId = await profileFor(req.user.userId);
   if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." });
 
-  const memberships = await db.select({
-    conversationId: conversationParticipants.conversationId,
-    unreadMessageCount: conversationParticipants.unreadMessageCount,
-    muted: conversationParticipants.muted,
-    pinned: conversationParticipants.pinned,
-    archived: conversationParticipants.archived,
-    notificationsEnabled: conversationParticipants.notificationsEnabled,
-    mentionsOnly: conversationParticipants.mentionsOnly,
-  }).from(conversationParticipants).where(and(
-    eq(conversationParticipants.userId, profileId),
-    eq(conversationParticipants.activeMember, true),
-    eq(conversationParticipants.temporarilySuspended, false),
-    eq(conversationParticipants.permanentlyRemoved, false),
-  ));
-
+  const memberships = await db.select({ conversationId: conversationParticipants.conversationId, unreadMessageCount: conversationParticipants.unreadMessageCount, muted: conversationParticipants.muted, pinned: conversationParticipants.pinned, archived: conversationParticipants.archived, notificationsEnabled: conversationParticipants.notificationsEnabled, mentionsOnly: conversationParticipants.mentionsOnly }).from(conversationParticipants).where(and(eq(conversationParticipants.userId, profileId), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false)));
   const ids = memberships.map((row) => row.conversationId);
   if (!ids.length) return void res.json({ success: true, conversations: [], archivedCount: 0, unreadCount: 0 });
-
-  const rows = await db.select({
-    id: conversations.id,
-    type: conversations.conversationType,
-    groupName: conversations.groupName,
-    groupPhoto: conversations.groupPhoto,
-    updatedAt: conversations.updatedAt,
-    messageCount: conversations.messageCount,
-  }).from(conversations).where(and(inArray(conversations.id, ids), eq(conversations.deleted, false))).orderBy(desc(conversations.updatedAt));
-
+  const rows = await db.select({ id: conversations.id, type: conversations.conversationType, groupName: conversations.groupName, groupPhoto: conversations.groupPhoto, updatedAt: conversations.updatedAt, messageCount: conversations.messageCount }).from(conversations).where(and(inArray(conversations.id, ids), eq(conversations.deleted, false))).orderBy(desc(conversations.updatedAt));
   const result = await Promise.all(rows.map(async (conversation) => {
     const membership = memberships.find((row) => row.conversationId === conversation.id);
-    const [last] = await db.select({
-      id: messages.id,
-      messageType: messages.messageType,
-      senderId: messages.senderId,
-      createdAt: messages.createdAt,
-      deletedForEveryone: messages.deletedForEveryone,
-      deletedPlaceholder: messages.deletedPlaceholder,
-      edited: messages.edited,
-    }).from(messages).where(eq(messages.conversationId, conversation.id)).orderBy(desc(messages.createdAt)).limit(1);
-
-    if (conversation.type === "group") {
-      return {
-        ...conversation,
-        displayName: conversation.groupName || "ReDom group",
-        profilePhoto: conversation.groupPhoto,
-        peerProfileId: null,
-        unreadMessageCount: membership?.unreadMessageCount ?? 0,
-        muted: membership?.muted ?? false,
-        pinned: membership?.pinned ?? false,
-        archived: membership?.archived ?? false,
-        notificationsEnabled: membership?.notificationsEnabled ?? true,
-        mentionsOnly: membership?.mentionsOnly ?? false,
-        lastMessage: last ? { ...last, message: null } : null,
-      };
-    }
-
-    const [peer] = await db.select({
-      profileId: userProfiles.id,
-      displayName: userProfiles.displayName,
-      profilePhoto: userProfiles.profilePhoto,
-      verified: userProfiles.verified,
-    }).from(conversationParticipants)
-      .innerJoin(userProfiles, eq(userProfiles.id, conversationParticipants.userId))
-      .where(and(
-        eq(conversationParticipants.conversationId, conversation.id),
-        eq(conversationParticipants.activeMember, true),
-        eq(conversationParticipants.temporarilySuspended, false),
-        eq(conversationParticipants.permanentlyRemoved, false),
-        ne(conversationParticipants.userId, profileId),
-      )).limit(1);
-
-    return {
-      ...conversation,
-      displayName: peer?.displayName || "ReDom contact",
-      profilePhoto: peer?.profilePhoto || null,
-      peerProfileId: peer?.profileId || null,
-      verified: peer?.verified || false,
-      unreadMessageCount: membership?.unreadMessageCount ?? 0,
-      muted: membership?.muted ?? false,
-      pinned: membership?.pinned ?? false,
-      archived: membership?.archived ?? false,
-      notificationsEnabled: membership?.notificationsEnabled ?? true,
-      mentionsOnly: membership?.mentionsOnly ?? false,
-      lastMessage: last ? { ...last, message: null } : null,
-    };
+    const [last] = await db.select({ id: messages.id, messageType: messages.messageType, senderId: messages.senderId, createdAt: messages.createdAt, deletedForEveryone: messages.deletedForEveryone, deletedPlaceholder: messages.deletedPlaceholder, edited: messages.edited }).from(messages).where(eq(messages.conversationId, conversation.id)).orderBy(desc(messages.createdAt)).limit(1);
+    if (conversation.type === "group") return { ...conversation, displayName: conversation.groupName || "ReDom group", profilePhoto: conversation.groupPhoto, peerProfileId: null, unreadMessageCount: membership?.unreadMessageCount ?? 0, muted: membership?.muted ?? false, pinned: membership?.pinned ?? false, archived: membership?.archived ?? false, notificationsEnabled: membership?.notificationsEnabled ?? true, mentionsOnly: membership?.mentionsOnly ?? false, lastMessage: last ? { ...last, message: null } : null };
+    const [peer] = await db.select({ profileId: userProfiles.id, displayName: userProfiles.displayName, profilePhoto: userProfiles.profilePhoto, verified: userProfiles.verified }).from(conversationParticipants).innerJoin(userProfiles, eq(userProfiles.id, conversationParticipants.userId)).where(and(eq(conversationParticipants.conversationId, conversation.id), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false), ne(conversationParticipants.userId, profileId))).limit(1);
+    return { ...conversation, displayName: peer?.displayName || "ReDom contact", profilePhoto: peer?.profilePhoto || null, peerProfileId: peer?.profileId || null, verified: peer?.verified || false, unreadMessageCount: membership?.unreadMessageCount ?? 0, muted: membership?.muted ?? false, pinned: membership?.pinned ?? false, archived: membership?.archived ?? false, notificationsEnabled: membership?.notificationsEnabled ?? true, mentionsOnly: membership?.mentionsOnly ?? false, lastMessage: last ? { ...last, message: null } : null };
   }));
-
   const unreadCount = result.reduce((sum, row) => sum + Number(row.unreadMessageCount || 0), 0);
   const archivedCount = result.filter((row) => row.archived).length;
   res.json({ success: true, conversations: result, archivedCount, unreadCount });
