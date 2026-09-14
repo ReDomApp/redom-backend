@@ -11,6 +11,7 @@ export interface ConversationSettings { muted: boolean; pinned: boolean; archive
 export interface MessageReactionSummary { reactionType: MessageReactionType; total: number; }
 export interface CryptoParticipant { profile_id: string; public_key: string | null; algorithm?: string | null; key_version?: number | null; }
 export interface CallRecord { id: string; conversationId: string; callType: "voice" | "video"; callStatus: string; participantCount: number; maxParticipants: number; microphoneEnabled: boolean; speakerEnabled: boolean; cameraEnabled: boolean; usingFrontCamera: boolean; encrypted: boolean; }
+export interface MessageDraft { id: string; draftMessage?: string | null; hasDraft: boolean; discarded?: boolean; updatedAt: string; }
 
 async function hydrateEncryptedMessages(conversationId: string, rows: ReDomMessage[]): Promise<ReDomMessage[]> { return Promise.all(rows.map(async (message) => { if (!message.encryptedPayload || message.message) return message; const plaintext = await decryptEnvelopeMap(message.encryptedPayload, conversationId).catch(() => null); return plaintext === null ? { ...message, message: "Waiting for encrypted message…" } : { ...message, message: plaintext }; })); }
 async function buildEncryptedPayload(conversationId: string, message: string) { await ensureDeviceKey(); const participants = await messageService.getCryptoParticipants(conversationId); const envelopes: Record<string, unknown> = {}; for (const participant of participants.participants) { if (!participant.public_key) throw new Error("This conversation participant has not enabled ReDom encrypted messaging on their current device."); envelopes[participant.profile_id] = await encryptForRecipient(message, participant.public_key, conversationId); } return envelopes; }
@@ -23,6 +24,10 @@ export const messageService = {
   updateSettings(conversationId: string, settings: Partial<ConversationSettings>) { return api.patch<{ success: boolean; settings: ConversationSettings }>(`/messages/conversations/${conversationId}/settings`, settings); },
   getDisappearingPolicy(conversationId: string) { return api.get<{ success: boolean; timerSeconds: DisappearingTimer; allowedTimers: DisappearingTimer[] }>(`/messages/conversations/${conversationId}/policy`); },
   setDisappearingPolicy(conversationId: string, timerSeconds: DisappearingTimer) { return api.patch<{ success: boolean; timerSeconds: DisappearingTimer }>(`/messages/conversations/${conversationId}/policy`, { timerSeconds }); },
+  getDraft(conversationId: string) { return api.get<{ success: boolean; draft: MessageDraft | null }>(`/messages/conversations/${conversationId}/draft`); },
+  saveDraft(conversationId: string, draftMessage: string) { return api.put<{ success: boolean; draft: MessageDraft | null }>(`/messages/conversations/${conversationId}/draft`, { draftMessage }); },
+  discardDraft(conversationId: string) { return api.delete<{ success: boolean; discarded: boolean }>(`/messages/conversations/${conversationId}/draft`); },
+  clearDraftOnSend(conversationId: string) { return api.post<{ success: boolean; cleared: boolean }>(`/messages/conversations/${conversationId}/draft/clear-on-send`); },
   setTyping(conversationId: string, typing: boolean) { return api.post<{ success: boolean }>(`/messages/conversations/${conversationId}/typing`, { typing }); },
   getTyping(conversationId: string) { return api.get<{ success: boolean; typing: Array<{ userId: string; isTyping: boolean; typingStartedAt?: string | null }> }>(`/messages/conversations/${conversationId}/typing`); },
   createDirect(recipientProfileId: string) { return api.post<{ success: boolean; conversationId: string; existing: boolean }>("/messages/conversations/direct", { recipientProfileId }); },
@@ -43,21 +48,8 @@ export const messageService = {
   async sendText(conversationId: string, message: string, parentMessageId?: string) { const envelopes = await buildEncryptedPayload(conversationId, message); return api.post<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages`, { encryptedPayload: envelopes, ...(parentMessageId ? { parentMessageId } : {}) }); },
   async editMessage(conversationId: string, messageId: string, message: string) { const encryptedPayload = await buildEncryptedPayload(conversationId, message); return api.patch<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages/${messageId}`, { encryptedPayload }); },
   sendEncryptedText(conversationId: string, encryptedPayload: Record<string, unknown>, parentMessageId?: string) { return api.post<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages`, { encryptedPayload, ...(parentMessageId ? { parentMessageId } : {}) }); },
-  async sendMedia(conversationId: string, type: "photo" | "voice" | "audio" | "video" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[]; viewOnce?: boolean }) {
-    return this.sendEncryptedMedia(conversationId, type, dataUri, options);
-  },
-  async sendEncryptedMedia(conversationId: string, type: "photo" | "video" | "voice" | "audio" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[]; viewOnce?: boolean }) {
-    await ensureDeviceKey();
-    const participants = await messageService.getCryptoParticipants(conversationId);
-    const encrypted = await encryptMediaForParticipants(dataUri, participants.participants, conversationId);
-    return api.post<{ success: boolean; message: ReDomMessage; attachment: MessageAttachment }>(`/messages/conversations/${conversationId}/encrypted-media`, {
-      type,
-      ciphertextDataUri: encrypted.ciphertextDataUri,
-      mimeType: encrypted.mime,
-      mediaEnvelopes: encrypted.envelopes,
-      ...(options ?? {}),
-    });
-  },
+  async sendMedia(conversationId: string, type: "photo" | "voice" | "audio" | "video" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[]; viewOnce?: boolean }) { return this.sendEncryptedMedia(conversationId, type, dataUri, options); },
+  async sendEncryptedMedia(conversationId: string, type: "photo" | "video" | "voice" | "audio" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[]; viewOnce?: boolean }) { await ensureDeviceKey(); const participants = await messageService.getCryptoParticipants(conversationId); const encrypted = await encryptMediaForParticipants(dataUri, participants.participants, conversationId); return api.post<{ success: boolean; message: ReDomMessage; attachment: MessageAttachment }>(`/messages/conversations/${conversationId}/encrypted-media`, { type, ciphertextDataUri: encrypted.ciphertextDataUri, mimeType: encrypted.mime, mediaEnvelopes: encrypted.envelopes, ...(options ?? {}) }); },
   getEncryptedMediaKey(messageId: string) { return api.get<{ success: boolean; envelope: { version: 1; algorithm: "X25519-AES-256-GCM"; ephemeralPublicKey: string; encryptedMediaKey: string } }>(`/messages/messages/${messageId}/media-key`); },
   getAttachment(messageId: string) { return api.get<{ success: boolean; attachment: MessageAttachment }>(`/messages/messages/${messageId}/attachment`); },
   deleteMessage(conversationId: string, messageId: string, scope: "me" | "everyone") { return api.delete<{ success: boolean; scope: "me" | "everyone"; messageId: string; placeholder?: string }>(`/messages/conversations/${conversationId}/messages/${messageId}`, { scope }); },
