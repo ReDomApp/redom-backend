@@ -8,9 +8,7 @@ import { conversations } from "../database/conversations";
 import { conversationParticipants } from "../database/conversationParticipants";
 import { messages } from "../database/messages";
 import { messageAttachments } from "../database/messageAttachments";
-import { messageReads } from "../database/messageReads";
 import { userProfiles } from "../database/userProfiles";
-import { users } from "../database/schema";
 import { blockedUsers } from "../database/blockedUsers";
 import { reports } from "../database/reports";
 import { activityLog } from "../database/activityLog";
@@ -45,6 +43,9 @@ async function blockedBetween(profileId: string, targetProfileId: string) {
   return Boolean(row);
 }
 
+// Canonical conversation reader. The E2EE route is intentionally authoritative for
+// exact /conversations/:conversationId/messages writes; this endpoint handles the
+// lifecycle-aware read path and never substitutes plaintext for encrypted content.
 router.get("/conversations/:conversationId", async (req, res) => {
   const parsed = z.string().uuid().safeParse(req.params.conversationId);
   if (!req.user?.userId || !parsed.success) return void res.status(400).json({ success: false, message: "A valid conversation is required." });
@@ -71,7 +72,7 @@ router.get("/conversations/:conversationId", async (req, res) => {
     return { ...safeRow, attachment: isViewOnce && opened ? null : (attachmentMap.get(row.id) ?? null), lifecycle: { viewOnce: isViewOnce, opened, expiresAt: life?.expires_at ?? null, kept: Boolean(life?.kept) } };
   });
   const parentIds = [...new Set(visible.map((row) => row.parentMessageId).filter((v): v is string => Boolean(v)))];
-  const parentRows = parentIds.length ? await db.select({ id: messages.id, message: messages.message, senderId: messages.senderId, deletedForEveryone: messages.deletedForEveryone, deletedPlaceholder: messages.deletedPlaceholder }).from(messages).where(inArray(messages.id, parentIds)) : [];
+  const parentRows = parentIds.length ? await db.select({ id: messages.id, message: messages.message, senderId: messages.senderId, deletedForEveryone: messages.deletedForEveryone, deletedPlaceholder: messages.deletedPlaceholder, encryptedPayload: messages.encryptedPayload }).from(messages).where(inArray(messages.id, parentIds)) : [];
   res.json({ success: true, messages: visible, replyTargets: parentRows });
 });
 
@@ -123,7 +124,8 @@ router.post("/messages/:messageId/view-once", async (req, res) => {
   if (!profileId || !message || !await memberFor(message.conversationId, profileId)) return void res.status(403).json({ success: false, message: "You do not have access to this message." });
   if (!["photo", "video", "voice"].includes(message.messageType)) return void res.status(400).json({ success: false, message: "View once is supported for photos, videos, and voice messages." });
   await pool.query(`INSERT INTO message_lifecycle(message_id, conversation_id, view_once) VALUES ($1,$2,true)
-    ON CONFLICT(message_id) DO UPDATE SET view_once=true, opened_at=NULL`, [message.id, message.conversationId]);
+    ON CONFLICT(message_id) DO UPDATE SET view_once=true, opened_at=NULL, expires_at=COALESCE(message_lifecycle.expires_at, now() + interval '14 days')`, [message.id, message.conversationId]);
+  await db.insert(activityLog).values({ userId: req.user.userId, activityType: "message_view_once_enabled", activityCategory: "messages", activityTitle: "View Once enabled", activityDescription: "A media message was marked View Once.", targetId: message.id, targetType: "message", targetUrl: `redom://messages/${message.conversationId}`, status: "success", triggeredBy: "user", source: "app", undoSupported: false, hidden: false, archived: false });
   res.json({ success: true, messageId: message.id, viewOnce: true });
 });
 
@@ -133,12 +135,16 @@ router.post("/messages/:messageId/open-view-once", async (req, res) => {
   const profileId = await profileIdFor(req.user.userId);
   const [message] = await db.select().from(messages).where(eq(messages.id, messageId.data)).limit(1);
   if (!profileId || !message || !await memberFor(message.conversationId, profileId)) return void res.status(403).json({ success: false, message: "You do not have access to this message." });
-  const life = await pool.query("SELECT view_once, opened_at FROM message_lifecycle WHERE message_id=$1", [message.id]);
+  const life = await pool.query("SELECT view_once, opened_at, expires_at FROM message_lifecycle WHERE message_id=$1", [message.id]);
   if (!life.rows[0]?.view_once) return void res.status(400).json({ success: false, message: "This message is not view once." });
+  if (life.rows[0].expires_at && new Date(life.rows[0].expires_at).getTime() <= Date.now()) return void res.status(410).json({ success: false, message: "This view once message has expired." });
   if (life.rows[0].opened_at) return void res.status(410).json({ success: false, message: "This view once message has already been opened." });
+  if (message.senderId === profileId) return void res.status(403).json({ success: false, message: "View Once media can only be opened by a recipient." });
   const attachment = await db.select().from(messageAttachments).where(and(eq(messageAttachments.messageId, message.id), eq(messageAttachments.active, true), eq(messageAttachments.deleted, false))).limit(1);
-  await pool.query("UPDATE message_lifecycle SET opened_at=now() WHERE message_id=$1", [message.id]);
-  res.json({ success: true, message: { ...message, attachment: attachment[0] ?? null }, openedAt: new Date().toISOString() });
+  const opened = await pool.query("UPDATE message_lifecycle SET opened_at=now() WHERE message_id=$1 AND opened_at IS NULL RETURNING opened_at", [message.id]);
+  if (!opened.rows[0]) return void res.status(410).json({ success: false, message: "This view once message has already been opened." });
+  await db.insert(activityLog).values({ userId: req.user.userId, activityType: "message_view_once_opened", activityCategory: "messages", activityTitle: "View Once opened", activityDescription: "A recipient opened View Once media.", targetId: message.id, targetType: "message", targetUrl: `redom://messages/${message.conversationId}`, status: "success", triggeredBy: "user", source: "app", undoSupported: false, hidden: false, archived: false });
+  res.json({ success: true, message: { ...message, attachment: attachment[0] ?? null }, openedAt: opened.rows[0].opened_at });
 });
 
 router.post("/messages/:messageId/report", async (req, res) => {
@@ -184,73 +190,6 @@ router.get("/block/:profileId/status", async (req, res) => {
   if (!them) return void res.status(404).json({ success: false, message: "Profile not found." });
   const [row] = await db.select({ id: blockedUsers.id }).from(blockedUsers).where(and(eq(blockedUsers.userId, req.user.userId), eq(blockedUsers.blockedUserId, them.userId))).limit(1);
   res.json({ success: true, blocked: Boolean(row) });
-});
-
-router.post("/groups", async (req, res) => {
-  const body = z.object({ name: z.string().trim().min(1).max(150), description: z.string().max(2000).optional(), memberProfileIds: z.array(z.string().uuid()).min(1).max(99) }).strict().safeParse(req.body);
-  if (!req.user?.userId || !body.success) return void res.status(400).json({ success: false, message: "A group name and members are required." });
-  const creator = await profileIdFor(req.user.userId);
-  if (!creator) return void res.status(404).json({ success: false, message: "Profile not found." });
-  const uniqueMembers = [...new Set([creator, ...body.data.memberProfileIds])];
-  const profiles = await db.select({ id: userProfiles.id }).from(userProfiles).where(inArray(userProfiles.id, uniqueMembers));
-  if (profiles.length !== uniqueMembers.length) return void res.status(400).json({ success: false, message: "One or more group members are unavailable." });
-  for (const target of uniqueMembers) if (target !== creator && await blockedBetween(creator, target)) return void res.status(403).json({ success: false, message: "A selected member is blocked." });
-  const [conversation] = await db.insert(conversations).values({ createdBy: creator, conversationType: "group", groupName: body.data.name, groupDescription: body.data.description ?? null, encrypted: true, aiModerationEnabled: true, participantCount: uniqueMembers.length }).returning({ id: conversations.id });
-  if (!conversation) return void res.status(500).json({ success: false, message: "Unable to create group." });
-  await db.insert(conversationParticipants).values(uniqueMembers.map((profileId) => ({ conversationId: conversation.id, userId: profileId, joinedBy: profileId === creator ? null : creator, joinedByCreator: profileId === creator, role: profileId === creator ? "owner" : "member", joinRequestApproved: true })));
-  res.status(201).json({ success: true, conversationId: conversation.id, participantCount: uniqueMembers.length });
-});
-
-router.get("/groups/:conversationId/members", async (req, res) => {
-  const conversationId = z.string().uuid().safeParse(req.params.conversationId);
-  if (!req.user?.userId || !conversationId.success) return void res.status(400).json({ success: false, message: "Invalid group." });
-  const profileId = await profileIdFor(req.user.userId);
-  if (!profileId || !await memberFor(conversationId.data, profileId)) return void res.status(403).json({ success: false, message: "You do not have access to this group." });
-  const members = await db.select({ id: conversationParticipants.id, profileId: conversationParticipants.userId, role: conversationParticipants.role, joinedAt: conversationParticipants.joinedAt, online: conversationParticipants.online }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversationId.data), eq(conversationParticipants.activeMember, true)));
-  res.json({ success: true, members });
-});
-
-router.patch("/groups/:conversationId/members/:memberProfileId", async (req, res) => {
-  const conversationId = z.string().uuid().safeParse(req.params.conversationId);
-  const memberProfileId = z.string().uuid().safeParse(req.params.memberProfileId);
-  const body = z.object({ role: z.enum(["admin", "member"]), active: z.boolean().optional() }).strict().safeParse(req.body);
-  if (!req.user?.userId || !conversationId.success || !memberProfileId.success || !body.success) return void res.status(400).json({ success: false, message: "Invalid member change." });
-  const actor = await profileIdFor(req.user.userId);
-  if (!actor) return void res.status(404).json({ success: false, message: "Profile not found." });
-  const [conversation] = await db.select({ id: conversations.id, createdBy: conversations.createdBy, conversationType: conversations.conversationType }).from(conversations).where(eq(conversations.id, conversationId.data)).limit(1);
-  const actorMember = await memberFor(conversationId.data, actor);
-  if (!conversation || conversation.conversationType !== "group" || !actorMember || !["owner", "admin"].includes(actorMember.role)) return void res.status(403).json({ success: false, message: "Only group admins can manage members." });
-  const update: Record<string, unknown> = { role: body.data.role, updatedAt: new Date() };
-  if (body.data.active !== undefined) { update.activeMember = body.data.active; update.leftGroup = !body.data.active; update.leftAt = body.data.active ? null : new Date(); }
-  await db.update(conversationParticipants).set(update).where(and(eq(conversationParticipants.conversationId, conversationId.data), eq(conversationParticipants.userId, memberProfileId.data)));
-  const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversationId.data), eq(conversationParticipants.activeMember, true)));
-  await db.update(conversations).set({ participantCount: Number(count), updatedAt: new Date() }).where(eq(conversations.id, conversationId.data));
-  res.json({ success: true });
-});
-
-router.post("/calls/:callId/signals", async (req, res) => {
-  const callId = z.string().uuid().safeParse(req.params.callId);
-  const body = z.object({ signalType: z.enum(["offer", "answer", "ice", "renegotiate", "bye"]), payload: z.record(z.string(), z.unknown()) }).strict().safeParse(req.body);
-  if (!req.user?.userId || !callId.success || !body.success) return void res.status(400).json({ success: false, message: "Invalid call signal." });
-  const profileId = await profileIdFor(req.user.userId);
-  if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." });
-  const [call] = await db.select().from(sql`calls`).where(sql`id = ${callId.data} AND deleted = false`).limit(1) as any;
-  if (!call) return void res.status(404).json({ success: false, message: "Call not found." });
-  if (!await memberFor(call.conversation_id, profileId)) return void res.status(403).json({ success: false, message: "You do not have access to this call." });
-  await pool.query("INSERT INTO call_signals(call_id, sender_id, signal_type, payload) VALUES($1,$2,$3,$4::jsonb)", [callId.data, profileId, body.data.signalType, JSON.stringify(body.data.payload)]);
-  res.status(201).json({ success: true });
-});
-
-router.get("/calls/:callId/signals", async (req, res) => {
-  const callId = z.string().uuid().safeParse(req.params.callId);
-  if (!req.user?.userId || !callId.success) return void res.status(400).json({ success: false, message: "Invalid call." });
-  const profileId = await profileIdFor(req.user.userId);
-  if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." });
-  const callResult = await pool.query("SELECT conversation_id FROM calls WHERE id=$1 AND deleted=false", [callId.data]);
-  if (!callResult.rows[0] || !await memberFor(callResult.rows[0].conversation_id, profileId)) return void res.status(403).json({ success: false, message: "You do not have access to this call." });
-  const since = typeof req.query.since === "string" ? req.query.since : null;
-  const result = await pool.query(`SELECT id, sender_id, signal_type, payload, created_at FROM call_signals WHERE call_id=$1 AND sender_id<>$2 ${since ? "AND created_at > $3" : ""} ORDER BY created_at ASC LIMIT 200`, since ? [callId.data, profileId, since] : [callId.data, profileId]);
-  res.json({ success: true, signals: result.rows });
 });
 
 export default router;
