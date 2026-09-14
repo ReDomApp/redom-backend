@@ -8,75 +8,9 @@ import { messageService } from "../messages/messageService";
 
 export function NewMessageScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [opening, setOpening] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const request = useRef(0);
-
-  useEffect(() => {
-    const q = query.trim();
-    setError("");
-    if (!q) { setResults([]); setLoading(false); return; }
-    const id = ++request.current;
-    const timer = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const response = await searchService.search(q);
-        if (id === request.current) setResults(response.results);
-      } catch (e) {
-        if (id === request.current) setError(e instanceof Error ? e.message : "Unable to search people.");
-      } finally {
-        if (id === request.current) setLoading(false);
-      }
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  const startConversation = async (person: SearchResult) => {
-    if (opening) return;
-    setOpening(person.profileId);
-    setError("");
-    try {
-      const response = await messageService.createDirect(person.profileId);
-      navigation.replace("Chat", { conversationId: response.conversationId });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to start this conversation.");
-    } finally {
-      setOpening(null);
-    }
-  };
-
-  return <SafeAreaView style={styles.root}>
-    <View style={styles.header}>
-      <Pressable onPress={() => navigation.goBack()} accessibilityLabel="Back"><Text style={styles.back}>‹</Text></Pressable>
-      <Text style={styles.title}>New Message</Text>
-      <View style={styles.headerSpacer} />
-    </View>
-    <View style={styles.quickActions}>
-      <Pressable style={styles.quick} onPress={() => navigation.navigate("CreateGroup")}><Text style={styles.quickIcon}>👥</Text><Text style={styles.quickText}>New group</Text></Pressable>
-      <Pressable style={styles.quick} onPress={() => navigation.navigate("Search")}><Text style={styles.quickIcon}>⌕</Text><Text style={styles.quickText}>Find people</Text></Pressable>
-    </View>
-    <View style={styles.search}><TextInput autoFocus value={query} onChangeText={setQuery} placeholder="Search by name or username" placeholderTextColor="#8A8D91" style={styles.input} returnKeyType="search" /></View>
-    {error ? <Pressable style={styles.error} onPress={() => setError("")}><Text style={styles.errorText}>{error}</Text></Pressable> : null}
-    {loading ? <View style={styles.loading}><ActivityIndicator color="#1877F2" /></View> : null}
-    <View style={styles.list}>
-      {results.map(person => <View key={person.profileId} style={styles.row}>
-        <Pressable style={styles.person} onPress={() => navigation.navigate("Profile", { userId: person.userId })}>
-          <View style={styles.avatar}><Text style={styles.avatarText}>{(person.firstName || person.username || "R").slice(0,1).toUpperCase()}</Text></View>
-          <View style={styles.copy}><Text style={styles.name}>{[person.firstName, person.lastName].filter(Boolean).join(" ") || person.username}{person.verified ? " ✓" : ""}</Text><Text style={styles.username}>@{person.username}</Text></View>
-        </Pressable>
-        <Pressable style={styles.messageButton} disabled={opening !== null} onPress={() => void startConversation(person)} accessibilityLabel={`Message ${person.username}`}>
-          {opening === person.profileId ? <ActivityIndicator color="#1877F2" /> : <Text style={styles.messageIcon}>✉</Text>}
-        </Pressable>
-      </View>)}
-      {!loading && query.trim() && !results.length && !error ? <View style={styles.empty}><Text style={styles.emptyTitle}>No people found</Text><Text style={styles.emptyText}>Try a different name or username.</Text></View> : null}
-      {!query.trim() ? <View style={styles.empty}><Text style={styles.emptyTitle}>Start a new conversation</Text><Text style={styles.emptyText}>Search for a person, open their profile, or tap the message button to start a chat.</Text></View> : null}
-    </View>
-  </SafeAreaView>;
+  const [query, setQuery] = useState(""); const [results, setResults] = useState<SearchResult[]>([]); const [loading, setLoading] = useState(false); const [opening, setOpening] = useState<string | null>(null); const [error, setError] = useState(""); const request = useRef(0);
+  useEffect(() => { const q=query.trim(); setError(""); if (!q) { setResults([]); setLoading(false); return; } const id=++request.current; const timer=setTimeout(async()=>{ setLoading(true); try { const response=await searchService.search(q); if(id===request.current)setResults(response.results); } catch(e) { if(id===request.current)setError(e instanceof Error?e.message:"Unable to search people."); } finally { if(id===request.current)setLoading(false); } },250); return()=>clearTimeout(timer); },[query]);
+  const startConversation=async(person:SearchResult)=>{ if(opening)return; setOpening(person.profileId); setError(""); try { const response=await messageService.createDirect(person.profileId); navigation.replace("Chat",{conversationId:response.conversationId}); } catch(e) { setError(e instanceof Error?e.message:"Unable to start this conversation."); } finally { setOpening(null); } };
+  return <SafeAreaView style={styles.root}><View style={styles.header}><Pressable onPress={()=>navigation.goBack()} accessibilityLabel="Back"><Text style={styles.back}>‹</Text></Pressable><Text style={styles.title}>New Message</Text><View style={styles.headerSpacer}/></View><View style={styles.quickActions}><Pressable style={styles.quick} onPress={()=>navigation.navigate("CreateGroup")}><Text style={styles.quickIcon}>👥</Text><Text style={styles.quickText}>New group</Text></Pressable><Pressable style={styles.quick} onPress={()=>navigation.navigate("Search")}><Text style={styles.quickIcon}>⌕</Text><Text style={styles.quickText}>Find people</Text></Pressable></View><View style={styles.search}><TextInput autoFocus value={query} onChangeText={setQuery} placeholder="Search by name or username" placeholderTextColor="#8A8D91" style={styles.input} returnKeyType="search"/></View>{error?<Pressable style={styles.error} onPress={()=>setError("")}><Text style={styles.errorText}>{error}</Text></Pressable>:null}{loading?<View style={styles.loading}><ActivityIndicator color="#1877F2"/></View>:null}<View style={styles.list}>{results.map(person=><View key={person.profileId} style={styles.row}><Pressable style={styles.person} onPress={()=>navigation.navigate("Profile",{userId:person.userId})}><View style={styles.avatar}><Text style={styles.avatarText}>{(person.firstName||person.username||"R").slice(0,1).toUpperCase()}</Text></View><View style={styles.copy}><Text style={styles.name}>{[person.firstName,person.lastName].filter(Boolean).join(" ")||person.username}{person.verified?" ✓":""}</Text><Text style={styles.username}>@{person.username}</Text></View></Pressable><Pressable style={styles.messageButton} disabled={opening!==null} onPress={()=>void startConversation(person)} accessibilityLabel={`Message ${person.username}`}>{opening===person.profileId?<ActivityIndicator color="#1877F2"/>:<Text style={styles.messageIcon}>✉</Text>}</Pressable></View>)}{!loading&&query.trim()&&!results.length&&!error?<View style={styles.empty}><Text style={styles.emptyTitle}>No people found</Text><Text style={styles.emptyText}>Try a different name or username.</Text></View>:null}{!query.trim()?<View style={styles.empty}><Text style={styles.emptyTitle}>Start a new conversation</Text><Text style={styles.emptyText}>Search for a person, open their profile, or tap the message button to start a chat.</Text></View>:null}</View></SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  root:{flex:1,backgroundColor:"#F0F2F5"}, header:{height:58,backgroundColor:"#FFF",borderBottomWidth:1,borderBottomColor:"#E4E6EB",flexDirection:"row",alignItems:"center",paddingHorizontal:12}, back:{fontSize:38,color:"#1877F2",lineHeight:42}, title:{fontSize:19,fontWeight:"800",color:"#050505",marginLeft:12}, headerSpacer:{flex:1}, quickActions:{backgroundColor:"#FFF",paddingHorizontal:12,paddingVertical:8,flexDirection:"row",gap:8}, quick:{flex:1,minHeight:62,borderRadius:12,backgroundColor:"#F0F2F5",alignItems:"center",justifyContent:"center"}, quickIcon:{fontSize:21,color:"#1877F2"}, quickText:{fontSize:13,fontWeight:"700",color:"#050505",marginTop:3}, search:{backgroundColor:"#FFF",padding:10}, input:{height:44,backgroundColor:"#F0F2F5",borderRadius:22,paddingHorizontal:17,color:"#050505",fontSize:15}, loading:{paddingVertical:10}, error:{margin:10,padding:11,borderRadius:10,backgroundColor:"#FFF1F1"},errorText:{color:"#B42318",textAlign:"center",fontSize:13},list:{padding:8},row:{backgroundColor:"#FFF",borderRadius:13,marginBottom:7,minHeight:68,flexDirection:"row",alignItems:"center",padding:7},person:{flex:1,minHeight:54,flexDirection:"row",alignItems:"center"},avatar:{width:48,height:48,borderRadius:24,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center"},avatarText:{color:"#FFF",fontWeight:"800",fontSize:19},copy:{flex:1,marginLeft:11},name:{fontSize:15,fontWeight:"700",color:"#050505"},username:{fontSize:13,color:"#65676B",marginTop:3},messageButton:{width:42,height:42,borderRadius:21,backgroundColor:"#E8F1FF",alignItems:"center",justifyContent:"center"},messageIcon:{fontSize:19,color:"#1877F2"},empty:{alignItems:"center',paddingHorizontal:30,paddingTop:70},emptyTitle:{fontSize:19,fontWeight:"800",color:"#050505",textAlign:"center"},emptyText:{fontSize:14,color:"#65676B",textAlign:"center",marginTop:7,lineHeight:20}
-});
+const styles=StyleSheet.create({root:{flex:1,backgroundColor:"#F0F2F5"},header:{height:58,backgroundColor:"#FFF",borderBottomWidth:1,borderBottomColor:"#E4E6EB",flexDirection:"row",alignItems:"center",paddingHorizontal:12},back:{fontSize:38,color:"#1877F2",lineHeight:42},title:{fontSize:19,fontWeight:"800",color:"#050505",marginLeft:12},headerSpacer:{flex:1},quickActions:{backgroundColor:"#FFF",paddingHorizontal:12,paddingVertical:8,flexDirection:"row",gap:8},quick:{flex:1,minHeight:62,borderRadius:12,backgroundColor:"#F0F2F5",alignItems:"center",justifyContent:"center"},quickIcon:{fontSize:21,color:"#1877F2"},quickText:{fontSize:13,fontWeight:"700",color:"#050505",marginTop:3},search:{backgroundColor:"#FFF",padding:10},input:{height:44,backgroundColor:"#F0F2F5",borderRadius:22,paddingHorizontal:17,color:"#050505",fontSize:15},loading:{paddingVertical:10},error:{margin:10,padding:11,borderRadius:10,backgroundColor:"#FFF1F1"},errorText:{color:"#B42318",textAlign:"center",fontSize:13},list:{padding:8},row:{backgroundColor:"#FFF",borderRadius:13,marginBottom:7,minHeight:68,flexDirection:"row",alignItems:"center",padding:7},person:{flex:1,minHeight:54,flexDirection:"row",alignItems:"center"},avatar:{width:48,height:48,borderRadius:24,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center"},avatarText:{color:"#FFF",fontWeight:"800",fontSize:19},copy:{flex:1,marginLeft:11},name:{fontSize:15,fontWeight:"700",color:"#050505"},username:{fontSize:13,color:"#65676B",marginTop:3},messageButton:{width:42,height:42,borderRadius:21,backgroundColor:"#E8F1FF",alignItems:"center",justifyContent:"center"},messageIcon:{fontSize:19,color:"#1877F2"},empty:{alignItems:"center",paddingHorizontal:30,paddingTop:70},emptyTitle:{fontSize:19,fontWeight:"800",color:"#050505",textAlign:"center"},emptyText:{fontSize:14,color:"#65676B",textAlign:"center",marginTop:7,lineHeight:20}});
