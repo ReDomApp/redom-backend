@@ -10,7 +10,6 @@ import ProfileIcon from "../assets/message-actions/profile.svg";
 import EditIcon from "../assets/message-actions/edit.svg";
 import DeleteIcon from "../assets/message-actions/delete.svg";
 import ReportIcon from "../assets/message-actions/report.svg";
-import StarIcon from "../components/ChatInfoIcon";
 import type { ReDomMessage } from "../messages/messageService";
 import { chatInfoService } from "../messages/chatInfoService";
 import { ForwardMessageSheet } from "./ForwardMessageSheet";
