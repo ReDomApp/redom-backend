@@ -10,6 +10,12 @@ const linking = {
   config: {
     screens: {
       Profile: "profile/username/:userId",
+      HomeFeed: "home",
+      Notifications: "notifications",
+      Messages: "messages",
+      Chat: "messages/:conversationId",
+      Settings: "settings",
+      Policy: "policy/:slug",
     },
   },
 };
