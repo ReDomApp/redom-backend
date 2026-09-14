@@ -1,0 +1,15 @@
+import { useEffect, useState } from "react";
+import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
+import * as LocalAuthentication from "expo-local-authentication";
+import type { ReactNode } from "react";
+import { chatInfoService } from "../messages/chatInfoService";
+import { ChatInfoIcon } from "../components/ChatInfoIcon";
+
+export function ChatLockGate({ conversationId, children }: { conversationId: string; children: ReactNode }) {
+  const [locked, setLocked] = useState(false); const [unlocked, setUnlocked] = useState(false); const [error, setError] = useState("");
+  const authenticate = async () => { setError(""); try { const hardware = await LocalAuthentication.hasHardwareAsync(); const enrolled = await LocalAuthentication.isEnrolledAsync(); if (!hardware || !enrolled) { setError("Set up device authentication before opening this locked chat."); return; } const result = await LocalAuthentication.authenticateAsync({ promptMessage: "Unlock ReDom chat", fallbackLabel: "Use device passcode" }); if (result.success) setUnlocked(true); else setError("Authentication was not completed."); } catch (e) { setError(e instanceof Error ? e.message : "Chat unlock failed."); } };
+  useEffect(() => { let mounted = true; void chatInfoService.getChatLock(conversationId).then((value) => { if (mounted) { setLocked(value); setUnlocked(!value); if (value) void authenticate(); } }).catch(() => { if (mounted) setUnlocked(true); }); const sub = AppState.addEventListener("change", (state) => { if (state !== "active") setUnlocked(false); else void chatInfoService.getChatLock(conversationId).then((value) => { setLocked(value); if (value) void authenticate(); else setUnlocked(true); }).catch(() => undefined); }); return () => { mounted = false; sub.remove(); }; }, [conversationId]);
+  if (!locked || unlocked) return <>{children}</>;
+  return <View style={styles.root}><View style={styles.icon}><ChatInfoIcon name="lock" size={48} color="#1877F2" /></View><Text style={styles.title}>Chat locked</Text><Text style={styles.body}>Unlock this chat with your device authentication.</Text>{error ? <Text style={styles.error}>{error}</Text> : null}<Pressable style={styles.button} onPress={() => void authenticate()}><Text style={styles.buttonText}>Unlock chat</Text></Pressable></View>;
+}
+const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: "#FFF", alignItems: "center", justifyContent: "center", padding: 28 }, icon: { width: 104, height: 104, borderRadius: 52, backgroundColor: "#EAF3FF", alignItems: "center", justifyContent: "center" }, title: { marginTop: 20, fontSize: 24, fontWeight: "800", color: "#101828" }, body: { marginTop: 8, textAlign: "center", color: "#667085", fontSize: 15, lineHeight: 22 }, error: { marginTop: 12, textAlign: "center", color: "#B42318" }, button: { marginTop: 22, minHeight: 50, paddingHorizontal: 28, borderRadius: 12, backgroundColor: "#1877F2", justifyContent: "center" }, buttonText: { color: "#FFF", fontWeight: "800", fontSize: 16 } });
