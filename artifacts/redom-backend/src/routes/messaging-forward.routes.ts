@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { db, pool } from "../database/db";
@@ -61,7 +61,7 @@ router.post("/forward", async (req, res) => {
   if (!source || source.deletedForEveryone || source.deletedPlaceholder) return void res.status(409).json({ success: false, message: "This message is unavailable for forwarding." });
   if (!(await requireMember(profileId, source.conversationId))) return void res.status(403).json({ success: false, message: "You cannot forward a message from a conversation you cannot access." });
 
-  const viewOnce = await pool.query("SELECT 1 FROM message_lifecycle WHERE message_id=$1 AND view_once=true LIMIT 1", [source.id]).catch(() => ({ rows: [] } as { rows: never[] }));
+  const viewOnce = await pool.query("SELECT 1 FROM message_lifecycle WHERE message_id=$1 AND view_once=true LIMIT 1").catch(() => ({ rows: [] as unknown[] }));
   if (viewOnce.rows.length) return void res.status(403).json({ success: false, message: "View Once messages cannot be forwarded." });
 
   const depthResult = await pool.query(`WITH RECURSIVE chain AS (
@@ -78,7 +78,7 @@ router.post("/forward", async (req, res) => {
   if (new Set(destinationIds).size !== destinationIds.length) return void res.status(400).json({ success: false, message: "Each destination chat can only be selected once." });
   const destinationRows = await db.select({ id: conversations.id, conversationType: conversations.conversationType, status: conversations.status, locked: conversations.locked, deleted: conversations.deleted })
     .from(conversations)
-    .where(sql`${conversations.id} = ANY(${sql.raw(`ARRAY[${destinationIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`);
+    .where(inArray(conversations.id, destinationIds));
   if (destinationRows.length !== destinationIds.length) return void res.status(404).json({ success: false, message: "One or more destination chats no longer exist." });
   const groupCount = destinationRows.filter((row) => row.conversationType === "group").length;
   if (sourceDepth > 0 && groupCount > 1) return void res.status(400).json({ success: false, message: "A forwarded message can be sent to at most one group chat in a single forward operation." });
@@ -103,6 +103,7 @@ router.post("/forward", async (req, res) => {
       senderId: profileId,
       parentMessageId: null,
       forwardedFromMessageId: source.id,
+      isForwarded: true,
       messageType: source.messageType,
       message: null,
       caption: null,
