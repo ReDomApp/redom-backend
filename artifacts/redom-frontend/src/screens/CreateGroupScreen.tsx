@@ -1,0 +1,21 @@
+import { useState } from "react";
+import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../routing/types";
+import { messageService } from "../messages/messageService";
+
+export function CreateGroupScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const [name, setName] = useState(""); const [description, setDescription] = useState(""); const [memberIds, setMemberIds] = useState(""); const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  const create = async () => {
+    const ids = [...new Set(memberIds.split(/[\s,]+/).map(v => v.trim()).filter(Boolean))];
+    if (!name.trim()) { setError("Enter a group name."); return; }
+    if (ids.some(id => !/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(id))) { setError("Each member must use a valid ReDom profile ID."); return; }
+    setSaving(true); setError("");
+    try { const result = await messageService.createGroup(name.trim(), ids, description.trim() || undefined); navigation.replace("GroupInfo", { conversationId: result.conversationId }); }
+    catch (e) { setError(e instanceof Error ? e.message : "Group could not be created."); } finally { setSaving(false); }
+  };
+  return <SafeAreaView style={styles.root}><View style={styles.header}><Pressable onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable><Text style={styles.title}>New group</Text><View style={{ width: 32 }} /></View><ScrollView contentContainerStyle={styles.content}><Text style={styles.heading}>Create a ReDom group</Text><Text style={styles.help}>Choose a name first. You can manage members and group permissions after creation.</Text><Text style={styles.label}>Group name</Text><TextInput value={name} onChangeText={setName} placeholder="Group name" style={styles.input} maxLength={150} /><Text style={styles.label}>Description</Text><TextInput value={description} onChangeText={setDescription} placeholder="Optional description" style={[styles.input, styles.multiline]} multiline maxLength={2000} /><Text style={styles.label}>Member profile IDs</Text><TextInput value={memberIds} onChangeText={setMemberIds} placeholder="Paste profile IDs separated by spaces or commas" style={[styles.input, styles.multiline]} multiline autoCapitalize="none" autoCorrect={false} /><Text style={styles.note}>Only profiles you are authorized to add will be accepted by the ReDom backend. Group membership never bypasses blocking or regional policy.</Text>{error ? <Text style={styles.error}>{error}</Text> : null}<Pressable disabled={saving} onPress={() => void create()} style={styles.primary}>{saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryText}>Create group</Text>}</Pressable><Pressable onPress={() => Alert.alert("Group privacy", "Private group conversations remain protected by membership and ReDom messaging security controls.")}><Text style={styles.policy}>Learn about ReDom Messaging Policy</Text></Pressable></ScrollView></SafeAreaView>;
+}
+const styles = StyleSheet.create({ root:{flex:1,backgroundColor:"#F0F2F5"},header:{height:58,backgroundColor:"#FFF",borderBottomWidth:1,borderBottomColor:"#E4E6EB",flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:12},back:{fontSize:38,color:"#1877F2"},title:{fontSize:19,fontWeight:"800",color:"#050505"},content:{padding:20},heading:{fontSize:24,fontWeight:"800",color:"#050505"},help:{marginTop:8,color:"#65676B",lineHeight:20},label:{marginTop:20,marginBottom:7,fontSize:14,fontWeight:"700",color:"#344054"},input:{backgroundColor:"#FFF",borderRadius:12,borderWidth:1,borderColor:"#D0D5DD",minHeight:48,paddingHorizontal:14,color:"#101828"},multiline:{minHeight:90,paddingTop:12,textAlignVertical:"top"},note:{marginTop:14,color:"#667085",fontSize:12,lineHeight:18},error:{marginTop:14,color:"#B42318",fontWeight:"600"},primary:{marginTop:20,height:50,borderRadius:25,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center"},primaryText:{color:"#FFF",fontWeight:"800",fontSize:16},policy:{marginTop:18,textAlign:"center",color:"#1877F2",fontWeight:"700"}});
