@@ -21,6 +21,7 @@ import { CoverPhotoViewerScreen } from "../screens/CoverPhotoViewerScreen";
 import { CustomizingExperienceScreen } from "../screens/CustomizingExperienceScreen";
 import { LoginScreen } from "../screens/LoginScreen";
 import { StartupScreen } from "../screens/StartupScreen";
+import { SearchScreen } from "../screens/SearchScreen";
 import { NotificationsScreen } from "../screens/NotificationsScreen";
 import { MessagesScreen } from "../screens/MessagesScreen";
 import { ChatScreen } from "../screens/ChatScreen";
@@ -60,6 +61,7 @@ export function AppNavigator() {
       <Stack.Screen name="CoverPhotoPreview" component={CoverPhotoPreviewScreen} />
       <Stack.Screen name="CoverPhotoViewer" component={CoverPhotoViewerScreen} />
       <Stack.Screen name="Foundation" component={FoundationScreen} />
+      <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="Messages" component={MessagesScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
