@@ -35,6 +35,15 @@
       "expo-secure-store",
       "expo-notifications",
       [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow ReDom to access your microphone for voice messages and calls.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
         "expo-localization",
         {
           "supportedLocales": {
