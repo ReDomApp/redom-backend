@@ -81,7 +81,7 @@ export function HomeFeedScreenV3() {
       <View style={ui.topActions}>
         <Pressable style={ui.topButton} accessibilityLabel="Create"><CreateIcon width={24} height={24} /></Pressable>
         <Pressable style={ui.topButton} accessibilityLabel="Search"><SearchIcon width={24} height={24} /></Pressable>
-        <Pressable style={ui.topButton} accessibilityLabel="Messenger"><MessengerIcon width={24} height={24} /></Pressable>
+        <Pressable style={ui.topButton} onPress={() => navigation.navigate("Messages")} accessibilityLabel="Messenger"><MessengerIcon width={24} height={24} /></Pressable>
       </View>
     </View>
 
@@ -89,7 +89,7 @@ export function HomeFeedScreenV3() {
       <Pressable style={[ui.navItem, ui.activeNav]} onPress={() => { scrollRef.current?.scrollTo({ y: 0, animated: true }); void refreshFeed(); }} accessibilityLabel="Home"><HomeIcon width={26} height={26} /></Pressable>
       <Pressable style={ui.navItem} accessibilityLabel="Reels"><VideoIcon width={26} height={26} /></Pressable>
       <Pressable style={ui.navItem} accessibilityLabel="Marketplace"><MarketplaceIcon width={26} height={26} /></Pressable>
-      <Pressable style={ui.navItem} accessibilityLabel="Notifications"><NotificationsIcon width={26} height={26} /></Pressable>
+      <Pressable style={ui.navItem} onPress={() => navigation.navigate("Notifications")} accessibilityLabel="Notifications"><NotificationsIcon width={26} height={26} /></Pressable>
       <Pressable style={ui.navItem} onPress={() => navigation.navigate("Profile")} accessibilityLabel="Profile"><Avatar uri={avatar} size={31} /></Pressable>
     </View>
 
@@ -206,5 +206,6 @@ function makeStyles(scale: number) {
     divider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: s(5) },
     logoutRow: { minHeight: s(50), justifyContent: "center", borderTopWidth: 1, borderTopColor: "#E4E6EB", marginTop: s(6) },
     logoutText: { color: "#050505", fontSize: s(16), fontWeight: "700" },
+    hiddenMenuTrigger: { position: "absolute", width: 1, height: 1, left: -10, bottom: -10 },
   });
 }
