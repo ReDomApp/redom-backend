@@ -10,7 +10,6 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
       updated_by uuid REFERENCES user_profiles(id),
       updated_at timestamptz NOT NULL DEFAULT now()
     );
-
     CREATE TABLE IF NOT EXISTS message_lifecycle (
       message_id uuid PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
       conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -20,11 +19,8 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
       kept boolean NOT NULL DEFAULT false,
       created_at timestamptz NOT NULL DEFAULT now()
     );
-
-    CREATE INDEX IF NOT EXISTS message_lifecycle_conversation_idx
-      ON message_lifecycle(conversation_id, expires_at);
-    CREATE INDEX IF NOT EXISTS message_lifecycle_view_once_idx
-      ON message_lifecycle(message_id, view_once);
+    CREATE INDEX IF NOT EXISTS message_lifecycle_conversation_idx ON message_lifecycle(conversation_id, expires_at);
+    CREATE INDEX IF NOT EXISTS message_lifecycle_view_once_idx ON message_lifecycle(message_id, view_once);
 
     CREATE TABLE IF NOT EXISTS call_signals (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -35,6 +31,18 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS call_signals_call_idx ON call_signals(call_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS redom_device_crypto_keys (
+      profile_id uuid PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
+      public_key text NOT NULL,
+      algorithm varchar(60) NOT NULL DEFAULT 'X25519-AES-256-GCM',
+      key_version integer NOT NULL DEFAULT 1,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS encrypted_payload jsonb;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS encryption_version integer;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS encrypted_at timestamptz;
 
     CREATE OR REPLACE FUNCTION redom_apply_message_lifecycle()
     RETURNS trigger LANGUAGE plpgsql AS $$
@@ -48,7 +56,6 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
       RETURN NEW;
     END;
     $$;
-
     DROP TRIGGER IF EXISTS redom_message_lifecycle_trigger ON messages;
     CREATE TRIGGER redom_message_lifecycle_trigger AFTER INSERT ON messages
       FOR EACH ROW EXECUTE FUNCTION redom_apply_message_lifecycle();
