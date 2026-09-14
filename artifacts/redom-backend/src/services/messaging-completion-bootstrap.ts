@@ -1,13 +1,7 @@
 import { pool } from "../database/db";
 import { logger } from "../lib/logger";
 
-/**
- * Idempotent messaging capability bootstrap.
- *
- * This is deliberately separate from Drizzle's generated migration history:
- * Render starts the API directly, so the messaging runtime must be able to
- * safely add the small lifecycle tables it needs on an already-running Neon DB.
- */
+/** Idempotently verifies the runtime tables required by complete messaging. */
 export async function ensureMessagingCompletionSchema(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conversation_message_policies (
@@ -29,39 +23,35 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS message_lifecycle_conversation_idx
       ON message_lifecycle(conversation_id, expires_at);
-
     CREATE INDEX IF NOT EXISTS message_lifecycle_view_once_idx
       ON message_lifecycle(message_id, view_once);
 
+    CREATE TABLE IF NOT EXISTS call_signals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      call_id uuid NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+      sender_id uuid NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+      signal_type varchar(20) NOT NULL CHECK (signal_type IN ('offer','answer','ice','renegotiate','bye')),
+      payload jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS call_signals_call_idx ON call_signals(call_id, created_at);
+
     CREATE OR REPLACE FUNCTION redom_apply_message_lifecycle()
-    RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
+    RETURNS trigger LANGUAGE plpgsql AS $$
     DECLARE timer integer;
     BEGIN
-      SELECT timer_seconds INTO timer
-      FROM conversation_message_policies
-      WHERE conversation_id = NEW.conversation_id;
-
+      SELECT timer_seconds INTO timer FROM conversation_message_policies WHERE conversation_id = NEW.conversation_id;
       INSERT INTO message_lifecycle(message_id, conversation_id, expires_at)
-      VALUES (
-        NEW.id,
-        NEW.conversation_id,
-        CASE
-          WHEN COALESCE(timer, 0) > 0 THEN NEW.created_at + make_interval(secs => timer)
-          ELSE NULL
-        END
-      )
+      VALUES (NEW.id, NEW.conversation_id,
+        CASE WHEN COALESCE(timer, 0) > 0 THEN NEW.created_at + make_interval(secs => timer) ELSE NULL END)
       ON CONFLICT (message_id) DO NOTHING;
       RETURN NEW;
     END;
     $$;
 
     DROP TRIGGER IF EXISTS redom_message_lifecycle_trigger ON messages;
-    CREATE TRIGGER redom_message_lifecycle_trigger
-      AFTER INSERT ON messages
+    CREATE TRIGGER redom_message_lifecycle_trigger AFTER INSERT ON messages
       FOR EACH ROW EXECUTE FUNCTION redom_apply_message_lifecycle();
   `);
-
   logger.info("Messaging completion schema verified");
 }
