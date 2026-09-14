@@ -1,6 +1,7 @@
 export type RegistrationFlowReservationRouteParams = { reservationId: string; flowId: string; expiresAt: string };
 export type RegistrationRouteParams = { challengeId: string; flowId: string; maskedTarget: string; expiresAt: string };
 export type MediaPickerRouteParams = { uri: string; base64: string; width: number; height: number };
+export type SettingsSection = "notifications" | "privacy" | "security" | "blocked" | "verification" | "support";
 export type RootStackParamList = {
   Login: undefined; FindAccount: undefined;
   DeviceVerification: { challengeId: string; channel: "sms" | "email" | "whatsapp"; maskedTarget: string; expiresAt: string };
@@ -22,4 +23,14 @@ export type RootStackParamList = {
   CoverPhotoPreview: MediaPickerRouteParams;
   CoverPhotoViewer: undefined;
   Foundation: undefined;
+  Notifications: undefined;
+  Messages: undefined;
+  Settings: undefined;
+  NotificationSettings: undefined;
+  PrivacySettings: undefined;
+  SecuritySettings: undefined;
+  BlockedUsers: undefined;
+  Verification: undefined;
+  Support: undefined;
+  Policy: { slug: "terms" | "privacy" | "community" | "messaging" | "notifications" | "security" | "verification" | "ai" | "regional" | "refunds" | "support" };
 };
