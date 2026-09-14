@@ -11,38 +11,110 @@ import { notifications } from "../database/notifications";
 
 const router = Router();
 router.use(authMiddleware, authRateLimit);
-async function profileIdFor(userId: string): Promise<string | null> { const result = await pool.query("SELECT id FROM user_profiles WHERE user_id = $1 LIMIT 1", [userId]); return result.rows[0]?.id ?? null; }
-async function requireMember(userId: string, conversationId: string) { const profileId = await profileIdFor(userId); if (!profileId) return null; const [member] = await db.select({ id: conversationParticipants.id }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversationId), eq(conversationParticipants.userId, profileId), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false))).limit(1); return member ? profileId : null; }
+
+async function profileIdFor(userId: string): Promise<string | null> {
+  const result = await pool.query("SELECT id FROM user_profiles WHERE user_id = $1 LIMIT 1", [userId]);
+  return result.rows[0]?.id ?? null;
+}
+
+async function requireMember(userId: string, conversationId: string) {
+  const profileId = await profileIdFor(userId);
+  if (!profileId) return null;
+  const [member] = await db.select({ id: conversationParticipants.id }).from(conversationParticipants).where(and(
+    eq(conversationParticipants.conversationId, conversationId),
+    eq(conversationParticipants.userId, profileId),
+    eq(conversationParticipants.activeMember, true),
+    eq(conversationParticipants.temporarilySuspended, false),
+    eq(conversationParticipants.permanentlyRemoved, false),
+  )).limit(1);
+  return member ? profileId : null;
+}
 
 router.put("/crypto/device-key", async (req, res) => {
-  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." }); const body = z.object({ publicKey: z.string().regex(/^[0-9a-f]{64}$/i) }).strict().safeParse(req.body); if (!body.success) return void res.status(400).json({ success: false, message: "A valid X25519 public key is required." }); const profileId = await profileIdFor(req.user.userId); if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." }); await pool.query(`INSERT INTO redom_device_crypto_keys(profile_id, public_key, algorithm, key_version, updated_at) VALUES ($1,$2,'X25519-AES-256-GCM',1,now()) ON CONFLICT(profile_id) DO UPDATE SET public_key=EXCLUDED.public_key, algorithm=EXCLUDED.algorithm, key_version=EXCLUDED.key_version, updated_at=now()`, [profileId, body.data.publicKey.toLowerCase()]); res.json({ success: true, profileId, publicKey: body.data.publicKey.toLowerCase(), algorithm: "X25519-AES-256-GCM", keyVersion: 1 });
+  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." });
+  const body = z.object({ publicKey: z.string().regex(/^[0-9a-f]{64}$/i) }).strict().safeParse(req.body);
+  if (!body.success) return void res.status(400).json({ success: false, message: "A valid X25519 public key is required." });
+  const profileId = await profileIdFor(req.user.userId);
+  if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." });
+  await pool.query(`INSERT INTO redom_device_crypto_keys(profile_id, public_key, algorithm, key_version, updated_at) VALUES ($1,$2,'X25519-AES-256-GCM',1,now()) ON CONFLICT(profile_id) DO UPDATE SET public_key=EXCLUDED.public_key, algorithm=EXCLUDED.algorithm, key_version=EXCLUDED.key_version, updated_at=now()`, [profileId, body.data.publicKey.toLowerCase()]);
+  res.json({ success: true, profileId, publicKey: body.data.publicKey.toLowerCase(), algorithm: "X25519-AES-256-GCM", keyVersion: 1 });
 });
+
 router.get("/crypto/device-key/:profileId", async (req, res) => {
-  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." }); const profileId = z.string().uuid().safeParse(req.params.profileId); if (!profileId.success) return void res.status(400).json({ success: false, message: "Invalid profile." }); const result = await pool.query("SELECT public_key, algorithm, key_version, updated_at FROM redom_device_crypto_keys WHERE profile_id=$1 LIMIT 1", [profileId.data]); if (!result.rows[0]) return void res.status(404).json({ success: false, message: "The recipient has not registered an encryption key on this device." }); res.json({ success: true, profileId: profileId.data, publicKey: result.rows[0].public_key, algorithm: result.rows[0].algorithm, keyVersion: result.rows[0].key_version, updatedAt: result.rows[0].updated_at });
+  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." });
+  const profileId = z.string().uuid().safeParse(req.params.profileId);
+  if (!profileId.success) return void res.status(400).json({ success: false, message: "Invalid profile." });
+  const requester = await profileIdFor(req.user.userId);
+  if (!requester) return void res.status(404).json({ success: false, message: "Profile not found." });
+  if (requester !== profileId.data) {
+    const exists = await db.select({ id: conversationParticipants.id }).from(conversationParticipants).where(and(eq(conversationParticipants.userId, requester), eq(conversationParticipants.activeMember, true), sql`EXISTS (SELECT 1 FROM conversation_participants cp2 WHERE cp2.conversation_id = ${conversationParticipants.conversationId} AND cp2.user_id = ${profileId.data} AND cp2.active_member = true)`)).limit(1);
+    if (!exists.length) return void res.status(403).json({ success: false, message: "You cannot access this encryption identity." });
+  }
+  const result = await pool.query("SELECT public_key, algorithm, key_version, updated_at FROM redom_device_crypto_keys WHERE profile_id=$1 LIMIT 1", [profileId.data]);
+  if (!result.rows[0]) return void res.status(404).json({ success: false, message: "The recipient has not registered an encryption key on this device." });
+  res.json({ success: true, profileId: profileId.data, publicKey: result.rows[0].public_key, algorithm: result.rows[0].algorithm, keyVersion: result.rows[0].key_version, updatedAt: result.rows[0].updated_at });
 });
+
 router.get("/crypto/conversations/:conversationId/crypto-participants", async (req, res) => {
-  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." }); const conversationId = z.string().uuid().safeParse(req.params.conversationId); if (!conversationId.success) return void res.status(400).json({ success: false, message: "Invalid conversation." }); const profileId = await requireMember(req.user.userId, conversationId.data); if (!profileId) return void res.status(403).json({ success: false, message: "You do not have access to this conversation." }); const result = await pool.query(`SELECT cp.user_id AS profile_id, k.public_key, k.algorithm, k.key_version FROM conversation_participants cp LEFT JOIN redom_device_crypto_keys k ON k.profile_id = cp.user_id WHERE cp.conversation_id=$1 AND cp.active_member=true AND cp.temporarily_suspended=false AND cp.permanently_removed=false`, [conversationId.data]); res.json({ success: true, participants: result.rows });
+  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." });
+  const conversationId = z.string().uuid().safeParse(req.params.conversationId);
+  if (!conversationId.success) return void res.status(400).json({ success: false, message: "Invalid conversation." });
+  const profileId = await requireMember(req.user.userId, conversationId.data);
+  if (!profileId) return void res.status(403).json({ success: false, message: "You do not have access to this conversation." });
+  const result = await pool.query(`SELECT cp.user_id AS profile_id, k.public_key, k.algorithm, k.key_version FROM conversation_participants cp LEFT JOIN redom_device_crypto_keys k ON k.profile_id = cp.user_id WHERE cp.conversation_id=$1 AND cp.active_member=true AND cp.temporarily_suspended=false AND cp.permanently_removed=false`, [conversationId.data]);
+  res.json({ success: true, participants: result.rows });
 });
 
 const encryptedEnvelope = z.object({ version: z.literal(1), algorithm: z.literal("X25519-AES-256-GCM"), ephemeralPublicKey: z.string().regex(/^[0-9a-f]{64}$/i), ciphertext: z.string().min(32).max(2000000) }).strict();
 const encryptedPayloadSchema = z.record(z.string().uuid(), encryptedEnvelope).refine((value) => Object.keys(value).length > 0, "At least one encrypted recipient is required.");
+
 router.post("/conversations/:conversationId/messages", async (req, res, next) => {
-  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." }); const id = z.string().uuid().safeParse(req.params.conversationId); const body = z.object({ encryptedPayload: encryptedPayloadSchema, parentMessageId: z.string().uuid().optional() }).strict().safeParse(req.body); if (!id.success || !body.success) return next(); const profileId = await requireMember(req.user.userId, id.data); if (!profileId) return void res.status(403).json({ success: false, message: "You cannot send messages in this conversation." }); const [conversation] = await db.select().from(conversations).where(and(eq(conversations.id, id.data), eq(conversations.deleted, false), eq(conversations.locked, false), eq(conversations.status, "active"))).limit(1); if (!conversation) return void res.status(403).json({ success: false, message: "This conversation is unavailable." }); const recipients = await db.select({ userId: conversationParticipants.userId, notificationsEnabled: conversationParticipants.notificationsEnabled, muted: conversationParticipants.muted }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, id.data), eq(conversationParticipants.activeMember, true), ne(conversationParticipants.userId, profileId))); const recipientIds = new Set(recipients.map((r) => r.userId)); recipientIds.add(profileId); for (const key of Object.keys(body.data.encryptedPayload)) if (!recipientIds.has(key)) return void res.status(400).json({ success: false, message: "Encrypted recipient is not an active conversation participant." }); if (body.data.parentMessageId) { const [parent] = await db.select({ id: messages.id }).from(messages).where(and(eq(messages.id, body.data.parentMessageId), eq(messages.conversationId, id.data), eq(messages.deletedForEveryone, false))).limit(1); if (!parent) return void res.status(400).json({ success: false, message: "The message you are replying to is unavailable." }); }
-  const [created] = await db.insert(messages).values({ conversationId: id.data, senderId: profileId, parentMessageId: body.data.parentMessageId, messageType: "text", message: null, sent: true, delivered: false, read: false, aiReviewed: false, moderationStatus: "approved", encryptedPayload: body.data.encryptedPayload, encryptionVersion: 1, encryptedAt: new Date() }).returning(); if (!created) return void res.status(500).json({ success: false, message: "Unable to persist encrypted message." }); await db.update(conversations).set({ messageCount: sql`${conversations.messageCount} + 1`, updatedAt: new Date() }).where(eq(conversations.id, id.data)); for (const recipient of recipients) { await db.update(conversationParticipants).set({ unreadMessageCount: sql`${conversationParticipants.unreadMessageCount} + 1` }).where(and(eq(conversationParticipants.conversationId, id.data), eq(conversationParticipants.userId, recipient.userId))); if (recipient.notificationsEnabled && !recipient.muted) await db.insert(notifications).values({ recipientUserId: recipient.userId, actorUserId: profileId, messageId: created.id, conversationId: id.data, notificationType: "message", title: "New message", body: "You have a new ReDom encrypted message.", actionUrl: `redom://messages/${id.data}`, unread: true, read: false, inAppDelivered: true, priority: "normal" }); }
+  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." });
+  const id = z.string().uuid().safeParse(req.params.conversationId);
+  const body = z.object({ encryptedPayload: encryptedPayloadSchema, parentMessageId: z.string().uuid().optional() }).strict().safeParse(req.body);
+  if (!id.success || !body.success) return next();
+  const profileId = await requireMember(req.user.userId, id.data);
+  if (!profileId) return void res.status(403).json({ success: false, message: "You cannot send messages in this conversation." });
+  const [conversation] = await db.select().from(conversations).where(and(eq(conversations.id, id.data), eq(conversations.deleted, false), eq(conversations.locked, false), eq(conversations.status, "active"))).limit(1);
+  if (!conversation) return void res.status(403).json({ success: false, message: "This conversation is unavailable." });
+  const recipients = await db.select({ userId: conversationParticipants.userId, notificationsEnabled: conversationParticipants.notificationsEnabled, muted: conversationParticipants.muted }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, id.data), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false), ne(conversationParticipants.userId, profileId)));
+  const recipientIds = new Set(recipients.map((r) => r.userId));
+  recipientIds.add(profileId);
+  for (const key of Object.keys(body.data.encryptedPayload)) if (!recipientIds.has(key)) return void res.status(400).json({ success: false, message: "Encrypted recipient is not an active conversation participant." });
+  if (!body.data.encryptedPayload[profileId]) return void res.status(400).json({ success: false, message: "The sender's encrypted envelope is required for local multi-device history." });
+  if (body.data.parentMessageId) {
+    const [parent] = await db.select({ id: messages.id }).from(messages).where(and(eq(messages.id, body.data.parentMessageId), eq(messages.conversationId, id.data), eq(messages.deletedForEveryone, false))).limit(1);
+    if (!parent) return void res.status(400).json({ success: false, message: "The message you are replying to is unavailable." });
+  }
+  const [created] = await db.insert(messages).values({ conversationId: id.data, senderId: profileId, parentMessageId: body.data.parentMessageId, messageType: "text", message: null, sent: true, delivered: false, read: false, aiReviewed: false, moderationStatus: "approved", encryptedPayload: body.data.encryptedPayload, encryptionVersion: 1, encryptedAt: new Date() }).returning();
+  if (!created) return void res.status(500).json({ success: false, message: "Unable to persist encrypted message." });
+  await db.update(conversations).set({ messageCount: sql`${conversations.messageCount} + 1`, updatedAt: new Date() }).where(eq(conversations.id, id.data));
+  for (const recipient of recipients) {
+    await db.update(conversationParticipants).set({ unreadMessageCount: sql`${conversationParticipants.unreadMessageCount} + 1` }).where(and(eq(conversationParticipants.conversationId, id.data), eq(conversationParticipants.userId, recipient.userId)));
+    if (recipient.notificationsEnabled && !recipient.muted) await db.insert(notifications).values({ recipientUserId: recipient.userId, actorUserId: profileId, messageId: created.id, conversationId: id.data, notificationType: "message", title: "New message", body: "You have a new ReDom encrypted message.", actionUrl: `redom://messages/${id.data}`, unread: true, read: false, inAppDelivered: true, priority: "normal" });
+  }
   res.status(201).json({ success: true, message: created });
 });
 
 router.patch("/conversations/:conversationId/messages/:messageId", async (req, res, next) => {
-  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." }); const conversationId = z.string().uuid().safeParse(req.params.conversationId); const messageId = z.string().uuid().safeParse(req.params.messageId); const body = z.object({ encryptedPayload: encryptedPayloadSchema }).strict().safeParse(req.body); if (!conversationId.success || !messageId.success || !body.success) return next();
-  const sender = await requireMember(req.user.userId, conversationId.data); if (!sender) return void res.status(403).json({ success: false, message: "You cannot edit messages in this conversation." }); const [message] = await db.select().from(messages).where(and(eq(messages.id, messageId.data), eq(messages.conversationId, conversationId.data), eq(messages.senderId, sender))).limit(1); if (!message) return void res.status(404).json({ success: false, message: "Message not found." }); if (message.deletedForEveryone || message.deletedPlaceholder) return void res.status(409).json({ success: false, message: "Deleted messages cannot be edited." }); if (message.messageType !== "text" || !message.encryptedPayload) return next(); if (Date.now() - new Date(message.createdAt).getTime() > 15 * 60 * 1000) return void res.status(403).json({ success: false, message: "Messages can only be edited within 15 minutes of sending." }); const participants = await db.select({ userId: conversationParticipants.userId }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversationId.data), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false))); const allowed = new Set(participants.map(p => p.userId)); for (const key of Object.keys(body.data.encryptedPayload)) if (!allowed.has(key)) return void res.status(400).json({ success: false, message: "Encrypted recipient is not an active conversation participant." }); const [updated] = await db.update(messages).set({ encryptedPayload: body.data.encryptedPayload, encryptionVersion: 1, encryptedAt: new Date(), edited: true, editedLabel: true, editedAt: new Date(), message: null, updatedAt: new Date() }).where(eq(messages.id, message.id)).returning(); res.json({ success: true, message: updated });
-});
-
-async function requireCallMember(userId: string, callId: string) { const profileId = await profileIdFor(userId); if (!profileId) return null; const result = await pool.query(`SELECT c.conversation_id FROM calls c JOIN conversation_participants cp ON cp.conversation_id=c.conversation_id AND cp.user_id=$2 WHERE c.id=$1 AND cp.active_member=true AND cp.temporarily_suspended=false AND cp.permanently_removed=false`, [callId, profileId]); return result.rows[0] ? profileId : null; }
-router.post("/calls/:callId/signals", async (req, res) => {
-  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." }); const callId = z.string().uuid().safeParse(req.params.callId); const body = z.object({ signalType: z.enum(["offer","answer","ice","renegotiate","bye"]), payload: z.record(z.unknown()).refine((v) => JSON.stringify(v).length <= 100000) }).strict().safeParse(req.body); if (!callId.success || !body.success) return void res.status(400).json({ success: false, message: "Invalid call signal." }); const profileId = await requireCallMember(req.user.userId, callId.data); if (!profileId) return void res.status(403).json({ success: false, message: "You do not have access to this call." }); await pool.query("INSERT INTO call_signals(call_id,sender_id,signal_type,payload) VALUES($1,$2,$3,$4)", [callId.data, profileId, body.data.signalType, JSON.stringify(body.data.payload)]); res.status(201).json({ success: true });
-});
-router.get("/calls/:callId/signals", async (req, res) => {
-  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." }); const callId = z.string().uuid().safeParse(req.params.callId); if (!callId.success) return void res.status(400).json({ success: false, message: "Invalid call." }); const profileId = await requireCallMember(req.user.userId, callId.data); if (!profileId) return void res.status(403).json({ success: false, message: "You do not have access to this call." }); const since = typeof req.query.since === "string" ? req.query.since : null; const result = await pool.query(`SELECT id,sender_id,signal_type,payload,created_at FROM call_signals WHERE call_id=$1 ${since ? "AND created_at > $2" : ""} ORDER BY created_at ASC LIMIT 200`, since ? [callId.data, since] : [callId.data]); res.json({ success: true, signals: result.rows });
+  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." });
+  const conversationId = z.string().uuid().safeParse(req.params.conversationId);
+  const messageId = z.string().uuid().safeParse(req.params.messageId);
+  const body = z.object({ encryptedPayload: encryptedPayloadSchema }).strict().safeParse(req.body);
+  if (!conversationId.success || !messageId.success || !body.success) return next();
+  const sender = await requireMember(req.user.userId, conversationId.data);
+  if (!sender) return void res.status(403).json({ success: false, message: "You cannot edit messages in this conversation." });
+  const [message] = await db.select().from(messages).where(and(eq(messages.id, messageId.data), eq(messages.conversationId, conversationId.data), eq(messages.senderId, sender))).limit(1);
+  if (!message) return void res.status(404).json({ success: false, message: "Message not found." });
+  if (message.deletedForEveryone || message.deletedPlaceholder) return void res.status(409).json({ success: false, message: "Deleted messages cannot be edited." });
+  if (message.messageType !== "text" || !message.encryptedPayload) return next();
+  if (Date.now() - new Date(message.createdAt).getTime() > 15 * 60 * 1000) return void res.status(403).json({ success: false, message: "Messages can only be edited within 15 minutes of sending." });
+  const participants = await db.select({ userId: conversationParticipants.userId }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversationId.data), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false)));
+  const allowed = new Set(participants.map((p) => p.userId));
+  for (const key of Object.keys(body.data.encryptedPayload)) if (!allowed.has(key)) return void res.status(400).json({ success: false, message: "Encrypted recipient is not an active conversation participant." });
+  if (!body.data.encryptedPayload[sender]) return void res.status(400).json({ success: false, message: "The sender's encrypted envelope is required." });
+  const [updated] = await db.update(messages).set({ encryptedPayload: body.data.encryptedPayload, encryptionVersion: 1, encryptedAt: new Date(), edited: true, editedLabel: true, editedAt: new Date(), message: null, updatedAt: new Date() }).where(eq(messages.id, message.id)).returning();
+  res.json({ success: true, message: updated });
 });
 
 export default router;
