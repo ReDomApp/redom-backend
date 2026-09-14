@@ -1,18 +1,22 @@
+import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { ReactNode } from "react";
 import CopyIcon from "../assets/message-actions/copy.svg";
 import ShareIcon from "../assets/message-actions/share.svg";
 import ReplyIcon from "../assets/message-actions/reply.svg";
+import ForwardIcon from "../assets/message-actions/forward.svg";
 import ReactionIcon from "../assets/message-actions/reaction.svg";
 import ProfileIcon from "../assets/message-actions/profile.svg";
 import EditIcon from "../assets/message-actions/edit.svg";
 import DeleteIcon from "../assets/message-actions/delete.svg";
 import ReportIcon from "../assets/message-actions/report.svg";
 import type { ReDomMessage } from "../messages/messageService";
+import { ForwardMessageSheet } from "./ForwardMessageSheet";
 
 interface MessageActionSheetProps {
   visible: boolean;
   message: ReDomMessage | null;
+  sourceConversationId: string;
   senderName: string;
   canViewProfile: boolean;
   canEdit: boolean;
@@ -32,11 +36,14 @@ interface MessageActionSheetProps {
 
 type Action = { label: string; icon: ReactNode; onPress: () => void; destructive?: boolean; disabled?: boolean };
 
-export function MessageActionSheet({ visible, message, senderName, canViewProfile, canEdit, canDelete, canCopy, canShare, onClose, onCopy, onShare, onReply, onReact, onViewProfile, onEdit, onDelete, onReport }: MessageActionSheetProps) {
+export function MessageActionSheet({ visible, message, sourceConversationId, senderName, canViewProfile, canEdit, canDelete, canCopy, canShare, onClose, onCopy, onShare, onReply, onReact, onViewProfile, onEdit, onDelete, onReport }: MessageActionSheetProps) {
+  const [forwardVisible, setForwardVisible] = useState(false);
   if (!message) return null;
+  const openForward = () => { onClose(); setForwardVisible(true); };
   const actions: Action[] = [
     { label: "Copy", icon: <CopyIcon width={23} height={23} />, onPress: onCopy, disabled: !canCopy },
     { label: "Share", icon: <ShareIcon width={23} height={23} />, onPress: onShare, disabled: !canShare },
+    { label: "Forward", icon: <ForwardIcon width={23} height={23} />, onPress: openForward, disabled: Boolean(message.lifecycle?.viewOnce || message.deletedForEveryone || message.deletedPlaceholder || (!message.message && !message.caption)) },
     { label: "Reply", icon: <ReplyIcon width={23} height={23} />, onPress: onReply },
     { label: "React", icon: <ReactionIcon width={23} height={23} />, onPress: onReact },
     ...(canViewProfile ? [{ label: `View ${senderName} profile`, icon: <ProfileIcon width={23} height={23} />, onPress: onViewProfile }] : []),
@@ -45,24 +52,27 @@ export function MessageActionSheet({ visible, message, senderName, canViewProfil
     { label: "Report", icon: <ReportIcon width={23} height={23} />, onPress: onReport },
   ];
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <Pressable style={styles.dismissArea} onPress={onClose} />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <Text numberOfLines={2} style={styles.preview}>{message.message || message.caption || "Message"}</Text>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.actions}>
-            {actions.map((action) => (
-              <Pressable key={action.label} disabled={action.disabled} onPress={() => { if (!action.disabled) action.onPress(); }} style={[styles.action, action.disabled && styles.disabled]}>
-                <View style={styles.iconBox}>{action.icon}</View>
-                <Text style={[styles.label, action.destructive && styles.destructive]}>{action.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <Pressable onPress={onClose} style={styles.cancel}><Text style={styles.cancelText}>Cancel</Text></Pressable>
+    <>
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.dismissArea} onPress={onClose} />
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text numberOfLines={2} style={styles.preview}>{message.message || message.caption || "Message"}</Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.actions}>
+              {actions.map((action) => (
+                <Pressable key={action.label} disabled={action.disabled} onPress={() => { if (!action.disabled) action.onPress(); }} style={[styles.action, action.disabled && styles.disabled]}>
+                  <View style={styles.iconBox}>{action.icon}</View>
+                  <Text style={[styles.label, action.destructive && styles.destructive]}>{action.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable onPress={onClose} style={styles.cancel}><Text style={styles.cancelText}>Cancel</Text></Pressable>
+          </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+      <ForwardMessageSheet visible={forwardVisible} message={message} sourceConversationId={sourceConversationId} onClose={() => setForwardVisible(false)} />
+    </>
   );
 }
 
