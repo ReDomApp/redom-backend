@@ -11,61 +11,10 @@ import { messages } from "../database/messages";
 import { userProfiles } from "../database/userProfiles";
 
 const router = Router();
-
-async function profileIdFor(userId: string) {
-  const [profile] = await db.select({ id: userProfiles.id }).from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-  return profile?.id ?? null;
-}
-async function memberOf(conversationId: string, profileId: string) {
-  const [member] = await db.select({ id: conversationParticipants.id, canJoinCalls: conversationParticipants.canJoinCalls }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversationId), eq(conversationParticipants.userId, profileId), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false))).limit(1);
-  return member ?? null;
-}
-
+async function profileIdFor(userId: string) { const [profile] = await db.select({ id: userProfiles.id }).from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1); return profile?.id ?? null; }
+async function memberOf(conversationId: string, profileId: string) { const [member] = await db.select({ id: conversationParticipants.id, canJoinCalls: conversationParticipants.canJoinCalls }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, conversationId), eq(conversationParticipants.userId, profileId), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false))).limit(1); return member ?? null; }
 router.use(authMiddleware, authRateLimit);
-
-router.get("/conversations/:conversationId", async (req, res) => {
-  const conversationId = z.string().uuid().safeParse(req.params.conversationId);
-  if (!req.user?.userId || !conversationId.success) return void res.status(400).json({ success: false, message: "A valid conversation is required." });
-  const profileId = await profileIdFor(req.user.userId);
-  if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." });
-  const member = await memberOf(conversationId.data, profileId);
-  if (!member) return void res.status(403).json({ success: false, message: "You do not have access to this conversation." });
-  const rows = await db.select().from(calls).where(and(eq(calls.conversationId, conversationId.data), eq(calls.deleted, false))).orderBy(desc(calls.createdAt)).limit(50);
-  res.json({ success: true, calls: rows });
-});
-
-router.post("/conversations/:conversationId", async (req, res) => {
-  const conversationId = z.string().uuid().safeParse(req.params.conversationId);
-  const parsed = z.object({ callType: z.enum(["voice", "video"]), maxParticipants: z.number().int().min(2).max(100).optional() }).strict().safeParse(req.body);
-  if (!req.user?.userId || !conversationId.success || !parsed.success) return void res.status(400).json({ success: false, message: "A valid call type is required." });
-  const profileId = await profileIdFor(req.user.userId);
-  if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." });
-  const member = await memberOf(conversationId.data, profileId);
-  if (!member || !member.canJoinCalls) return void res.status(403).json({ success: false, message: "Calls are not available for this participant." });
-  const [conversation] = await db.select({ type: conversations.conversationType, status: conversations.status, locked: conversations.locked, deleted: conversations.deleted }).from(conversations).where(eq(conversations.id, conversationId.data)).limit(1);
-  if (!conversation || conversation.deleted || conversation.locked || conversation.status !== "active") return void res.status(403).json({ success: false, message: "This conversation is unavailable." });
-  const maxParticipants = parsed.data.maxParticipants ?? (conversation.type === "group" ? 50 : 2);
-  const [created] = await db.insert(calls).values({ conversationId: conversationId.data, startedByUserId: profileId, callType: parsed.data.callType, conversationType: conversation.type === "group" ? "group" : "direct", callStatus: "ringing", active: true, participantCount: 1, maxParticipants, microphoneEnabled: true, speakerEnabled: true, cameraEnabled: parsed.data.callType === "video", usingFrontCamera: true, screenSharing: false, encrypted: true }).returning();
-  if (!created) return void res.status(500).json({ success: false, message: "Unable to start call." });
-  res.status(201).json({ success: true, call: created });
-});
-
-router.patch("/:callId", async (req, res) => {
-  const callId = z.string().uuid().safeParse(req.params.callId);
-  const parsed = z.object({ status: z.enum(["connecting", "active", "ended", "declined", "missed", "cancelled", "failed"]), microphoneEnabled: z.boolean().optional(), speakerEnabled: z.boolean().optional(), cameraEnabled: z.boolean().optional(), usingFrontCamera: z.boolean().optional(), screenSharing: z.boolean().optional(), connectionQuality: z.enum(["excellent", "good", "fair", "poor"]).nullable().optional(), networkType: z.enum(["wifi", "mobile"]).nullable().optional(), durationSeconds: z.number().int().min(0).max(86400).optional() }).strict().safeParse(req.body);
-  if (!req.user?.userId || !callId.success || !parsed.success) return void res.status(400).json({ success: false, message: "A valid call update is required." });
-  const profileId = await profileIdFor(req.user.userId);
-  if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." });
-  const [existing] = await db.select().from(calls).where(and(eq(calls.id, callId.data), eq(calls.deleted, false))).limit(1);
-  if (!existing) return void res.status(404).json({ success: false, message: "Call not found." });
-  const member = await memberOf(existing.conversationId, profileId);
-  if (!member) return void res.status(403).json({ success: false, message: "You do not have access to this call." });
-  const ended = ["ended", "declined", "missed", "cancelled", "failed"].includes(parsed.data.status);
-  const [updated] = await db.update(calls).set({ callStatus: parsed.data.status, ...parsed.data, active: !ended, startedAt: parsed.data.status === "active" && !existing.startedAt ? new Date() : existing.startedAt, answeredAt: parsed.data.status === "active" && !existing.answeredAt ? new Date() : existing.answeredAt, endedAt: ended ? new Date() : existing.endedAt, updatedAt: new Date() }).where(eq(calls.id, callId.data)).returning();
-  if (ended) {
-    await db.insert(messages).values({ conversationId: existing.conversationId, senderId: existing.startedByUserId, messageType: parsed.data.status === "missed" ? "missed_call" : "system", message: parsed.data.status === "missed" ? "Missed ReDom call" : "ReDom call ended", callType: existing.callType === "voice" ? "voice_call" : "video_call", callDurationSeconds: parsed.data.durationSeconds ?? existing.durationSeconds, systemAction: "call_ended", sent: true, delivered: true, read: false, aiReviewed: false, moderationStatus: "approved" });
-  }
-  res.json({ success: true, call: updated });
-});
-
+router.get("/conversations/:conversationId", async (req, res) => { const conversationId = z.string().uuid().safeParse(req.params.conversationId); if (!req.user?.userId || !conversationId.success) return void res.status(400).json({ success: false, message: "A valid conversation is required." }); const profileId = await profileIdFor(req.user.userId); if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." }); if (!await memberOf(conversationId.data, profileId)) return void res.status(403).json({ success: false, message: "You do not have access to this conversation." }); const rows = await db.select().from(calls).where(and(eq(calls.conversationId, conversationId.data), eq(calls.deleted, false))).orderBy(desc(calls.createdAt)).limit(50); res.json({ success: true, calls: rows }); });
+router.post("/conversations/:conversationId", async (req, res) => { const conversationId = z.string().uuid().safeParse(req.params.conversationId); const parsed = z.object({ callType: z.enum(["voice", "video"]), maxParticipants: z.number().int().min(2).max(100).optional() }).strict().safeParse(req.body); if (!req.user?.userId || !conversationId.success || !parsed.success) return void res.status(400).json({ success: false, message: "A valid call type is required." }); const profileId = await profileIdFor(req.user.userId); if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." }); const member = await memberOf(conversationId.data, profileId); if (!member || !member.canJoinCalls) return void res.status(403).json({ success: false, message: "Calls are not available for this participant." }); const [conversation] = await db.select({ type: conversations.conversationType, status: conversations.status, locked: conversations.locked, deleted: conversations.deleted }).from(conversations).where(eq(conversations.id, conversationId.data)).limit(1); if (!conversation || conversation.deleted || conversation.locked || conversation.status !== "active") return void res.status(403).json({ success: false, message: "This conversation is unavailable." }); const maxParticipants = parsed.data.maxParticipants ?? (conversation.type === "group" ? 50 : 2); const [created] = await db.insert(calls).values({ conversationId: conversationId.data, startedByUserId: profileId, callType: parsed.data.callType, conversationType: conversation.type === "group" ? "group" : "direct", callStatus: "ringing", active: true, participantCount: 1, maxParticipants, microphoneEnabled: true, speakerEnabled: true, cameraEnabled: parsed.data.callType === "video", usingFrontCamera: true, screenSharing: false, encrypted: true }).returning(); if (!created) return void res.status(500).json({ success: false, message: "Unable to start call." }); res.status(201).json({ success: true, call: created }); });
+router.patch("/:callId", async (req, res) => { const callId = z.string().uuid().safeParse(req.params.callId); const parsed = z.object({ status: z.enum(["connecting", "active", "ended", "declined", "missed", "cancelled", "failed"]), microphoneEnabled: z.boolean().optional(), speakerEnabled: z.boolean().optional(), cameraEnabled: z.boolean().optional(), usingFrontCamera: z.boolean().optional(), screenSharing: z.boolean().optional(), connectionQuality: z.enum(["excellent", "good", "fair", "poor"]).nullable().optional(), networkType: z.enum(["wifi", "mobile"]).nullable().optional(), durationSeconds: z.number().int().min(0).max(86400).optional() }).strict().safeParse(req.body); if (!req.user?.userId || !callId.success || !parsed.success) return void res.status(400).json({ success: false, message: "A valid call update is required." }); const profileId = await profileIdFor(req.user.userId); if (!profileId) return void res.status(404).json({ success: false, message: "Profile not found." }); const [existing] = await db.select().from(calls).where(and(eq(calls.id, callId.data), eq(calls.deleted, false))).limit(1); if (!existing) return void res.status(404).json({ success: false, message: "Call not found." }); if (!await memberOf(existing.conversationId, profileId)) return void res.status(403).json({ success: false, message: "You do not have access to this call." }); const ended = ["ended", "declined", "missed", "cancelled", "failed"].includes(parsed.data.status); const { status, durationSeconds, ...callFields } = parsed.data; const [updated] = await db.update(calls).set({ callStatus: status, ...callFields, ...(durationSeconds !== undefined ? { durationSeconds } : {}), active: !ended, startedAt: status === "active" && !existing.startedAt ? new Date() : existing.startedAt, answeredAt: status === "active" && !existing.answeredAt ? new Date() : existing.answeredAt, endedAt: ended ? new Date() : existing.endedAt, updatedAt: new Date() }).where(eq(calls.id, callId.data)).returning(); if (ended) await db.insert(messages).values({ conversationId: existing.conversationId, senderId: existing.startedByUserId, messageType: status === "missed" ? "missed_call" : "system", message: status === "missed" ? "Missed ReDom call" : "ReDom call ended", callType: existing.callType === "voice" ? "voice_call" : "video_call", callDurationSeconds: durationSeconds ?? existing.durationSeconds, systemAction: "call_ended", sent: true, delivered: true, read: false, aiReviewed: false, moderationStatus: "approved" }); res.json({ success: true, call: updated }); });
 export default router;
