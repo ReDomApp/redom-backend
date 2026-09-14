@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { decryptEnvelopeMap, encryptForRecipient, ensureDeviceKey } from "./e2ee";
+import { decryptEnvelopeMap, encryptForRecipient, ensureDeviceKey, getDeviceId } from "./e2ee";
 import { encryptMediaForParticipants } from "./encryptedMedia";
 
 export type MessageReactionType = "like" | "love" | "haha" | "wow" | "sad" | "angry";
@@ -55,7 +55,7 @@ export const messageService = {
   sendEncryptedText(conversationId: string, encryptedPayload: Record<string, unknown>, parentMessageId?: string) { return api.post<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages`, { encryptedPayload, ...(parentMessageId ? { parentMessageId } : {}) }); },
   async sendMedia(conversationId: string, type: "photo" | "voice" | "audio" | "video" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[]; viewOnce?: boolean }) { return this.sendEncryptedMedia(conversationId, type, dataUri, options); },
   async sendEncryptedMedia(conversationId: string, type: "photo" | "video" | "voice" | "audio" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[]; viewOnce?: boolean }) { await registerCurrentDevice(); const participants = await messageService.getCryptoParticipants(conversationId); const encrypted = await encryptMediaForParticipants(dataUri, participants.participants, conversationId); return api.post<{ success: boolean; message: ReDomMessage; attachment: MessageAttachment }>(`/messages/conversations/${conversationId}/encrypted-media`, { type, ciphertextDataUri: encrypted.ciphertextDataUri, mimeType: encrypted.mime, mediaEnvelopes: encrypted.envelopes, ...(options ?? {}) }); },
-  getEncryptedMediaKey(messageId: string) { return api.get<{ success: boolean; envelope: { version: 1; algorithm: "X25519-AES-256-GCM"; ephemeralPublicKey: string; encryptedMediaKey: string } }>(`/messages/messages/${messageId}/media-key`); },
+  async getEncryptedMediaKey(messageId: string) { const deviceId = await getDeviceId(); return api.get<{ success: boolean; envelope: { version: 1; algorithm: "X25519-AES-256-GCM"; ephemeralPublicKey: string; encryptedMediaKey: string } }>(`/messages/messages/${messageId}/media-key?deviceId=${encodeURIComponent(deviceId)}`); },
   getAttachment(messageId: string) { return api.get<{ success: boolean; attachment: MessageAttachment }>(`/messages/messages/${messageId}/attachment`); },
   deleteMessage(conversationId: string, messageId: string, scope: "me" | "everyone") { return api.delete<{ success: boolean; scope: "me" | "everyone"; messageId: string; placeholder?: string }>(`/messages/conversations/${conversationId}/messages/${messageId}`, { scope }); },
   markViewOnce(messageId: string) { return api.post<{ success: boolean; messageId: string; viewOnce: boolean }>(`/messages/messages/${messageId}/view-once`); },
