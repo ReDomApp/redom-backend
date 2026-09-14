@@ -12,8 +12,9 @@ app.use(pinoHttp({ logger, serializers: { req(req) { return { id: req.id, method
 app.use(cors());
 app.use("/redom-backend/support/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/support/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
-app.use(express.json({ limit: "12mb" }));
-app.use(express.urlencoded({ extended: true, limit: "12mb" }));
+// Encrypted media is base64 encoded before transport. Keep a bounded JSON envelope above the 10 MB binary media limit.
+app.use(express.json({ limit: "16mb" }));
+app.use(express.urlencoded({ extended: true, limit: "16mb" }));
 app.use(profileShareRouter);
 app.use("/redom-backend", apiRateLimit, router);
 app.use("/", apiRateLimit, router);
