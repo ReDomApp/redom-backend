@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { ensureDeviceKey } from "./e2ee";
+import { decryptEnvelopeMap, encryptForRecipient, ensureDeviceKey } from "./e2ee";
 
 export type MessageReactionType = "like" | "love" | "haha" | "wow" | "sad" | "angry";
 export type DisappearingTimer = 0 | 86400 | 604800 | 7776000;
@@ -10,10 +10,18 @@ export interface ConversationSettings { muted: boolean; pinned: boolean; archive
 export interface MessageReactionSummary { reactionType: MessageReactionType; total: number; }
 export interface CryptoParticipant { profile_id: string; public_key: string | null; algorithm?: string | null; key_version?: number | null; }
 
+async function hydrateEncryptedMessages(conversationId: string, messages: ReDomMessage[]): Promise<ReDomMessage[]> {
+  return Promise.all(messages.map(async (message) => {
+    if (!message.encryptedPayload || message.message) return message;
+    const plaintext = await decryptEnvelopeMap(message.encryptedPayload, conversationId).catch(() => null);
+    return plaintext === null ? { ...message, message: "Waiting for encrypted message…" } : { ...message, message: plaintext };
+  }));
+}
+
 export const messageService = {
   listConversations() { return api.get<{ success: boolean; conversations: ConversationSummary[] }>("/messages/conversations"); },
-  getMessages(conversationId: string) { return api.get<{ success: boolean; messages: ReDomMessage[]; replyTargets?: ReDomMessage[] }>(`/messages/conversations/${conversationId}`); },
-  getCompletedMessages(conversationId: string) { return api.get<{ success: boolean; messages: ReDomMessage[]; replyTargets?: ReDomMessage[] }>(`/messages/conversations/${conversationId}`); },
+  async getMessages(conversationId: string) { const result = await api.get<{ success: boolean; messages: ReDomMessage[]; replyTargets?: ReDomMessage[] }>(`/messages/conversations/${conversationId}`); return { ...result, messages: await hydrateEncryptedMessages(conversationId, result.messages), replyTargets: result.replyTargets ? await hydrateEncryptedMessages(conversationId, result.replyTargets) : result.replyTargets }; },
+  getCompletedMessages(conversationId: string) { return this.getMessages(conversationId); },
   getSettings(conversationId: string) { return api.get<{ success: boolean; settings: ConversationSettings }>(`/messages/conversations/${conversationId}/settings`); },
   updateSettings(conversationId: string, settings: Partial<ConversationSettings>) { return api.patch<{ success: boolean; settings: ConversationSettings }>(`/messages/conversations/${conversationId}/settings`, settings); },
   getDisappearingPolicy(conversationId: string) { return api.get<{ success: boolean; timerSeconds: DisappearingTimer; allowedTimers: DisappearingTimer[] }>(`/messages/conversations/${conversationId}/policy`); },
@@ -23,9 +31,18 @@ export const messageService = {
   createDirect(recipientProfileId: string) { return api.post<{ success: boolean; conversationId: string; existing: boolean }>("/messages/conversations/direct", { recipientProfileId }); },
   createGroup(name: string, memberProfileIds: string[], description?: string) { return api.post<{ success: boolean; conversationId: string; participantCount: number }>("/messages/groups", { name, memberProfileIds, ...(description ? { description } : {}) }); },
   getGroupMembers(conversationId: string) { return api.get<{ success: boolean; members: Array<{ id: string; profileId: string; role: string; joinedAt: string; online: boolean }> }>(`/messages/groups/${conversationId}/members`); },
-  ensureEncryptionKey() { return ensureDeviceKey().then(({ publicKey }) => api.put<{ success: boolean; profileId: string; publicKey: string }>("/messages/crypto/device-key", { publicKey })); },
+  async ensureEncryptionKey() { const { publicKey } = await ensureDeviceKey(); return api.put<{ success: boolean; profileId: string; publicKey: string }>("/messages/crypto/device-key", { publicKey }); },
   getCryptoParticipants(conversationId: string) { return api.get<{ success: boolean; participants: CryptoParticipant[] }>(`/messages/crypto/conversations/${conversationId}/crypto-participants`); },
-  sendText(conversationId: string, message: string, parentMessageId?: string) { return api.post<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages`, { message, ...(parentMessageId ? { parentMessageId } : {}) }); },
+  async sendText(conversationId: string, message: string, parentMessageId?: string) {
+    await this.ensureEncryptionKey();
+    const participants = await this.getCryptoParticipants(conversationId);
+    const envelopes: Record<string, unknown> = {};
+    for (const participant of participants.participants) {
+      if (!participant.public_key) throw new Error("This conversation participant has not enabled ReDom encrypted messaging on their current device.");
+      envelopes[participant.profile_id] = await encryptForRecipient(message, participant.public_key, conversationId);
+    }
+    return api.post<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages`, { encryptedPayload: envelopes, ...(parentMessageId ? { parentMessageId } : {}) });
+  },
   sendEncryptedText(conversationId: string, encryptedPayload: Record<string, unknown>, parentMessageId?: string) { return api.post<{ success: boolean; message: ReDomMessage }>(`/messages/conversations/${conversationId}/messages`, { encryptedPayload, ...(parentMessageId ? { parentMessageId } : {}) }); },
   sendMedia(conversationId: string, type: "photo" | "voice" | "audio" | "video" | "document" | "gif" | "sticker", dataUri: string, options?: { caption?: string; parentMessageId?: string; durationSeconds?: number; waveform?: number[] }) { return api.post<{ success: boolean; message: ReDomMessage; attachment: MessageAttachment }>(`/messages/conversations/${conversationId}/media`, { type, dataUri, ...options }); },
   getAttachment(messageId: string) { return api.get<{ success: boolean; attachment: MessageAttachment }>(`/messages/messages/${messageId}/attachment`); },
