@@ -80,11 +80,11 @@ export function HomeFeedScreenV3() {
 
   return <SafeAreaView style={ui.root}>
     <View style={ui.topHeader}>
-      <View style={ui.brandRow}><Pressable style={ui.menuButton} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu"><MenuIcon width={25} height={25} /></Pressable><View style={ui.brand}><ReDomLogo width={n(116, scale)} height={n(34, scale)} /></View></View>
+      <View style={ui.brandRow}><Pressable style={ui.menuButton} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu"><MenuIcon width={25} height={25} /></Pressable><View style={ui.brand}><ReDomLogo width={n(120, scale)} height={n(36, scale)} /></View></View>
       <View style={ui.topActions}>
         <Pressable style={ui.topButton} accessibilityLabel="Create"><CreateIcon width={24} height={24} pointerEvents="none" /></Pressable>
         <Pressable style={ui.topButton} accessibilityLabel="Search"><SearchIcon width={24} height={24} pointerEvents="none" /></Pressable>
-        <Pressable style={ui.topButton} onPress={openMessages} hitSlop={10} accessibilityRole="button" accessibilityLabel="Messenger" testID="home-feed-messenger-button"><View pointerEvents="none"><MessengerIcon width={24} height={24} /></View></Pressable>
+        <Pressable style={ui.topButton} onPress={openMessages} hitSlop={10} accessibilityRole="button" accessibilityLabel="Messenger" testID="home-feed-messenger-button"><View pointerEvents="none" style={ui.messengerIcon}><MessengerIcon width={24} height={24} /></View></Pressable>
       </View>
     </View>
 
@@ -163,18 +163,19 @@ function makeStyles(scale: number) {
   const s = (v: number) => n(v, scale);
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: "#F0F2F5" },
-    topHeader: { height: s(56), paddingHorizontal: s(12), backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    topHeader: { height: s(60), paddingHorizontal: s(12), backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     brandRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: s(8) },
-    menuButton: { width: s(38), height: s(38), borderRadius: s(19), alignItems: "center", justifyContent: "center" },
+    menuButton: { width: s(40), height: s(40), borderRadius: s(20), alignItems: "center", justifyContent: "center" },
     brand: { justifyContent: "center" },
     topActions: { flexDirection: "row", alignItems: "center", gap: s(7) },
-    topButton: { width: s(38), height: s(38), borderRadius: s(19), backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", zIndex: 10, elevation: 10 },
-    navigationBar: { height: s(52), backgroundColor: "#FFFFFF", flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-    navItem: { width: s(58), height: s(52), alignItems: "center", justifyContent: "center" },
+    topButton: { width: s(40), height: s(40), borderRadius: s(20), backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", zIndex: 10, elevation: 10 },
+    messengerIcon: { transform: [{ translateY: s(3) }] },
+    navigationBar: { height: s(54), backgroundColor: "#FFFFFF", flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
+    navItem: { width: s(58), height: s(54), alignItems: "center", justifyContent: "center" },
     activeNav: { borderBottomWidth: 3, borderBottomColor: "#1877F2" },
     feed: { paddingBottom: s(24) },
-    composer: { backgroundColor: "#FFFFFF", minHeight: s(62), paddingHorizontal: s(12), paddingVertical: s(10), flexDirection: "row", alignItems: "center", gap: s(9) },
-    composerInput: { flex: 1, minHeight: s(40), borderRadius: s(20), backgroundColor: "#F0F2F5", paddingHorizontal: s(16), justifyContent: "center" },
+    composer: { backgroundColor: "#FFFFFF", minHeight: s(66), paddingHorizontal: s(12), paddingVertical: s(11), flexDirection: "row", alignItems: "center", gap: s(9) },
+    composerInput: { flex: 1, minHeight: s(42), borderRadius: s(21), backgroundColor: "#F0F2F5", paddingHorizontal: s(16), justifyContent: "center" },
     composerText: { fontSize: s(15), color: "#65676B", fontWeight: "400" },
     mediaButton: { width: s(32), alignItems: "center", justifyContent: "center" },
     storyHeader: { backgroundColor: "#FFFFFF", paddingHorizontal: s(12), paddingTop: s(12), paddingBottom: s(8), flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
