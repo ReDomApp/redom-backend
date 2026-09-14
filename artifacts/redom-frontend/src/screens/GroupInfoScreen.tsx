@@ -3,108 +3,33 @@ import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleShe
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
+import { useAuthContext } from "../auth/context";
 import { messageService } from "../messages/messageService";
 
 export function GroupInfoScreen({ route }: NativeStackScreenProps<RootStackParamList, "GroupInfo">) {
-  const navigation = useNavigation();
-  const [group, setGroup] = useState<any>(null);
-  const [members, setMembers] = useState<any[]>([]);
-  const [joinRequests, setJoinRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [memberId, setMemberId] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [requesting, setRequesting] = useState(false);
-
-  const isAdmin = useMemo(() => members.some((m) => m.role === "owner" || m.role === "admin"), [members]);
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try {
-      const [g, m] = await Promise.all([
-        messageService.getGroupSettings(route.params.conversationId),
-        messageService.getGroupMembers(route.params.conversationId),
-      ]);
-      setGroup(g.settings); setMembers(m.members);
-      if (g.settings?.joinApprovalRequired) {
-        try {
-          const requests = await messageService.getGroupJoinRequests(route.params.conversationId);
-          setJoinRequests(requests.requests ?? []);
-        } catch {
-          setJoinRequests([]);
-        }
-      } else setJoinRequests([]);
-    } catch (e) { setError(e instanceof Error ? e.message : "Unable to load group information."); }
-    finally { setLoading(false); }
-  }, [route.params.conversationId]);
+  const navigation = useNavigation(); const { user } = useAuthContext();
+  const [group, setGroup] = useState<any>(null); const [members, setMembers] = useState<any[]>([]); const [joinRequests, setJoinRequests] = useState<any[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [memberId, setMemberId] = useState(""); const [saving, setSaving] = useState(false); const [requesting, setRequesting] = useState(false);
+  const isAdmin = useMemo(() => members.some((m) => m.profileId === user?.profileId && (m.role === "owner" || m.role === "admin")), [members, user?.profileId]);
+  const load = useCallback(async () => { setLoading(true); setError(""); try { const [g, m] = await Promise.all([messageService.getGroupSettings(route.params.conversationId), messageService.getGroupMembers(route.params.conversationId)]); setGroup(g.settings); setMembers(m.members); if (g.settings?.joinApprovalRequired) { try { const requests = await messageService.getGroupJoinRequests(route.params.conversationId); setJoinRequests(requests.requests ?? []); } catch { setJoinRequests([]); } } else setJoinRequests([]); } catch (e) { setError(e instanceof Error ? e.message : "Unable to load group information."); } finally { setLoading(false); } }, [route.params.conversationId]);
   useEffect(() => { void load(); }, [load]);
-
-  const update = async (patch: Record<string, unknown>) => {
-    if (!group || saving) return;
-    setSaving(true); setError("");
-    try { await messageService.updateGroupSettings(route.params.conversationId, patch); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : "Group setting could not be changed."); }
-    finally { setSaving(false); }
-  };
-  const add = async () => {
-    const id = memberId.trim(); if (!id) return;
-    setSaving(true); setError("");
-    try { await messageService.addGroupMembers(route.params.conversationId, [id]); setMemberId(""); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : "Member could not be added."); }
-    finally { setSaving(false); }
-  };
-  const remove = (profileId: string) => Alert.alert("Remove member", "Remove this member from the group?", [
-    { text: "Cancel", style: "cancel" },
-    { text: "Remove", style: "destructive", onPress: async () => { setSaving(true); try { await messageService.removeGroupMember(route.params.conversationId, profileId); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Member could not be removed."); } finally { setSaving(false); } } },
-  ]);
-  const changeRole = (profileId: string, currentRole: string) => Alert.alert("Member role", "Choose this member's group role.", [
-    { text: "Cancel", style: "cancel" },
-    { text: "Admin", onPress: async () => { try { await messageService.setGroupMemberRole(route.params.conversationId, profileId, "admin"); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Role could not be changed."); } } },
-    ...(currentRole === "admin" ? [] : [{ text: "Member", onPress: async () => { try { await messageService.setGroupMemberRole(route.params.conversationId, profileId, "member"); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Role could not be changed."); } } }]),
-  ]);
+  const update = async (patch: Record<string, unknown>) => { if (!group || saving || !isAdmin) return; setSaving(true); setError(""); try { await messageService.updateGroupSettings(route.params.conversationId, patch); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Group setting could not be changed."); } finally { setSaving(false); } };
+  const add = async () => { const id = memberId.trim(); if (!id || !isAdmin) return; setSaving(true); setError(""); try { await messageService.addGroupMembers(route.params.conversationId, [id]); setMemberId(""); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Member could not be added."); } finally { setSaving(false); } };
+  const remove = (profileId: string) => Alert.alert("Remove member", "Remove this member from the group?", [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: async () => { setSaving(true); try { await messageService.removeGroupMember(route.params.conversationId, profileId); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Member could not be removed."); } finally { setSaving(false); } } }]);
+  const changeRole = (profileId: string, currentRole: string) => Alert.alert("Member role", "Choose this member's group role.", [{ text: "Cancel", style: "cancel" }, { text: "Admin", onPress: async () => { try { await messageService.setGroupMemberRole(route.params.conversationId, profileId, "admin"); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Role could not be changed."); } } }, ...(currentRole === "admin" ? [] : [{ text: "Member", onPress: async () => { try { await messageService.setGroupMemberRole(route.params.conversationId, profileId, "member"); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Role could not be changed."); } } }])]);
   const approve = async (profileId: string) => { setSaving(true); try { await messageService.approveGroupJoinRequest(route.params.conversationId, profileId); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Join request could not be approved."); } finally { setSaving(false); } };
   const reject = async (profileId: string) => { setSaving(true); try { await messageService.rejectGroupJoinRequest(route.params.conversationId, profileId); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Join request could not be rejected."); } finally { setSaving(false); } };
-  const requestJoin = async () => {
-    if (requesting) return; setRequesting(true); setError("");
-    try { await messageService.requestGroupJoin(route.params.conversationId); Alert.alert("Request sent", "Your request to join this group has been sent to the group admins."); }
-    catch (e) { setError(e instanceof Error ? e.message : "Your join request could not be sent."); }
-    finally { setRequesting(false); }
-  };
-  const leave = () => Alert.alert("Leave group", "You will stop receiving group messages.", [
-    { text: "Cancel", style: "cancel" },
-    { text: "Leave", style: "destructive", onPress: async () => { try { await messageService.leaveGroup(route.params.conversationId); navigation.goBack(); } catch (e) { setError(e instanceof Error ? e.message : "You could not leave the group."); } } },
-  ]);
-
+  const requestJoin = async () => { if (requesting || isAdmin) return; setRequesting(true); setError(""); try { await messageService.requestGroupJoin(route.params.conversationId); Alert.alert("Request sent", "Your request to join this group has been sent to the group admins."); } catch (e) { setError(e instanceof Error ? e.message : "Your join request could not be sent."); } finally { setRequesting(false); } };
+  const leave = () => Alert.alert("Leave group", "You will stop receiving group messages.", [{ text: "Cancel", style: "cancel" }, { text: "Leave", style: "destructive", onPress: async () => { try { await messageService.leaveGroup(route.params.conversationId); navigation.goBack(); } catch (e) { setError(e instanceof Error ? e.message : "You could not leave the group."); } } }]);
   if (loading) return <SafeAreaView style={styles.root}><View style={styles.center}><ActivityIndicator size="large" color="#1877F2" /></View></SafeAreaView>;
   if (!group) return <SafeAreaView style={styles.root}><Text style={styles.error}>{error || "Group unavailable."}</Text></SafeAreaView>;
-  return <SafeAreaView style={styles.root}>
-    <View style={styles.header}><Pressable onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable><Text style={styles.title}>Group info</Text><View style={{ width: 32 }} /></View>
-    <ScrollView contentContainerStyle={styles.content}>
-      <View style={styles.hero}><View style={styles.avatar}><Text style={styles.avatarText}>{(group.groupName || "G").slice(0, 1).toUpperCase()}</Text></View><Text style={styles.name}>{group.groupName}</Text><Text style={styles.count}>{group.participantCount} members</Text></View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {group.joinApprovalRequired ? <View style={styles.approvalCard}>
-        <Text style={styles.approvalTitle}>Join approval</Text>
-        <Text style={styles.approvalHint}>New members must be approved by a group admin.</Text>
-        {!isAdmin ? <Pressable onPress={() => void requestJoin()} disabled={requesting} style={styles.primary}><Text style={styles.primaryText}>{requesting ? "Sending…" : "Request to join"}</Text></Pressable> : null}
-      </View> : null}
-      {isAdmin && group.joinApprovalRequired ? <View><Text style={styles.section}>Pending join requests{joinRequests.length ? ` (${joinRequests.length})` : ""}</Text>{joinRequests.length === 0 ? <Text style={styles.empty}>No pending requests.</Text> : joinRequests.map((r) => <View key={r.id || r.profileId} style={styles.request}><View style={{ flex: 1 }}><Text style={styles.memberId}>{r.profileId}</Text><Text style={styles.role}>{r.requestedAt ? new Date(r.requestedAt).toLocaleString() : "Pending"}</Text></View><Pressable onPress={() => void approve(r.profileId)} disabled={saving} style={styles.approve}><Text style={styles.approveText}>Approve</Text></Pressable><Pressable onPress={() => void reject(r.profileId)} disabled={saving} style={styles.reject}><Text style={styles.rejectText}>Reject</Text></Pressable></View>)}</View> : null}
-      <Text style={styles.section}>Group information</Text>
-      <TextInput value={group.groupName || ""} onChangeText={(v) => setGroup({ ...group, groupName: v })} onBlur={() => void update({ groupName: group.groupName })} style={styles.input} />
-      <TextInput value={group.groupDescription || ""} onChangeText={(v) => setGroup({ ...group, groupDescription: v })} placeholder="Description" style={[styles.input, styles.multiline]} multiline onBlur={() => void update({ groupDescription: group.groupDescription })} />
-      <Text style={styles.section}>Permissions</Text>
-      <View style={styles.row}><Text style={styles.rowText}>Members can edit group info</Text><Switch value={Boolean(group.anyoneCanEditInfo)} onValueChange={(v) => void update({ anyoneCanEditInfo: v })} /></View>
-      <View style={styles.row}><Text style={styles.rowText}>Members can add people</Text><Switch value={Boolean(group.anyoneCanInvite)} onValueChange={(v) => void update({ anyoneCanInvite: v })} /></View>
-      <View style={styles.row}><Text style={styles.rowText}>Members can remove people</Text><Switch value={Boolean(group.anyoneCanRemoveMembers)} onValueChange={(v) => void update({ anyoneCanRemoveMembers: v })} /></View>
-      <View style={styles.row}><Text style={styles.rowText}>Join approval required</Text><Switch value={Boolean(group.joinApprovalRequired)} onValueChange={(v) => void update({ joinApprovalRequired: v })} /></View>
-      <Text style={styles.section}>Add member</Text>
-      <TextInput value={memberId} onChangeText={setMemberId} placeholder="ReDom profile ID" autoCapitalize="none" style={styles.input} />
-      <Pressable onPress={() => void add()} disabled={saving} style={styles.secondary}><Text style={styles.secondaryText}>Add member</Text></Pressable>
-      <Text style={styles.section}>Members</Text>
-      {members.map((m) => <View key={m.id} style={styles.member}><View style={{ flex: 1 }}><Text style={styles.memberId}>{m.profileId}</Text><Text style={styles.role}>{m.role} · {m.online ? "online" : "offline"}</Text></View>{isAdmin && m.role !== "owner" ? <><Pressable onPress={() => changeRole(m.profileId, m.role)}><Text style={styles.roleAction}>{m.role === "admin" ? "Role" : "Make admin"}</Text></Pressable><Pressable onPress={() => remove(m.profileId)}><Text style={styles.remove}>Remove</Text></Pressable></> : null}</View>)}
-      <Pressable onPress={leave} style={styles.leave}><Text style={styles.leaveText}>Leave group</Text></Pressable>
-    </ScrollView>
-  </SafeAreaView>;
+  return <SafeAreaView style={styles.root}><View style={styles.header}><Pressable onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable><Text style={styles.title}>Group info</Text><View style={{ width: 32 }} /></View><ScrollView contentContainerStyle={styles.content}>
+    <View style={styles.hero}><View style={styles.avatar}><Text style={styles.avatarText}>{(group.groupName || "G").slice(0, 1).toUpperCase()}</Text></View><Text style={styles.name}>{group.groupName}</Text><Text style={styles.count}>{group.participantCount} members</Text></View>
+    {error ? <Text style={styles.error}>{error}</Text> : null}
+    {group.joinApprovalRequired ? <View style={styles.approvalCard}><Text style={styles.approvalTitle}>Join approval</Text><Text style={styles.approvalHint}>New members must be approved by a group admin.</Text>{!isAdmin ? <Pressable onPress={() => void requestJoin()} disabled={requesting} style={styles.primary}><Text style={styles.primaryText}>{requesting ? "Sending…" : "Request to join"}</Text></Pressable> : null}</View> : null}
+    {isAdmin && group.joinApprovalRequired ? <View><Text style={styles.section}>Pending join requests{joinRequests.length ? ` (${joinRequests.length})` : ""}</Text>{joinRequests.length === 0 ? <Text style={styles.empty}>No pending requests.</Text> : joinRequests.map((r) => <View key={r.id || r.profileId} style={styles.request}><View style={{ flex: 1 }}><Text style={styles.memberId}>{r.profileId}</Text><Text style={styles.role}>{r.requestedAt ? new Date(r.requestedAt).toLocaleString() : "Pending"}</Text></View><Pressable onPress={() => void approve(r.profileId)} disabled={saving} style={styles.approve}><Text style={styles.approveText}>Approve</Text></Pressable><Pressable onPress={() => void reject(r.profileId)} disabled={saving} style={styles.reject}><Text style={styles.rejectText}>Reject</Text></Pressable></View>)}</View> : null}
+    {isAdmin ? <><Text style={styles.section}>Group information</Text><TextInput value={group.groupName || ""} onChangeText={(v) => setGroup({ ...group, groupName: v })} onBlur={() => void update({ groupName: group.groupName })} style={styles.input} /><TextInput value={group.groupDescription || ""} onChangeText={(v) => setGroup({ ...group, groupDescription: v })} placeholder="Description" style={[styles.input, styles.multiline]} multiline onBlur={() => void update({ groupDescription: group.groupDescription })} /><Text style={styles.section}>Permissions</Text><View style={styles.row}><Text style={styles.rowText}>Members can edit group info</Text><Switch value={Boolean(group.anyoneCanEditInfo)} onValueChange={(v) => void update({ anyoneCanEditInfo: v })} /></View><View style={styles.row}><Text style={styles.rowText}>Members can add people</Text><Switch value={Boolean(group.anyoneCanInvite)} onValueChange={(v) => void update({ anyoneCanInvite: v })} /></View><View style={styles.row}><Text style={styles.rowText}>Members can remove people</Text><Switch value={Boolean(group.anyoneCanRemoveMembers)} onValueChange={(v) => void update({ anyoneCanRemoveMembers: v })} /></View><View style={styles.row}><Text style={styles.rowText}>Join approval required</Text><Switch value={Boolean(group.joinApprovalRequired)} onValueChange={(v) => void update({ joinApprovalRequired: v })} /></View><Text style={styles.section}>Add member</Text><TextInput value={memberId} onChangeText={setMemberId} placeholder="ReDom profile ID" autoCapitalize="none" style={styles.input} /><Pressable onPress={() => void add()} disabled={saving} style={styles.secondary}><Text style={styles.secondaryText}>Add member</Text></Pressable></> : null}
+    <Text style={styles.section}>Members</Text>{members.map((m) => <View key={m.id} style={styles.member}><View style={{ flex: 1 }}><Text style={styles.memberId}>{m.profileId}</Text><Text style={styles.role}>{m.role} · {m.online ? "online" : "offline"}</Text></View>{isAdmin && m.role !== "owner" ? <><Pressable onPress={() => changeRole(m.profileId, m.role)}><Text style={styles.roleAction}>{m.role === "admin" ? "Role" : "Make admin"}</Text></Pressable><Pressable onPress={() => remove(m.profileId)}><Text style={styles.remove}>Remove</Text></Pressable></> : null}</View>)}
+    <Pressable onPress={leave} style={styles.leave}><Text style={styles.leaveText}>Leave group</Text></Pressable>
+  </ScrollView></SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F0F2F5" }, header: { height: 58, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12 }, back: { fontSize: 38, color: "#1877F2" }, title: { fontSize: 19, fontWeight: "800", color: "#050505" }, content: { padding: 16, paddingBottom: 40 }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, hero: { backgroundColor: "#FFF", borderRadius: 16, padding: 20, alignItems: "center" }, avatar: { width: 76, height: 76, borderRadius: 38, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" }, avatarText: { fontSize: 30, fontWeight: "800", color: "#FFF" }, name: { marginTop: 10, fontSize: 22, fontWeight: "800", color: "#050505" }, count: { marginTop: 4, color: "#65676B" }, approvalCard: { backgroundColor: "#FFF", borderRadius: 14, padding: 14, marginTop: 12 }, approvalTitle: { fontSize: 16, fontWeight: "800", color: "#101828" }, approvalHint: { marginTop: 4, marginBottom: 10, color: "#667085" }, primary: { height: 44, borderRadius: 22, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" }, primaryText: { color: "#FFF", fontWeight: "800" }, section: { marginTop: 20, marginBottom: 8, fontSize: 14, fontWeight: "800", color: "#344054" }, input: { backgroundColor: "#FFF", borderRadius: 12, borderWidth: 1, borderColor: "#D0D5DD", minHeight: 48, paddingHorizontal: 14, color: "#101828", marginBottom: 8 }, multiline: { minHeight: 82, paddingTop: 12, textAlignVertical: "top" }, row: { backgroundColor: "#FFF", minHeight: 56, paddingHorizontal: 14, borderRadius: 12, marginBottom: 7, flexDirection: "row", alignItems: "center" }, rowText: { flex: 1, color: "#101828", fontWeight: "600" }, secondary: { height: 46, borderRadius: 23, backgroundColor: "#E8F1FF", alignItems: "center", justifyContent: "center" }, secondaryText: { color: "#1877F2", fontWeight: "800" }, request: { backgroundColor: "#FFF", borderRadius: 12, padding: 12, marginBottom: 7, flexDirection: "row", alignItems: "center", gap: 8 }, approve: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: "#E8F1FF" }, approveText: { color: "#1877F2", fontWeight: "800" }, reject: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: "#FFF0F0" }, rejectText: { color: "#B42318", fontWeight: "800" }, empty: { color: "#667085", backgroundColor: "#FFF", borderRadius: 12, padding: 14 }, member: { backgroundColor: "#FFF", borderRadius: 12, padding: 14, marginBottom: 7, flexDirection: "row", alignItems: "center", gap: 10 }, memberId: { color: "#101828", fontWeight: "700" }, role: { marginTop: 4, color: "#667085", fontSize: 12 }, roleAction: { color: "#1877F2", fontWeight: "700" }, remove: { color: "#B42318", fontWeight: "700" }, leave: { height: 48, borderRadius: 24, backgroundColor: "#FFF0F0", alignItems: "center", justifyContent: "center", marginTop: 24 }, leaveText: { color: "#B42318", fontWeight: "800" }, error: { padding: 14, color: "#B42318", fontWeight: "600" },
-});
+const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: "#F0F2F5" }, header: { height: 58, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12 }, back: { fontSize: 38, color: "#1877F2" }, title: { fontSize: 19, fontWeight: "800", color: "#050505" }, content: { padding: 16, paddingBottom: 40 }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, hero: { backgroundColor: "#FFF", borderRadius: 16, padding: 20, alignItems: "center" }, avatar: { width: 76, height: 76, borderRadius: 38, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" }, avatarText: { fontSize: 30, fontWeight: "800", color: "#FFF" }, name: { marginTop: 10, fontSize: 22, fontWeight: "800", color: "#050505" }, count: { marginTop: 4, color: "#65676B" }, approvalCard: { backgroundColor: "#FFF", borderRadius: 14, padding: 14, marginTop: 12 }, approvalTitle: { fontSize: 16, fontWeight: "800", color: "#101828" }, approvalHint: { marginTop: 4, marginBottom: 10, color: "#667085" }, primary: { height: 44, borderRadius: 22, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" }, primaryText: { color: "#FFF", fontWeight: "800" }, section: { marginTop: 20, marginBottom: 8, fontSize: 14, fontWeight: "800", color: "#344054" }, input: { backgroundColor: "#FFF", borderRadius: 12, borderWidth: 1, borderColor: "#D0D5DD", minHeight: 48, paddingHorizontal: 14, color: "#101828", marginBottom: 8 }, multiline: { minHeight: 82, paddingTop: 12, textAlignVertical: "top" }, row: { backgroundColor: "#FFF", minHeight: 56, paddingHorizontal: 14, borderRadius: 12, marginBottom: 7, flexDirection: "row", alignItems: "center" }, rowText: { flex: 1, color: "#101828", fontWeight: "600" }, secondary: { height: 46, borderRadius: 23, backgroundColor: "#E8F1FF", alignItems: "center", justifyContent: "center" }, secondaryText: { color: "#1877F2", fontWeight: "800" }, request: { backgroundColor: "#FFF", borderRadius: 12, padding: 12, marginBottom: 7, flexDirection: "row", alignItems: "center", gap: 8 }, approve: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: "#E8F1FF" }, approveText: { color: "#1877F2", fontWeight: "800" }, reject: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: "#FFF0F0" }, rejectText: { color: "#B42318", fontWeight: "800" }, empty: { color: "#667085", backgroundColor: "#FFF", borderRadius: 12, padding: 14 }, member: { backgroundColor: "#FFF", borderRadius: 12, padding: 14, marginBottom: 7, flexDirection: "row", alignItems: "center", gap: 10 }, memberId: { color: "#101828", fontWeight: "700" }, role: { marginTop: 4, color: "#667085", fontSize: 12 }, roleAction: { color: "#1877F2", fontWeight: "700" }, remove: { color: "#B42318", fontWeight: "700" }, leave: { height: 48, borderRadius: 24, backgroundColor: "#FFF0F0", alignItems: "center", justifyContent: "center", marginTop: 24 }, leaveText: { color: "#B42318", fontWeight: "800" }, error: { padding: 14, color: "#B42318", fontWeight: "600" } });
