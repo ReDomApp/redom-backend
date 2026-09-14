@@ -1,0 +1,41 @@
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../routing/types";
+import { productService, type ReDomSettings } from "../product/productService";
+
+const meta: Record<"NotificationSettings" | "PrivacySettings" | "SecuritySettings" | "BlockedUsers" | "Verification" | "Support", { title: string; policy: "notifications" | "privacy" | "security" | "verification" | "support" }> = {
+  NotificationSettings: { title: "Notification settings", policy: "notifications" },
+  PrivacySettings: { title: "Privacy settings", policy: "privacy" },
+  SecuritySettings: { title: "Security settings", policy: "security" },
+  BlockedUsers: { title: "Blocked people", policy: "privacy" },
+  Verification: { title: "Verification", policy: "verification" },
+  Support: { title: "Support & reporting", policy: "support" },
+};
+
+export function SettingsSubscreen({ route }: NativeStackScreenProps<RootStackParamList, "NotificationSettings" | "PrivacySettings" | "SecuritySettings" | "BlockedUsers" | "Verification" | "Support">) {
+  const navigation = useNavigation();
+  const key = route.name as keyof typeof meta;
+  const info = meta[key];
+  const [settings, setSettings] = useState<ReDomSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => { try { const r = await productService.getSettings(); setSettings(r.settings); } catch { /* screen remains usable for policy/navigation */ } }, []);
+  useEffect(() => { void load(); }, [load]);
+  const update = async (field: keyof ReDomSettings, value: boolean) => {
+    if (!settings) return; setSettings({ ...settings, [field]: value }); setBusy(true);
+    try { const r = await productService.updateSettings({ [field]: value }); setSettings(r.settings); } catch { await load(); } finally { setBusy(false); }
+  };
+  return <SafeAreaView style={styles.root}><View style={styles.header}><Pressable onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable><Text style={styles.title}>{info.title}</Text><View style={{ width: 32 }} /></View><ScrollView contentContainerStyle={styles.content}>
+    {key === "NotificationSettings" ? <><Text style={styles.section}>Push and in-app</Text><Info text="Device notification permission is required for push delivery. ReDom also keeps in-app notification state on the backend." /><Pressable style={styles.row} onPress={() => navigation.navigate("Notifications")}><Text style={styles.label}>Open Notifications</Text><Text style={styles.chevron}>›</Text></Pressable></> : null}
+    {key === "PrivacySettings" ? <><Text style={styles.section}>Privacy controls</Text><Info text="Profile and content visibility are enforced by the ReDom backend. Client settings never override server authorization." /><Pressable style={styles.row} onPress={() => navigation.navigate("Policy", { slug: "privacy" })}><Text style={styles.label}>Privacy Policy</Text><Text style={styles.chevron}>›</Text></Pressable><Pressable style={styles.row} onPress={() => navigation.navigate("BlockedUsers")}><Text style={styles.label}>Blocked people</Text><Text style={styles.chevron}>›</Text></Pressable></> : null}
+    {key === "SecuritySettings" ? <><Text style={styles.section}>Account security</Text><Info text="Use ReDom authentication, device verification, two-factor authentication and session controls. Security decisions are backend-authoritative." /><Pressable style={styles.row} onPress={() => navigation.navigate("Policy", { slug: "security" })}><Text style={styles.label}>Security Policy</Text><Text style={styles.chevron}>›</Text></Pressable></> : null}
+    {key === "BlockedUsers" ? <><Text style={styles.section}>Blocked people</Text><Info text="Blocked-user actions are security-sensitive and must be persisted by the ReDom backend before the UI reports success." /><Text style={styles.empty}>No blocked people are currently loaded in this screen.</Text></> : null}
+    {key === "Verification" ? <><Text style={styles.section}>Account verification</Text><Info text="Verification eligibility and decisions are controlled by ReDom's verification workflow. ReDom AI can explain requirements but cannot grant verification." /><Pressable style={styles.row} onPress={() => navigation.navigate("Policy", { slug: "verification" })}><Text style={styles.label}>Verification Policy</Text><Text style={styles.chevron}>›</Text></Pressable></> : null}
+    {key === "Support" ? <><Text style={styles.section}>Help and reporting</Text><Info text="Use ReDom Support for product problems, account issues and supported safety reports. Case state comes from the backend." /><Pressable style={styles.row} onPress={() => navigation.navigate("Policy", { slug: "support" })}><Text style={styles.label}>Support & Reporting Policy</Text><Text style={styles.chevron}>›</Text></Pressable></> : null}
+    {key === "NotificationSettings" && settings ? <><Text style={styles.section}>Related feed notifications</Text><Toggle label="Following feed" value={settings.followingFeed} onChange={(v) => void update("followingFeed", v)} disabled={busy} /></> : null}
+  </ScrollView></SafeAreaView>;
+}
+function Toggle({ label, value, onChange, disabled }: { label: string; value: boolean; onChange: (v: boolean) => void; disabled: boolean }) { return <View style={styles.row}><Text style={styles.label}>{label}</Text><Switch value={value} onValueChange={onChange} disabled={disabled} trackColor={{ false: "#D9DDE3", true: "#9FC4FF" }} thumbColor={value ? "#1877F2" : "#FFF"} /></View>; }
+function Info({ text }: { text: string }) { return <View style={styles.info}><Text style={styles.infoText}>{text}</Text></View>; }
+const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: "#F0F2F5" }, header: { height: 58, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12 }, back: { fontSize: 38, color: "#1877F2" }, title: { fontSize: 19, fontWeight: "800", color: "#050505" }, content: { padding: 12, paddingBottom: 40 }, section: { fontSize: 17, fontWeight: "800", color: "#050505", marginTop: 18, marginBottom: 8 }, info: { backgroundColor: "#FFF", borderRadius: 12, padding: 14, marginBottom: 8 }, infoText: { color: "#65676B", fontSize: 14, lineHeight: 21 }, row: { minHeight: 54, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", paddingHorizontal: 15, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, label: { color: "#050505", fontSize: 15 }, chevron: { color: "#8A8D91", fontSize: 28 }, empty: { padding: 20, color: "#65676B", backgroundColor: "#FFF", borderRadius: 12 } });
