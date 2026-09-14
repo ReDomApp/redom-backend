@@ -16,6 +16,7 @@ import messagesRoutes from "./messages.routes";
 import messageMediaRoutes from "./message-media.routes";
 import callsRoutes from "./calls.routes";
 import messageReactionRoutes from "./message-reactions.routes";
+import messagingCompletionRoutes from "./messaging-completion.routes";
 import searchRoutes from "./search.routes";
 import { profileMediaExpiryMiddleware } from "../middleware/profile-media-expiry.middleware";
 
@@ -31,6 +32,7 @@ router.use("/feed", feedRoutes);
 router.use("/comments", commentRoutes);
 router.use("/product", productRoutes);
 router.use("/messages", messageMediaRoutes);
+router.use("/messages", messagingCompletionRoutes);
 router.use("/messages", messagesRoutes);
 router.use("/calls", callsRoutes);
 router.use("/message-reactions", messageReactionRoutes);
