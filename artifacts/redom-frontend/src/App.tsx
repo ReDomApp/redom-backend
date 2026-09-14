@@ -8,7 +8,7 @@ import { AppNavigator } from "./routing/AppNavigator";
 const linking = {
   prefixes: ["redom://", "https://redom.app"],
   config: { screens: {
-    Profile: "profile/username/:userId", HomeFeed: "home", Search: "search", Notifications: "notifications", Messages: "messages", Chat: "messages/:conversationId", Settings: "settings", Policy: "policy/:slug",
+    Profile: "profile/username/:userId", HomeFeed: "home", Search: "search", Notifications: "notifications", Messages: "messages", Chat: "messages/:conversationId", CallLinkJoin: "call-link/:token", Settings: "settings", Policy: "policy/:slug",
   } },
 };
 
