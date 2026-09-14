@@ -30,6 +30,7 @@ import { friendRequests } from "./friendRequests";
 import { conversations } from "./conversations";
 import { conversationParticipants } from "./conversationParticipants";
 import { messages } from "./messages";
+import { messageDeletions } from "./messageDeletions";
 import { messageAttachments } from "./messageAttachments";
 import { messageReads } from "./messageReads";
 import { messageRequests } from "./messageRequests";
@@ -73,7 +74,7 @@ export const db = drizzle(pool, { schema: {
   verification, verificationDocuments, verificationSubscriptions, verifications,
   accountActions, reports, appeals, blockedUsers, restrictedUsers, mutedUsers,
   followers, following, friends, friendRequests,
-  conversations, conversationParticipants, messages, messageAttachments, messageReads,
+  conversations, conversationParticipants, messages, messageDeletions, messageAttachments, messageReads,
   messageRequests, messageDrafts, calls,
   posts, postMedia, postMentions, draftPosts, scheduledPosts, polls, reactions, saves,
   shares, stories, storyViewers, feedPreferences, notifications, searchHistory,
