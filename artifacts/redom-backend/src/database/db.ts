@@ -12,6 +12,7 @@ import { loginHistory } from "./loginHistory";
 import { activityLog } from "./activityLog";
 import { userPrivacy } from "./userPrivacy";
 import { userSettings } from "./userSettings";
+import { notificationPreferences } from "./notificationPreferences";
 import { verification } from "./verification";
 import { verificationDocuments } from "./verificationDocuments";
 import { verificationSubscriptions } from "./verificationSubscriptions";
@@ -68,7 +69,7 @@ pool.on("error", (error) => console.error("Database connection error:", error));
 
 export const db = drizzle(pool, { schema: {
   users, userProfiles, accountSecurity, twoFactorRecoveryCodes, totpLoginChallenges,
-  sessions, activeSessions, loginHistory, activityLog, userPrivacy, userSettings,
+  sessions, activeSessions, loginHistory, activityLog, userPrivacy, userSettings, notificationPreferences,
   verification, verificationDocuments, verificationSubscriptions, verifications,
   accountActions, reports, appeals, blockedUsers, restrictedUsers, mutedUsers,
   followers, following, friends, friendRequests,
