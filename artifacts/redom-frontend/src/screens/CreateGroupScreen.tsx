@@ -68,7 +68,7 @@ export function CreateGroupScreen() {
           <View style={styles.nameBox}>
             <TextInput value={name} onChangeText={setName} placeholder="Group name" placeholderTextColor="#667085" style={styles.nameInput} maxLength={150} autoFocus />
           </View>
-          <Pressable onPress={() => setName((value) => value)} hitSlop={8}><GroupActionIcon kind="emoji" size={27} color="#98A2B3" /></Pressable>
+          <Pressable onPress={() => undefined} hitSlop={8} accessibilityLabel="Keyboard"><GroupActionIcon kind="keyboard" size={27} color="#98A2B3" /></Pressable>
         </View>
 
         <Pressable style={styles.row} onPress={chooseTimer}>
