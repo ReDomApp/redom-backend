@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { rotateConversationEncryption } from "./e2ee";
+import { getDeviceId, rotateConversationEncryption } from "./e2ee";
 export interface GroupSettings { id:string; groupName:string; groupDescription?:string|null; groupPhoto?:string|null; participantCount:number; anyoneCanEditInfo:boolean; anyoneCanInvite:boolean; anyoneCanShareInvite?:boolean; anyoneCanRemoveMembers:boolean; anyoneCanPinMessages:boolean; anyoneCanSendMessages:boolean; anyoneCanSendHistory:boolean; joinApprovalRequired:boolean; encrypted:boolean; isAdmin:boolean; inviteLink?:string|null; }
 export interface GroupMember { id:string; profileId:string; role:string; joinedAt:string; online:boolean; memberTag?:string|null; displayName?:string; profilePhoto?:string|null; verified?:boolean; }
 export interface GroupInvite { token:string; link:string; group:any; }
@@ -15,7 +15,7 @@ export const groupService={
  setMemberTag(conversationId:string,profileId:string,tag:string|null){return api.patch<{success:boolean;tag:string|null}>(`/messages/groups/${conversationId}/members/${profileId}/tag`,{tag});},
  transferOwnership(conversationId:string,profileId:string){return api.post<{success:boolean;ownerProfileId:string}>(`/messages/groups/${conversationId}/transfer-owner`,{profileId});},
  getMemberChanges(conversationId:string){return api.get<{success:boolean;changes:Array<{id:string;type:string;title:string;description:string;createdAt:string}>}>(`/messages/groups/${conversationId}/member-changes`);},
- async leave(conversationId:string){await rotateConversationEncryption(conversationId,[await import("./e2ee").then(m=>m.getDeviceId()).catch(()=>"")]);return api.post<{success:boolean;left:boolean}>(`/messages/groups/${conversationId}/leave`);},
+ async leave(conversationId:string){const deviceId=await getDeviceId();const participants=await api.get<{success:boolean;participants:Array<{profile_id:string;device_id:string;public_key:string|null}>}>(`/messages/crypto/conversations/${conversationId}/crypto-participants`);const self=participants.participants.find(item=>item.device_id===deviceId);if(!self)throw new Error("This device is not an active encrypted member of the group.");await rotateConversationEncryption(conversationId,[self.profile_id]);return api.post<{success:boolean;left:boolean}>(`/messages/groups/${conversationId}/leave`);},
  getInvite(conversationId:string){return api.get<{success:boolean;token:string;link:string;group:any}>(`/messages/groups/${conversationId}/invite-link`);},
  resetInvite(conversationId:string){return api.post<{success:boolean;token:string;link:string}>(`/messages/groups/${conversationId}/invite-link/reset`,{});},
  previewInvite(token:string){return api.get<{success:boolean;group:any;link:string}>(`/messages/groups/invite/${encodeURIComponent(token)}`);},
