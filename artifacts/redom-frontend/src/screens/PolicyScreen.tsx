@@ -1,60 +1,195 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { productService, type PolicySlug } from "../product/productService";
 
-type PolicyState = { title: string; summary: string; version: string; sections: Array<{ heading: string; body: string }> };
+type PolicySection = { heading: string; body: string };
+type PolicyState = { title: string; summary: string; version: string; sections: PolicySection[] };
+type PolicyResponse = {
+  success?: boolean;
+  version?: string;
+  document?: { title?: string; summary?: string; version?: string; sections?: unknown };
+  title?: string;
+  summary?: string;
+  sections?: unknown;
+};
+
+function normalizeSections(value: unknown): PolicySection[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((section): section is PolicySection => {
+    if (!section || typeof section !== "object") return false;
+    const item = section as Record<string, unknown>;
+    return typeof item.heading === "string" && typeof item.body === "string";
+  });
+}
+
+function normalizePolicy(response: PolicyResponse): PolicyState {
+  const document = response?.document && typeof response.document === "object" ? response.document : undefined;
+  return {
+    title: document?.title ?? response?.title ?? "ReDom Policy",
+    summary: document?.summary ?? response?.summary ?? "",
+    version: response?.version ?? document?.version ?? "",
+    sections: normalizeSections(document?.sections ?? response?.sections),
+  };
+}
 
 export function PolicyScreen({ route }: NativeStackScreenProps<RootStackParamList, "Policy">) {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const scrollRef = useRef<ScrollView>(null);
   const sectionOffsets = useRef<Record<string, number>>({});
   const [state, setState] = useState<PolicyState | null>(null);
   const [error, setError] = useState(false);
   const slug = route?.params?.slug as PolicySlug | undefined;
 
+  const loadPolicy = useCallback(async () => {
+    setError(false);
+    setState(null);
+    sectionOffsets.current = {};
+    if (!slug) {
+      setError(true);
+      return;
+    }
+
+    try {
+      const response = await productService.getPolicy(slug);
+      const normalized = normalizePolicy(response as PolicyResponse);
+      setState(normalized);
+    } catch {
+      setError(true);
+    }
+  }, [slug]);
+
   useEffect(() => {
     let active = true;
-    if (!slug) { setError(true); return () => { active = false; }; }
-    void productService.getPolicy(slug).then((r) => {
-      if (active) setState({ ...r.document, version: r.version });
-    }).catch(() => active && setError(true));
-    return () => { active = false; };
+    if (!slug) {
+      setError(true);
+      setState(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    setError(false);
+    setState(null);
+    sectionOffsets.current = {};
+
+    void productService.getPolicy(slug)
+      .then((response) => {
+        if (active) setState(normalizePolicy(response as PolicyResponse));
+      })
+      .catch(() => {
+        if (active) setError(true);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [slug]);
+
+  const goBack = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate("HomeFeed");
+  };
 
   const jumpTo = (heading: string) => {
     const y = sectionOffsets.current[heading];
-    if (typeof y === "number") scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    if (typeof y === "number") {
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }
   };
 
-  return <SafeAreaView style={styles.root}>
-    <View style={styles.header}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.back}>‹</Text></Pressable>
-      <Text style={styles.headerTitle}>ReDom Policies</Text>
-      <View style={styles.headerSpacer} />
-    </View>
-    {state ? <ScrollView ref={scrollRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={styles.eyebrow}>{slug === "messaging" ? "MESSAGING & PRIVACY" : "POLICY"}</Text>
-      <Text style={styles.title}>{state.title}</Text>
-      <Text style={styles.summary}>{state.summary}</Text>
-      <Text style={styles.version}>Version {state.version}</Text>
+  const retry = () => {
+    void loadPolicy();
+  };
 
-      <View style={styles.contentsCard}>
-        <Text style={styles.contentsTitle}>On this page</Text>
-        {state.sections.slice(0, 8).map((section, index) => <Pressable key={section.heading} accessibilityRole="button" accessibilityLabel={`Open ${section.heading}`} onPress={() => jumpTo(section.heading)} style={styles.contentsRow}>
-          <Text style={styles.contentsIndex}>{String(index + 1).padStart(2, "0")}</Text><Text style={styles.contentsText}>{section.heading}</Text><Text style={styles.contentsArrow}>›</Text>
-        </Pressable>)}
+  return (
+    <SafeAreaView style={styles.root}>
+      <View style={styles.header}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={8}
+          onPress={goBack}
+          style={styles.backButton}
+        >
+          <Text style={styles.back}>‹</Text>
+        </Pressable>
+        <Text style={styles.headerTitle}>ReDom Policies</Text>
+        <View style={styles.headerSpacer} />
       </View>
 
-      {state.sections.map((section) => <View key={section.heading} onLayout={(event) => { sectionOffsets.current[section.heading] = event.nativeEvent.layout.y; }} style={styles.section}>
-        <Text style={styles.heading}>{section.heading}</Text>
-        <Text style={styles.body}>{section.body}</Text>
-      </View>)}
-      <Text style={styles.footer}>ReDom Messaging Policy · {state.version}</Text>
-    </ScrollView> : <View style={styles.center}>{error ? <><Text style={styles.error}>This policy is temporarily unavailable.</Text><Pressable accessibilityRole="button" onPress={() => { setError(false); setState(null); }} style={styles.retry}><Text style={styles.retryText}>Try again</Text></Pressable></> : <ActivityIndicator size="large" color="#1877F2" />}</View>}
-  </SafeAreaView>;
+      {state ? (
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.eyebrow}>
+            {slug === "messaging" ? "MESSAGING & PRIVACY" : "POLICY"}
+          </Text>
+          <Text style={styles.title}>{state.title}</Text>
+          {!!state.summary && <Text style={styles.summary}>{state.summary}</Text>}
+          {!!state.version && <Text style={styles.version}>Version {state.version}</Text>}
+
+          {state.sections.length > 0 && (
+            <View style={styles.contentsCard}>
+              <Text style={styles.contentsTitle}>On this page</Text>
+              {state.sections.slice(0, 8).map((section, index) => (
+                <Pressable
+                  key={`${section.heading}-${index}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${section.heading}`}
+                  onPress={() => jumpTo(section.heading)}
+                  style={styles.contentsRow}
+                >
+                  <Text style={styles.contentsIndex}>{String(index + 1).padStart(2, "0")}</Text>
+                  <Text style={styles.contentsText}>{section.heading}</Text>
+                  <Text style={styles.contentsArrow}>›</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          {state.sections.map((section, index) => (
+            <View
+              key={`${section.heading}-${index}`}
+              onLayout={(event) => {
+                sectionOffsets.current[section.heading] = event.nativeEvent.layout.y;
+              }}
+              style={styles.section}
+            >
+              <Text style={styles.heading}>{section.heading}</Text>
+              <Text style={styles.body}>{section.body}</Text>
+            </View>
+          ))}
+
+          <Text style={styles.footer}>
+            ReDom {slug === "messaging" ? "Messaging" : "Policy"} · {state.version}
+          </Text>
+        </ScrollView>
+      ) : (
+        <View style={styles.center}>
+          {error ? (
+            <>
+              <Text style={styles.error}>This policy is temporarily unavailable.</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Try loading the policy again"
+                onPress={retry}
+                style={styles.retry}
+              >
+                <Text style={styles.retryText}>Try again</Text>
+              </Pressable>
+            </>
+          ) : (
+            <ActivityIndicator size="large" color="#1877F2" />
+          )}
+        </View>
+      )}
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
