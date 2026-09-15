@@ -42,6 +42,7 @@ export const reports = pgTable("reports", {
   reportSource: varchar("report_source", { length: 40 }).default("general").notNull(),
   exitAfterReport: boolean("exit_after_report").default(false).notNull(),
   evidenceMessageCount: integer("evidence_message_count").default(0).notNull(),
+  notificationLanguage: varchar("notification_language", { length: 10 }).default("en").notNull(),
   aiModel: varchar("ai_model", { length: 100 }),
   aiCategories: jsonb("ai_categories"),
   aiCategoryScores: jsonb("ai_category_scores"),
