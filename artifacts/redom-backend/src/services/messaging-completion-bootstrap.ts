@@ -21,7 +21,6 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS message_lifecycle_conversation_idx ON message_lifecycle(conversation_id, expires_at);
     CREATE INDEX IF NOT EXISTS message_lifecycle_view_once_idx ON message_lifecycle(message_id, view_once);
-
     CREATE TABLE IF NOT EXISTS call_signals (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       call_id uuid NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
@@ -31,7 +30,6 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS call_signals_call_idx ON call_signals(call_id, created_at);
-
     CREATE TABLE IF NOT EXISTS redom_device_crypto_keys (
       profile_id uuid PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
       public_key text NOT NULL,
@@ -50,7 +48,6 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
     ALTER TABLE redom_device_crypto_keys DROP CONSTRAINT IF EXISTS redom_device_crypto_keys_pkey;
     CREATE UNIQUE INDEX IF NOT EXISTS redom_device_crypto_keys_device_pk ON redom_device_crypto_keys(device_id);
     CREATE INDEX IF NOT EXISTS redom_device_crypto_profile_idx ON redom_device_crypto_keys(profile_id, revoked_at);
-
     CREATE TABLE IF NOT EXISTS message_media_envelopes (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       message_id uuid NOT NULL REFERENCES messages(id),
@@ -60,34 +57,32 @@ export async function ensureMessagingCompletionSchema(): Promise<void> {
       algorithm text NOT NULL DEFAULT 'X25519-AES-256-GCM',
       ephemeral_public_key text NOT NULL,
       encrypted_media_key text NOT NULL,
+      conversation_key_version integer NOT NULL DEFAULT 1,
       created_at timestamptz NOT NULL DEFAULT now()
     );
     ALTER TABLE message_media_envelopes ADD COLUMN IF NOT EXISTS recipient_device_id uuid;
+    ALTER TABLE message_media_envelopes ADD COLUMN IF NOT EXISTS conversation_key_version integer NOT NULL DEFAULT 1;
     ALTER TABLE message_media_envelopes DROP CONSTRAINT IF EXISTS message_media_envelopes_message_id_recipient_profile_id_key;
     CREATE UNIQUE INDEX IF NOT EXISTS message_media_envelopes_device_unique ON message_media_envelopes(message_id, recipient_device_id) WHERE recipient_device_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS message_media_envelopes_profile_legacy_unique ON message_media_envelopes(message_id, recipient_profile_id) WHERE recipient_device_id IS NULL;
     CREATE INDEX IF NOT EXISTS message_media_envelopes_message_idx ON message_media_envelopes(message_id);
     CREATE INDEX IF NOT EXISTS message_media_envelopes_recipient_idx ON message_media_envelopes(recipient_profile_id);
-
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS encrypted_payload jsonb;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS encryption_version integer;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS encrypted_at timestamptz;
-
     CREATE OR REPLACE FUNCTION redom_apply_message_lifecycle()
     RETURNS trigger LANGUAGE plpgsql AS $$
     DECLARE timer integer;
     BEGIN
       SELECT timer_seconds INTO timer FROM conversation_message_policies WHERE conversation_id = NEW.conversation_id;
       INSERT INTO message_lifecycle(message_id, conversation_id, expires_at)
-      VALUES (NEW.id, NEW.conversation_id,
-        CASE WHEN COALESCE(timer, 0) > 0 THEN NEW.created_at + make_interval(secs => timer) ELSE NULL END)
+      VALUES (NEW.id, NEW.conversation_id, CASE WHEN COALESCE(timer, 0) > 0 THEN NEW.created_at + make_interval(secs => timer) ELSE NULL END)
       ON CONFLICT (message_id) DO NOTHING;
       RETURN NEW;
     END;
     $$;
     DROP TRIGGER IF EXISTS redom_message_lifecycle_trigger ON messages;
-    CREATE TRIGGER redom_message_lifecycle_trigger AFTER INSERT ON messages
-      FOR EACH ROW EXECUTE FUNCTION redom_apply_message_lifecycle();
+    CREATE TRIGGER redom_message_lifecycle_trigger AFTER INSERT ON messages FOR EACH ROW EXECUTE FUNCTION redom_apply_message_lifecycle();
   `);
   logger.info("Messaging completion schema verified");
 }
