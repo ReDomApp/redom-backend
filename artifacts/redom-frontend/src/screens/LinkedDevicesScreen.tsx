@@ -3,145 +3,26 @@ import { ActivityIndicator, Alert, Pressable, RefreshControl, SafeAreaView, Scro
 import { useNavigation } from "@react-navigation/native";
 import { messageService, type CryptoDevice } from "../messages/messageService";
 import { getDeviceId } from "../messages/e2ee";
+import { revokeDeviceAndRotate } from "../messages/encryptionLifecycle";
 
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  return date.toLocaleString();
-}
-
-function deviceName(device: CryptoDevice) {
-  return device.device_label || (device.platform ? `${device.platform} device` : "ReDom device");
-}
-
+function formatDate(value: string) { const date = new Date(value); if (Number.isNaN(date.getTime())) return "Unknown"; return date.toLocaleString(); }
+function deviceName(device: CryptoDevice) { return device.device_label || (device.platform ? `${device.platform} device` : "ReDom device"); }
 export function LinkedDevicesScreen() {
-  const navigation = useNavigation();
-  const [devices, setDevices] = useState<CryptoDevice[]>([]);
-  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [revoking, setRevoking] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (refresh = false) => {
-    if (refresh) setRefreshing(true); else setLoading(true);
-    setError(null);
-    try {
-      const [deviceId] = await Promise.all([getDeviceId(), messageService.ensureEncryptionKey()]);
-      setCurrentDeviceId(deviceId);
-      const result = await messageService.getCryptoDevices();
-      setDevices(result.devices);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to load linked devices.");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
+  const navigation = useNavigation(); const [devices, setDevices] = useState<CryptoDevice[]>([]); const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [revoking, setRevoking] = useState<string | null>(null); const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async (refresh = false) => { if (refresh) setRefreshing(true); else setLoading(true); setError(null); try { const [deviceId] = await Promise.all([getDeviceId(), messageService.ensureEncryptionKey()]); setCurrentDeviceId(deviceId); const result = await messageService.getCryptoDevices(); setDevices(result.devices); } catch (e) { setError(e instanceof Error ? e.message : "Unable to load linked devices."); } finally { setLoading(false); setRefreshing(false); } }, []);
   useEffect(() => { void load(); }, [load]);
-
-  const confirmRevoke = (device: CryptoDevice) => {
-    if (device.device_id === currentDeviceId) return;
-    Alert.alert(
-      "Log out this device?",
-      `${deviceName(device)} will no longer receive new encrypted messages or media for this account. You can link it again later from that device.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Log out", style: "destructive", onPress: () => void revoke(device.device_id) },
-      ],
-    );
-  };
-
-  const revoke = async (deviceId: string) => {
-    if (deviceId === currentDeviceId || revoking) return;
-    setRevoking(deviceId);
-    setError(null);
-    try {
-      await messageService.revokeCryptoDevice(deviceId);
-      setDevices((current) => current.filter((device) => device.device_id !== deviceId));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to log out that device.");
-    } finally {
-      setRevoking(null);
-    }
-  };
-
+  const confirmRevoke = (device: CryptoDevice) => { if (device.device_id === currentDeviceId) return; Alert.alert("Log out this device?", `${deviceName(device)} will no longer receive new encrypted messages or media for this account. You can link it again later from that device.`, [{ text: "Cancel", style: "cancel" }, { text: "Log out", style: "destructive", onPress: () => void revoke(device.device_id) }]); };
+  const revoke = async (deviceId: string) => { if (deviceId === currentDeviceId || revoking) return; setRevoking(deviceId); setError(null); try { await revokeDeviceAndRotate(deviceId); setDevices(current => current.filter(device => device.device_id !== deviceId)); } catch (e) { setError(e instanceof Error ? e.message : "Unable to log out that device."); } finally { setRevoking(null); } };
   return <SafeAreaView style={styles.root}>
-    <View style={styles.header}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable>
-      <Text style={styles.title}>Linked devices</Text>
-      <View style={styles.headerSpacer} />
-    </View>
-    <ScrollView
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}
-    >
-      <View style={styles.info}>
-        <Text style={styles.infoTitle}>Your encrypted devices</Text>
-        <Text style={styles.infoText}>Each device has its own ReDom encryption identity. Messages and encrypted media are addressed to active devices individually.</Text>
-      </View>
-
+    <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></Pressable><Text style={styles.title}>Linked devices</Text><View style={styles.headerSpacer} /></View>
+    <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}>
+      <View style={styles.info}><Text style={styles.infoTitle}>Your encrypted devices</Text><Text style={styles.infoText}>Each device has its own ReDom encryption identity. Messages and encrypted media are addressed to active devices individually.</Text></View>
       {error ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text><Pressable onPress={() => void load()}><Text style={styles.retry}>Try again</Text></Pressable></View> : null}
       {loading ? <ActivityIndicator size="large" color="#1877F2" style={styles.loader} /> : null}
       {!loading && devices.length === 0 ? <View style={styles.empty}><Text style={styles.emptyTitle}>No active devices</Text><Text style={styles.emptyText}>This device will appear here after encrypted messaging is initialized.</Text></View> : null}
-
-      {!loading && devices.length > 0 ? <View style={styles.list}>
-        {devices.map((device) => {
-          const isCurrent = device.device_id === currentDeviceId;
-          return <View key={device.device_id} style={styles.device}>
-            <View style={styles.icon}><Text style={styles.iconText}>{device.platform === "iOS" ? "" : device.platform === "Android" ? "▣" : "⌁"}</Text></View>
-            <View style={styles.deviceBody}>
-              <View style={styles.nameRow}><Text style={styles.name}>{deviceName(device)}</Text>{isCurrent ? <View style={styles.currentBadge}><Text style={styles.currentText}>This device</Text></View> : null}</View>
-              <Text style={styles.meta}>{device.platform || "Unknown platform"}{device.primary_device ? " · Primary" : ""}</Text>
-              <Text style={styles.meta}>Added {formatDate(device.created_at)}</Text>
-              <Text style={styles.meta}>Last active {formatDate(device.updated_at)}</Text>
-              {!isCurrent ? <Pressable disabled={revoking === device.device_id} onPress={() => confirmRevoke(device)} style={styles.logoutButton}>
-                {revoking === device.device_id ? <ActivityIndicator size="small" color="#D93025" /> : <Text style={styles.logoutText}>Log out</Text>}
-              </Pressable> : null}
-            </View>
-          </View>;
-        })}
-      </View> : null}
-
-      <View style={styles.securityNote}>
-        <Text style={styles.securityTitle}>Security</Text>
-        <Text style={styles.securityText}>Logging out a device revokes its active encryption identity. It will not be included in future encrypted message or media envelopes.</Text>
-      </View>
+      {!loading && devices.length > 0 ? <View style={styles.list}>{devices.map(device => { const isCurrent = device.device_id === currentDeviceId; return <View key={device.device_id} style={styles.device}><View style={styles.icon}><Text style={styles.iconText}>{device.platform === "iOS" ? "" : device.platform === "Android" ? "▣" : "⌁"}</Text></View><View style={styles.deviceBody}><View style={styles.nameRow}><Text style={styles.name}>{deviceName(device)}</Text>{isCurrent ? <View style={styles.currentBadge}><Text style={styles.currentText}>This device</Text></View> : null}</View><Text style={styles.meta}>{device.platform || "Unknown platform"}{device.primary_device ? " · Primary" : ""}</Text><Text style={styles.meta}>Added {formatDate(device.created_at)}</Text><Text style={styles.meta}>Last active {formatDate(device.updated_at)}</Text>{!isCurrent ? <Pressable disabled={revoking === device.device_id} onPress={() => confirmRevoke(device)} style={styles.logoutButton}>{revoking === device.device_id ? <ActivityIndicator size="small" color="#D93025" /> : <Text style={styles.logoutText}>Log out</Text>}</Pressable> : null}</View></View>; })}</View> : null}
+      <View style={styles.securityNote}><Text style={styles.securityTitle}>Security</Text><Text style={styles.securityText}>Logging out a device revokes its active encryption identity and rotates conversation encryption for chats shared with the logged-out device.</Text></View>
     </ScrollView>
   </SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F0F2F5" },
-  header: { height: 58, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12 },
-  back: { fontSize: 38, color: "#1877F2", lineHeight: 42 },
-  title: { fontSize: 19, fontWeight: "800", color: "#050505" },
-  headerSpacer: { width: 32 },
-  content: { padding: 12, paddingBottom: 40 },
-  info: { backgroundColor: "#FFF", borderRadius: 12, padding: 15, marginBottom: 12 },
-  infoTitle: { color: "#050505", fontSize: 16, fontWeight: "800", marginBottom: 5 },
-  infoText: { color: "#65676B", fontSize: 14, lineHeight: 21 },
-  loader: { marginTop: 40 },
-  list: { backgroundColor: "#FFF", borderRadius: 12, overflow: "hidden" },
-  device: { flexDirection: "row", padding: 15, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-  icon: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E7F3FF", alignItems: "center", justifyContent: "center", marginRight: 12 },
-  iconText: { color: "#1877F2", fontSize: 20, fontWeight: "700" },
-  deviceBody: { flex: 1 },
-  nameRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 7 },
-  name: { color: "#050505", fontSize: 16, fontWeight: "700" },
-  currentBadge: { backgroundColor: "#E7F3FF", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
-  currentText: { color: "#1877F2", fontSize: 11, fontWeight: "700" },
-  meta: { color: "#65676B", fontSize: 12, marginTop: 4 },
-  logoutButton: { alignSelf: "flex-start", marginTop: 10, minWidth: 70, minHeight: 34, borderRadius: 8, borderWidth: 1, borderColor: "#D93025", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
-  logoutText: { color: "#D93025", fontSize: 13, fontWeight: "700" },
-  error: { backgroundColor: "#FFF", borderRadius: 12, padding: 14, marginBottom: 12 },
-  errorText: { color: "#D93025", fontSize: 14, lineHeight: 20 },
-  retry: { color: "#1877F2", fontWeight: "700", marginTop: 8 },
-  empty: { backgroundColor: "#FFF", borderRadius: 12, padding: 20 },
-  emptyTitle: { color: "#050505", fontSize: 16, fontWeight: "700" },
-  emptyText: { color: "#65676B", fontSize: 14, lineHeight: 21, marginTop: 5 },
-  securityNote: { marginTop: 14, padding: 15, backgroundColor: "#FFF", borderRadius: 12 },
-  securityTitle: { color: "#050505", fontSize: 14, fontWeight: "800", marginBottom: 5 },
-  securityText: { color: "#65676B", fontSize: 13, lineHeight: 20 },
-});
+const styles = StyleSheet.create({ root:{flex:1,backgroundColor:"#F0F2F5"},header:{height:58,backgroundColor:"#FFF",borderBottomWidth:1,borderBottomColor:"#E4E6EB",flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:12},back:{fontSize:38,color:"#1877F2",lineHeight:42},title:{fontSize:19,fontWeight:"800",color:"#050505"},headerSpacer:{width:32},content:{padding:12,paddingBottom:40},info:{backgroundColor:"#FFF",borderRadius:12,padding:15,marginBottom:12},infoTitle:{color:"#050505",fontSize:16,fontWeight:"800",marginBottom:5},infoText:{color:"#65676B",fontSize:14,lineHeight:21},loader:{marginTop:40},list:{backgroundColor:"#FFF",borderRadius:12,overflow:"hidden"},device:{flexDirection:"row",padding:15,borderBottomWidth:1,borderBottomColor:"#E4E6EB"},icon:{width:44,height:44,borderRadius:22,backgroundColor:"#E7F3FF",alignItems:"center",justifyContent:"center",marginRight:12},iconText:{color:"#1877F2",fontSize:20,fontWeight:"700"},deviceBody:{flex:1},nameRow:{flexDirection:"row",alignItems:"center",flexWrap:"wrap",gap:7},name:{color:"#050505",fontSize:16,fontWeight:"700"},currentBadge:{backgroundColor:"#E7F3FF",borderRadius:8,paddingHorizontal:7,paddingVertical:3},currentText:{color:"#1877F2",fontSize:11,fontWeight:"700"},meta:{color:"#65676B",fontSize:12,marginTop:4},logoutButton:{alignSelf:"flex-start",marginTop:10,minWidth:70,minHeight:34,borderRadius:8,borderWidth:1,borderColor:"#D93025",alignItems:"center",justifyContent:"center",paddingHorizontal:12},logoutText:{color:"#D93025",fontSize:13,fontWeight:"700"},error:{backgroundColor:"#FFF",borderRadius:12,padding:14,marginBottom:12},errorText:{color:"#D93025",fontSize:14,lineHeight:20},retry:{color:"#1877F2",fontWeight:"700",marginTop:8},empty:{backgroundColor:"#FFF",borderRadius:12,padding:20},emptyTitle:{color:"#050505",fontSize:16,fontWeight:"700"},emptyText:{color:"#65676B",fontSize:14,lineHeight:21,marginTop:5},securityNote:{marginTop:14,padding:15,backgroundColor:"#FFF",borderRadius:12},securityTitle:{color:"#050505",fontSize:14,fontWeight:"800",marginBottom:5},securityText:{color:"#65676B",fontSize:13,lineHeight:20}});
