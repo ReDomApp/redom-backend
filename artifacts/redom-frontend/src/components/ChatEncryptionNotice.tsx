@@ -1,23 +1,24 @@
+import React, { useState } from "react";
 import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { ChatInfoIcon } from "./ChatInfoIcon";
 
-type Props = {
-  visible?: boolean;
-};
+type Props = { visible?: boolean };
+type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
-const DETAILS: Array<{ icon: "message" | "call" | "media" | "location" | "status"; label: string }> = [
-  { icon: "message", label: "Text and voice messages" },
+const DETAILS: Array<{ icon: "list" | "call" | "media" | "location" | "privacy"; label: string }> = [
+  { icon: "list", label: "Text and voice messages" },
   { icon: "call", label: "Audio and video calls" },
   { icon: "media", label: "Photos, videos and documents" },
   { icon: "location", label: "Location sharing" },
-  { icon: "status", label: "Status updates" },
+  { icon: "privacy", label: "Status updates" },
 ];
 
 export function ChatEncryptionNotice({ visible = true }: Props) {
-  const navigation = useNavigation();
-  const [open, setOpen] = React.useState(false);
+  const navigation = useNavigation<Navigation>();
+  const [open, setOpen] = useState(false);
 
   if (!visible) return null;
 
@@ -43,7 +44,7 @@ export function ChatEncryptionNotice({ visible = true }: Props) {
                 <View style={styles.safeDial}><ChatInfoIcon name="encryption" size={38} color="#101828" /></View>
                 <View style={styles.safeLatch} />
               </View>
-              <View style={styles.lock}><ChatInfoIcon name="encryption" size={48} color="#101828" /></View>
+              <View style={styles.lock}><ChatInfoIcon name="lock" size={48} color="#101828" /></View>
             </View>
 
             <Text style={styles.title}>Your chats and calls are private</Text>
@@ -60,7 +61,7 @@ export function ChatEncryptionNotice({ visible = true }: Props) {
               ))}
             </View>
 
-            <Pressable accessibilityRole="button" onPress={() => { setOpen(false); navigation.navigate("Policy", { slug: "messaging" }); }} style={styles.learnMore}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Open ReDom encryption policy" onPress={() => { setOpen(false); navigation.navigate("Policy", { slug: "messaging" }); }} style={styles.learnMore}>
               <Text style={styles.learnMoreText}>Learn more</Text>
             </Pressable>
           </View>
@@ -70,20 +71,8 @@ export function ChatEncryptionNotice({ visible = true }: Props) {
   );
 }
 
-import React from "react";
-
 const styles = StyleSheet.create({
-  banner: {
-    marginHorizontal: 24,
-    marginTop: 10,
-    marginBottom: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: "#FFF6E5",
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
+  banner: { marginHorizontal: 24, marginTop: 10, marginBottom: 8, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, backgroundColor: "#FFF6E5", flexDirection: "row", alignItems: "flex-start" },
   bannerText: { flex: 1, marginLeft: 7, color: "#4A4A4A", fontSize: 14, lineHeight: 19, textAlign: "center" },
   bannerLink: { fontWeight: "800" },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.28)", justifyContent: "flex-end" },
