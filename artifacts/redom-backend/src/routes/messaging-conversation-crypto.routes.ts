@@ -54,17 +54,11 @@ async function requireMember(userId: string, conversationId: string) {
   if (!profileId) return null;
   const [member] = await db.select({ id: conversationParticipants.id })
     .from(conversationParticipants)
-    .where(and(
-      eq(conversationParticipants.conversationId, conversationId),
-      eq(conversationParticipants.userId, profileId),
-      eq(conversationParticipants.activeMember, true),
-      eq(conversationParticipants.temporarilySuspended, false),
-      eq(conversationParticipants.permanentlyRemoved, false),
-    )).limit(1);
+    .where(and(eq(conversationParticipants.conversationId, conversationId), eq(conversationParticipants.userId, profileId), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.temporarilySuspended, false), eq(conversationParticipants.permanentlyRemoved, false))).limit(1);
   return member ? profileId : null;
 }
 
-async function activeDevices(conversationId: string) {
+async function activeDevices(conversationId: string, excludeProfileIds: string[] = []) {
   const result = await pool.query(`
     SELECT k.device_id, k.profile_id, k.public_key
     FROM redom_device_crypto_keys k
@@ -74,7 +68,8 @@ async function activeDevices(conversationId: string) {
       AND cp.temporarily_suspended=false
       AND cp.permanently_removed=false
       AND k.revoked_at IS NULL
-  `, [conversationId]);
+      AND NOT (k.profile_id = ANY($2::uuid[]))
+  `, [conversationId, excludeProfileIds]);
   return result.rows as Array<{ device_id: string; profile_id: string; public_key: string }>;
 }
 
@@ -112,9 +107,7 @@ router.post("/crypto/conversations/:conversationId/key/initialize", async (req, 
   const existing = await pool.query("SELECT key_version FROM redom_conversation_crypto_keys WHERE conversation_id=$1 LIMIT 1", [conversationId.data]);
   if (existing.rows[0]) return void res.status(409).json({ success: false, initialized: true, keyVersion: existing.rows[0].key_version, message: "Conversation encryption is already established." });
   await pool.query("INSERT INTO redom_conversation_crypto_keys(conversation_id,key_version,algorithm,membership_epoch,created_by) VALUES($1,1,'AES-256-GCM-CONVERSATION-KEY',1,$2)", [conversationId.data, profileId]);
-  for (const [deviceId, envelope] of Object.entries(body.data.envelopes)) {
-    await pool.query("INSERT INTO redom_conversation_crypto_envelopes(conversation_id,key_version,device_id,envelope) VALUES($1,1,$2,$3::jsonb)", [conversationId.data, deviceId, JSON.stringify(envelope)]);
-  }
+  for (const [deviceId, envelope] of Object.entries(body.data.envelopes)) await pool.query("INSERT INTO redom_conversation_crypto_envelopes(conversation_id,key_version,device_id,envelope) VALUES($1,1,$2,$3::jsonb)", [conversationId.data, deviceId, JSON.stringify(envelope)]);
   res.status(201).json({ success: true, initialized: true, keyVersion: 1, deviceIds: Object.keys(body.data.envelopes) });
 });
 
@@ -132,10 +125,32 @@ router.post("/crypto/conversations/:conversationId/key/envelopes", async (req, r
   const allowed = new Set(devices.map((device) => device.device_id));
   if (!allowed.has(body.data.deviceId)) return void res.status(403).json({ success: false, message: "The requesting device is not an active conversation device." });
   for (const deviceId of Object.keys(body.data.envelopes)) if (!allowed.has(deviceId)) return void res.status(400).json({ success: false, message: "Every conversation-key envelope must target an active conversation device." });
-  for (const [deviceId, envelope] of Object.entries(body.data.envelopes)) {
-    await pool.query("INSERT INTO redom_conversation_crypto_envelopes(conversation_id,key_version,device_id,envelope) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(conversation_id,key_version,device_id) DO UPDATE SET envelope=EXCLUDED.envelope,updated_at=now()", [conversationId.data, state.rows[0].key_version, deviceId, JSON.stringify(envelope)]);
-  }
+  for (const [deviceId, envelope] of Object.entries(body.data.envelopes)) await pool.query("INSERT INTO redom_conversation_crypto_envelopes(conversation_id,key_version,device_id,envelope) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(conversation_id,key_version,device_id) DO UPDATE SET envelope=EXCLUDED.envelope,updated_at=now()", [conversationId.data, state.rows[0].key_version, deviceId, JSON.stringify(envelope)]);
   res.json({ success: true, keyVersion: state.rows[0].key_version, added: Object.keys(body.data.envelopes).length });
+});
+
+router.post("/crypto/conversations/:conversationId/key/rotate", async (req, res) => {
+  if (!req.user?.userId) return void res.status(401).json({ success: false, message: "Authentication required." });
+  const conversationId = z.string().uuid().safeParse(req.params.conversationId);
+  const body = z.object({ deviceId: z.string().uuid(), excludeProfileIds: z.array(z.string().uuid()).max(1024).default([]), envelopes: envelopeMap }).strict().safeParse(req.body);
+  if (!conversationId.success || !body.success) return void res.status(400).json({ success: false, message: "A valid device, membership exclusions and encrypted key envelopes are required." });
+  const actorProfileId = await requireMember(req.user.userId, conversationId.data);
+  if (!actorProfileId) return void res.status(403).json({ success: false, message: "You do not have access to this conversation." });
+  await ensureTables();
+  const current = await pool.query("SELECT key_version, membership_epoch FROM redom_conversation_crypto_keys WHERE conversation_id=$1 FOR UPDATE", [conversationId.data]);
+  if (!current.rows[0]) return void res.status(409).json({ success: false, message: "Conversation encryption must be initialized before rotation." });
+  const nextVersion = Number(current.rows[0].key_version) + 1;
+  const nextEpoch = Number(current.rows[0].membership_epoch) + 1;
+  const excluded = [...new Set(body.data.excludeProfileIds)];
+  const devices = await activeDevices(conversationId.data, excluded);
+  const allowed = new Set(devices.map((device) => device.device_id));
+  if (!allowed.has(body.data.deviceId)) return void res.status(403).json({ success: false, message: "The requesting device must remain an authorized device for the rotated key." });
+  for (const deviceId of Object.keys(body.data.envelopes)) if (!allowed.has(deviceId)) return void res.status(400).json({ success: false, message: "Every rotated conversation-key envelope must target an authorized active device." });
+  for (const device of devices) if (!body.data.envelopes[device.device_id]) return void res.status(400).json({ success: false, message: "The rotated key must be provisioned to every remaining active encryption device." });
+  await pool.query("UPDATE redom_conversation_crypto_keys SET key_version=$2,membership_epoch=$3,updated_at=now() WHERE conversation_id=$1", [conversationId.data, nextVersion, nextEpoch]);
+  for (const [deviceId, envelope] of Object.entries(body.data.envelopes)) await pool.query("INSERT INTO redom_conversation_crypto_envelopes(conversation_id,key_version,device_id,envelope) VALUES($1,$2,$3,$4::jsonb)", [conversationId.data, nextVersion, deviceId, JSON.stringify(envelope)]);
+  await pool.query("DELETE FROM redom_conversation_crypto_envelopes WHERE conversation_id=$1 AND key_version < $2", [conversationId.data, nextVersion]);
+  res.json({ success: true, keyVersion: nextVersion, membershipEpoch: nextEpoch, rotated: true, excludedProfileIds: excluded });
 });
 
 export default router;
