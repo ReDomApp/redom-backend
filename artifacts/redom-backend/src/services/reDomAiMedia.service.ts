@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { openai } from "../lib/openai";
 
 const IMAGE_MODEL = "gpt-image-2";
+const IMAGE_FALLBACK_MODEL = "gpt-image-1-mini";
 const TRANSCRIBE_MODEL = "gpt-4o-transcribe";
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
@@ -25,18 +26,61 @@ function extensionForMime(mimeType: string, fallback: string) {
   return fallback;
 }
 
+function openAiErrorDetails(error: unknown) {
+  const value = error as { status?: unknown; code?: unknown; message?: unknown; error?: { code?: unknown; message?: unknown } } | null;
+  const status = typeof value?.status === "number" ? value.status : undefined;
+  const code = typeof value?.code === "string" ? value.code : typeof value?.error?.code === "string" ? value.error.code : undefined;
+  const message = typeof value?.message === "string" ? value.message : typeof value?.error?.message === "string" ? value.error.message : undefined;
+  return { status, code, message };
+}
+
+function shouldTryImageFallback(error: unknown) {
+  const details = openAiErrorDetails(error);
+  return details.status === 403 || details.status === 404 || details.code === "model_not_found" || details.code === "unsupported_model";
+}
+
+async function generateImageWithModel(model: string, prompt: string, user: string) {
+  return openai.images.generate({
+    model,
+    prompt,
+    size: "1024x1024",
+    quality: "low",
+    n: 1,
+    user,
+  });
+}
+
 export async function generateReDomAiImage(userId: string, prompt: string) {
-  const response = await openai.images.generate({ model: IMAGE_MODEL, prompt, size: "1024x1024", n: 1, user: userIdentifier(userId) });
+  const safetyUser = userIdentifier(userId);
+  let response;
+  let model = IMAGE_MODEL;
+  try {
+    response = await generateImageWithModel(IMAGE_MODEL, prompt, safetyUser);
+  } catch (error) {
+    if (!shouldTryImageFallback(error)) {
+      const details = openAiErrorDetails(error);
+      const suffix = details.code || details.message ? ` (${details.code ?? details.message})` : "";
+      throw new Error(`OpenAI image generation failed${suffix}.`);
+    }
+    try {
+      response = await generateImageWithModel(IMAGE_FALLBACK_MODEL, prompt, safetyUser);
+      model = IMAGE_FALLBACK_MODEL;
+    } catch (fallbackError) {
+      const details = openAiErrorDetails(fallbackError);
+      const suffix = details.code || details.message ? ` (${details.code ?? details.message})` : "";
+      throw new Error(`OpenAI image generation failed${suffix}.`);
+    }
+  }
   const image = response.data?.[0];
-  if (!image?.b64_json) throw new Error("The image service did not return image data.");
-  return { dataUri: `data:image/png;base64,${image.b64_json}`, model: IMAGE_MODEL };
+  if (!image?.b64_json) throw new Error(`OpenAI ${model} did not return image data.`);
+  return { dataUri: `data:image/png;base64,${image.b64_json}`, model };
 }
 
 export async function editReDomAiImage(userId: string, imageDataUri: string, prompt: string) {
   const { mimeType, bytes } = decodeDataUri(imageDataUri);
   if (bytes.length > MAX_FILE_BYTES) throw new Error("Image is too large.");
   const file = await toFile(bytes, `redom-ai-source.${extensionForMime(mimeType, "png")}`, { type: mimeType });
-  const response = await openai.images.edit({ model: IMAGE_MODEL, image: file, prompt, size: "1024x1024", n: 1, user: userIdentifier(userId) });
+  const response = await openai.images.edit({ model: IMAGE_MODEL, image: file, prompt, size: "1024x1024", quality: "low", n: 1, user: userIdentifier(userId) });
   const image = response.data?.[0];
   if (!image?.b64_json) throw new Error("The image editing service did not return image data.");
   return { dataUri: `data:image/png;base64,${image.b64_json}`, model: IMAGE_MODEL };
