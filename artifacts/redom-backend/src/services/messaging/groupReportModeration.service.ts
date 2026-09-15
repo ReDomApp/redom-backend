@@ -45,23 +45,31 @@ export async function moderateGroupReport(reportId: string) {
   if (!report?.conversationId) throw new Error("Group report not found.");
   const [group] = await db.select({ groupName: conversations.groupName }).from(conversations).where(eq(conversations.id, report.conversationId)).limit(1);
   const evidence = await db.select({ id: reportEvidenceMessages.id, messageId: reportEvidenceMessages.messageId, moderationText: reportEvidenceMessages.moderationText }).from(reportEvidenceMessages).where(eq(reportEvidenceMessages.reportId, reportId)).orderBy(desc(reportEvidenceMessages.sentAt));
-  const moderationTexts = evidence.map((item) => item.moderationText).filter((value): value is string => Boolean(value?.trim()));
+  const reviewable = evidence.filter((item): item is typeof item & { moderationText: string } => Boolean(item.moderationText?.trim()));
 
-  let status = "under_review"; let decision = "insufficient_evidence"; let categories: string[] = []; let scores: Record<string, number> = {}; let autoRemoved = false; let autoHidden = false; let requiresHumanReview = true;
+  let status = "under_review"; let decision = "insufficient_evidence"; let categories: string[] = []; let scores: Record<string, number> = {}; let autoRemoved = false; let autoHidden = false; let requiresHumanReview = true; let flaggedMessageIds: string[] = [];
   try {
-    if (moderationTexts.length) {
-      const response = await openai.moderations.create({ model: MODEL, input: moderationTexts.slice(0, 5).join("\n\n--- REPORTED MESSAGE ---\n\n").slice(0, 24000) });
-      const result = response.results[0]; const rawCategories = (result?.categories ?? {}) as unknown as Record<string, boolean>; const rawScores = (result?.category_scores ?? {}) as unknown as Record<string, number>; categories = categoryNames(rawCategories); scores = rawScores;
-      if (result?.flagged) { status = "closed"; decision = "violation_detected"; autoRemoved = true; autoHidden = true; requiresHumanReview = false; } else { status = "closed"; decision = "no_violation_detected"; requiresHumanReview = false; }
+    if (reviewable.length) {
+      const results = await Promise.all(reviewable.slice(0, 5).map(async (item) => ({ messageId: item.messageId, result: (await openai.moderations.create({ model: MODEL, input: item.moderationText.slice(0, 12000) })).results[0] })));
+      const categorySet = new Set<string>();
+      for (const item of results) {
+        const rawCategories = (item.result?.categories ?? {}) as unknown as Record<string, boolean>;
+        const rawScores = (item.result?.category_scores ?? {}) as unknown as Record<string, number>;
+        for (const category of categoryNames(rawCategories)) categorySet.add(category);
+        for (const [key, value] of Object.entries(rawScores)) scores[key] = Math.max(scores[key] ?? 0, value);
+        if (item.result?.flagged) flaggedMessageIds.push(item.messageId);
+      }
+      categories = [...categorySet];
+      if (flaggedMessageIds.length) { status = "closed"; decision = "violation_detected"; autoRemoved = true; autoHidden = true; requiresHumanReview = false; }
+      else { status = "closed"; decision = "no_violation_detected"; requiresHumanReview = false; }
     }
   } catch (error) { decision = "ai_review_failed"; status = "under_review"; requiresHumanReview = true; console.error("ReDom AI group report moderation failed", error); }
 
   const now = new Date();
   await db.transaction(async (tx) => {
     await tx.update(reports).set({ aiReviewed: true, aiModel: MODEL, aiCategories: categories, aiCategoryScores: scores, aiDecision: decision, aiConfidenceScore: Object.values(scores).length ? Math.max(...Object.values(scores)) : null, aiRecommendedAction: autoRemoved ? "content_removed" : decision === "no_violation_detected" ? "no_violation" : "escalate", autoRemoved, autoHidden, requiresHumanReview, moderatorAction: autoRemoved ? "content_removed" : decision === "no_violation_detected" ? "no_violation" : "pending", status, reviewedAt: now, aiReviewedAt: now, closedAt: status === "closed" ? now : null, updatedAt: now }).where(eq(reports.id, reportId));
-    if (autoRemoved && evidence.length) {
-      const messageIds = evidence.map((item) => item.messageId);
-      await tx.update(messages).set({ aiReviewed: true, moderationStatus: "removed", restrictedMessage: true, spamDetected: categories.some((c) => c.startsWith("spam")), scamDetected: categories.some((c) => c.includes("fraud") || c.includes("scam") || c.includes("illicit")), adultContentDetected: categories.some((c) => c.startsWith("sexual")), violenceDetected: categories.some((c) => c.startsWith("violence")), hateSpeechDetected: categories.some((c) => c.startsWith("hate")), updatedAt: now }).where(inArray(messages.id, messageIds));
+    if (autoRemoved && flaggedMessageIds.length) {
+      await tx.update(messages).set({ aiReviewed: true, moderationStatus: "removed", restrictedMessage: true, spamDetected: categories.some((c) => c.startsWith("spam")), scamDetected: categories.some((c) => c.includes("fraud") || c.includes("scam") || c.includes("illicit")), adultContentDetected: categories.some((c) => c.startsWith("sexual")), violenceDetected: categories.some((c) => c.startsWith("violence")), hateSpeechDetected: categories.some((c) => c.startsWith("hate")), updatedAt: now }).where(inArray(messages.id, flaggedMessageIds));
     }
   });
 
@@ -70,7 +78,6 @@ export async function moderateGroupReport(reportId: string) {
     const [actor] = await db.select({ role: conversationParticipants.role }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, report.conversationId), eq(conversationParticipants.userId, report.reporterUserId), eq(conversationParticipants.activeMember, true))).limit(1);
     if (actor) await exitReporterFromGroup(report.conversationId, report.reporterUserId, actor.role);
   }
-
   await notifyReporter(reportId, { status, decision, categories, evidenceCount: evidence.length, groupName: group?.groupName || "ReDom group", reason: report.reportReason, exitAfterReport: report.exitAfterReport });
   return { reportId, status, decision, categories, evidenceCount: evidence.length, emailChecked: true };
 }
