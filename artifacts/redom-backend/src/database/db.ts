@@ -19,6 +19,7 @@ import { verificationSubscriptions } from "./verificationSubscriptions";
 import { verifications } from "./verifications.schema";
 import { accountActions } from "./accountActions";
 import { reports } from "./reports";
+import { reportEvidenceMessages } from "./reportEvidenceMessages";
 import { appeals } from "./appeals";
 import { blockedUsers } from "./blockedUsers";
 import { restrictedUsers } from "./restrictedUsers";
@@ -72,7 +73,7 @@ export const db = drizzle(pool, { schema: {
   users, userProfiles, accountSecurity, twoFactorRecoveryCodes, totpLoginChallenges,
   sessions, activeSessions, loginHistory, activityLog, userPrivacy, userSettings, notificationPreferences,
   verification, verificationDocuments, verificationSubscriptions, verifications,
-  accountActions, reports, appeals, blockedUsers, restrictedUsers, mutedUsers,
+  accountActions, reports, reportEvidenceMessages, appeals, blockedUsers, restrictedUsers, mutedUsers,
   followers, following, friends, friendRequests,
   conversations, conversationParticipants, messages, messageDeletions, messageAttachments, messageReads,
   messageRequests, messageDrafts, calls,
