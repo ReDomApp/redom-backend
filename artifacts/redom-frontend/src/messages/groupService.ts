@@ -3,7 +3,7 @@ export interface GroupSettings { id:string; groupName:string; groupDescription?:
 export interface GroupMember { id:string; profileId:string; role:string; joinedAt:string; online:boolean; memberTag?:string|null; displayName?:string; profilePhoto?:string|null; verified?:boolean; }
 export interface GroupInvite { token:string; link:string; group:any; }
 export const groupService={
- getSettings(conversationId:string){return api.get<{success:boolean;settings:GroupSettings}>(`/messages/groups/${conversationId}/settings`);},
+ getSettings(conversationId:string){return api.get<{success:boolean;settings:GroupSettings}>(`/messages/groups/${conversationId}/settings`).then(async r=>{try{const d=await api.get<{success:boolean;group:GroupSettings}>(`/messages/groups/${conversationId}/details`);return {success:r.success,settings:{...r.settings,anyoneCanShareInvite:d.group.anyoneCanShareInvite}};}catch{return r;}});},
  getDetails(conversationId:string){return api.get<{success:boolean;group:GroupSettings;members:GroupMember[]}>(`/messages/groups/${conversationId}/details`);},
  updateSettings(conversationId:string,patch:Record<string,unknown>){return api.patch<{success:boolean}>(`/messages/groups/${conversationId}/settings`,patch);},
  updatePhoto(conversationId:string,groupPhoto:string|null){return api.patch<{success:boolean;groupPhoto:string|null}>(`/messages/groups/${conversationId}/photo`,{groupPhoto});},
