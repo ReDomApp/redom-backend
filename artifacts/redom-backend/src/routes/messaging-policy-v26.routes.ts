@@ -4,8 +4,8 @@ const router = Router();
 
 const document = {
   title: "ReDom Messaging Policy",
-  summary: "Privacy, security and messaging rules for ReDom conversations, groups, calls, media and ReDom AI features.",
-  version: "3.0.0",
+  summary: "Privacy, security and messaging rules for ReDom conversations, groups, calls, media, reporting and ReDom AI features.",
+  version: "3.1.0",
   effectiveAt: "2026-09-15T00:00:00.000Z",
   sections: [
     { heading: "Your chats are private", body: "ReDom private conversations are designed around end-to-end encryption. Private message content is protected before it is sent, and the server routes encrypted content and authorized metadata without requiring private-chat plaintext for ordinary delivery." },
@@ -30,14 +30,15 @@ const document = {
     { heading: "Advanced chat privacy", body: "Advanced chat privacy is a server-authorized conversation setting. In a protected conversation, ReDom blocks forwarding outside the chat and disables the in-chat ReDom AI context-sharing control. For groups, changing this setting requires the appropriate owner or administrator permission." },
     { heading: "Profiles and business conversations", body: "Direct chats and message profile actions use ReDom display names and profiles rather than making phone numbers the primary identity presentation. Business profiles may expose configured business information such as account type, verification state, address, email, category and hours; ReDom does not fabricate missing business fields." },
     { heading: "ReDom AI", body: "ReDom AI is a separate, user-invoked experience. Private conversation content is not automatically supplied to ReDom AI merely because a user is viewing a chat. If a user deliberately provides message content, an image, a file or a voice prompt to ReDom AI, that material is handled as part of that explicit AI request. Advanced chat privacy disables automatic chat-context entry for protected conversations." },
-    { heading: "Responsible messaging", body: "Use ReDom to communicate lawfully and respectfully. Do not use messaging to harass, threaten, impersonate, defraud, distribute malware, coordinate harmful activity, or repeatedly contact people who do not want to hear from you. ReDom may apply spam, scam, abuse and account-safety controls and may provide blocking and reporting tools." },
-    { heading: "Reporting and blocking", body: "Users can use supported blocking and reporting controls to manage unwanted contact and report supported messages or groups. Blocking and membership restrictions are enforced by the backend. Reporting does not give the reporting user access to unrelated private conversation content." },
+    { heading: "ReDom AI Moderation", body: "ReDom AI Moderation is a separate safety system from the user-facing ReDom AI assistant. When a user reports a group, ReDom collects only the report information and up to five recent available messages from that group for the moderation check. The moderation check uses OpenAI's moderation service to classify potentially harmful content. ReDom does not send unrelated private conversations or the user's ReDom AI chats to this report workflow." },
+    { heading: "AI report decisions", body: "ReDom AI Moderation records the moderation result, detected categories, evidence count, report status and recommended action. A flagged report can cause the reported evidence messages to be restricted by ReDom and the report to be closed; unavailable or failed AI evidence checks remain under review. The reported group is not notified of the report." },
+    { heading: "Report notifications", body: "After the report checks are completed, ReDom checks whether the reporting account has a connected and verified email address. If so, ReDom sends a report result from the configured ReDom Reports email address with the report status, AI finding, detected categories, evidence count and whether exit was requested. The email does not include the reported message text." },
+    { heading: "Reporting and blocking", body: "Users can use supported blocking and reporting controls to manage unwanted contact and report supported messages or groups. Group reports can be submitted as Report or Report and exit. Reporting and membership changes are enforced by the backend, while ReDom AI Moderation performs the report evidence safety check. Reporting does not give the reporting user access to unrelated private conversation content." },
     { heading: "Privacy boundary", body: "Private conversation content is not exposed through public profile surfaces, ordinary search or AI merely because a user asks for it. Conversation membership, device authorization, encryption and server-side access controls remain authoritative." },
     { heading: "If encryption is unavailable", body: "ReDom fails safely when protected messaging cannot be established. A user may be asked to reconnect or authorize a device before continuing. ReDom does not intentionally send private message content as readable fallback content merely to complete delivery." },
-    { heading: "Learn more", body: "For a conversation-specific security check, open the conversation's encryption-verification screen. For group controls such as permissions, invites, disappearing messages, View Once, chat lock, forwarding and Advanced chat privacy, use the supported controls in Group Info and Chat Info. This policy describes the current ReDom messaging behavior and privacy boundary." },
+    { heading: "Learn more", body: "For a conversation-specific security check, open the conversation's encryption-verification screen. For group controls such as permissions, invites, disappearing messages, View Once, chat lock, forwarding, reporting and Advanced chat privacy, use the supported controls in Group Info and Chat Info. This policy describes the current ReDom messaging behavior and privacy boundary." },
   ],
 };
 
 router.get("/policies/messaging", (_req, res) => res.json({ success: true, slug: "messaging", document }));
-
 export default router;
