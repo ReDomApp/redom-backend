@@ -4,6 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { ChatInfoIcon } from "./ChatInfoIcon";
+import { NavigationIcon } from "./NavigationIcon";
 
 type Props = { visible?: boolean };
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
@@ -36,7 +37,7 @@ export function ChatEncryptionNotice({ visible = true }: Props) {
           <View style={styles.sheet}>
             <View style={styles.handle} />
             <Pressable accessibilityRole="button" accessibilityLabel="Close encryption information" onPress={() => setOpen(false)} style={styles.close}>
-              <Text style={styles.closeText}>×</Text>
+              <NavigationIcon kind="close" size={30} color="#667085" />
             </Pressable>
 
             <View style={styles.illustration}>
@@ -79,7 +80,6 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: "#FFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 28, paddingTop: 18, paddingBottom: 24, maxHeight: "94%" },
   handle: { alignSelf: "center", width: 62, height: 5, borderRadius: 4, backgroundColor: "#98A2B3", marginBottom: 14 },
   close: { position: "absolute", top: 72, left: 25, zIndex: 2, width: 34, height: 34, alignItems: "center", justifyContent: "center" },
-  closeText: { fontSize: 38, lineHeight: 38, fontWeight: "300", color: "#667085" },
   illustration: { height: 175, alignItems: "center", justifyContent: "center", marginTop: 6 },
   safeBody: { width: 150, height: 122, borderRadius: 25, backgroundColor: "#20D66B", borderWidth: 2, borderColor: "#101828", alignItems: "center", justifyContent: "center", transform: [{ rotate: "-1deg" }] },
   safeDial: { width: 76, height: 76, borderRadius: 38, borderWidth: 2, borderColor: "#101828", alignItems: "center", justifyContent: "center" },
@@ -90,6 +90,6 @@ const styles = StyleSheet.create({
   details: { marginTop: 18, gap: 13 },
   detailRow: { flexDirection: "row", alignItems: "center", minHeight: 28 },
   detailText: { marginLeft: 15, fontSize: 16, color: "#667085" },
-  learnMore: { marginTop: 22, minHeight: 54, borderRadius: 28, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" },
+  learnMore: { marginTop: 22, minHeight: 54, borderRadius: 28, backgroundColor: "#25D366", alignItems: "center", justifyContent: "center" },
   learnMoreText: { color: "#FFF", fontSize: 17, fontWeight: "800" },
 });
