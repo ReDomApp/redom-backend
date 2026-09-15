@@ -22,6 +22,7 @@ function randomConversationKey(): Uint8Array { return Crypto.getRandomBytes(32);
 async function deriveAesKey(shared: Uint8Array, context: string): Promise<Uint8Array> { const contextBytes = new TextEncoder().encode(`ReDom-E2EE-v1|${context}`); return new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, concat(shared, contextBytes))); }
 function encryptAesGcm(plaintext: Uint8Array, key: Uint8Array): Uint8Array { const nonce = Crypto.getRandomBytes(AES_GCM_NONCE_BYTES); return concat(nonce, gcm(key, nonce).encrypt(plaintext)); }
 function decryptAesGcm(combined: Uint8Array, key: Uint8Array): Uint8Array { if (combined.length <= AES_GCM_NONCE_BYTES + 16) throw new Error("Invalid ReDom encrypted message."); const nonce = combined.slice(0, AES_GCM_NONCE_BYTES); return gcm(key, nonce).decrypt(combined.slice(AES_GCM_NONCE_BYTES)); }
+function conversationIdFromContext(context: string): string { return context.split("|")[0]; }
 
 export async function ensureDeviceKey(): Promise<{ deviceId: string; publicKey: string }> {
   const existingPublic = await SecureStore.getItemAsync(PUBLIC_KEY); const existingPrivate = await SecureStore.getItemAsync(PRIVATE_KEY); let deviceId = await SecureStore.getItemAsync(DEVICE_ID);
@@ -41,15 +42,14 @@ async function saveConversationKey(conversationId: string, key: Uint8Array) { aw
 async function cryptoParticipants(conversationId: string): Promise<CryptoParticipantLike[]> { const result = await api.get<{ success: boolean; participants: CryptoParticipantLike[] }>(`/messages/crypto/conversations/${conversationId}/crypto-participants`); return result.participants; }
 
 async function establishConversationKey(conversationId: string, participants: CryptoParticipantLike[]): Promise<Uint8Array> {
-  const device = await ensureDeviceKey(); let key = await getStoredConversationKey(conversationId); let state: { initialized?: boolean; envelope?: ReDomEncryptedEnvelope; deviceIds?: string[]; needsDeviceEnvelope?: boolean } | null = null;
-  try { state = await api.get<{ success: boolean; initialized: boolean; envelope?: ReDomEncryptedEnvelope; deviceIds?: string[]; needsDeviceEnvelope?: boolean }>(`/messages/crypto/conversations/${conversationId}/key?deviceId=${encodeURIComponent(device.deviceId)}`); }
+  const device = await ensureDeviceKey(); let key = await getStoredConversationKey(conversationId); let state: { initialized?: boolean; envelope?: ReDomEncryptedEnvelope; deviceIds?: string[] } | null = null;
+  try { state = await api.get<{ success: boolean; initialized: boolean; envelope?: ReDomEncryptedEnvelope; deviceIds?: string[] }>(`/messages/crypto/conversations/${conversationId}/key?deviceId=${encodeURIComponent(device.deviceId)}`); }
   catch (error: any) { const status = Number(error?.status ?? error?.response?.status ?? 0); if (status !== 404 && status !== 409) throw error; if (status === 409 && error?.response?.data) state = error.response.data; }
   if (!key && state?.envelope) { key = hexToBytes(await legacyDecryptFromSender(state.envelope, `conversation-key:${conversationId}`)); await saveConversationKey(conversationId, key); }
   if (!key) {
     key = randomConversationKey(); const envelopes: Record<string, ReDomEncryptedEnvelope> = {};
     for (const participant of participants) { if (!participant.public_key) throw new Error("This conversation participant has not registered an encryption device."); envelopes[participant.device_id] = await legacyEncryptForRecipient(bytesToHex(key), participant.public_key, `conversation-key:${conversationId}`); }
-    try { await api.post(`/messages/crypto/conversations/${conversationId}/key/initialize`, { deviceId: device.deviceId, envelopes }); }
-    catch (error: any) { const status = Number(error?.status ?? error?.response?.status ?? 0); if (status !== 409) throw error; }
+    try { await api.post(`/messages/crypto/conversations/${conversationId}/key/initialize`, { deviceId: device.deviceId, envelopes }); } catch (error: any) { const status = Number(error?.status ?? error?.response?.status ?? 0); if (status !== 409) throw error; }
     await saveConversationKey(conversationId, key); return key;
   }
   const covered = new Set(state?.deviceIds ?? []); const missing: Record<string, ReDomEncryptedEnvelope> = {};
@@ -57,8 +57,8 @@ async function establishConversationKey(conversationId: string, participants: Cr
   if (Object.keys(missing).length) await api.post(`/messages/crypto/conversations/${conversationId}/key/envelopes`, { deviceId: device.deviceId, envelopes: missing });
   return key;
 }
-async function conversationKeyForEncryption(conversationId: string) { return establishConversationKey(conversationId, await cryptoParticipants(conversationId)); }
-async function conversationKeyForDecryption(conversationId: string): Promise<Uint8Array> { const local = await getStoredConversationKey(conversationId); if (local) return local; const device = await ensureDeviceKey(); const result = await api.get<{ success: boolean; initialized: boolean; envelope?: ReDomEncryptedEnvelope }>(`/messages/crypto/conversations/${conversationId}/key?deviceId=${encodeURIComponent(device.deviceId)}`); if (!result.envelope) throw new Error("This device has not received the conversation encryption key."); const key = hexToBytes(await legacyDecryptFromSender(result.envelope, `conversation-key:${conversationId}`)); await saveConversationKey(conversationId, key); return key; }
+async function conversationKeyForEncryption(context: string) { const conversationId = conversationIdFromContext(context); return establishConversationKey(conversationId, await cryptoParticipants(conversationId)); }
+async function conversationKeyForDecryption(context: string): Promise<Uint8Array> { const conversationId = conversationIdFromContext(context); const local = await getStoredConversationKey(conversationId); if (local) return local; const device = await ensureDeviceKey(); const result = await api.get<{ success: boolean; initialized: boolean; envelope?: ReDomEncryptedEnvelope }>(`/messages/crypto/conversations/${conversationId}/key?deviceId=${encodeURIComponent(device.deviceId)}`); if (!result.envelope) throw new Error("This device has not received the conversation encryption key."); const key = hexToBytes(await legacyDecryptFromSender(result.envelope, `conversation-key:${conversationId}`)); await saveConversationKey(conversationId, key); return key; }
 
 export async function encryptForRecipient(plaintext: string, _recipientPublicKeyHex: string, context: string): Promise<ReDomEncryptedEnvelope> { const key = await conversationKeyForEncryption(context); const combined = encryptAesGcm(new TextEncoder().encode(plaintext), key); return { version: 1, algorithm: CONVERSATION_ALGORITHM, ephemeralPublicKey: ZERO_PUBLIC_KEY, ciphertext: bytesToHex(combined) }; }
 export async function decryptFromSender(envelope: ReDomEncryptedEnvelope, context: string): Promise<string> { if (envelope.version !== 1 || envelope.algorithm !== CONVERSATION_ALGORITHM) throw new Error("Unsupported ReDom encrypted message."); if (envelope.ephemeralPublicKey === ZERO_PUBLIC_KEY) { const key = await conversationKeyForDecryption(context); return new TextDecoder().decode(decryptAesGcm(hexToBytes(envelope.ciphertext), key)); } return legacyDecryptFromSender(envelope, context); }
