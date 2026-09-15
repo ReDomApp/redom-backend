@@ -1,0 +1,1 @@
+ALTER TABLE "conversations" ADD COLUMN IF NOT EXISTS "anyone_can_share_invite" boolean NOT NULL DEFAULT true;
