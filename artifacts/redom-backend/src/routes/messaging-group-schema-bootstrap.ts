@@ -1,0 +1,6 @@
+import { Router } from "express";
+import { pool } from "../database/db";
+const router=Router();let ready:Promise<void>|null=null;
+async function ensure(){await pool.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS anyone_can_send_messages boolean NOT NULL DEFAULT true; ALTER TABLE conversations ADD COLUMN IF NOT EXISTS anyone_can_send_history boolean NOT NULL DEFAULT true; ALTER TABLE conversations ADD COLUMN IF NOT EXISTS anyone_can_share_invite boolean NOT NULL DEFAULT true; ALTER TABLE conversation_participants ADD COLUMN IF NOT EXISTS member_tag varchar(80); CREATE TABLE IF NOT EXISTS group_invite_links (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, token varchar(128) UNIQUE NOT NULL, created_by uuid NOT NULL REFERENCES user_profiles(id), active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), reset_at timestamptz); CREATE INDEX IF NOT EXISTS group_invite_links_conversation_active_idx ON group_invite_links(conversation_id,active);`)}
+router.use(async(_req,_res,next)=>{try{ready??=(ensure().catch(e=>{ready=null;throw e}));await ready;next()}catch(e){next(e)}});
+export default router;
