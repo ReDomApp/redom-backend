@@ -1,0 +1,4 @@
+import { pgTable, uuid, varchar, text, timestamp, index } from "drizzle-orm/pg-core";
+import { conversations } from "./conversations";
+import { userProfiles } from "./userProfiles";
+export const scheduledGroupCalls=pgTable("scheduled_group_calls",{id:uuid("id").defaultRandom().primaryKey(),conversationId:uuid("conversation_id").notNull().references(()=>conversations.id,{onDelete:"cascade"}),createdBy:uuid("created_by").notNull().references(()=>userProfiles.id,{onDelete:"cascade"}),callType:varchar("call_type",{length:12}).notNull(),title:varchar("title",{length:160}).notNull(),description:text("description"),scheduledAt:timestamp("scheduled_at",{withTimezone:true}).notNull(),status:varchar("status",{length:16}).default("scheduled").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).defaultNow().notNull()},t=>({conversationScheduledIdx:index("scheduled_group_calls_conversation_idx").on(t.conversationId,t.scheduledAt)}));
