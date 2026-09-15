@@ -8,11 +8,216 @@ import { conversations } from "../database/conversations";
 import { conversationParticipants } from "../database/conversationParticipants";
 import { userProfiles } from "../database/userProfiles";
 import { groupInviteLinks } from "../database/groupInviteLinks";
-const router=Router();router.use(authMiddleware);
-async function me(userId:string){const[p]=await db.select({id:userProfiles.id}).from(userProfiles).where(eq(userProfiles.userId,userId)).limit(1);return p?.id??null}
-async function getMember(conversationId:string,profileId:string){const[m]=await db.select({role:conversationParticipants.role}).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId,conversationId),eq(conversationParticipants.userId,profileId),eq(conversationParticipants.activeMember,true),eq(conversationParticipants.permanentlyRemoved,false))).limit(1);return m??null}
-async function createInvite(conversationId:string,creator:string){const[tokenRow]=await db.select().from(groupInviteLinks).where(and(eq(groupInviteLinks.conversationId,conversationId),eq(groupInviteLinks.active,true))).orderBy(desc(groupInviteLinks.createdAt)).limit(1);if(tokenRow)return tokenRow;const[token]=await db.insert(groupInviteLinks).values({conversationId,createdBy:creator,token:randomBytes(32).toString("base64url"),active:true}).returning();if(!token)throw new Error("Unable to create invite link.");return token}
-router.get("/groups/:conversationId/invite-link",async(req,res,next)=>{const id=z.string().uuid().safeParse(req.params.conversationId);if(!req.user?.userId||!id.success)return next();const profile=await me(req.user.userId);const actor=profile?await getMember(id.data,profile):null;if(!profile||!actor)return void res.status(403).json({success:false,message:"You do not have access to this group."});const[g]=await db.select({participantCount:conversations.participantCount,anyoneCanShareInvite:conversations.anyoneCanShareInvite,groupName:conversations.groupName,groupDescription:conversations.groupDescription,groupPhoto:conversations.groupPhoto,joinApprovalRequired:conversations.joinApprovalRequired,encrypted:conversations.encrypted}).from(conversations).where(eq(conversations.id,id.data)).limit(1);if(!g)return void res.status(404).json({success:false,message:"Group not found."});if(actor.role!=="owner"&&actor.role!=="admin"&&(!g.anyoneCanShareInvite||g.participantCount>=33))return void res.status(403).json({success:false,message:"Only group admins can create an invite link for this group."});const invite=await createInvite(id.data,profile);return void res.json({success:true,token:invite.token,link:`https://redom.app/group-invite/${invite.token}`,group:{id:id.data,...g}})});
-router.patch("/groups/:conversationId/invite-permission",async(req,res,next)=>{const id=z.string().uuid().safeParse(req.params.conversationId);const body=z.object({anyoneCanShareInvite:z.boolean()}).strict().safeParse(req.body);if(!req.user?.userId||!id.success||!body.success)return next();const profile=await me(req.user.userId);const actor=profile?await getMember(id.data,profile):null;if(!profile||!actor||!(["owner","admin"].includes(actor.role)))return void res.status(403).json({success:false,message:"Only group admins can change invite-link permissions."});await db.update(conversations).set({anyoneCanShareInvite:body.data.anyoneCanShareInvite,updatedAt:new Date()}).where(eq(conversations.id,id.data));res.json({success:true,anyoneCanShareInvite:body.data.anyoneCanShareInvite});});
-router.post("/groups/:conversationId/invite-link/reset",async(req,res,next)=>{const id=z.string().uuid().safeParse(req.params.conversationId);if(!req.user?.userId||!id.success)return next();const profile=await me(req.user.userId);const actor=profile?await getMember(id.data,profile):null;if(!profile||!actor)return void res.status(403).json({success:false,message:"You do not have access to this group."});if(actor.role!=="owner"&&actor.role!=="admin")return void res.status(403).json({success:false,message:"Only group admins can reset the invite link."});await db.update(groupInviteLinks).set({active:false,resetAt:new Date()}).where(and(eq(groupInviteLinks.conversationId,id.data),eq(groupInviteLinks.active,true)));const invite=await createInvite(id.data,profile);res.json({success:true,token:invite.token,link:`https://redom.app/group-invite/${invite.token}`)});
+
+const router = Router();
+router.use(authMiddleware);
+
+async function me(userId: string) {
+  const [profile] = await db
+    .select({ id: userProfiles.id })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+
+  return profile?.id ?? null;
+}
+
+async function getMember(conversationId: string, profileId: string) {
+  const [member] = await db
+    .select({ role: conversationParticipants.role })
+    .from(conversationParticipants)
+    .where(
+      and(
+        eq(conversationParticipants.conversationId, conversationId),
+        eq(conversationParticipants.userId, profileId),
+        eq(conversationParticipants.activeMember, true),
+        eq(conversationParticipants.permanentlyRemoved, false),
+      ),
+    )
+    .limit(1);
+
+  return member ?? null;
+}
+
+async function createInvite(conversationId: string, creator: string) {
+  const [existing] = await db
+    .select()
+    .from(groupInviteLinks)
+    .where(
+      and(
+        eq(groupInviteLinks.conversationId, conversationId),
+        eq(groupInviteLinks.active, true),
+      ),
+    )
+    .orderBy(desc(groupInviteLinks.createdAt))
+    .limit(1);
+
+  if (existing) return existing;
+
+  const [invite] = await db
+    .insert(groupInviteLinks)
+    .values({
+      conversationId,
+      createdBy: creator,
+      token: randomBytes(32).toString("base64url"),
+      active: true,
+    })
+    .returning();
+
+  if (!invite) {
+    throw new Error("Unable to create invite link.");
+  }
+
+  return invite;
+}
+
+router.get("/groups/:conversationId/invite-link", async (req, res, next) => {
+  const id = z.string().uuid().safeParse(req.params.conversationId);
+
+  if (!req.user?.userId || !id.success) {
+    return next();
+  }
+
+  const profile = await me(req.user.userId);
+  const actor = profile ? await getMember(id.data, profile) : null;
+
+  if (!profile || !actor) {
+    return void res.status(403).json({
+      success: false,
+      message: "You do not have access to this group.",
+    });
+  }
+
+  const [group] = await db
+    .select({
+      participantCount: conversations.participantCount,
+      anyoneCanShareInvite: conversations.anyoneCanShareInvite,
+      groupName: conversations.groupName,
+      groupDescription: conversations.groupDescription,
+      groupPhoto: conversations.groupPhoto,
+      joinApprovalRequired: conversations.joinApprovalRequired,
+      encrypted: conversations.encrypted,
+    })
+    .from(conversations)
+    .where(eq(conversations.id, id.data))
+    .limit(1);
+
+  if (!group) {
+    return void res.status(404).json({
+      success: false,
+      message: "Group not found.",
+    });
+  }
+
+  if (
+    actor.role !== "owner" &&
+    actor.role !== "admin" &&
+    (!group.anyoneCanShareInvite || group.participantCount >= 33)
+  ) {
+    return void res.status(403).json({
+      success: false,
+      message: "Only group admins can create an invite link for this group.",
+    });
+  }
+
+  const invite = await createInvite(id.data, profile);
+
+  return void res.json({
+    success: true,
+    token: invite.token,
+    link: `https://redom.app/group-invite/${invite.token}`,
+    group: {
+      id: id.data,
+      ...group,
+    },
+  });
+});
+
+router.patch(
+  "/groups/:conversationId/invite-permission",
+  async (req, res, next) => {
+    const id = z.string().uuid().safeParse(req.params.conversationId);
+    const body = z
+      .object({ anyoneCanShareInvite: z.boolean() })
+      .strict()
+      .safeParse(req.body);
+
+    if (!req.user?.userId || !id.success || !body.success) {
+      return next();
+    }
+
+    const profile = await me(req.user.userId);
+    const actor = profile ? await getMember(id.data, profile) : null;
+
+    if (!profile || !actor || !["owner", "admin"].includes(actor.role)) {
+      return void res.status(403).json({
+        success: false,
+        message: "Only group admins can change invite-link permissions.",
+      });
+    }
+
+    await db
+      .update(conversations)
+      .set({
+        anyoneCanShareInvite: body.data.anyoneCanShareInvite,
+        updatedAt: new Date(),
+      })
+      .where(eq(conversations.id, id.data));
+
+    return void res.json({
+      success: true,
+      anyoneCanShareInvite: body.data.anyoneCanShareInvite,
+    });
+  },
+);
+
+router.post(
+  "/groups/:conversationId/invite-link/reset",
+  async (req, res, next) => {
+    const id = z.string().uuid().safeParse(req.params.conversationId);
+
+    if (!req.user?.userId || !id.success) {
+      return next();
+    }
+
+    const profile = await me(req.user.userId);
+    const actor = profile ? await getMember(id.data, profile) : null;
+
+    if (!profile || !actor) {
+      return void res.status(403).json({
+        success: false,
+        message: "You do not have access to this group.",
+      });
+    }
+
+    if (actor.role !== "owner" && actor.role !== "admin") {
+      return void res.status(403).json({
+        success: false,
+        message: "Only group admins can reset the invite link.",
+      });
+    }
+
+    await db
+      .update(groupInviteLinks)
+      .set({
+        active: false,
+        resetAt: new Date(),
+      })
+      .where(
+        and(
+          eq(groupInviteLinks.conversationId, id.data),
+          eq(groupInviteLinks.active, true),
+        ),
+      );
+
+    const invite = await createInvite(id.data, profile);
+
+    return void res.json({
+      success: true,
+      token: invite.token,
+      link: `https://redom.app/group-invite/${invite.token}`,
+    });
+  },
+);
+
 export default router;
