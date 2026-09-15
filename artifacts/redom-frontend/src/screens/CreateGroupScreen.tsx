@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useNavigation } from "@react-navigation/native";
@@ -6,22 +6,58 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { messageService, type DisappearingTimer } from "../messages/messageService";
 import { groupService } from "../messages/groupService";
+import { searchService, type SearchResult } from "../search/searchService";
 import { GroupActionIcon } from "../components/GroupActionIcon";
 
 const timerOptions: Array<{ value: DisappearingTimer; label: string }> = [
   { value: 86400, label: "24 hours" }, { value: 604800, label: "7 days" }, { value: 7776000, label: "90 days" }, { value: 0, label: "Off" },
 ];
 
+const tokenizeMembers = (value: string) => [...new Set(value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean))];
+
 export function CreateGroupScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [memberIds, setMemberIds] = useState("");
+  const [resolvedMembers, setResolvedMembers] = useState<SearchResult[]>([]);
+  const [resolvingMembers, setResolvingMembers] = useState(false);
   const [photo, setPhoto] = useState<string | null>(null);
   const [timer, setTimer] = useState<DisappearingTimer>(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const members = [...new Set(memberIds.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean))];
+
+  const memberTokens = tokenizeMembers(memberIds);
+
+  useEffect(() => {
+    let cancelled = false;
+    const tokens = tokenizeMembers(memberIds);
+    if (!tokens.length) { setResolvedMembers([]); setResolvingMembers(false); return; }
+
+    setResolvingMembers(true);
+    const timerId = setTimeout(async () => {
+      try {
+        const matches = await Promise.all(tokens.map(async (token) => {
+          try {
+            const result = await searchService.search(token);
+            const exact = result.results.find((candidate) =>
+              candidate.profileId === token ||
+              candidate.publicId === token ||
+              candidate.username.toLowerCase() === token.replace(/^@/, "").toLowerCase(),
+            );
+            return exact ?? null;
+          } catch {
+            return null;
+          }
+        }));
+        if (!cancelled) setResolvedMembers(matches.filter((item): item is SearchResult => item !== null));
+      } finally {
+        if (!cancelled) setResolvingMembers(false);
+      }
+    }, 250);
+
+    return () => { cancelled = true; clearTimeout(timerId); };
+  }, [memberIds]);
 
   const choosePhoto = async () => {
     try {
@@ -36,12 +72,22 @@ export function CreateGroupScreen() {
 
   const showPermissions = () => Alert.alert("Group permissions", "Members can edit group settings, send new messages, and add other members. Invite links and member approval remain controlled by group admins.");
 
+  const removeMember = (token: string) => {
+    setMemberIds((value) => tokenizeMembers(value).filter((item) => item !== token).join(" "));
+  };
+
   const create = async () => {
     if (!name.trim()) { setError("Enter a group name."); return; }
-    if (members.some((id) => !/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(id))) { setError("Each member must use a valid ReDom profile ID."); return; }
+    if (resolvingMembers) { setError("Wait for ReDom to finish checking the members."); return; }
+    if (memberTokens.length !== resolvedMembers.length) {
+      setError("Each member must be a valid ReDom profile ID or username.");
+      return;
+    }
+
     setSaving(true); setError("");
     try {
-      const result = await messageService.createGroup(name.trim(), members, description.trim() || undefined);
+      const memberUserIds = [...new Set(resolvedMembers.map((member) => member.userId))];
+      const result = await messageService.createGroup(name.trim(), memberUserIds, description.trim() || undefined);
       if (photo) await groupService.updatePhoto(result.conversationId, photo);
       if (timer !== 0) await messageService.setDisappearingPolicy(result.conversationId, timer);
       await groupService.updateSettings(result.conversationId, { anyoneCanEditInfo: true, anyoneCanInvite: true, anyoneCanSendMessages: true });
@@ -80,15 +126,22 @@ export function CreateGroupScreen() {
         </Pressable>
 
         <View style={styles.membersSection}>
-          <Text style={styles.memberCount}>Members: {members.length}</Text>
-          {members.length === 0 ? <Text style={styles.memberHint}>Add member profile IDs below</Text> : members.map((id) => (
-            <View key={id} style={styles.memberRow}>
-              <View style={styles.memberAvatar}><GroupActionIcon kind="members" size={30} color="#1877F2" /></View>
-              <Text style={styles.memberId} numberOfLines={1}>{id}</Text>
-              <Pressable onPress={() => setMemberIds((value) => value.split(/[\s,]+/).filter((item) => item && item !== id).join(" "))} hitSlop={8}><GroupActionIcon kind="close" size={22} color="#667085" /></Pressable>
-            </View>
-          ))}
-          <TextInput value={memberIds} onChangeText={setMemberIds} placeholder="Paste profile IDs separated by spaces or commas" placeholderTextColor="#98A2B3" style={styles.memberInput} autoCapitalize="none" autoCorrect={false} multiline />
+          <Text style={styles.memberCount}>Members: {memberTokens.length}</Text>
+          {memberTokens.length === 0 ? <Text style={styles.memberHint}>Add a ReDom profile ID or @username below</Text> : memberTokens.map((token) => {
+            const resolved = resolvedMembers.find((member) => member.profileId === token || member.publicId === token || member.username.toLowerCase() === token.replace(/^@/, "").toLowerCase());
+            return (
+              <View key={token} style={styles.memberRow}>
+                <View style={styles.memberAvatar}>{resolved?.profilePhoto ? <Image source={{ uri: resolved.profilePhoto }} style={styles.memberPhoto} /> : <GroupActionIcon kind="members" size={30} color="#1877F2" />}</View>
+                <View style={styles.memberIdentity}>
+                  <Text style={styles.memberName} numberOfLines={1}>{resolved ? `${resolved.firstName} ${resolved.lastName}`.trim() : token}</Text>
+                  <Text style={styles.memberId} numberOfLines={1}>{resolved ? `@${resolved.username}` : token}</Text>
+                </View>
+                {resolved ? <GroupActionIcon kind="check" size={20} color="#1877F2" /> : resolvingMembers ? <ActivityIndicator size="small" /> : <GroupActionIcon kind="close" size={20} color="#B42318" />}
+                <Pressable onPress={() => removeMember(token)} hitSlop={8}><GroupActionIcon kind="close" size={22} color="#667085" /></Pressable>
+              </View>
+            );
+          })}
+          <TextInput value={memberIds} onChangeText={setMemberIds} placeholder="Enter profile IDs or @usernames" placeholderTextColor="#98A2B3" style={styles.memberInput} autoCapitalize="none" autoCorrect={false} multiline />
           <TextInput value={description} onChangeText={setDescription} placeholder="Add group description (optional)" placeholderTextColor="#98A2B3" style={styles.descriptionInput} multiline maxLength={2000} />
         </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -115,9 +168,12 @@ const styles = StyleSheet.create({
   membersSection: { marginTop: 1, backgroundColor: "#F5F6F7", paddingTop: 18 },
   memberCount: { paddingHorizontal: 32, fontSize: 16, color: "#667085", marginBottom: 10 },
   memberHint: { paddingHorizontal: 32, paddingVertical: 18, color: "#667085" },
-  memberRow: { minHeight: 72, backgroundColor: "#FFF", paddingHorizontal: 32, flexDirection: "row", alignItems: "center", gap: 14, borderBottomWidth: 1, borderBottomColor: "#EEF0F2" },
-  memberAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: "#EEF2F6", alignItems: "center", justifyContent: "center" },
-  memberId: { flex: 1, fontSize: 15, color: "#101828" },
+  memberRow: { minHeight: 72, backgroundColor: "#FFF", paddingHorizontal: 32, flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#EEF0F2" },
+  memberAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: "#EEF2F6", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  memberPhoto: { width: 50, height: 50 },
+  memberIdentity: { flex: 1 },
+  memberName: { fontSize: 15, color: "#101828", fontWeight: "600" },
+  memberId: { fontSize: 13, color: "#667085", marginTop: 2 },
   memberInput: { margin: 18, minHeight: 72, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#D0D5DD", borderRadius: 12, padding: 14, color: "#101828", textAlignVertical: "top" },
   descriptionInput: { marginHorizontal: 18, minHeight: 72, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#D0D5DD", borderRadius: 12, padding: 14, color: "#101828", textAlignVertical: "top" },
   error: { margin: 18, color: "#B42318", fontWeight: "600" },
