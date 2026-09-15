@@ -21,6 +21,7 @@ async function ensureSchema() {
     ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_source varchar(40) NOT NULL DEFAULT 'general';
     ALTER TABLE reports ADD COLUMN IF NOT EXISTS exit_after_report boolean NOT NULL DEFAULT false;
     ALTER TABLE reports ADD COLUMN IF NOT EXISTS evidence_message_count integer NOT NULL DEFAULT 0;
+    ALTER TABLE reports ADD COLUMN IF NOT EXISTS notification_language varchar(10) NOT NULL DEFAULT 'en';
     ALTER TABLE reports ADD COLUMN IF NOT EXISTS ai_model varchar(100);
     ALTER TABLE reports ADD COLUMN IF NOT EXISTS ai_categories jsonb;
     ALTER TABLE reports ADD COLUMN IF NOT EXISTS ai_category_scores jsonb;
@@ -65,10 +66,11 @@ async function activeMember(conversationId: string, profileId: string) {
 }
 
 const reasonSchema = z.string().trim().min(1).max(60);
+const languageSchema = z.enum(["en", "es", "fr", "de", "pt", "it", "nl", "ar", "zh", "ja", "ko", "hi", "ru", "tr"]);
 
 router.post("/groups/:conversationId/report", async (req, res) => {
   const id = z.string().uuid().safeParse(req.params.conversationId);
-  const body = z.object({ reason: reasonSchema, details: z.string().trim().max(5000).optional(), exitAfterReport: z.boolean().default(false) }).strict().safeParse(req.body);
+  const body = z.object({ reason: reasonSchema, details: z.string().trim().max(5000).optional(), exitAfterReport: z.boolean().default(false), language: languageSchema.optional() }).strict().safeParse(req.body);
   if (!req.user?.userId || !id.success || !body.success) return void res.status(400).json({ success: false, message: "A valid report reason and group are required." });
 
   const reporter = await profileFor(req.user.userId);
@@ -91,6 +93,7 @@ router.post("/groups/:conversationId/report", async (req, res) => {
     reportSource: "group_info",
     exitAfterReport: body.data.exitAfterReport,
     evidenceMessageCount: recent.length,
+    notificationLanguage: body.data.language ?? "en",
     aiReviewed: false,
     autoHidden: false,
     autoRemoved: false,
@@ -122,7 +125,7 @@ router.get("/reports/:reportId", async (req, res) => {
   if (!req.user?.userId || !reportId.success) return void res.status(400).json({ success: false, message: "Invalid report." });
   const reporter = await profileFor(req.user.userId);
   if (!reporter) return void res.status(404).json({ success: false, message: "Profile not found." });
-  const [report] = await db.select({ id: reports.id, status: reports.status, reportReason: reports.reportReason, aiReviewed: reports.aiReviewed, aiDecision: reports.aiDecision, aiCategories: reports.aiCategories, aiRecommendedAction: reports.aiRecommendedAction, requiresHumanReview: reports.requiresHumanReview, autoRemoved: reports.autoRemoved, exitAfterReport: reports.exitAfterReport, evidenceMessageCount: reports.evidenceMessageCount, createdAt: reports.createdAt, reviewedAt: reports.reviewedAt, emailNotificationSentAt: reports.emailNotificationSentAt }).from(reports).where(and(eq(reports.id, reportId.data), eq(reports.reporterUserId, reporter))).limit(1);
+  const [report] = await db.select({ id: reports.id, status: reports.status, reportReason: reports.reportReason, aiReviewed: reports.aiReviewed, aiDecision: reports.aiDecision, aiCategories: reports.aiCategories, aiRecommendedAction: reports.aiRecommendedAction, requiresHumanReview: reports.requiresHumanReview, autoRemoved: reports.autoRemoved, exitAfterReport: reports.exitAfterReport, evidenceMessageCount: reports.evidenceMessageCount, notificationLanguage: reports.notificationLanguage, createdAt: reports.createdAt, reviewedAt: reports.reviewedAt, emailNotificationSentAt: reports.emailNotificationSentAt }).from(reports).where(and(eq(reports.id, reportId.data), eq(reports.reporterUserId, reporter))).limit(1);
   if (!report) return void res.status(404).json({ success: false, message: "Report not found." });
   res.json({ success: true, report });
 });
