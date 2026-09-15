@@ -6,7 +6,7 @@ import { AiSparkIcon } from "../assets/ai/AiIcon";
 
 export function GlobalReDomAiAssistant() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  return <Pressable accessibilityRole="button" accessibilityLabel="Open ReDom AI" onPress={() => navigation.navigate("ReDomAI")} style={styles.aiButton}><AiSparkIcon size={22} color="#FFFFFF"/></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel="Open ReDom AI" onPress={() => navigation.navigate("ReDomAI", {})} style={styles.aiButton}><AiSparkIcon size={22} color="#FFFFFF"/></Pressable>;
 }
 
 const styles = StyleSheet.create({
