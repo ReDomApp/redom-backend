@@ -22,12 +22,12 @@
     {"idx": 17, "version": "7", "when": 1788952000000, "tag": "0017_registration_challenge_flow_ids", "breakpoints": true},
     {"idx": 18, "version": "7", "when": 1788953000000, "tag": "0018_registration_flow_reservation_names", "breakpoints": true},
     {"idx": 19, "version": "7", "when": 1788954000000, "tag": "0019_registration_flow_reservations_repair", "breakpoints": true},
-    {"idx": 20, "version": "7", "when": "1788955000000", "tag": "0020_registration_flow_birthday", "breakpoints": true},
-    {"idx": 21, "version": "7", "when": "1788956000000", "tag": "0021_registration_flow_gender", "breakpoints": true},
-    {"idx": 22, "version": "7", "when": "1788957000000", "tag": "0022_registration_flow_phone", "breakpoints": true},
-    {"idx": 23, "version": "7", "when": "1788958000000", "tag": "0023_registration_flow_phone_security", "breakpoints": true},
-    {"idx": 24, "version": "7", "when": "1789048440000", "tag": "0024_registration_flow_memory_columns", "breakpoints": true},
-    {"idx": 25, "version": "7", "when": "1789152000000", "tag": "0025_login_history_flow_id", "breakpoints": true},
+    {"idx": 20, "version": "7", "when": 1788955000000, "tag": "0020_registration_flow_birthday", "breakpoints": true},
+    {"idx": 21, "version": "7", "when": 1788956000000, "tag": "0021_registration_flow_gender", "breakpoints": true},
+    {"idx": 22, "version": "7", "when": 1788957000000, "tag": "0022_registration_flow_phone", "breakpoints": true},
+    {"idx": 23, "version": "7", "when": 1788958000000, "tag": "0023_registration_flow_phone_security", "breakpoints": true},
+    {"idx": 24, "version": "7", "when": 1789048440000, "tag": "0024_registration_flow_memory_columns", "breakpoints": true},
+    {"idx": 25, "version": "7", "when": 1789152000000, "tag": "0025_login_history_flow_id", "breakpoints": true},
     {"idx": 26, "version": "7", "when": 1789400000000, "tag": "0026_group_features", "breakpoints": true},
     {"idx": 27, "version": "7", "when": 1789400100000, "tag": "0027_group_invite_permission", "breakpoints": true}
   ]
