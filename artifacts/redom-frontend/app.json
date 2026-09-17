@@ -11,7 +11,26 @@
       "bundleIdentifier": "com.redom.app",
       "associatedDomains": [
         "applinks:redom.app"
-      ]
+      ],
+      "bitcode": false,
+      "infoPlist": {
+        "CFBundleLocalizations": [
+          "en",
+          "es",
+          "fr",
+          "de",
+          "pt",
+          "it",
+          "nl",
+          "ar",
+          "zh",
+          "ja",
+          "ko",
+          "hi",
+          "ru",
+          "tr"
+        ]
+      }
     },
     "android": {
       "package": "com.redom.app",
@@ -34,7 +53,19 @@
       ],
       "adaptiveIcon": {
         "backgroundColor": "#1877F2"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH"
+      ]
     },
     "plugins": [
       "expo-secure-store",
@@ -109,6 +140,11 @@
         }
       ],
       "expo-sharing"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ff2a65f1-94f8-4751-8464-5eb32406c76c"
+      }
+    }
   }
 }
