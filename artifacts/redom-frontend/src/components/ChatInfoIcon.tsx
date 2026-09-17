@@ -1,6 +1,6 @@
 import { Svg, Path, Circle, Rect, Line, Polyline } from "react-native-svg";
 
-type IconName = "location" | "mail" | "info" | "media" | "lock" | "privacy" | "group" | "groupAdd" | "block" | "report" | "bell" | "visibility" | "star" | "list" | "clear" | "encryption" | "qr" | "number" | "edit" | "share" | "sticker" | "ai" | "download" | "gallery" | "web" | "rotate" | "set" | "more" | "search" | "call" | "video";
+type IconName = "location" | "mail" | "info" | "media" | "lock" | "privacy" | "group" | "groupAdd" | "block" | "report" | "bell" | "visibility" | "star" | "list" | "clear" | "encryption" | "qr" | "number" | "edit" | "share" | "sticker" | "ai" | "download" | "gallery" | "web" | "rotate" | "set" | "more" | "search" | "call" | "video" | "message";
 
 export function ChatInfoIcon({ name, size = 25, color = "#667085" }: { name: IconName; size?: number; color?: string }) {
   const common = { stroke: color, strokeWidth: 1.9, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, fill: "none" };
@@ -8,6 +8,7 @@ export function ChatInfoIcon({ name, size = 25, color = "#667085" }: { name: Ico
     {name === "location" ? <><Path d="M14 25s7-7.1 7-13A7 7 0 1 0 7 12c0 5.9 7 13 7 13Z" {...common}/><Circle cx="14" cy="12" r="2.3" {...common}/></> : null}
     {name === "mail" ? <><Rect x="3" y="5" width="22" height="18" rx="2" {...common}/><Polyline points="4,7 14,15 24,7" {...common}/></> : null}
     {name === "info" ? <><Circle cx="14" cy="14" r="10.5" {...common}/><Line x1="14" y1="12" x2="14" y2="20" {...common}/><Circle cx="14" cy="8.2" r="1" fill={color}/></> : null}
+    {name === "message" ? <><Path d="M4 5.5h20v14H10l-5 4v-4H4v-14Z" {...common}/><Line x1="9" y1="11" x2="19" y2="11" {...common}/><Line x1="9" y1="15" x2="16" y2="15" {...common}/></> : null}
     {name === "media" ? <><Rect x="4" y="6" width="20" height="17" rx="2" {...common}/><Circle cx="10" cy="11" r="1.4" {...common}/><Polyline points="6,20 11,15 15,18 18,14 22,20" {...common}/></> : null}
     {name === "lock" ? <><Rect x="6" y="12" width="16" height="12" rx="2" {...common}/><Path d="M9 12V9a5 5 0 0 1 10 0v3" {...common}/><Circle cx="14" cy="18" r="1.4" {...common}/></> : null}
     {name === "privacy" ? <><Path d="M14 3 23 7v6c0 6-3.8 10-9 12-5.2-2-9-6-9-12V7l9-4Z" {...common}/><Path d="m9 14 3 3 7-7" {...common}/></> : null}
