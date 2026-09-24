@@ -149,7 +149,7 @@ export function GroupIconScreen({ route, navigation }: Props) {
             <Action styles={s} icon="emoji" title="Emoji & stickers" onPress={showEmojiPicker} />
             <Action styles={s} icon="search" title="Search web" onPress={() => {
               setSheet(false);
-              void Linking.openURL("https://www.google.com/search?tbm=isch&q=group+icon");
+              void openExternalLink("https://www.google.com/search?tbm=isch&q=group+icon", "Search group icons", "group-icon-search");
             }} />
             <Action styles={s} icon="sparkle" title="AI images" onPress={() => {
               setSheet(false);
