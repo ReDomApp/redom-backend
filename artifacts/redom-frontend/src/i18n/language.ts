@@ -173,7 +173,7 @@ const translations: Partial<Record<LanguageCode, Record<string, string>>> = {
   ar: {
     ...base, languageUpdated: "تم تحديث لغة ReDom داخل التطبيق", languageUpdatedBody: "لغة تطبيق ReDom لديك الآن هي {language}.", joinToday: "انضم إلى ReDom اليوم", createDescription: "أنشئ حسابًا للتواصل مع الأصدقاء والعائلة ومجتمعات الأشخاص الذين يشاركونك اهتماماتك حول العالم.", createAccount: "إنشاء حساب جديد", findAccount: "العثور على حسابك", alreadyAccount: "هل لديك حساب بالفعل؟", login: "تسجيل الدخول", loginTitle: "تسجيل الدخول إلى ReDom", mobileOrEmail: "رقم الهاتف المحمول أو البريد الإلكتروني", password: "كلمة المرور", forgotPassword: "هل نسيت كلمة المرور؟", or: "أو", whatsName: "ما اسمك؟", realName: "أدخل الاسم الذي تستخدمه في حياتك الحقيقية.", everydayName: "اكتب الاسم الذي تستخدمه كل يوم.", firstName: "الاسم الأول", lastName: "اسم العائلة", continue: "متابعة", flowId: "معرّف تدفق ReDom الخاص بك هو {flowId}. استخدمه خلال 30 دقيقة.", language: "اللغة", terms: "الشروط والأحكام", privacy: "سياسة الخصوصية", guidelines: "إرشادات المجتمع",
   },
-  zh: {
+  "zh-CN": {
     ...base, languageUpdated: "ReDom 应用内语言已更新", languageUpdatedBody: "你的 ReDom 应用语言现在是 {language}。", joinToday: "立即加入 ReDom", createDescription: "创建账户，与世界各地兴趣相投的朋友、家人和社区建立联系。", createAccount: "创建新账户", findAccount: "查找你的账户", alreadyAccount: "已经有账户？", login: "登录", loginTitle: "登录 ReDom", mobileOrEmail: "手机号或电子邮箱", password: "密码", forgotPassword: "忘记密码？", or: "或", whatsName: "你的名字是什么？", realName: "输入你现实生活中使用的姓名。", everydayName: "请输入你日常使用的姓名。", firstName: "名字", lastName: "姓氏", continue: "继续", flowId: "你的 ReDom 流程 ID 是 {flowId}。请在 30 分钟内使用。", language: "语言", terms: "条款与条件", privacy: "隐私政策", guidelines: "社区守则",
   },
   ja: {
