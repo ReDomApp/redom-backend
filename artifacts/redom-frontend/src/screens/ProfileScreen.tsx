@@ -40,6 +40,7 @@ import UploadMediaIcon from "../assets/profile-media/upload.svg";
 import CoverMediaIcon from "../assets/profile-media/cover.svg";
 import InfoMediaIcon from "../assets/profile-media/info.svg";
 import { useAuthContext } from "../auth/context";
+import { ReDomMenuDrawer } from "../components/ReDomMenuDrawer";
 import { profileService, type ProfileData, type ProfileSuggestion } from "../profile/service";
 import type { RootStackParamList } from "../routing/types";
 
@@ -69,6 +70,7 @@ export function ProfileScreen({ navigation, route }: Props) {
   const [tab, setTab] = useState<Tab>("All");
   const [adding, setAdding] = useState<string | null>(null);
   const [sheet, setSheet] = useState<SheetKind>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -157,7 +159,7 @@ export function ProfileScreen({ navigation, route }: Props) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ui.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProfile} />}>
         <View style={ui.coverWrap}>
           {p?.coverPhoto ? <ImageBackground source={{ uri: p.coverPhoto }} style={ui.cover} resizeMode="cover"><View style={ui.coverShade} /></ImageBackground> : <View style={ui.cover}><View style={ui.coverShade} /></View>}
-          {canEdit ? <Pressable style={ui.menuButton} accessibilityLabel="Open profile navigation"><MenuIcon width={ui.coverToolIcon} height={ui.coverToolIcon} /></Pressable> : null}
+          {canEdit ? <Pressable style={ui.menuButton} onPress={() => setMenuOpen(true)} accessibilityLabel="Open profile navigation"><MenuIcon width={ui.coverToolIcon} height={ui.coverToolIcon} /></Pressable> : null}
           <View style={ui.coverTools}>
             {canEdit ? <Pressable accessibilityLabel="Edit cover photo" onPress={() => setSheet("cover")}><CoverEditIcon width={ui.coverToolIcon} height={ui.coverToolIcon} /></Pressable> : null}
             <Pressable accessibilityLabel="Search profile" onPress={() => setSearchOpen(true)}><CoverSearchIcon width={ui.coverToolIcon} height={ui.coverToolIcon} /></Pressable>
@@ -199,6 +201,7 @@ export function ProfileScreen({ navigation, route }: Props) {
         </> : null}
         {loading ? <View style={ui.loading}><Text style={ui.emptyText}>Loading profile...</Text></View> : null}
       </ScrollView>
+      <ReDomMenuDrawer visible={menuOpen} onClose={() => setMenuOpen(false)} />
       {sheet === "avatar" || sheet === "cover" ? <ProfileMediaSheet
   kind={sheet}
   onClose={() => setSheet(null)}
