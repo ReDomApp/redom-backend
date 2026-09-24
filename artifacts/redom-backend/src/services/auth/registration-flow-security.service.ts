@@ -140,7 +140,7 @@ function buildSecurity(result: IPAPIResult): RegistrationFlowNetworkSecurity {
     datacenter: result.datacenter?.datacenter ?? null,
     datacenterDomain: result.datacenter?.domain ?? null,
     datacenterNetwork: result.datacenter?.network ?? null,
-    vpnService: result.vpn?.service ?? null,
+    vpnService: result.vpn_details?.service ?? null,
     egressService: result.egress_service?.type ?? null,
     egressProvider: result.egress_service?.provider ?? null,
     proxy: result.is_proxy === true,
