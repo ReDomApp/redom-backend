@@ -9,6 +9,7 @@ export const paymentTransactions = pgTable("payment_transactions", {
   subscriptionId: uuid("subscription_id").references(() => verificationSubscriptions.id),
   planId: uuid("plan_id").references(() => paymentPlans.id),
   reference: varchar("reference", { length: 100 }).notNull().unique(),
+  redomTransactionId: varchar("redom_transaction_id", { length: 15 }).unique(),
   externalTransactionId: bigint("external_transaction_id", { mode: "bigint" }),
   amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(),
   currency: varchar("currency", { length: 3 }).notNull(),
