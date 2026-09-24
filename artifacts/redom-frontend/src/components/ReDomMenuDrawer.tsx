@@ -287,7 +287,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.42)" },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.42)" },
   drawer: { position: "absolute", left: 0, top: 0, bottom: 0, backgroundColor: "#FFFFFF", elevation: 24, shadowColor: "#000", shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 8, height: 0 } },
   topSafe: { paddingTop: 34, paddingHorizontal: 18 },
   accountHeader: { minHeight: 78, borderRadius: 16, borderWidth: 1, borderColor: "#E4E6EB", flexDirection: "row", alignItems: "center", paddingHorizontal: 12, backgroundColor: "#FFFFFF", elevation: 2 },
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
   logoutRow: { height: 52, borderRadius: 12, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center", marginTop: 16 },
   logoutText: { color: "#050505", fontSize: 16, fontWeight: "800" },
   accountModalRoot: { flex: 1, justifyContent: "flex-end" },
-  accountBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.48)" },
+  accountBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.48)" },
   accountSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 22, paddingTop: 8, paddingBottom: 26, maxHeight: "78%" },
   handle: { width: 42, height: 4, borderRadius: 2, backgroundColor: "#CCD0D5", alignSelf: "center", marginBottom: 12 },
   sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
