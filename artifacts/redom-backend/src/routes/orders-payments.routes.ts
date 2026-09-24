@@ -46,7 +46,7 @@ router.get("/subscriptions", authMiddleware, async (req, res) => {
   if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
   const result = await pool.query(
     `SELECT id, subscription_type, subscription_status, billing_cycle,
-            payment_provider, auto_renew, started_at, renewed_at, expires_at,
+            auto_renew, started_at, renewed_at, expires_at,
             cancelled_at, created_at, updated_at
        FROM verification_subscriptions
       WHERE user_id = $1
@@ -60,7 +60,6 @@ router.get("/subscriptions", authMiddleware, async (req, res) => {
       subscriptionType: String(row.subscription_type),
       subscriptionStatus: String(row.subscription_status),
       billingCycle: String(row.billing_cycle),
-      paymentProvider: row.payment_provider ? String(row.payment_provider) : null,
       autoRenew: Boolean(row.auto_renew),
       startedAt: row.started_at ? new Date(row.started_at).toISOString() : null,
       renewedAt: row.renewed_at ? new Date(row.renewed_at).toISOString() : null,
