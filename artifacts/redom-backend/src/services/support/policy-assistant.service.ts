@@ -2,6 +2,8 @@ export type ReDomPolicyDocument = {
   slug: string;
   title: string;
   summary: string;
+  version?: string;
+  effectiveAt?: string;
   sections: Array<{ heading: string; body: string }>;
 };
 
@@ -68,11 +70,14 @@ export const REDOM_SUPPORT_POLICY_DOCUMENTS: ReDomPolicyDocument[] = [
     { heading: "Review", body: "AI can explain requirements but does not independently grant or deny verification." },
     { heading: "Privacy", body: "Verification information is security-sensitive and handled according to applicable privacy and retention rules." },
   ] },
-  { slug: "ai", title: "ReDom AI Policy", summary: "How ReDom AI can assist without bypassing platform controls.", sections: [
-    { heading: "What ReDom AI can do", body: "AI can explain product behavior, assist with supported content and language tasks, and guide users through workflows." },
+  { slug: "ai", title: "ReDom AI Policy", summary: "How ReDom AI can assist without bypassing platform controls.", version: "1.1.1", effectiveAt: "2026-09-24T00:00:00.000Z", sections: [
+    { heading: "What ReDom AI can do", body: "AI can explain product behavior, assist with supported content and language tasks, guide users through workflows, generate supported images from user prompts, and help users imagine or develop creative ideas." },
+    { heading: "AI information and policy", body: "The ReDom AI information dashboard provides access to AI capabilities, accuracy information, training information and this AI Policy. The AI Policy is the authoritative user-facing reference for ReDom AI boundaries." },
+    { heading: "Image generation", body: "Users can explicitly request supported image generation from the ReDom AI experience. Generated images remain part of the user-invoked AI workflow and do not grant access to private conversations, accounts or protected platform data." },
     { heading: "What it cannot do", body: "AI cannot bypass authentication or privacy, expose secrets, grant verification, change ownership, approve refunds, or override regional restrictions." },
     { heading: "Messaging privacy", body: "AI must not retrieve or disclose another person's private conversation content merely because a user asks. Any AI feature operating on message content must receive content through an explicitly authorized product flow." },
-    { heading: "Refusals", body: "Conflicting requests receive an explanation and a safe supported path where possible." },
+    { heading: "Accuracy", body: "AI-generated responses can be inaccurate or incomplete. Users should verify important information before relying on it, especially for legal, financial, medical, security or account decisions." },
+    { heading: "Refusals and safety", body: "Conflicting or unsafe requests receive an explanation and a supported safe path where possible. ReDom AI does not override ReDom safety, moderation, authorization or regional controls." },
     { heading: "Language", body: "AI follows the user's language when the requested operation supports localization." },
   ] },
   { slug: "regional", title: "ReDom Regional Policy", summary: "Country and region-specific availability and policy controls.", sections: [
