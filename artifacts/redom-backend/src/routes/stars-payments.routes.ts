@@ -216,7 +216,8 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       throw error;
     } finally { client.release(); }
   } catch (error) {
-    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to start Stars payment." });
+    const message = error instanceof Error ? error.message : "Unable to start Stars payment.";
+    return res.status(400).json({ success: false, message });
   }
 });
 
