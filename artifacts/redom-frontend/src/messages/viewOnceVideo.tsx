@@ -1,3 +1,5 @@
+import { useEventListener } from "expo";
+import { useState } from "react";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { StyleSheet, View } from "react-native";
 
