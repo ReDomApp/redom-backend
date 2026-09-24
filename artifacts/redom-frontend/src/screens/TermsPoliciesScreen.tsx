@@ -15,6 +15,7 @@ import EventsIcon from "../assets/home-feed/events.svg";
 import SupportIcon from "../assets/home-feed/support.svg";
 import OrdersIcon from "../assets/home-feed/orders-payments.svg";
 import SearchIcon from "../assets/home-feed/search.svg";
+import LanguageIcon from "../assets/home-feed/language.svg";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TermsPolicies">;
 type IconComponent = ComponentType<{ width?: number; height?: number }>;
@@ -44,6 +45,7 @@ const groups: PolicyGroup[] = [
     { slug: "regional", title: "Regional Policy", description: "Country and region-specific availability and controls.", Icon: OrdersIcon },
     { slug: "refunds", title: "Refund Policy", description: "Rules for supported refund requests.", Icon: OrdersIcon },
   ] },
+  { title: "Language", description: "Language selection, localization and device-language preferences.", slug: "language", Icon: LanguageIcon },
   { title: "Support and Reporting", Icon: SupportIcon, items: [
     { slug: "support", title: "Support and Reporting Policy", description: "How users can get help, report problems and follow supported cases.", Icon: SupportIcon },
   ] },
