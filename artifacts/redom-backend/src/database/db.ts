@@ -16,6 +16,10 @@ import { notificationPreferences } from "./notificationPreferences";
 import { verification } from "./verification";
 import { verificationDocuments } from "./verificationDocuments";
 import { verificationSubscriptions } from "./verificationSubscriptions";
+import { paymentPlans } from "./paymentPlans";
+import { paymentTransactions } from "./paymentTransactions";
+import { paymentSubscriptions } from "./paymentSubscriptions";
+import { paymentWebhookEvents } from "./paymentWebhookEvents";
 import { verifications } from "./verifications.schema";
 import { accountActions } from "./accountActions";
 import { reports } from "./reports";
@@ -76,7 +80,7 @@ pool.on("error", (error) => console.error("Database connection error:", error));
 export const db = drizzle(pool, { schema: {
   users, userProfiles, accountSecurity, twoFactorRecoveryCodes, totpLoginChallenges,
   sessions, activeSessions, loginHistory, activityLog, userPrivacy, userSettings, notificationPreferences,
-  verification, verificationDocuments, verificationSubscriptions, verifications,
+  verification, verificationDocuments, verificationSubscriptions, paymentPlans, paymentTransactions, paymentSubscriptions, paymentWebhookEvents, verifications,
   accountActions, reports, reportEvidenceMessages, appeals, blockedUsers, restrictedUsers, mutedUsers,
   followers, following, friends, friendRequests,
   conversations, conversationParticipants, messages, messageDeletions, messageAttachments, messageReads,
