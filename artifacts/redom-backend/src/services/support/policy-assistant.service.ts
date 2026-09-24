@@ -91,6 +91,14 @@ export const REDOM_SUPPORT_POLICY_DOCUMENTS: ReDomPolicyDocument[] = [
     { heading: "Review", body: "Refund decisions are made by the authorized refund workflow, not ReDom AI or the frontend." },
     { heading: "Status", body: "The application must show only backend-confirmed refund states." },
   ] },
+  { slug: "saved", title: "ReDom Saved Content Policy", summary: "How ReDom saves, collections and collaborative collection controls work.", version: "1.0.1", effectiveAt: "2026-09-24T00:00:00.000Z", sections: [
+    { heading: "Saving content", body: "Users can save supported ReDom posts, photos, videos, reels, page posts and marketplace content for later access." },
+    { heading: "Collections", body: "Saved content can be organized into named collections. Collections can be private, public, or collaborative." },
+    { heading: "Public collections", body: "Public collection visibility is explicit and does not make private account data visible." },
+    { heading: "Contributors", body: "Collaborative collections allow the owner to invite active ReDom friends as contributors. Public and collaborative modes are mutually exclusive." },
+    { heading: "Privacy", body: "ReDom does not expose a list of people who saved content." },
+    { heading: "Unavailable content", body: "Deleted, private, restricted or otherwise unavailable content may no longer be displayed in Saved." },
+  ] },
   { slug: "support", title: "ReDom Support and Reporting Policy", summary: "How users can get help, report problems and follow supported cases.", sections: [
     { heading: "Support", body: "Use supported ReDom support channels for account, product and safety issues." },
     { heading: "Reports", body: "Reports should contain enough information to evaluate the issue without exposing unrelated private information." },
