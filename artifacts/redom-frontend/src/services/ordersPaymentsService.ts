@@ -7,7 +7,7 @@ export interface OrderSummary {
 }
 export interface PaymentSettings { currency: string; pin_enabled: boolean; biometric_enabled: boolean; }
 export interface StarCountry { name: string; isoCode: string; currency: string; }
-export interface StarPackage { key: string; stars: number; usdPrice: number; localAmount: number; amountMinor: number; localAmountFormatted: string; currency: string; payable?: boolean; availabilityReason?: string | null; }
+export interface StarPackage { key: string; stars: number; usdPrice: number; regularUsdPrice: number; firstPurchaseUsdPrice: number|null; firstPurchaseDiscountPercent: number; popular: boolean; localAmount: number; amountMinor: number; localAmountFormatted: string; currency: string; payable?: boolean; availabilityReason?: string | null; }
 export interface StarTransaction { id:string; type:string; stars:number; balanceAfter:number; packageKey:string|null; countryCode:string|null; currency:string|null; amountMinor:number|null; reference:string|null; createdAt:string; }
 export interface SavedPaymentMethod { id:string; provider:string; email:string; brand:string|null; cardType:string|null; last4:string|null; expMonth:number|null; expYear:number|null; bank:string|null; countryCode:string|null; currency:string|null; reusable:boolean; createdAt:string; }
 export interface PaymentAddress { id:string; country_code:string; country_name:string; full_name:string; address_line1:string; address_line2:string|null; city:string; state:string|null; postal_code:string|null; mapbox_place_id:string|null; latitude:number|null; longitude:number|null; is_default:boolean; created_at:string; updated_at:string; }
