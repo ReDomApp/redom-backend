@@ -132,8 +132,26 @@ router.patch("/settings", authMiddleware, async (req, res) => {
   return res.json({ success: true, settings: result.rows[0] });
 });
 
-router.get("/stars/activity", authMiddleware, async (_req, res) => {
-  return res.json({ success: true, activity: [] });
+router.get("/stars/activity", authMiddleware, async (req, res) => {
+  const userId = req.user?.userId;
+  if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  await pool.query("INSERT INTO redom_stars_accounts(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING", [userId]);
+  const balance = await pool.query("SELECT balance FROM redom_stars_accounts WHERE user_id=$1", [userId]);
+  const activity = await pool.query(
+    `SELECT id,type,stars,balance_after,package_key,country_code,currency,amount_minor,reference,created_at
+       FROM redom_stars_transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100`,
+    [userId],
+  );
+  return res.json({
+    success: true,
+    balance: Number(balance.rows[0]?.balance ?? 0),
+    activity: activity.rows.map((row) => ({
+      id:String(row.id), type:String(row.type), stars:Number(row.stars), balanceAfter:Number(row.balance_after),
+      packageKey:row.package_key ? String(row.package_key) : null, countryCode:row.country_code ? String(row.country_code) : null,
+      currency:row.currency ? String(row.currency) : null, amountMinor:row.amount_minor == null ? null : Number(row.amount_minor),
+      reference:row.reference ? String(row.reference) : null, createdAt:new Date(row.created_at).toISOString(),
+    })),
+  });
 });
 
 export default router;
