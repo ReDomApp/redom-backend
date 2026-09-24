@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useLanguage, LANGUAGES } from "../i18n/LanguageProvider";
 import type { LanguageCode } from "../i18n/language";
