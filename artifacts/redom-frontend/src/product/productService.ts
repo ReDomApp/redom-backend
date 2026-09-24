@@ -1,6 +1,6 @@
 import { api } from "../api/client";
 
-export type PolicySlug = "terms" | "privacy" | "community" | "messaging" | "media" | "calls" | "notifications" | "security" | "verification" | "ai" | "regional" | "refunds" | "support" | "saved" | "events" | "language";
+export type PolicySlug = "terms" | "privacy" | "community" | "messaging" | "media" | "calls" | "notifications" | "security" | "verification" | "ai" | "regional" | "refunds" | "support" | "saved" | "events" | "language" | "appearance";
 export interface ReDomPolicy { slug: PolicySlug; version: string; effectiveAt: string; document: { title: string; summary: string; sections: Array<{ heading: string; body: string }> } }
 export interface ReDomNotification { id: string; notificationType: string; title?: string | null; body?: string | null; actionUrl?: string | null; unread: boolean; createdAt: string }
 export interface ReDomSettings { theme: "system" | "light" | "dark"; language: string; politicalContent: boolean; followingFeed: boolean; followingFeedSnooze: string; sensitiveContent: string; autoplayVideos: string; autoTranslatePosts: boolean; autoTranslateComments: boolean; fontSize: "small" | "medium" | "large"; reduceMotion: boolean; highContrast: boolean; screenReaderMode: boolean; captions: string; showJoinDate: boolean }
