@@ -55,6 +55,17 @@ router.post("/chat", authMiddleware, async (req, res) => {
     return res.status(200).json({ success: true, is_safe: true, support_reply: result.reply, caseNumber: result.supportCase.caseNumber, status: result.supportCase.status });
   } catch (error) { req.log?.error?.({ err: error }, "In-app support processing failed"); return res.status(502).json({ success: false, message: "ReDom Support is temporarily unavailable. Please try again shortly." }); }
 });
+router.post("/feedback", authMiddleware, async (req, res) => {
+  const parsed = z.object({ topic: z.string().trim().min(1).max(300), helpful: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid feedback." });
+  try {
+    await pool.query(`INSERT INTO support_feedback (user_id, topic, helpful) VALUES ($1, $2, $3)`, [req.user!.userId, parsed.data.topic, parsed.data.helpful]);
+    return res.status(201).json({ success: true });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "Support feedback save failed");
+    return res.status(500).json({ success: false, message: "Unable to save feedback." });
+  }
+});
 router.get("/cases", authMiddleware, async (req, res) => { try { return res.status(200).json({ success: true, cases: await listOwnedSupportCases(req.user!.userId) }); } catch (error) { req.log?.error?.({ err: error }, "Support case list failed"); return res.status(500).json({ success: false, message: "Unable to load your support history." }); } });
 router.get("/cases/:caseNumber", authMiddleware, async (req, res) => { const caseNumber = String(req.params.caseNumber).toUpperCase(); if (!/^R\d{11}$/.test(caseNumber)) return res.status(400).json({ success: false, message: "Invalid Case Number." }); try { const supportCase = await getOwnedSupportCase(req.user!.userId, caseNumber); if (!supportCase) return res.status(404).json({ success: false, message: "Support case not found." }); return res.status(200).json({ success: true, case: supportCase, messages: await getSupportCaseMessages(supportCase.id, 50) }); } catch (error) { req.log?.error?.({ err: error }, "Support case read failed"); return res.status(500).json({ success: false, message: "Unable to load this support case." }); } });
 
