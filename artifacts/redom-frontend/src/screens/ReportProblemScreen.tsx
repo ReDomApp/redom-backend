@@ -47,7 +47,7 @@ async function dataUriFromFile(uri: string, contentType: string): Promise<string
 export function ReportProblemScreen({}: Props) {
   const { colors } = useTheme();
   const s = makeStyles(colors);
-  const navigation = useNavigation();
+  const navigation = useNavigation<import("@react-navigation/native-stack").NativeStackNavigationProp<RootStackParamList>>();
   const { user } = useAuthContext();
   const [stage, setStage] = useState<Stage>("intro");
   const [includeDiagnostics, setIncludeDiagnostics] = useState<boolean | null>(null);
