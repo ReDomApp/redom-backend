@@ -196,9 +196,11 @@ async function storeAttachments(report: BugReport, attachments: BugReportAttachm
 }
 
 export async function submitBugReport(input: BugReportInput): Promise<BugReport> {
-  if (!reportIdPattern.test(input.product.trim())) throw new Error("Invalid product.");
+  if (!input.product.trim() || input.product.trim().length > 80) throw new Error("Invalid product.");
+  if (!input.category.trim() || input.category.trim().length > 80) throw new Error("Invalid problem category.");
   if (!input.description.trim()) throw new Error("Describe the problem.");
   const attachments = (input.attachments ?? []).slice(0, MAX_ATTACHMENTS);
+  if (attachments.reduce((sum, item) => sum + Math.floor((item.data.length * 3) / 4), 0) > MAX_ATTACHMENT_BYTES) throw new Error("Attachments exceed the 10 MB total limit.");
   const reportId = generateReportId();
   const from = /technical|bug|crash|performance/i.test(input.category) ? env.email.bugReportsFrom : env.email.problemReportsFrom;
   let draft: GeminiReportDraft | null = null;
