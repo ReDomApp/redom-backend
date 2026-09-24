@@ -267,6 +267,13 @@
       "when": 1790271000000,
       "tag": "0037_payment_currency_cooldown",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790274600000,
+      "tag": "0038_support_feedback",
+      "breakpoints": true
     }
   ]
 }
