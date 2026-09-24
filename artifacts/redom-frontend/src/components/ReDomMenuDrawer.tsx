@@ -208,7 +208,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 </View>
               ) : null}
 
-              <View style={[styles.divider, { backgroundColor: colors.border }] />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
               <Pressable style={styles.sectionHeader} onPress={() => setSupportOpen((v) => !v)}>
                 <HelpSupportIcon width={35} height={35} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Help and support</Text>
