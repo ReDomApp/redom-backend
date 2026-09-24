@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   empty: { backgroundColor: "#FFF", marginTop: 8, padding: 28, alignItems: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "700" },
   emptyText: { color: "#65676B", textAlign: "center", marginTop: 7 },
-  menuOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
+  menuOverlay: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
   menuSheet: { backgroundColor: "#FFF", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18 },
   menuTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   menuRow: { paddingVertical: 17, borderTopWidth: 1, borderTopColor: "#E4E6EB" },
