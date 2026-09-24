@@ -419,7 +419,7 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) {
       lineHeight: 23,
     },
     modalBackdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: "rgba(0,0,0,0.42)",
     },
     sheet: {
