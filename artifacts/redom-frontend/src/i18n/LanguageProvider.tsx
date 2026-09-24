@@ -12,7 +12,6 @@ import {
   t,
   LANGUAGE_EXPLICIT_KEY,
   LANGUAGE_STORAGE_KEY,
-  LANGUAGE_STORAGE_KEY,
 } from "./language";
 import { uiMessage } from "./uiMessages";
 import { localizeUiTexts } from "./aiLocalization";
