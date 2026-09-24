@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTheme } from "../theme/ThemeProvider";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useLanguage, LANGUAGES } from "../i18n/LanguageProvider";
@@ -26,6 +27,8 @@ const SWITCHING_LABELS: Partial<Record<LanguageCode, string>> = {
 };
 
 export function LanguageScreen() {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   const navigation = useNavigation();
   const {
     language,
@@ -161,11 +164,11 @@ function Radio({ selected }: { selected: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#FFF" },
+function makeStyles(colors:ReturnType<typeof useTheme>["colors"]){return StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.surface },
   header: {
     height: 58,
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: "#A6A6A6",
     flexDirection: "row",
@@ -174,21 +177,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   backButton: { width: 42, height: 48, justifyContent: "center" },
-  back: { fontSize: 44, lineHeight: 46, fontWeight: "300", color: "#111" },
-  title: { flex: 1, fontSize: 25, fontWeight: "400", color: "#111", marginLeft: 2 },
+  back: { fontSize: 44, lineHeight: 46, fontWeight: "300", color: colors.text },
+  title: { flex: 1, fontSize: 25, fontWeight: "400", color: colors.text, marginLeft: 2 },
   headerSpacer: { width: 42 },
   list: { paddingBottom: 30 },
   row: {
     minHeight: 66,
     paddingHorizontal: 29,
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#D8D8D8",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  name: { flex: 1, fontSize: 22, lineHeight: 30, color: "#111", fontWeight: "400" },
+  name: { flex: 1, fontSize: 22, lineHeight: 30, color: colors.text, fontWeight: "400" },
   radio: {
     width: 38,
     height: 38,
@@ -212,7 +215,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 22,
     borderRadius: 16,
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     alignItems: "center",
     shadowColor: "#000",
     shadowOpacity: 0.14,
@@ -220,6 +223,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 7 },
     elevation: 8,
   },
-  loadingTitle: { marginTop: 12, fontSize: 17, fontWeight: "700", color: "#111" },
-  loadingSubtitle: { marginTop: 5, fontSize: 13, color: "#65676B" },
-});
+  loadingTitle: { marginTop: 12, fontSize: 17, fontWeight: "700", color: colors.text },
+  loadingSubtitle: { marginTop: 5, fontSize: 13, color: colors.textSecondary },
+}); }
+
