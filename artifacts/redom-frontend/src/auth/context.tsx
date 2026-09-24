@@ -11,6 +11,7 @@ interface AuthContextValue extends AuthState {
   register(input: RegisterInput): Promise<AuthResult>;
   adoptSession(user: AuthUser, session: AuthSession): Promise<void>;
   switchDeviceAccount(userId: string): Promise<void>;
+  prepareForAccountLogin(): Promise<void>;
   logout(): Promise<void>;
   refresh(): Promise<void>;
 }
@@ -89,11 +90,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, [activate]);
 
+  const prepareForAccountLogin = useCallback(async () => {
+    await clearStoredSession();
+    setState(unauthenticatedState);
+  }, []);
+
   const logout = useCallback(async () => {
     try { await authService.logout(); } finally { await clearStoredSession(); setState(unauthenticatedState); }
   }, []);
 
-  const value = useMemo<AuthContextValue>(() => ({ ...state, login, verifyLoginDevice, verifyLoginTwoFactor, register, adoptSession, switchDeviceAccount, logout, refresh }), [state, login, verifyLoginDevice, verifyLoginTwoFactor, register, adoptSession, switchDeviceAccount, logout, refresh]);
+  const value = useMemo<AuthContextValue>(() => ({ ...state, login, verifyLoginDevice, verifyLoginTwoFactor, register, adoptSession, switchDeviceAccount, prepareForAccountLogin, logout, refresh }), [state, login, verifyLoginDevice, verifyLoginTwoFactor, register, adoptSession, switchDeviceAccount, logout, refresh]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
