@@ -76,7 +76,7 @@ const settingsRows = [
   { label: "Recent ad activity", Icon: AdsIcon, route: "Settings" as const },
   { label: "Orders and payments", Icon: OrdersIcon, route: "Settings" as const },
   { label: "Link history", Icon: LinkHistoryIcon, route: "Settings" as const },
-  { label: "Dark mode", Icon: DarkModeIcon, route: "Settings" as const },
+  { label: "Dark mode", Icon: DarkModeIcon, route: "DarkMode" as const },
   { label: "Language", Icon: LanguageIcon, route: "Language" as const },
 ];
 
