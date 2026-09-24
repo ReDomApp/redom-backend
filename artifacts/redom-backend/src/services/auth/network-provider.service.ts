@@ -86,7 +86,7 @@ export async function getNetworkProvider(ip: string | undefined): Promise<Networ
     companyType: result.company?.type ?? result.asn?.type ?? null,
     asn: result.asn?.asn ?? null,
     datacenter: result.datacenter?.datacenter ?? null,
-    vpnService: result.vpn?.service ?? null,
+    vpnService: result.vpn_details?.service ?? null,
     egressService: result.egress_service?.type ?? null,
     egressProvider: result.egress_service?.provider ?? null,
     proxy: result.is_proxy === true,
