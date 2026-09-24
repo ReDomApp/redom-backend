@@ -4,7 +4,6 @@ import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../theme/ThemeProvider";
 import BackIcon from "../assets/navigation/back.svg";
 import CartIcon from "../assets/home-feed/cart.svg";
-import MenuIcon from "../assets/home-feed/menu.svg";
 
 export function CartScreen() {
   const navigation = useNavigation();
