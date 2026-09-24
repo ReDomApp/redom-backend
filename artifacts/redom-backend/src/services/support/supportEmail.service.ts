@@ -66,7 +66,8 @@ export async function generateSupportEmailHtml(input: {
   supportReply: string;
 }): Promise<string> {
   // Keep the customer-facing email shell deterministic. AI supplies the support message; it does not control the email layout.
-  return fallbackHtml(input.caseNumber, input.supportReply);
+  const body = input.supportReply.replace(/^Case Number:\s*R\d{11}\s*\n\s*/i, "").trim();
+  return fallbackHtml(input.caseNumber, body);
 }
 
 export async function sendGeneratedSupportEmail(input: {
