@@ -11,7 +11,7 @@ const notificationRows: Array<[keyof NotificationPreferences, string]> = [
 ];
 
 export function SettingsSubscreen({ route }: NativeStackScreenProps<RootStackParamList, "NotificationSettings" | "PrivacySettings" | "SecuritySettings" | "BlockedUsers" | "Verification" | "Support">) {
-  const navigation = useNavigation(); const key = route.name as keyof typeof meta; const info = meta[key];
+  const navigation = useNavigation<import("@react-navigation/native-stack").NativeStackNavigationProp<RootStackParamList>>(); const key = route.name as keyof typeof meta; const info = meta[key];
   const [settings, setSettings] = useState<ReDomSettings | null>(null); const [preferences, setPreferences] = useState<NotificationPreferences | null>(null); const [busy, setBusy] = useState<string | null>(null);
   const load = useCallback(async () => { try { const s = await productService.getSettings(); setSettings(s.settings); if (key === "NotificationSettings") { const p = await productService.getNotificationPreferences(); setPreferences(p.preferences); } } catch {} }, [key]);
   useEffect(() => { void load(); }, [load]);
