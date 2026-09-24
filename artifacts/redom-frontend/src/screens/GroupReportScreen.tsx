@@ -11,9 +11,9 @@ import { useLanguage } from "../i18n/LanguageProvider";
 type Props = NativeStackScreenProps<RootStackParamList, "GroupReport">;
 const reasons = ["Spam or scam", "Harassment or bullying", "Hate or abusive content", "Violence or threats", "Sexual content", "Child safety", "Illegal activity", "Other"];
 
-export function GroupReportScreen({
+export function GroupReportScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
-  const s = makeStyles(colors); route, navigation }: Props) {
+  const s = makeStyles(colors);
   const { language } = useLanguage();
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
