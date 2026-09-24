@@ -168,8 +168,8 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 <Pressable style={styles.accountIdentity} onPress={openProfile} accessibilityRole="button" accessibilityLabel="Open my ReDom profile">
                   {user?.profilePhoto ? <Image source={{ uri: user.profilePhoto }} style={styles.avatar} /> : <ProfilePlaceholder width={styles.avatar.width} height={styles.avatar.height} />}
                   <View style={styles.accountCopy}>
-                    <Text style={[styles.accountName, { color: colors.text }] numberOfLines={1}>{displayName}</Text>
-                    {user?.username ? <Text style={[styles.accountUsername, { color: colors.textSecondary }] numberOfLines={1}>@{user.username.replace(/^@/, "")}</Text> : null}
+                    <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
+                    {user?.username ? <Text style={[styles.accountUsername, { color: colors.textSecondary }]} numberOfLines={1}>@{user.username.replace(/^@/, "")}</Text> : null}
                   </View>
                 </Pressable>
                 <Pressable style={styles.accountArrow} onPress={() => setAccountsOpen(true)} accessibilityRole="button" accessibilityLabel="Switch ReDom profile or Page">
@@ -214,7 +214,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Help and support</Text>
                 <Text style={[styles.sectionChevron, { color: colors.text }]}>{supportOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
-              {supportOpen ? supportRows.map((item) => row(item.label, item.Icon, () => go(item.route, item.params as never))) : null}
+              {supportOpen ? supportRows.map((item) => row(item.label, item.Icon, () => go(item.route))) : null}
 
               <View style={styles.divider} />
               <Pressable style={styles.sectionHeader} onPress={() => setSettingsOpen((v) => !v)}>
@@ -264,7 +264,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 <Pressable key={account.user.id} style={styles.accountRow} onPress={() => void switchAccount(account)} accessibilityRole="button" accessibilityLabel={`Switch to ${account.user.firstName} ${account.user.lastName}`}>
                   {account.user.profilePhoto ? <Image source={{ uri: account.user.profilePhoto }} style={styles.accountAvatar} /> : <ProfilePlaceholder width={52} height={52} />}
                   <View style={styles.accountRowCopy}>
-                    <Text style={[styles.accountRowName, { color: colors.text }] numberOfLines={1}>{account.user.firstName} {account.user.lastName}</Text>
+                    <Text style={[styles.accountRowName, { color: colors.text }]} numberOfLines={1}>{account.user.firstName} {account.user.lastName}</Text>
                     <Text style={[styles.accountRowMeta, { color: colors.textSecondary }]}>{account.user.id === user?.id ? "Current profile" : `@${account.user.username}`}</Text>
                   </View>
                   {account.user.id === user?.id ? <View style={styles.selected}><Text style={styles.selectedMark}>✓</Text></View> : null}
