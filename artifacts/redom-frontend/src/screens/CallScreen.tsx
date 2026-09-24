@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "../theme/ThemeProvider";
 import { Alert, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { RTCIceCandidate, RTCPeerConnection, RTCSessionDescription, RTCView, mediaDevices } from "react-native-webrtc";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -8,7 +9,9 @@ import { messageService, type CallRecord } from "../messages/messageService";
 type Props = NativeStackScreenProps<RootStackParamList, "Call">;
 const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
-export function CallScreen({ route, navigation }: Props) {
+export function CallScreen({
+  const { colors } = useTheme();
+  const styles = makeStyles(colors); route, navigation }: Props) {
   const { conversationId, callType, callId: suppliedCallId } = route.params;
   const peer = useRef<RTCPeerConnection | null>(null); const stream = useRef<any>(null); const timer = useRef<ReturnType<typeof setInterval> | null>(null); const last = useRef<string | undefined>();
   const [call, setCall] = useState<CallRecord | null>(null); const [remote, setRemote] = useState<any>(null); const [muted, setMuted] = useState(false); const [camera, setCamera] = useState(callType === "video"); const [status, setStatus] = useState("Connecting…");
@@ -35,4 +38,4 @@ export function CallScreen({ route, navigation }: Props) {
   const end = async () => { if (call) await messageService.updateCall(call.id, { status: "ended" }).catch(() => undefined); navigation.goBack(); };
   return <SafeAreaView style={styles.root}>{remote ? <RTCView streamURL={remote.toURL()} style={styles.remote} objectFit="cover" /> : <View style={styles.wait}><Text style={styles.status}>{status}</Text><Text style={styles.sub}>ReDom call</Text></View>}{callType === "video" && stream.current ? <RTCView streamURL={stream.current.toURL()} style={styles.local} objectFit="cover" mirror /> : null}<View style={styles.controls}><Pressable style={[styles.control, muted && styles.active]} onPress={toggleMute}><Text style={styles.controlText}>{muted ? "Unmute" : "Mute"}</Text></Pressable>{callType === "video" ? <Pressable style={[styles.control, !camera && styles.active]} onPress={toggleCamera}><Text style={styles.controlText}>{camera ? "Camera" : "Video off"}</Text></Pressable> : null}<Pressable style={styles.end} onPress={() => void end()}><Text style={styles.endText}>End</Text></Pressable></View></SafeAreaView>;
 }
-const styles = StyleSheet.create({ root:{flex:1,backgroundColor:"#050505"},remote:{flex:1},local:{position:"absolute",top:22,right:18,width:120,height:180,borderRadius:14},wait:{flex:1,alignItems:"center",justifyContent:"center"},status:{color:"#FFF",fontSize:21,fontWeight:"800"},sub:{color:"#AEB4BD",marginTop:8},controls:{position:"absolute",bottom:28,left:14,right:14,flexDirection:"row",justifyContent:"center",gap:10},control:{height:48,minWidth:76,paddingHorizontal:14,borderRadius:24,backgroundColor:"#252A31",alignItems:"center",justifyContent:"center"},active:{backgroundColor:"#444A52"},controlText:{color:"#FFF",fontWeight:"700"},end:{height:48,minWidth:76,paddingHorizontal:18,borderRadius:24,backgroundColor:"#E53935",alignItems:"center",justifyContent:"center"},endText:{color:"#FFF",fontWeight:"800"}});
+function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) { return StyleSheet.create({ root:{flex:1,backgroundColor:"#050505"},remote:{flex:1},local:{position:"absolute",top:22,right:18,width:120,height:180,borderRadius:14},wait:{flex:1,alignItems:"center",justifyContent:"center"},status:{color:"#FFF",fontSize:21,fontWeight:"800"},sub:{color:"#AEB4BD",marginTop:8},controls:{position:"absolute",bottom:28,left:14,right:14,flexDirection:"row",justifyContent:"center",gap:10},control:{height:48,minWidth:76,paddingHorizontal:14,borderRadius:24,backgroundColor:"#252A31",alignItems:"center",justifyContent:"center"},active:{backgroundColor:"#444A52"},controlText:{color:"#FFF",fontWeight:"700"},end:{height:48,minWidth:76,paddingHorizontal:18,borderRadius:24,backgroundColor:"#E53935",alignItems:"center",justifyContent:"center"},endText:{color:"#FFF",fontWeight:"800"}}); }
