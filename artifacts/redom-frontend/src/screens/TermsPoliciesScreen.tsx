@@ -45,6 +45,9 @@ const groups: PolicyGroup[] = [
     { slug: "regional", title: "Regional Policy", description: "Country and region-specific availability and controls.", Icon: OrdersIcon },
     { slug: "refunds", title: "Refund Policy", description: "Rules for supported refund requests.", Icon: OrdersIcon },
   ] },
+  { title: "Appearance and Preferences", Icon: LanguageIcon, items: [
+    { slug: "appearance", title: "Appearance Policy", description: "How Dark mode, light mode and device appearance settings apply across ReDom.", Icon: LanguageIcon },
+  ] },
   { title: "Account, Language and Preferences", Icon: LanguageIcon, items: [
     { slug: "language", title: "Language Policy", description: "Language selection, localization and device-language preferences.", Icon: LanguageIcon },
   ] },
