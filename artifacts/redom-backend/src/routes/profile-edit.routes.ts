@@ -15,7 +15,7 @@ router.get("/", async (req: Request, res: Response) => {
               p.hometown_privacy,p.birthday_month_day_privacy,p.birthday_year_privacy
          FROM users u LEFT JOIN user_profiles p ON p.user_id=u.id
         WHERE u.id=$1 LIMIT 1`,
-      [req.user.userId],
+      [req.user!.userId],
     );
     if (!result.rows.length) return res.status(404).json({ success: false, message: "Profile not found." });
     const p = result.rows[0];
@@ -53,13 +53,13 @@ router.patch("/details", async (req: Request, res: Response) => {
         `INSERT INTO user_profiles (user_id, display_name)
          SELECT id, trim(concat_ws(' ', first_name, last_name)) FROM users WHERE id=$1
          ON CONFLICT (user_id) DO NOTHING`,
-        [req.user.userId],
+        [req.user!.userId],
       );
       fields.push("updated_at=NOW()");
       const result = await client.query(
         `UPDATE user_profiles SET ${fields.join(",")} WHERE user_id=$${values.length + 1}
          RETURNING user_id,bio,current_city,hometown,bio_privacy,current_city_privacy,hometown_privacy,birthday_month_day_privacy,birthday_year_privacy,updated_at`,
-        [...values, req.user.userId],
+        [...values, req.user!.userId],
       );
       if (!result.rowCount) {
         await client.query("ROLLBACK");
