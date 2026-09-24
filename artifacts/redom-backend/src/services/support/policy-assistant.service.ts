@@ -80,6 +80,15 @@ export const REDOM_SUPPORT_POLICY_DOCUMENTS: ReDomPolicyDocument[] = [
     { heading: "Refusals and safety", body: "Conflicting or unsafe requests receive an explanation and a supported safe path where possible. ReDom AI does not override ReDom safety, moderation, authorization or regional controls." },
     { heading: "Language", body: "AI follows the user's language when the requested operation supports localization." },
   ] },
+  { slug: "appearance", title: "ReDom Appearance Policy", summary: "How ReDom Dark mode, light mode and device appearance settings work.", version: "1.0.0", effectiveAt: "2026-09-24T00:00:00.000Z", sections: [
+    { heading: "Appearance choices", body: "Users can choose Dark mode On, Off, or Use system settings from the Dark mode screen." },
+    { heading: "Dark mode On", body: "When On is selected, ReDom uses its dark appearance across supported application surfaces." },
+    { heading: "Dark mode Off", body: "When Off is selected, ReDom uses its light appearance across supported application surfaces." },
+    { heading: "Use system settings", body: "When Use system settings is selected, ReDom follows the device appearance preference and updates when the device appearance changes." },
+    { heading: "Persistence", body: "A manually selected appearance preference is stored for the user and remains active across supported app restarts until another option is selected." },
+    { heading: "Account synchronization", body: "Where account settings are available, ReDom synchronizes the selected appearance preference with the user account." },
+    { heading: "Scope", body: "Appearance changes apply to the ReDom application experience and do not change account permissions, privacy controls, security controls, content visibility or regional eligibility." },
+  ] },
   { slug: "language", title: "ReDom Language Policy", summary: "How ReDom language selection, localization and device-language preferences work.", version: "1.0.0", effectiveAt: "2026-09-24T00:00:00.000Z", sections: [
     { heading: "Language selection", body: "Users can select a supported ReDom language from the Language settings screen. The selected language applies to the ReDom app interface and supported localized product experiences." },
     { heading: "Device Language", body: "When Device Language is selected, ReDom follows the supported language and regional locale provided by the device. If a device language is not supported, ReDom uses its designated fallback language." },
@@ -132,6 +141,7 @@ const POLICY_ALIASES: Record<string, string> = {
   regional: "regional", country: "regional", availability: "regional",
   refunds: "refunds", refund: "refunds", payments: "refunds", chargeback: "refunds",
   support: "support", reporting: "support", reports: "support",
+  appearance: "appearance", dark_mode: "appearance", darkmode: "appearance", theme: "appearance",
 };
 
 export function getPolicyDocument(slug: string | null | undefined): ReDomPolicyDocument | null {
