@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { useAuthContext } from "../auth/context";
 import ReDomAiLogo from "../assets/ai/redom-ai-logo.svg";
-import { AiBackIcon, AiEditIcon, AiImageIcon, AiInfoIcon, AiSparkIcon } from "../assets/ai/AiIcon";
+import { AiBackIcon, AiBellIcon, AiEditIcon, AiImageIcon, AiInfoIcon, AiProfileIcon, AiSparkIcon } from "../assets/ai/AiIcon";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ReDomAIInfo">;
 const MUTE_KEY = "redom.ai.muted";
@@ -37,11 +37,11 @@ export function ReDomAiInfoScreen({ navigation }: Props) {
 
       <View style={styles.actionRow}>
         <Pressable style={styles.actionButton} onPress={() => navigation.navigate("Profile")} accessibilityRole="button" accessibilityLabel="Open profile">
-          <View style={styles.actionIcon}><AiInfoIcon size={24} color="#111111" /></View>
+          <View style={styles.actionIcon}><AiProfileIcon size={25} color="#111111" /></View>
           <Text style={styles.actionText}>Profile</Text>
         </Pressable>
         <Pressable style={styles.actionButton} onPress={() => void toggleMute()} accessibilityRole="button" accessibilityLabel={muted ? "Unmute ReDom AI" : "Mute ReDom AI"}>
-          <View style={[styles.actionIcon, muted && styles.actionIconActive]}><Text style={styles.muteGlyph}>{muted ? "🔕" : "🔔"}</Text></View>
+          <View style={[styles.actionIcon, muted && styles.actionIconActive]}><AiBellIcon size={25} color="#111111" muted={muted} /></View>
           <Text style={styles.actionText}>{muted ? "Unmute" : "Mute"}</Text>
         </Pressable>
       </View>
@@ -104,7 +104,6 @@ const styles = StyleSheet.create({
   actionButton: { alignItems: "center", minWidth: 74 },
   actionIcon: { width: 58, height: 58, borderRadius: 29, backgroundColor: "#EEF0F3", alignItems: "center", justifyContent: "center" },
   actionIconActive: { backgroundColor: "#E7F3FF" },
-  muteGlyph: { fontSize: 23 },
   actionText: { marginTop: 8, color: "#111111", fontSize: 14 },
   sectionLabel: { width: "100%", marginTop: 20, marginBottom: 10, color: "#667085", fontSize: 16, fontWeight: "800" },
   cardGroup: { width: "100%" },
