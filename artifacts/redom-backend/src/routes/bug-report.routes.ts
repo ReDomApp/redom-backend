@@ -53,7 +53,7 @@ router.post("/", authMiddleware, authRateLimit, async (req, res) => {
 
 router.get("/:reportId", authMiddleware, async (req, res) => {
   const reportId = String(req.params.reportId);
-  if (!/^\d{6,11}$/.test(reportId)) return res.status(400).json({ success: false, message: "Invalid report ID." });
+  if (!/^\d{10}$/.test(reportId)) return res.status(400).json({ success: false, message: "Invalid report ID." });
   const result = await import("../database/db").then(({ pool }) => pool.query(
     `SELECT report_id, product, category, description, fix_required, status, email_status, submitted_at, emailed_at
      FROM bug_reports WHERE report_id=$1 AND user_id=$2 LIMIT 1`,
