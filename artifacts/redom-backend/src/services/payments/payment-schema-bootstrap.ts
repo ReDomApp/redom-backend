@@ -35,6 +35,9 @@ export async function ensurePaymentSchema(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_user_idx ON payment_transactions(user_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_subscription_idx ON payment_transactions(subscription_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_status_idx ON payment_transactions(status, created_at DESC)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_status varchar(20) NOT NULL DEFAULT 'pending'`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_sent_at timestamp with time zone`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_error varchar(500)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS payment_subscriptions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
