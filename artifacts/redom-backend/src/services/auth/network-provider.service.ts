@@ -99,7 +99,7 @@ export async function getNetworkProvider(ip: string | undefined): Promise<Networ
     fraudScore: Number(result.fraud_score ?? 0),
   };
 
-  const providerDomain = result.company?.domain ?? result.asn?.domain ?? result.vpn?.url ?? null;
+  const providerDomain = result.company?.domain ?? result.asn?.domain ?? result.vpn_details?.url ?? null;
   const response: NetworkProviderResult = {
     success: true,
     networkProvider,
