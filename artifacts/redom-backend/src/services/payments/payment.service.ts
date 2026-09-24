@@ -9,10 +9,31 @@ const STANDARD_NGN = 4500;
 
 type PaystackResponse<T> = { status: boolean; message: string; data: T };
 type InitializeData = { authorization_url: string; access_code: string; reference: string };
-type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };\ntype RefundData = { id?: number; status?: string; amount?: number; currency?: string; expected_at?: string | null; refunded_at?: string | null; transaction?: { id?: number; reference?: string }; message?: string };
+type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };
+type RefundData = { id?: number; status?: string; amount?: number; currency?: string; expected_at?: string | null; refunded_at?: string | null; transaction?: { id?: number; reference?: string }; message?: string };
 type PaymentContext = { transactionId: string; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
 
-async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string): Promise<void> {\n  if (verified.status === "success" || !verified.id || verified.amount <= 0) return;\n  try {\n    const refund = await paystack<RefundData>("post", "/refund", {\n      transaction: String(verified.id),\n      amount: verified.amount,\n      currency: verified.currency,\n      customer_note: "Automatic refund for a payment that did not complete.",\n      merchant_note: "Automatic ReDom refund for failed transaction " + reference,\n    });\n    await pool.query(\n      "UPDATE payment_transactions SET refund_status=$1, refund_id=$2, refund_amount_minor=$3, refund_requested_at=now(), refund_expected_at=$4, refund_processed_at=$5, refund_error=NULL, updated_at=now() WHERE id=$6",\n      [refund.status || "pending", refund.id ? String(refund.id) : null, refund.amount != null ? String(refund.amount) : String(verified.amount), refund.expected_at ? new Date(refund.expected_at) : null, refund.refunded_at ? new Date(refund.refunded_at) : null, transactionId],\n    );\n  } catch (error) {\n    const message = error instanceof Error ? error.message : String(error);\n    await pool.query("UPDATE payment_transactions SET refund_status='failed', refund_requested_at=now(), refund_error=$1, updated_at=now() WHERE id=$2", [message.slice(0, 500), transactionId]);\n  }\n}\n\nasync function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
+async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string): Promise<void> {
+  if (verified.status === "success" || !verified.id || verified.amount <= 0) return;
+  try {
+    const refund = await paystack<RefundData>("post", "/refund", {
+      transaction: String(verified.id),
+      amount: verified.amount,
+      currency: verified.currency,
+      customer_note: "Automatic refund for a payment that did not complete.",
+      merchant_note: "Automatic ReDom refund for failed transaction " + reference,
+    });
+    await pool.query(
+      "UPDATE payment_transactions SET refund_status=$1, refund_id=$2, refund_amount_minor=$3, refund_requested_at=now(), refund_expected_at=$4, refund_processed_at=$5, refund_error=NULL, updated_at=now() WHERE id=$6",
+      [refund.status || "pending", refund.id ? String(refund.id) : null, refund.amount != null ? String(refund.amount) : String(verified.amount), refund.expected_at ? new Date(refund.expected_at) : null, refund.refunded_at ? new Date(refund.refunded_at) : null, transactionId],
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await pool.query("UPDATE payment_transactions SET refund_status='failed', refund_requested_at=now(), refund_error=$1, updated_at=now() WHERE id=$2", [message.slice(0, 500), transactionId]);
+  }
+}
+
+async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
   const client = await pool.connect();
   try {
     const result = await client.query("SELECT pt.id, pt.reference, pt.amount_minor, pt.currency, pt.status, pt.paid_at, pt.metadata, pt.customer_email_status, pt.refund_status, pt.refund_id, pt.refund_expected_at, pt.refund_processed_at, pt.refund_error, u.email, u.first_name, u.last_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
