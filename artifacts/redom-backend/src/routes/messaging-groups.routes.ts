@@ -10,6 +10,7 @@ import { conversationParticipants } from "../database/conversationParticipants";
 import { userProfiles } from "../database/userProfiles";
 import { activityLog } from "../database/activityLog";
 import { groupInviteLinks } from "../database/groupInviteLinks";
+import { friends } from "../database/friends";
 
 const router = Router();
 router.use(authMiddleware, authRateLimit);
@@ -45,8 +46,21 @@ router.post("/groups", async (req, res) => {
   if (!req.user?.userId || !body.success) return void res.status(400).json({ success: false, message: "A valid group name and member list are required." });
   const creator = await profileId(req.user.userId); if (!creator) return void res.status(404).json({ success: false, message: "Profile not found." });
   const unique = [...new Set(body.data.memberProfileIds)].filter(id => id !== creator);
-  const profiles = unique.length ? await db.select({ id: userProfiles.id }).from(userProfiles).where(inArray(userProfiles.id, unique)) : [];
+  const profiles = unique.length ? await db.select({ id: userProfiles.id, userId: userProfiles.userId }).from(userProfiles).where(inArray(userProfiles.id, unique)) : [];
   if (profiles.length !== unique.length) return void res.status(400).json({ success: false, message: "One or more group members could not be found." });
+  if (unique.length) {
+    const creatorProfile = await db.select({ userId: userProfiles.userId }).from(userProfiles).where(eq(userProfiles.id, creator)).limit(1);
+    const creatorUserId = creatorProfile[0]?.userId;
+    if (!creatorUserId) return void res.status(404).json({ success: false, message: "Profile not found." });
+    const directRows = await db.select({ friendUserId: friends.friendUserId }).from(friends).where(and(eq(friends.userId, creatorUserId), eq(friends.friendshipStatus, "active")));
+    const reverseRows = await db.select({ userId: friends.userId }).from(friends).where(and(eq(friends.friendUserId, creatorUserId), eq(friends.friendshipStatus, "active")));
+    const direct = new Set([...directRows.map(r => r.friendUserId), ...reverseRows.map(r => r.userId)]);
+    const friendOfFriendRows = direct.size ? await db.select({ userId: friends.userId, friendUserId: friends.friendUserId }).from(friends).where(eq(friends.friendshipStatus, "active")) : [];
+    const allowed = new Set<string>(direct);
+    for (const row of friendOfFriendRows) if (direct.has(row.userId)) allowed.add(row.friendUserId); else if (direct.has(row.friendUserId)) allowed.add(row.userId);
+    const disallowed = profiles.filter(profile => profile.userId !== creatorUserId && !allowed.has(profile.userId));
+    if (disallowed.length) return void res.status(403).json({ success: false, message: "Only friends and friends of friends can be added to a ReDom chat group." });
+  }
   const [group] = await db.insert(conversations).values({ createdBy: creator, conversationType: "group", groupName: body.data.name, groupDescription: body.data.description ?? null, participantCount: unique.length + 1, anyoneCanEditInfo: true, anyoneCanInvite: true, anyoneCanRemoveMembers: false, anyoneCanPinMessages: true, anyoneCanSendMessages: true, anyoneCanSendHistory: true, joinApprovalRequired: false, encrypted: true }).returning({ id: conversations.id });
   if (!group) return void res.status(500).json({ success: false, message: "Unable to create group." });
   await db.insert(conversationParticipants).values([{ conversationId: group.id, userId: creator, role: "owner", joinedByCreator: true, joinRequestApproved: true }, ...unique.map(userId => ({ conversationId: group.id, userId, role: "member", joinedBy: creator, joinedByCreator: false, joinRequestApproved: true }))]);
