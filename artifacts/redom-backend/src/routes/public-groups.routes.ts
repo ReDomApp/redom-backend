@@ -26,7 +26,7 @@ router.get("/", async (req, res) => {
     groupPhoto: publicGroups.groupPhoto, coverPhoto: publicGroups.coverPhoto,
     memberCount: publicGroups.memberCount, memberApprovalRequired: publicGroups.memberApprovalRequired,
   }).from(publicGroups).where(where).orderBy(desc(publicGroups.memberCount), desc(publicGroups.updatedAt)).limit(limit);
-  res.json({ success: true, groups: rows });
+  return res.json({ success: true, groups: rows });
 });
 
 router.get("/mine", async (req, res) => {
@@ -39,7 +39,7 @@ router.get("/mine", async (req, res) => {
     .innerJoin(publicGroups, eq(publicGroups.id, publicGroupMembers.groupId))
     .where(and(eq(publicGroupMembers.profileId, profileId), eq(publicGroupMembers.active, true), eq(publicGroupMembers.pending, false), eq(publicGroups.deleted, false)))
     .orderBy(desc(publicGroups.updatedAt));
-  res.json({ success: true, groups: rows });
+  return res.json({ success: true, groups: rows });
 });
 
 router.post("/", async (req, res) => {
@@ -50,7 +50,7 @@ router.post("/", async (req, res) => {
   const [group] = await db.insert(publicGroups).values({ createdBy: profileId, name: body.data.name, description: body.data.description ?? null, groupPhoto: body.data.groupPhoto ?? null, coverPhoto: body.data.coverPhoto ?? null, memberApprovalRequired: body.data.memberApprovalRequired ?? false }).returning();
   if (!group) return void res.status(500).json({ success: false, message: "Public group could not be created." });
   await db.insert(publicGroupMembers).values({ groupId: group.id, profileId, role: "owner", active: true, pending: false });
-  res.status(201).json({ success: true, group });
+  return res.status(201).json({ success: true, group });
 });
 
 router.post("/:groupId/join", async (req, res) => {
@@ -66,7 +66,7 @@ router.post("/:groupId/join", async (req, res) => {
   if (existing) await db.update(publicGroupMembers).set({ active: !pending, pending, updatedAt: new Date() }).where(eq(publicGroupMembers.id, existing.id));
   else await db.insert(publicGroupMembers).values({ groupId: id.data, profileId, role: "member", active: !pending, pending });
   if (!pending && !existing?.active) await db.update(publicGroups).set({ memberCount: group.memberCount + 1, updatedAt: new Date() }).where(eq(publicGroups.id, id.data));
-  res.status(201).json({ success: true, joined: !pending, pending, groupId: id.data });
+  return res.status(201).json({ success: true, joined: !pending, pending, groupId: id.data });
 });
 
 router.post("/:groupId/leave", async (req, res) => {
@@ -79,7 +79,7 @@ router.post("/:groupId/leave", async (req, res) => {
   const [group] = await db.select({ memberCount: publicGroups.memberCount }).from(publicGroups).where(eq(publicGroups.id, id.data)).limit(1);
   await db.update(publicGroupMembers).set({ active: false, updatedAt: new Date() }).where(eq(publicGroupMembers.id, member.id));
   await db.update(publicGroups).set({ memberCount: Math.max(1, (group?.memberCount ?? 2) - 1), updatedAt: new Date() }).where(eq(publicGroups.id, id.data));
-  res.json({ success: true, left: true });
+  return res.json({ success: true, left: true });
 });
 
 export default router;
