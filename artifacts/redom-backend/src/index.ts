@@ -8,6 +8,7 @@ import { startRegistrationChallengeCleanup, stopRegistrationChallengeCleanup } f
 import { startRegistrationFlowReservationCleanup, stopRegistrationFlowReservationCleanup } from "./services/auth/registration-flow-reservation-cleanup.service";
 import { startProfilePhotoExpiryCleanup, stopProfilePhotoExpiryCleanup } from "./services/profile-photo-expiry.service";
 import { startSupportCaseCleanup, stopSupportCaseCleanup } from "./services/support-case-cleanup.service";
+import { ensurePaymentSchema } from "./services/payments/payment-schema-bootstrap";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -16,6 +17,7 @@ const host = "0.0.0.0";
 
 async function start(): Promise<void> {
   await ensureMessagingCompletionSchema();
+  await ensurePaymentSchema();
   const server = app.listen(port, host, () => {
     startRegistrationChallengeCleanup();
     startRegistrationFlowReservationCleanup();
