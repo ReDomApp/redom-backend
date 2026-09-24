@@ -12,6 +12,7 @@ import { saves } from "../database/saves";
 import { savedCollections, savedCollectionContributors } from "../database/savedCollections";
 import { friends } from "../database/friends";
 import { posts } from "../database/posts";
+import { users } from "../database/schema";
 
 const router = Router();
 const POLICY_DOCUMENTS: Record<string, { title: string; summary: string; sections: Array<{ heading: string; body: string }>; version?: string; effectiveAt?: string }> = {
@@ -84,6 +85,18 @@ router.delete("/saved/:id", authMiddleware, async (req, res) => {
   if (!id.success) { res.status(400).json({ success: false, message: "Invalid saved item." }); return; }
   await db.update(saves).set({ active: false, updatedAt: new Date() }).where(and(eq(saves.id, id.data), eq(saves.userId, profileId)));
   res.json({ success: true });
+});
+
+router.get("/saved/friends", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) { res.status(401).json({ success: false, message: "Authentication required." }); return; }
+  const rows = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, profilePhoto: userProfiles.profilePhoto })
+    .from(friends)
+    .innerJoin(users, eq(users.id, friends.friendUserId))
+    .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+    .where(and(eq(friends.userId, req.user.userId), eq(friends.friendshipStatus, "active")))
+    .orderBy(users.firstName, users.lastName)
+    .limit(100);
+  res.json({ success: true, friends: rows.map((x) => ({ id: x.id, name: `${x.firstName} ${x.lastName}`.trim(), profilePhoto: x.profilePhoto })) });
 });
 
 router.post("/saved/collections", authMiddleware, async (req, res) => {
