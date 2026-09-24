@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { openExternalLink } from "../utils/openExternalLink";
 import StartupArtwork from "../assets/brand/startup.svg";
 import WarningBlack from "../assets/auth/warning-black.svg";
 import { fetchNetworkProvider, type NetworkProviderResponse } from "../auth/networkProvider";
@@ -104,7 +105,7 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
 
             {isVpnOrDatacenter ? <Text style={styles.embeddedNotice}>Your connection type was detected automatically. ReDom is showing this warning before Login because the current network is not a normal residential/mobile connection.</Text> : null}
 
-            {!checking && !failed && profile?.termsUrl ? <Pressable onPress={() => void Linking.openURL(profile.termsUrl!)} style={styles.terms}><Text style={styles.termsText}>{termsTitle}</Text><Text style={styles.urlText}>{profile.termsUrl}</Text></Pressable> : null}
+            {!checking && !failed && profile?.termsUrl ? <Pressable onPress={() => void openExternalLink(profile.termsUrl!, termsTitle, "startup-terms")} style={styles.terms}><Text style={styles.termsText}>{termsTitle}</Text><Text style={styles.urlText}>{profile.termsUrl}</Text></Pressable> : null}
 
             {checking
               ? <View style={styles.checkingButton}><ActivityIndicator color="#FFFFFF" /><Text style={styles.buttonText}>Checking network…</Text></View>
