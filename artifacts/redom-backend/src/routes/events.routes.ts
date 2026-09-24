@@ -12,7 +12,7 @@ const r2 = new S3Client({ region: env.cloudflare.r2.region || "auto", endpoint: 
 
 function parseImage(value: string) {
   const match = /^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value);
-  if (!match) throw new Error("Only JPEG, PNG and WebP event images are supported.");
+  if (!match) throw new Error("Only JPEG, PNG, WebP and GIF event images are supported.");
   const body = Buffer.from(match[2], "base64");
   if (!body.length || body.length > 8 * 1024 * 1024) throw new Error("Event images must be 8 MB or smaller.");
   return { mime: match[1] === "image/jpg" ? "image/jpeg" : match[1], body };
@@ -33,11 +33,10 @@ async function publicEvent(id: string, viewer: string | null) {
   return null;
 }
 
-router.get("/media/:id", async (req,res)=>{
+router.get("/media/:id", authMiddleware, async (req,res)=>{
   try{
-    const row=await pool.query("SELECT cover_key,privacy,creator_user_id FROM events WHERE id=$1 AND status='active' LIMIT 1",[req.params.id]);
-    if(!row.rows[0]?.cover_key)return res.status(404).end();
-    const object=await r2.send(new GetObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:row.rows[0].cover_key}));
+    const event=await publicEvent(req.params.id, req.user?.userId ?? null); if(!event?.cover_key)return res.status(404).end();
+    const object=await r2.send(new GetObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:event.cover_key}));
     if(!object.Body)return res.status(404).end();
     res.setHeader("Cache-Control","public,max-age=600");res.setHeader("Content-Type",object.ContentType||"image/jpeg");
     return res.end(Buffer.from(await object.Body.transformToByteArray()));
