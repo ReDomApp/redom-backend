@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { productService, type PolicySlug } from "../product/productService";
 
-type PolicyState = { title: string; summary: string; version: string; sections: Array<{ heading: string; body: string }> };
+type PolicyState = { title: string; summary: string; version: string; effectiveAt: string; sections: Array<{ heading: string; body: string }> };
 
 export function PolicyScreen({ route }: NativeStackScreenProps<RootStackParamList, "Policy">) {
   const navigation = useNavigation();
@@ -19,7 +19,7 @@ export function PolicyScreen({ route }: NativeStackScreenProps<RootStackParamLis
     let active = true;
     if (!slug) { setError(true); return () => { active = false; }; }
     void productService.getPolicy(slug).then((r) => {
-      if (active) setState({ ...r.document, version: r.version });
+      if (active) setState({ ...r.document, version: r.version, effectiveAt: r.effectiveAt });
     }).catch(() => active && setError(true));
     return () => { active = false; };
   }, [slug]);
@@ -41,7 +41,7 @@ export function PolicyScreen({ route }: NativeStackScreenProps<RootStackParamLis
       <Text style={styles.eyebrow}>{slug === "messaging" ? "MESSAGING & PRIVACY" : slug === "events" ? "EVENTS" : "POLICY"}</Text>
       <Text style={styles.title}>{state.title}</Text>
       <Text style={styles.summary}>{state.summary}</Text>
-      <Text style={styles.version}>Version {state.version}</Text>
+      <View style={styles.metaRow}><Text style={styles.version}>Version {state.version}</Text><Text style={styles.version}>Effective {new Date(state.effectiveAt).toLocaleDateString()}</Text></View>
 
       <View style={styles.contentsCard}>
         <Text style={styles.contentsTitle}>On this page</Text>
@@ -70,7 +70,7 @@ const styles = StyleSheet.create({
   eyebrow: { marginTop: 34, paddingHorizontal: 22, fontSize: 12, fontWeight: "800", letterSpacing: 1.3, color: "#1877F2" },
   title: { marginTop: 8, paddingHorizontal: 22, fontSize: 34, lineHeight: 40, fontWeight: "800", color: "#111111" },
   summary: { marginTop: 12, paddingHorizontal: 22, fontSize: 18, lineHeight: 27, color: "#5F6368" },
-  version: { marginTop: 14, paddingHorizontal: 22, fontSize: 12, color: "#8A8D91" },
+  metaRow: { marginTop: 14, paddingHorizontal: 22, flexDirection: "row", gap: 18, flexWrap: "wrap" },\n  version: { fontSize: 12, color: "#8A8D91" },
   contentsCard: { marginTop: 28, marginHorizontal: 16, borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#E5E7EB", paddingVertical: 8 },
   contentsTitle: { paddingHorizontal: 8, paddingVertical: 12, fontSize: 18, fontWeight: "800", color: "#111111" },
   contentsRow: { minHeight: 48, flexDirection: "row", alignItems: "center", paddingHorizontal: 8 },
