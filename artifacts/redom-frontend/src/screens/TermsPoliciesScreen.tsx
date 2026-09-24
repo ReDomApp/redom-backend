@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
@@ -14,9 +14,10 @@ import SavedIcon from "../assets/home-feed/saved.svg";
 import EventsIcon from "../assets/home-feed/events.svg";
 import SupportIcon from "../assets/home-feed/support.svg";
 import OrdersIcon from "../assets/home-feed/orders-payments.svg";
+import SearchIcon from "../assets/home-feed/search.svg";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TermsPolicies">;
-type IconComponent = React.ComponentType<{ width?: number; height?: number }>;
+type IconComponent = ComponentType<{ width?: number; height?: number }>;
 type PolicyItem = { slug: PolicySlug; title: string; description: string; Icon: IconComponent };
 type PolicyGroup = { title: string; Icon: IconComponent; items: PolicyItem[] };
 
@@ -65,7 +66,7 @@ export function TermsPoliciesScreen({ navigation }: Props) {
       </View>
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.hero}><View style={styles.heroIcon}><TermsIcon width={48} height={48} /></View><View style={styles.heroCopy}><Text style={styles.heroTitle}>Terms and Policies</Text><Text style={styles.heroText}>Learn how ReDom works, how your information is handled, and the rules that apply to each ReDom feature.</Text></View></View>
-        <View style={styles.searchBox}><Text style={styles.searchGlyph}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search terms and policies..." placeholderTextColor="#65676B" style={styles.searchInput} accessibilityLabel="Search terms and policies" returnKeyType="search" /></View>
+        <View style={styles.searchBox}><SearchIcon width={24} height={24} /><TextInput value={query} onChangeText={setQuery} placeholder="Search terms and policies..." placeholderTextColor="#65676B" style={styles.searchInput} accessibilityLabel="Search terms and policies" returnKeyType="search" /></View>
         <Text style={styles.sectionIntro}>Policies</Text><Text style={styles.sectionHint}>Choose a category to see the policies available for that part of ReDom.</Text>
         {filteredGroups.map((group) => {
           const open = Boolean(openGroups[group.title]) || Boolean(query.trim());
