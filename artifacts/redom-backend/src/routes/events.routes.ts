@@ -82,30 +82,30 @@ router.get("/",async(req,res)=>{
     (SELECT COUNT(*)::int FROM event_responses er WHERE er.event_id=e.id AND er.status='going') going_count,
     (SELECT er.status FROM event_responses er WHERE er.event_id=e.id AND er.user_id=$1 LIMIT 1) viewer_status
     FROM events e JOIN users u ON u.id=e.creator_user_id WHERE ${where.join(" AND ")} ORDER BY e.start_at ASC LIMIT 50`,params);
-  res.json({success:true,events:r.rows});
+  return res.json({success:true,events:r.rows});
 });
 
 router.get("/mine",async(req,res)=>{
   const tab=String(req.query.tab??"hosting");
   const r=await pool.query(`SELECT e.*,(SELECT COUNT(*)::int FROM event_responses er WHERE er.event_id=e.id AND er.status='interested') interested_count,(SELECT COUNT(*)::int FROM event_responses er WHERE er.event_id=e.id AND er.status='going') going_count FROM events e WHERE e.creator_user_id=$1 AND e.status='active' ${tab==="past"?"AND e.start_at<now()":"AND e.start_at>=now()"} ORDER BY e.start_at DESC LIMIT 100`,[req.user!.userId]);
-  res.json({success:true,events:r.rows});
+  return res.json({success:true,events:r.rows});
 });
 
 router.get("/settings",async(req,res)=>{
   const r=await pool.query("SELECT add_events_to_calendar FROM event_settings WHERE user_id=$1",[req.user!.userId]);
-  res.json({success:true,settings:{addEventsToCalendar:r.rows[0]?.add_events_to_calendar??false}});
+  return res.json({success:true,settings:{addEventsToCalendar:r.rows[0]?.add_events_to_calendar??false}});
 });
 router.patch("/settings",async(req,res)=>{
   const parsed=z.object({addEventsToCalendar:z.boolean()}).safeParse(req.body);if(!parsed.success)return res.status(400).json({success:false,message:"Invalid event setting."});
   const r=await pool.query(`INSERT INTO event_settings(user_id,add_events_to_calendar) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET add_events_to_calendar=EXCLUDED.add_events_to_calendar,updated_at=now() RETURNING add_events_to_calendar`,[req.user!.userId,parsed.data.addEventsToCalendar]);
-  res.json({success:true,settings:{addEventsToCalendar:r.rows[0].add_events_to_calendar}});
+  return res.json({success:true,settings:{addEventsToCalendar:r.rows[0].add_events_to_calendar}});
 });
 
 router.post("/",async(req,res)=>{
   const parsed=eventInput.safeParse(req.body);if(!parsed.success)return res.status(400).json({success:false,message:parsed.error.issues[0]?.message||"Invalid event."});
   const v=parsed.data;
   const r=await pool.query(`INSERT INTO events(creator_user_id,name,description,start_at,end_at,timezone,event_type,privacy,location_name,location_city,location_lat,location_lng,location_radius_miles,location_mode,virtual_url,repeat_rule) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,[req.user!.userId,v.name,v.description||null,v.startAt,v.endAt||null,v.timezone,v.eventType,v.privacy,v.locationName||null,v.locationCity||null,v.locationLat??null,v.locationLng??null,v.locationRadiusMiles??null,v.locationMode,v.virtualUrl??null,v.repeatRule]);
-  res.status(201).json({success:true,eventId:r.rows[0].id});
+  return res.status(201).json({success:true,eventId:r.rows[0].id});
 });
 
 router.post("/:id/cover",async(req,res)=>{
@@ -115,29 +115,29 @@ router.post("/:id/cover",async(req,res)=>{
     const parsed=parseImage(image),ext=parsed.mime==="image/png"?"png":parsed.mime==="image/webp"?"webp":"jpg",key=`events/${req.user!.userId}/${req.params.id}/${Date.now()}-${randomUUID()}.${ext}`;
     await r2.send(new PutObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:key,Body:parsed.body,ContentType:parsed.mime}));
     await pool.query("UPDATE events SET cover_key=$1,updated_at=now() WHERE id=$2",[key,req.params.id]);
-    res.json({success:true,mediaUrl:`/events/media/${req.params.id}`});
-  }catch(e){res.status(400).json({success:false,message:e instanceof Error?e.message:"Unable to upload event image."});}
+    return res.json({success:true,mediaUrl:`/events/media/${req.params.id}`});
+  }catch(e){return res.status(400).json({success:false,message:e instanceof Error?e.message:"Unable to upload event image."});}
 });
 
 router.post("/:id/rsvp",async(req,res)=>{
   const parsed=z.object({status:z.enum(["interested","going"])}).safeParse(req.body);if(!parsed.success)return res.status(400).json({success:false,message:"Choose Interested or Going."});
   const event=await publicEvent(req.params.id,req.user!.userId);if(!event)return res.status(404).json({success:false,message:"Event not found."});
   await pool.query(`INSERT INTO event_responses(event_id,user_id,status) VALUES($1,$2,$3) ON CONFLICT(event_id,user_id) DO UPDATE SET status=EXCLUDED.status,updated_at=now()`,[req.params.id,req.user!.userId,parsed.data.status]);
-  res.json({success:true,status:parsed.data.status});
+  return res.json({success:true,status:parsed.data.status});
 });
 router.delete("/:id/rsvp",async(req,res)=>{
-  await pool.query("DELETE FROM event_responses WHERE event_id=$1 AND user_id=$2",[req.params.id,req.user!.userId]);res.json({success:true});
+  await pool.query("DELETE FROM event_responses WHERE event_id=$1 AND user_id=$2",[req.params.id,req.user!.userId]);return res.json({success:true});
 });
 
 router.post("/:id/cancel",async(req,res)=>{
   const r=await pool.query("UPDATE events SET status='cancelled',updated_at=now() WHERE id=$1 AND creator_user_id=$2 AND status='active' RETURNING id",[req.params.id,req.user!.userId]);
   if(!r.rowCount)return res.status(404).json({success:false,message:"Event not found or you are not the host."});
-  res.json({success:true});
+  return res.json({success:true});
 });
 
 router.get("/:id",async(req,res)=>{
   const e=await publicEvent(req.params.id,req.user!.userId);if(!e)return res.status(404).json({success:false,message:"Event not found."});
-  res.json({success:true,event:e});
+  return res.json({success:true,event:e});
 });
 
 export default router;
