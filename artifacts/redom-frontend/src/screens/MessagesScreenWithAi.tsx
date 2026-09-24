@@ -1,4 +1,3 @@
-import type { ComponentProps } from "react";
 import { MessagesScreen } from "./MessagesScreen";
 import { GlobalReDomAiAssistant } from "./GlobalReDomAiAssistant";
 
