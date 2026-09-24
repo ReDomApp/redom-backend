@@ -94,6 +94,7 @@ export async function sendPaymentConfirmationEmail(input: {
   const refundStatus = input.refund?.status ? escapeHtml(input.refund.status) : "Not initiated";
   const refundExpected = escapeHtml(formatDate(input.refund?.expectedAt ?? null));
   const refundProcessed = escapeHtml(formatDate(input.refund?.processedAt ?? null));
+  const redomTransactionId = escapeHtml(input.redomTransactionId || "Not assigned");
   const providerReference = escapeHtml(input.details?.providerReference || input.reference);
   const channel = escapeHtml(channelLabel(input.details?.channel));
   const type = escapeHtml(input.details?.type || "Not available");
@@ -124,6 +125,7 @@ ${isPaid ? `<tr><td style="padding:13px 16px;color:#65676B;">Next Billing Date</
 <h2 style="font-size:17px;margin:0 0 12px;">Transaction Details</h2>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #DADDE1;">
 <tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Plan</td><td align="right" style="padding:12px 16px;border-bottom:1px solid #DADDE1;">${plan}</td></tr>
+<tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">ReDom Transaction ID</td><td align="right" style="padding:12px 16px;font-family:Consolas,'Courier New',monospace;font-size:13px;border-bottom:1px solid #DADDE1;">${redomTransactionId}</td></tr>
 <tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Provider Reference</td><td align="right" style="padding:12px 16px;font-family:Consolas,'Courier New',monospace;font-size:13px;border-bottom:1px solid #DADDE1;">${providerReference}</td></tr>
 <tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Date Paid</td><td align="right" style="padding:12px 16px;border-bottom:1px solid #DADDE1;">${paidAt}</td></tr>
 <tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Bank</td><td align="right" style="padding:12px 16px;border-bottom:1px solid #DADDE1;">${bank}</td></tr>
@@ -153,7 +155,7 @@ ${!isPaid ? `<div style="margin-top:18px;padding:14px 16px;background:#F0F2F5;bo
     "",
     "Transaction Details",
     `Plan: ${input.planName}`,
-    `Provider Reference: ${input.details?.providerReference || input.reference}`,
+    `ReDom Transaction ID: ${input.redomTransactionId || "Not assigned"}`,\n    `Provider Reference: ${input.details?.providerReference || input.reference}`,
     `Date Paid: ${formatDateTime(input.paidAt)}`,
     `Bank: ${input.details?.bank || "Not available"}`,
     `Channel: ${channelLabel(input.details?.channel)}`,
