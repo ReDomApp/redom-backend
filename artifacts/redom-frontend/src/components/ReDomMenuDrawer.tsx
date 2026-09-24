@@ -46,7 +46,7 @@ const shortcuts = [
   { label: "ReDom AI", Icon: ReDomAiIcon, route: "ReDomAI" as const },
   { label: "Saved", Icon: SavedIcon, route: "Saved" as const },
   { label: "Memories", Icon: MemoriesIcon },
-  { label: "Marketplace", Icon: MarketplaceIcon },
+  { label: "Marketplace", Icon: MarketplaceIcon, route: "Marketplace" as const },
   { label: "Groups", Icon: GroupsIcon },
 ];
 
@@ -177,7 +177,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
               <Text style={styles.sectionLabel}>Your shortcuts</Text>
-              {shortcuts.map(({ label, Icon, route }) => row(label, Icon, route ? () => go(route) : undefined))}
+              {shortcuts.map(({ label, Icon, route }) => row(label, Icon, route ? () => go(route) : label === "Memories" ? () => Alert.alert("Memories", "Coming Soon") : undefined))}
               <Pressable style={styles.seeMore} onPress={() => setMoreOpen((value) => !value)} accessibilityRole="button" accessibilityLabel="See more ReDom destinations">
                 <Text style={styles.seeMoreText}>{moreOpen ? "See less" : "See more"}</Text>
               </Pressable>
