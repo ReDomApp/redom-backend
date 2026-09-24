@@ -8,9 +8,9 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interaction
 const GEMINI_MODEL = "gemini-3.8-flash";
 const MAX_ATTACHMENTS = 3;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const REPORT_ID_MIN = 100_000;
+const REPORT_ID_MIN = 1_000_000_000;
 const REPORT_ID_MAX = 9_999_999_999;
-const reportIdPattern = /^[0-9]{6,11}$/;
+const reportIdPattern = /^[0-9]{10}$/;
 
 const r2 = new S3Client({
   region: env.cloudflare.r2.region,
@@ -53,8 +53,13 @@ export type BugReport = {
 
 type GeminiReportDraft = { fix_required: string; html: string };
 
-function generateReportId(): string {
-  return String(randomInt(REPORT_ID_MIN, REPORT_ID_MAX + 1));
+async function generateReportId(): Promise<string> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = String(randomInt(REPORT_ID_MIN, REPORT_ID_MAX + 1));
+    const existing = await pool.query("SELECT 1 FROM bug_reports WHERE report_id=$1 LIMIT 1", [candidate]);
+    if (!existing.rowCount) return candidate;
+  }
+  throw new Error("Unable to allocate a unique report ID.");
 }
 
 function escapeHtml(value: string): string {
@@ -168,7 +173,7 @@ async function insertReport(input: BugReportInput, reportId: string, fixRequired
   return mapReport(result.rows[0]);
 }
 
-function parseAttachment(input: BugReportAttachmentInput): { body: Buffer; size: number } {
+function parseAttachment(input: BugReportAttachmentInput): { body: Buffer; size: number; contentType: string } {
   const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(input.data);
   if (!match) throw new Error(`Invalid attachment data for ${input.filename}.`);
   const contentType = match[1].toLowerCase();
@@ -176,7 +181,7 @@ function parseAttachment(input: BugReportAttachmentInput): { body: Buffer; size:
   if (!allowed) throw new Error(`Unsupported attachment type: ${contentType}.`);
   const body = Buffer.from(match[2], "base64");
   if (!body.length || body.length > MAX_ATTACHMENT_BYTES) throw new Error(`Attachment ${input.filename} exceeds the 10 MB limit.`);
-  return { body, size: body.length };
+  return { body, size: body.length, contentType };
 }
 
 async function storeAttachments(report: BugReport, attachments: BugReportAttachmentInput[]): Promise<Array<{ filename: string; contentType: string; body: Buffer; size: number }>> {
@@ -185,12 +190,12 @@ async function storeAttachments(report: BugReport, attachments: BugReportAttachm
     const parsed = parseAttachment(input);
     const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "attachment";
     const key = `bug-reports/${report.userId}/${report.reportId}/${Date.now()}-${randomUUID()}-${safeName}`;
-    await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: key, Body: parsed.body, ContentType: input.contentType }));
+    await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: key, Body: parsed.body, ContentType: parsed.contentType }));
     await pool.query(
       `INSERT INTO bug_report_attachments (report_id,storage_key,filename,content_type,byte_size) VALUES ($1,$2,$3,$4,$5)`,
       [report.id, key, safeName, input.contentType, parsed.size],
     );
-    stored.push({ filename: safeName, contentType: input.contentType, body: parsed.body, size: parsed.size });
+    stored.push({ filename: safeName, contentType: parsed.contentType, body: parsed.body, size: parsed.size });
   }
   return stored;
 }
@@ -200,13 +205,22 @@ export async function submitBugReport(input: BugReportInput): Promise<BugReport>
   if (!input.category.trim() || input.category.trim().length > 80) throw new Error("Invalid problem category.");
   if (!input.description.trim()) throw new Error("Describe the problem.");
   const attachments = (input.attachments ?? []).slice(0, MAX_ATTACHMENTS);
-  if (attachments.reduce((sum, item) => sum + Math.floor((item.data.length * 3) / 4), 0) > MAX_ATTACHMENT_BYTES) throw new Error("Attachments exceed the 10 MB total limit.");
-  const reportId = generateReportId();
-  const from = /technical|bug|crash|performance/i.test(input.category) ? env.email.bugReportsFrom : env.email.problemReportsFrom;
+  const parsedAttachments = attachments.map((attachment) => ({ input: attachment, parsed: parseAttachment(attachment) }));
+  const totalAttachmentBytes = parsedAttachments.reduce((sum, item) => sum + item.parsed.size, 0);
+  if (totalAttachmentBytes > MAX_ATTACHMENT_BYTES) throw new Error("Attachments exceed the 10 MB total limit.");
+  const reportId = await generateReportId();
+  const technicalCategories = new Set(["Bug / error", "Crash", "Feature not working", "Performance"]);
+  const from = technicalCategories.has(input.category.trim()) ? env.email.bugReportsFrom : env.email.problemReportsFrom;
+  if (!reportIdPattern.test(reportId)) throw new Error("Generated report ID is invalid.");
   let draft: GeminiReportDraft | null = null;
   try { draft = await generateReportDraft({ reportId, product: safeText(input.product, 80), category: safeText(input.category, 80), description: safeText(input.description, 12_000), diagnostics: input.includeDiagnostics ? input.diagnostics ?? null : null, attachments }); } catch {}
   const fixRequired = draft?.fix_required || "Reproduce the reported problem, identify the failing ReDom component or flow, and implement the smallest verified fix that addresses the user's described behavior.";
   let report = await insertReport(input, reportId, fixRequired, from);
+  await pool.query(
+    `INSERT INTO activity_log (user_id,activity_type,activity_category,activity_title,activity_description,target_id,target_type,status,triggered_by,source,undo_supported,hidden,archived)
+     VALUES ($1,'problem_report_submitted','support','Technical problem report submitted',$2,$3,'bug_report','success','user','app',false,false,false)`,
+    [input.userId, `ReDom technical problem report ${reportId} was submitted.`, report.id],
+  ).catch(() => undefined);
   let storedAttachments: Array<{ filename: string; contentType: string; body: Buffer; size: number }> = [];
   try {
     storedAttachments = await storeAttachments(report, attachments);
