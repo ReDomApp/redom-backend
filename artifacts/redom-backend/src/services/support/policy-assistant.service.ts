@@ -109,6 +109,12 @@ export const REDOM_SUPPORT_POLICY_DOCUMENTS: ReDomPolicyDocument[] = [
     { heading: "Review", body: "Refund decisions are made by the authorized refund workflow, not ReDom AI or the frontend." },
     { heading: "Status", body: "The application must show only backend-confirmed refund states." },
   ] },
+  { slug: "link_history", title: "ReDom Link History Policy", summary: "How ReDom records and lets users manage links opened from the app.", version: "1.0.0", effectiveAt: "2026-09-24T00:00:00.000Z", sections: [
+    { heading: "Recorded links", body: "Supported ReDom web-link actions can record the opened URL, domain, optional title, source and time so the user can review Link history." },
+    { heading: "Privacy", body: "Link history is account-private and is not exposed to other users." },
+    { heading: "Controls", body: "Users can open a recorded link, remove an individual entry or clear their Link history." },
+    { heading: "Scope", body: "The Link History service records supported web links only; mail and SMS actions are not included." },
+  ] },
   { slug: "saved", title: "ReDom Saved Content Policy", summary: "How ReDom saves, collections and collaborative collection controls work.", version: "1.0.1", effectiveAt: "2026-09-24T00:00:00.000Z", sections: [
     { heading: "Saving content", body: "Users can save supported ReDom posts, photos, videos, reels, page posts and marketplace content for later access." },
     { heading: "Collections", body: "Saved content can be organized into named collections. Collections can be private, public, or collaborative." },
