@@ -9,9 +9,7 @@ import { messageService, type CallRecord } from "../messages/messageService";
 type Props = NativeStackScreenProps<RootStackParamList, "Call">;
 const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
-export function CallScreen({
-  const { colors } = useTheme();
-  const styles = makeStyles(colors); route, navigation }: Props) {
+export function CallScreen({ route, navigation }: Props) {
   const { conversationId, callType, callId: suppliedCallId } = route.params;
   const peer = useRef<RTCPeerConnection | null>(null); const stream = useRef<any>(null); const timer = useRef<ReturnType<typeof setInterval> | null>(null); const last = useRef<string | undefined>();
   const [call, setCall] = useState<CallRecord | null>(null); const [remote, setRemote] = useState<any>(null); const [muted, setMuted] = useState(false); const [camera, setCamera] = useState(callType === "video"); const [status, setStatus] = useState("Connecting…");
