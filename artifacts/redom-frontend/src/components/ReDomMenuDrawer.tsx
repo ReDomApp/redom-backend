@@ -44,7 +44,7 @@ type Props = { visible: boolean; onClose: () => void };
 
 const shortcuts = [
   { label: "ReDom AI", Icon: ReDomAiIcon, route: "ReDomAI" as const },
-  { label: "Saved", Icon: SavedIcon },
+  { label: "Saved", Icon: SavedIcon, route: "Saved" as const },
   { label: "Memories", Icon: MemoriesIcon },
   { label: "Marketplace", Icon: MarketplaceIcon },
   { label: "Groups", Icon: GroupsIcon },
