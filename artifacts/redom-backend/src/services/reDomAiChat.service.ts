@@ -47,7 +47,7 @@ export async function generateReDomAiReply(userId: string, request: ReDomAiChatR
     model: MODEL,
     instructions: `${INSTRUCTIONS}\n${languageInstruction}`,
     input: [{ role: "user", content: userContent }],
-    tools: [{ type: "web_search" }],
+    tools: [{ type: "web_search" } as any],
     safety_identifier: safetyIdentifier(userId),
   });
 
