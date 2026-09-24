@@ -38,6 +38,13 @@ export async function ensurePaymentSchema(): Promise<void> {
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_status varchar(20) NOT NULL DEFAULT 'pending'`);
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_sent_at timestamp with time zone`);
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_error varchar(500)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS refund_status varchar(30)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS refund_id varchar(100)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS refund_amount_minor bigint`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS refund_requested_at timestamp with time zone`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS refund_expected_at timestamp with time zone`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS refund_processed_at timestamp with time zone`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS refund_error varchar(500);`);
   await pool.query(`CREATE TABLE IF NOT EXISTS payment_subscriptions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
