@@ -82,14 +82,14 @@ router.get("/settings", authMiddleware, async (req, res) => {
   const userId = req.user?.userId;
   if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
   const result = await pool.query(
-    `SELECT currency, pin_enabled, biometric_enabled FROM payment_settings WHERE user_id = $1`,
+    `SELECT currency, pin_enabled, biometric_enabled, currency_changed_at FROM payment_settings WHERE user_id = $1`,
     [userId],
   );
   if (!result.rows[0]) {
     const created = await pool.query(
       `INSERT INTO payment_settings (user_id) VALUES ($1)
        ON CONFLICT (user_id) DO UPDATE SET updated_at = now()
-       RETURNING currency, pin_enabled, biometric_enabled`,
+       RETURNING currency, pin_enabled, biometric_enabled, currency_changed_at`,
       [userId],
     );
     return res.json({ success: true, settings: created.rows[0] });
@@ -105,19 +105,29 @@ router.patch("/settings", authMiddleware, async (req, res) => {
   const value = parsed.data;
   const current = await pool.query(`SELECT currency, pin_enabled, biometric_enabled FROM payment_settings WHERE user_id = $1`, [userId]);
   const base = current.rows[0] ?? { currency: "NGN", pin_enabled: false, biometric_enabled: false };
+  const currencyChanged = value.currency !== undefined && value.currency !== base.currency;
+  if (currencyChanged && base.currency_changed_at) {
+    const changedAt = new Date(base.currency_changed_at).getTime();
+    const availableAt = changedAt + 72 * 60 * 60 * 1000;
+    if (Date.now() < availableAt) {
+      const remainingHours = Math.max(1, Math.ceil((availableAt - Date.now()) / (60 * 60 * 1000)));
+      return res.status(429).json({ success: false, message: `You can only change your currency once every 72 hours. Try again in about ${remainingHours} hour(s).`, currencyChangeAvailableAt: new Date(availableAt).toISOString() });
+    }
+  }
   const next = {
     currency: value.currency ?? base.currency,
     pin_enabled: value.pinEnabled ?? base.pin_enabled,
     biometric_enabled: value.biometricEnabled ?? base.biometric_enabled,
+    currency_changed_at: currencyChanged ? new Date() : base.currency_changed_at,
   };
   const result = await pool.query(
-    `INSERT INTO payment_settings (user_id, currency, pin_enabled, biometric_enabled)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO payment_settings (user_id, currency, pin_enabled, biometric_enabled, currency_changed_at)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (user_id) DO UPDATE SET currency = EXCLUDED.currency,
        pin_enabled = EXCLUDED.pin_enabled, biometric_enabled = EXCLUDED.biometric_enabled,
-       updated_at = now()
+       currency_changed_at = EXCLUDED.currency_changed_at, updated_at = now()
      RETURNING currency, pin_enabled, biometric_enabled`,
-    [userId, next.currency, next.pin_enabled, next.biometric_enabled],
+    [userId, next.currency, next.pin_enabled, next.biometric_enabled, next.currency_changed_at],
   );
   return res.json({ success: true, settings: result.rows[0] });
 });
