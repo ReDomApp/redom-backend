@@ -112,6 +112,7 @@ export async function checkIP(ip: string): Promise<IPAPIResult> {
 
         return {
           ...data,
+          vpn_details: (data as any).vpn ?? null,
           success: true,
           fraud_score: fraudScore,
           proxy: data.is_proxy === true,
