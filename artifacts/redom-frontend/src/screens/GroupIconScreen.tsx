@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTheme } from "../theme/ThemeProvider";
 import {
   ActivityIndicator,
   Alert,
@@ -22,7 +23,9 @@ type PickerKind = "camera" | "gallery";
 
 const EMOJIS = ["😀", "😎", "😂", "😍", "🥳", "🔥", "⭐", "💙", "🌎", "🚀", "🎯", "💬", "🤝", "🎉", "🛡️", "💡"];
 
-export function GroupIconScreen({ route, navigation }: Props) {
+export function GroupIconScreen({
+  const { colors } = useTheme();
+  const styles = makeStyles(colors); route, navigation }: Props) {
   const [group, setGroup] = useState<GroupSettings | null>(null);
   const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -168,7 +171,7 @@ function Action({ icon, title, onPress }: { icon: any; title: string; onPress: (
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) { return StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   loading: { marginTop: 60 },
   header: { height: 64, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#000" },
@@ -176,14 +179,14 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", gap: 26 },
   viewer: { flex: 1, alignItems: "center", justifyContent: "center" },
   photo: { width: "100%", height: "100%" },
-  empty: { width: 280, height: 280, alignItems: "center", justifyContent: "center", backgroundColor: "#FFF" },
-  emptyText: { fontSize: 100, fontWeight: "800", color: "#1877F2", marginTop: -80 },
+  empty: { width: 280, height: 280, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
+  emptyText: { fontSize: 100, fontWeight: "800", color: colors.primary, marginTop: -80 },
   busy: { position: "absolute", top: 64, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "#0008" },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "#0008", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#FFF", borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingTop: 12, paddingBottom: 28 },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingTop: 12, paddingBottom: 28 },
   handle: { alignSelf: "center", width: 62, height: 6, borderRadius: 3, backgroundColor: "#98A2B3", marginBottom: 10 },
   sheetTitle: { height: 58, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sheetHeading: { fontSize: 19, fontWeight: "600", color: "#111" },
   action: { height: 70, paddingHorizontal: 28, flexDirection: "row", alignItems: "center", gap: 22 },
-  actionText: { fontSize: 17, color: "#101828" },
-});
+  actionText: { fontSize: 17, color: colors.text },
+}); }
