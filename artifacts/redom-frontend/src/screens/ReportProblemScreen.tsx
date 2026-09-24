@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Alert, Image, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import * as Constants from "expo-constants";
+import Constants from "expo-constants";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useNavigation } from "@react-navigation/native";
@@ -49,11 +49,11 @@ export function ReportProblemScreen({}: Props) {
 
   const diagnostics = useMemo(() => ({
     app: "ReDom",
-    appVersion: Constants.default.expoConfig?.version ?? "unknown",
-    runtimeVersion: typeof Constants.default.expoConfig?.runtimeVersion === "string" ? Constants.default.expoConfig.runtimeVersion : "unknown",
+    appVersion: Constants.expoConfig?.version ?? "unknown",
+    runtimeVersion: typeof Constants.expoConfig?.runtimeVersion === "string" ? Constants.expoConfig.runtimeVersion : "unknown",
     platform: Platform.OS,
     osVersion: String(Platform.Version),
-    locale: String(Constants.default.expoConfig?.extra?.locale ?? "unknown"),
+    locale: String(Constants.expoConfig?.extra?.locale ?? "unknown"),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown",
     account: user ? {
       publicId: user.publicId,
