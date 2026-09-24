@@ -9,7 +9,7 @@ const STANDARD_NGN = 4500;
 
 type PaystackResponse<T> = { status: boolean; message: string; data: T };
 type InitializeData = { authorization_url: string; access_code: string; reference: string };
-type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; customer?: { email?: string }; plan?: any };
+type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };
 type PaymentContext = { transactionId: string; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
 
 async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
