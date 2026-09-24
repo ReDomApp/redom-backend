@@ -54,6 +54,7 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
         redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
         paidAt,
         details: row.metadata?.paymentDetails ?? undefined,
+        redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
         nextBillingAt: row.expires_at ? new Date(row.expires_at) : null,
       });
       await client.query("UPDATE payment_transactions SET customer_email_status='sent', customer_email_sent_at=now(), customer_email_error=NULL, updated_at=now() WHERE id=$1", [transactionId]);
