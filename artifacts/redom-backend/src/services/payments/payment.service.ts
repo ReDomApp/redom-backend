@@ -2,6 +2,7 @@ import axios from "axios";
 import crypto from "node:crypto";
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
+import { sendPaymentConfirmationEmail } from "./paymentEmail.service";
 
 const API = "https://api.paystack.co";
 const STANDARD_NGN = 4500;
