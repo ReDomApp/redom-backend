@@ -3,7 +3,7 @@ export type FriendPerson={userId:string;profileId:string;firstName:string;lastNa
 export const friendsService={
  list(q?:string){return api.get<{success:boolean;people:FriendPerson[]}>(`/friends${q?`?q=${encodeURIComponent(q)}`:""}`);},
  following(){return api.get<{success:boolean;people:FriendPerson[]}>("/friends/following");},
- profileFriends(userId:string){return api.get<{success:boolean;people:FriendPerson[]}>(`/friends/profile/${userId}`)},
+ profileFriends(userId:string,mode:"all"|"mutual"="all"){return api.get<{success:boolean;people:FriendPerson[]}>(`/friends/profile/${userId}?mode=${mode}`)},
  suggested(q?:string){return api.get<{success:boolean;people:FriendPerson[]}>(`/friends/suggested${q?`?q=${encodeURIComponent(q)}`:""}`);},
  common(){return api.get<{success:boolean;people:FriendPerson[]}>("/friends/common");},
  requests(){return api.get<{success:boolean;incoming:FriendPerson[];outgoing:FriendPerson[]}>("/friends/requests");},
