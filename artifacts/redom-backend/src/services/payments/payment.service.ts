@@ -12,6 +12,37 @@ type InitializeData = { authorization_url: string; access_code: string; referenc
 type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; customer?: { email?: string }; plan?: any };
 type PaymentContext = { transactionId: string; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
 
+async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const result = await client.query("SELECT pt.id, pt.reference, pt.amount_minor, pt.currency, pt.paid_at, pt.customer_email_status, u.email, u.first_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
+    const row = result.rows[0];
+    if (!row?.email || row.customer_email_status === "sent" || row.customer_email_status === "sending") return;
+    const claimed = await client.query("UPDATE payment_transactions SET customer_email_status='sending', customer_email_error=NULL, updated_at=now() WHERE id=$1 AND status='paid' AND customer_email_status IN ('pending','failed') RETURNING id", [transactionId]);
+    if (!claimed.rows[0]) return;
+    try {
+      const paidAt = row.paid_at ? new Date(row.paid_at) : new Date();
+      await sendPaymentConfirmationEmail({
+        to: String(row.email),
+        firstName: row.first_name ? String(row.first_name) : null,
+        planName: row.plan_name ? String(row.plan_name) : "ReDom subscription",
+        amountMinor: String(row.amount_minor),
+        currency: String(row.currency),
+        interval: row.interval ? String(row.interval) : "monthly",
+        reference: String(row.reference),
+        paidAt,
+        nextBillingAt: row.expires_at ? new Date(row.expires_at) : null,
+      });
+      await client.query("UPDATE payment_transactions SET customer_email_status='sent', customer_email_sent_at=now(), customer_email_error=NULL, updated_at=now() WHERE id=$1", [transactionId]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await client.query("UPDATE payment_transactions SET customer_email_status='failed', customer_email_error=$1, updated_at=now() WHERE id=$2", [message.slice(0, 500), transactionId]);
+    }
+  } finally {
+    client.release();
+  }
+}
+
 function makeReference(): string { return "rd_" + Date.now() + "_" + crypto.randomBytes(6).toString("hex"); }
 function minorAmount(subscriptionType: string, currency: string): number {
   if (currency === "NGN" && subscriptionType === "standard") return STANDARD_NGN * 100;
