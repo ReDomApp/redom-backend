@@ -21,4 +21,4 @@ export function CartScreen() {
     </View>
   </SafeAreaView>;
 }
-const styles = StyleSheet.create({ root:{flex:1}, header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",paddingHorizontal:14},  title:{fontSize:19,fontWeight:"800",flex:1,textAlign:"center"}, empty:{alignItems:"center",paddingHorizontal:35,marginTop:115},  heading:{fontSize:28,fontWeight:"900",marginTop:24}, copy:{fontSize:16,lineHeight:23,textAlign:"center",marginTop:12} });
+const styles = StyleSheet.create({ root:{flex:1}, header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",paddingHorizontal:14}, button:{width:34,height:34,alignItems:"center",justifyContent:"center"},  title:{fontSize:19,fontWeight:"800",flex:1,textAlign:"center"}, empty:{alignItems:"center",paddingHorizontal:35,marginTop:115},  heading:{fontSize:28,fontWeight:"900",marginTop:24}, copy:{fontSize:16,lineHeight:23,textAlign:"center",marginTop:12} });
