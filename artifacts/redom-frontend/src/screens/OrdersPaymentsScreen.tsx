@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useTheme } from "../theme/ThemeProvider";
@@ -15,7 +15,7 @@ export function OrdersPaymentsScreen() {
   return <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
     <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
       <Pressable onPress={() => navigation.goBack()}><Text style={[styles.back, { color: colors.text }]}>‹</Text></Pressable>
-      <Text style={[styles.headerTitle, { color: colors.text }]}>Orders and payments</Text><View style={styles.actions}><Pressable onPress={() => navigation.navigate("Cart")}><Text style={[styles.action, { color: colors.text }]}>🛒</Text></Pressable><Pressable onPress={() => navigation.navigate("SavedProducts")}><Text style={[styles.action, { color: colors.text }]}>☰</Text></Pressable></View>
+      <Text style={[styles.headerTitle, { color: colors.text }]}>Orders and payments</Text><View style={styles.actions}><Pressable onPress={() => navigation.navigate("Cart")}><Text style={[styles.action, { color: colors.text }]}>🛒</Text></Pressable><Pressable onPress={() => Alert.alert("Shopping", "Choose a shopping destination.", [{ text: "Cart", onPress: () => navigation.navigate("Cart") }, { text: "Saved products", onPress: () => navigation.navigate("SavedProducts") }, { text: "Orders and payments", style: "cancel" }])}><Text style={[styles.action, { color: colors.text }]}>☰</Text></Pressable></View>
     </View>
     <ScrollView contentContainerStyle={styles.content}>
       <Pressable onPress={() => navigation.navigate("PaymentMethods")} style={[styles.payCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
