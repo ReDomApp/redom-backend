@@ -45,7 +45,7 @@ export function FindAccountScreen({navigation}:Props){
     setLoading(true);try{const d=await getDeviceId();const r=await authService.changePasswordAfterRecovery({resetToken,password:newPassword,deviceId:d,deviceName:Platform.OS==="ios"?"iPhone":"Android Device",deviceType:"mobile",platform:Platform.OS,appVersion:"1.0.0",language});if(!r.success||!r.user||!r.session)throw new Error(r.message||"Your password could not be saved.");setPasswordOpen(false);await adoptSession(r.user,r.session);}catch(e){setPasswordError(e instanceof Error?e.message:"Your password could not be saved.")}finally{setLoading(false)}
   }
 
-  const methodLabel=(m:PasswordRecoveryLookupResult["account"]["methods"][number])=>m.channel==="email"?`Send Reset Code to ${m.maskedTarget}`:m.channel==="sms"?`Send Reset Verification Code to ${m.maskedTarget}`:`Send verification code to ${m.maskedTarget} via WhatsApp`;
+  const methodLabel=(m:NonNullable<PasswordRecoveryLookupResult["account"]>["methods"][number])=>m.channel==="email"?`Send Reset Code to ${m.maskedTarget}`:m.channel==="sms"?`Send Reset Verification Code to ${m.maskedTarget}`:`Send verification code to ${m.maskedTarget} via WhatsApp`;
   const methodIcon=(channel:PasswordRecoveryChannel)=>channel==="email"?<EmailIcon width={22} height={22}/>:channel==="sms"?<PhoneIcon width={22} height={22}/>:<WhatsAppIcon width={22} height={22}/>;
 
   return <ReDomScreen footer={<View style={s.footer}><Text style={s.muted}>© ReDom</Text><ReDomLogo width={72} height={20}/></View>}>
