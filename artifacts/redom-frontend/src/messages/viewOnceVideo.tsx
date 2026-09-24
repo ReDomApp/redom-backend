@@ -14,6 +14,6 @@ export function ViewOnceVideo({ uri }: { uri: string }) {
     return () => subscription.remove();
   }, [player]);
 
-  return <View style={styles.container}><VideoView style={styles.video} player={player} allowsFullscreen contentFit="contain" /><View accessible accessibilityLabel={isPlaying ? "Playing View Once video" : "View Once video ready"} /></View>;
+  return <View style={styles.container}><VideoView style={styles.video} player={player} /><View accessible accessibilityLabel={isPlaying ? "Playing View Once video" : "View Once video ready"} /></View>;
 }
 const styles = StyleSheet.create({ container: { width: 250, height: 250, borderRadius: 14, overflow: "hidden", backgroundColor: "#000" }, video: { width: 250, height: 250 } });
