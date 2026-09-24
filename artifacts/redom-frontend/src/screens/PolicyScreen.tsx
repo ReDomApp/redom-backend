@@ -38,7 +38,7 @@ export function PolicyScreen({ route }: NativeStackScreenProps<RootStackParamLis
       <View style={styles.headerSpacer} />
     </View>
     {state ? <ScrollView ref={scrollRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={styles.eyebrow}>{slug === "messaging" ? "MESSAGING & PRIVACY" : "POLICY"}</Text>
+      <Text style={styles.eyebrow}>{slug === "messaging" ? "MESSAGING & PRIVACY" : slug === "events" ? "EVENTS" : "POLICY"}</Text>
       <Text style={styles.title}>{state.title}</Text>
       <Text style={styles.summary}>{state.summary}</Text>
       <Text style={styles.version}>Version {state.version}</Text>
@@ -54,7 +54,7 @@ export function PolicyScreen({ route }: NativeStackScreenProps<RootStackParamLis
         <Text style={styles.heading}>{section.heading}</Text>
         <Text style={styles.body}>{section.body}</Text>
       </View>)}
-      <Text style={styles.footer}>ReDom Messaging Policy · {state.version}</Text>
+      <Text style={styles.footer}>ReDom Policies · {state.version}</Text>
     </ScrollView> : <View style={styles.center}>{error ? <><Text style={styles.error}>This policy is temporarily unavailable.</Text><Pressable accessibilityRole="button" onPress={() => { setError(false); setState(null); }} style={styles.retry}><Text style={styles.retryText}>Try again</Text></Pressable></> : <ActivityIndicator size="large" color="#1877F2" />}</View>}
   </SafeAreaView>;
 }
