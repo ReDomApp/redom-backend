@@ -25,7 +25,7 @@ const EMOJIS = ["😀", "😎", "😂", "😍", "🥳", "🔥", "⭐", "💙", "
 
 export function GroupIconScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
-  const s = makeStyles(colors);
+  const styles = makeStyles(colors);
   const [group, setGroup] = useState<GroupSettings | null>(null);
   const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false);
