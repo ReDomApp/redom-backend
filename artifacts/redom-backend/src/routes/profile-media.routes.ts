@@ -74,7 +74,7 @@ router.use(authMiddleware);
 router.get("/current", async (req: Request, res: Response) => {
   try {
     await restoreExpiredProfiles();
-    const r = await pool.query(`SELECT p.id,p.published_at,p.content,pm.object_key,pm.thumbnail_key,pm.share_id FROM posts p JOIN post_media pm ON pm.post_id=p.id AND pm.is_primary=true WHERE p.user_id=$1 AND p.type='profile_photo' AND p.deleted=false ORDER BY p.published_at DESC LIMIT 1`, [req.user.userId]);
+    const r = await pool.query(`SELECT p.id,p.published_at,p.content,pm.object_key,pm.thumbnail_key,pm.share_id FROM posts p JOIN post_media pm ON pm.post_id=p.id AND pm.is_primary=true WHERE p.user_id=$1 AND p.type='profile_photo' AND p.deleted=false ORDER BY p.published_at DESC LIMIT 1`, [req.user!.userId]);
     if (!r.rows.length) return res.json({ success: true, media: null });
     const row = r.rows[0]; return res.json({ success: true, media: { postId: row.id, publishedAt: row.published_at, caption: row.content, objectKey: row.object_key, thumbnailKey: row.thumbnail_key, shareId: row.share_id } });
   } catch { return res.status(500).json({ success: false, message: "Unable to load profile picture." }); }
@@ -91,21 +91,21 @@ router.post("/upload", async (req: Request, res: Response) => {
   try {
     await restoreExpiredProfiles();
     const parsed = parseDataUri(image); const ext = parsed.mime === "image/png" ? "png" : parsed.mime === "image/webp" ? "webp" : "jpg";
-    const key = `profiles/${req.user.userId}/${kind}/${Date.now()}-${randomUUID()}.${ext}`; await putR2(key, parsed.body, parsed.mime);
+    const key = `profiles/${req.user!.userId}/${kind}/${Date.now()}-${randomUUID()}.${ext}`; await putR2(key, parsed.body, parsed.mime);
     const expiry = kind === "profile" ? expiryFor(temporary) : null; const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`INSERT INTO user_profiles (user_id,display_name) SELECT id,trim(concat_ws(' ',first_name,last_name)) FROM users WHERE id=$1 ON CONFLICT (user_id) DO NOTHING`, [req.user.userId]);
-      const previous = kind === "profile" ? (await client.query(`SELECT profile_photo FROM user_profiles WHERE user_id=$1 FOR UPDATE`, [req.user.userId])).rows[0]?.profile_photo ?? null : null;
+      await client.query(`INSERT INTO user_profiles (user_id,display_name) SELECT id,trim(concat_ws(' ',first_name,last_name)) FROM users WHERE id=$1 ON CONFLICT (user_id) DO NOTHING`, [req.user!.userId]);
+      const previous = kind === "profile" ? (await client.query(`SELECT profile_photo FROM user_profiles WHERE user_id=$1 FOR UPDATE`, [req.user!.userId])).rows[0]?.profile_photo ?? null : null;
       const mediaShareId = shareId();
-      if (kind === "profile") await client.query(`UPDATE user_profiles SET profile_photo=$1,profile_photo_previous=$2,profile_photo_expires_at=$3,updated_at=NOW() WHERE user_id=$4`, [key, expiry ? previous : null, expiry, req.user.userId]);
-      else await client.query(`UPDATE user_profiles SET cover_photo=$1,updated_at=NOW() WHERE user_id=$2`, [key, req.user.userId]);
-      await client.query(`INSERT INTO profile_media_history (user_id,kind,object_key,previous_object_key,share_id,caption,temporary_until) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [req.user.userId, kind, key, expiry ? previous : null, mediaShareId, caption || null, expiry]);
+      if (kind === "profile") await client.query(`UPDATE user_profiles SET profile_photo=$1,profile_photo_previous=$2,profile_photo_expires_at=$3,updated_at=NOW() WHERE user_id=$4`, [key, expiry ? previous : null, expiry, req.user!.userId]);
+      else await client.query(`UPDATE user_profiles SET cover_photo=$1,updated_at=NOW() WHERE user_id=$2`, [key, req.user!.userId]);
+      await client.query(`INSERT INTO profile_media_history (user_id,kind,object_key,previous_object_key,share_id,caption,temporary_until) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [req.user!.userId, kind, key, expiry ? previous : null, mediaShareId, caption || null, expiry]);
       let postId: string | null = null;
       if (req.body?.shareToFeed !== false) {
-        postId = (await client.query(`INSERT INTO posts (user_id,share_id,content,type,visibility,comments_enabled,sharing_enabled,published_at,created_at,updated_at) VALUES ($1,$2,$3,$4,'public',true,true,NOW(),NOW(),NOW()) RETURNING id`, [req.user.userId, mediaShareId, caption || null, kind === "profile" ? "profile_photo" : "cover_photo"])).rows[0].id;
+        postId = (await client.query(`INSERT INTO posts (user_id,share_id,content,type,visibility,comments_enabled,sharing_enabled,published_at,created_at,updated_at) VALUES ($1,$2,$3,$4,'public',true,true,NOW(),NOW(),NOW()) RETURNING id`, [req.user!.userId, mediaShareId, caption || null, kind === "profile" ? "profile_photo" : "cover_photo"])).rows[0].id;
         await client.query(`INSERT INTO post_media (post_id,share_id,media_type,object_key,file_name,mime_type,file_size,is_primary,processing_status,moderation_status,caption,uploaded_at,created_at,updated_at) VALUES ($1,$2,'image',$3,$4,$5,$6,true,'ready','pending',$7,NOW(),NOW(),NOW())`, [postId, shareId(), key, `${kind}-${Date.now()}.${ext}`, parsed.mime, parsed.body.length, caption || null]);
-        await client.query(`UPDATE user_profiles SET post_count=COALESCE(post_count,0)+1,updated_at=NOW() WHERE user_id=$1`, [req.user.userId]);
+        await client.query(`UPDATE user_profiles SET post_count=COALESCE(post_count,0)+1,updated_at=NOW() WHERE user_id=$1`, [req.user!.userId]);
       }
       await client.query("COMMIT");
       return res.json({ success: true, kind, postId, shareId: mediaShareId, uploadedAt: new Date().toISOString(), expiresAt: expiry?.toISOString() ?? null, message: `${kind === "profile" ? "Profile picture" : "Cover photo"} uploaded.` });
