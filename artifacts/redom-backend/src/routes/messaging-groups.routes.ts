@@ -41,17 +41,43 @@ async function ensureInvite(conversationId: string, creator: string) {
 }
 
 router.post("/groups", async (req, res) => {
-  const body = z.object({ name: z.string().trim().min(1).max(100), description: z.string().trim().max(2000).optional(), memberProfileIds: z.array(z.string().uuid()).max(1023).default([]) }).strict().safeParse(req.body);
+  const body = z.object({ name: z.string().trim().min(1).max(100), description: z.string().trim().max(2000).optional(), memberProfileIds: z.array(z.string().uuid()).max(1023).default([]), visibility: z.enum(["public","private"]).default("private") }).strict().safeParse(req.body);
   if (!req.user?.userId || !body.success) return void res.status(400).json({ success: false, message: "A valid group name and member list are required." });
   const creator = await profileId(req.user.userId); if (!creator) return void res.status(404).json({ success: false, message: "Profile not found." });
   const unique = [...new Set(body.data.memberProfileIds)].filter(id => id !== creator);
   const profiles = unique.length ? await db.select({ id: userProfiles.id }).from(userProfiles).where(inArray(userProfiles.id, unique)) : [];
   if (profiles.length !== unique.length) return void res.status(400).json({ success: false, message: "One or more group members could not be found." });
-  const [group] = await db.insert(conversations).values({ createdBy: creator, conversationType: "group", groupName: body.data.name, groupDescription: body.data.description ?? null, participantCount: unique.length + 1, anyoneCanEditInfo: true, anyoneCanInvite: true, anyoneCanRemoveMembers: false, anyoneCanPinMessages: true, anyoneCanSendMessages: true, anyoneCanSendHistory: true, joinApprovalRequired: false, encrypted: true }).returning({ id: conversations.id });
+  const [group] = await db.insert(conversations).values({ createdBy: creator, conversationType: "group", groupVisibility: body.data.visibility, groupName: body.data.name, groupDescription: body.data.description ?? null, participantCount: unique.length + 1, anyoneCanEditInfo: true, anyoneCanInvite: true, anyoneCanRemoveMembers: false, anyoneCanPinMessages: true, anyoneCanSendMessages: true, anyoneCanSendHistory: true, joinApprovalRequired: false, encrypted: true }).returning({ id: conversations.id });
   if (!group) return void res.status(500).json({ success: false, message: "Unable to create group." });
   await db.insert(conversationParticipants).values([{ conversationId: group.id, userId: creator, role: "owner", joinedByCreator: true, joinRequestApproved: true }, ...unique.map(userId => ({ conversationId: group.id, userId, role: "member", joinedBy: creator, joinedByCreator: false, joinRequestApproved: true }))]);
   await db.insert(activityLog).values({ userId: req.user.userId, activityType: "group_created", activityCategory: "messages", activityTitle: "Group created", activityDescription: `Created ReDom group ${body.data.name}.`, targetId: group.id, targetType: "conversation", status: "success", triggeredBy: "user", source: "app", undoSupported: false, hidden: false, archived: false });
   res.status(201).json({ success: true, conversationId: group.id, participantCount: unique.length + 1 });
+});
+
+router.get("/groups/discover", async (req, res) => {
+  const q = String(req.query.q ?? "").trim();
+  const limit = Math.min(Math.max(Number(req.query.limit ?? 20) || 20, 1), 50);
+  const me = await profileId(req.user!.userId);
+  const joined = me ? await db.select({ conversationId: conversationParticipants.conversationId }).from(conversationParticipants).where(and(eq(conversationParticipants.userId, me), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.permanentlyRemoved, false))) : [];
+  const joinedIds = joined.map(x => x.conversationId);
+  const conditions = [eq(conversations.conversationType, "group"), eq(conversations.groupVisibility, "public"), eq(conversations.status, "active"), eq(conversations.deleted, false), eq(conversations.moderationStatus, "approved")];
+  if (joinedIds.length) conditions.push(sql`${conversations.id} NOT IN (${sql.join(joinedIds.map(id => sql`${id}`), sql`, `)})`);
+  if (q) conditions.push(sql`lower(coalesce(${conversations.groupName}, '')) like ${"%"+q.toLowerCase()+"%"}`);
+  const rows = await db.select({ id: conversations.id, groupName: conversations.groupName, groupDescription: conversations.groupDescription, groupPhoto: conversations.groupPhoto, participantCount: conversations.participantCount, joinApprovalRequired: conversations.joinApprovalRequired, verified: conversations.verified }).from(conversations).where(and(...conditions)).orderBy(desc(conversations.participantCount), desc(conversations.updatedAt)).limit(limit);
+  res.json({ success: true, groups: rows });
+});
+
+router.post("/groups/:conversationId/discover-join", async (req, res) => {
+  const id = z.string().uuid().safeParse(req.params.conversationId); if (!req.user?.userId || !id.success) return void res.status(400).json({ success: false, message: "Invalid group." });
+  const me = await profileId(req.user.userId); if (!me) return void res.status(404).json({ success: false, message: "Profile not found." });
+  const [group] = await db.select({ id: conversations.id, groupName: conversations.groupName, groupVisibility: conversations.groupVisibility, participantCount: conversations.participantCount, joinApprovalRequired: conversations.joinApprovalRequired, status: conversations.status, deleted: conversations.deleted, moderationStatus: conversations.moderationStatus }).from(conversations).where(eq(conversations.id, id.data)).limit(1);
+  if (!group || group.groupVisibility !== "public" || group.status !== "active" || group.deleted || group.moderationStatus !== "approved") return void res.status(404).json({ success: false, message: "This group is not available to join." });
+  if (group.participantCount >= 1024) return void res.status(409).json({ success: false, message: "This group is full." });
+  const existing = await member(id.data, me); if (existing) return res.json({ success: true, joined: true, pending: false, conversationId: id.data });
+  const pending = group.joinApprovalRequired;
+  await db.insert(conversationParticipants).values({ conversationId: id.data, userId: me, role: "member", joinedBy: null, invited: false, activeMember: !pending, joinRequestApproved: !pending });
+  if (!pending) await db.update(conversations).set({ participantCount: group.participantCount + 1, updatedAt: new Date() }).where(eq(conversations.id, id.data));
+  res.status(201).json({ success: true, joined: !pending, pending, conversationId: id.data, groupName: group.groupName });
 });
 
 router.get("/groups/:conversationId/members", async (req, res) => {
