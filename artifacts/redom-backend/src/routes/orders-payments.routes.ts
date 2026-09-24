@@ -72,8 +72,9 @@ router.get("/subscriptions", authMiddleware, async (req, res) => {
   });
 });
 
+const supportedCurrencies = ["DZD","ARS","AUD","BDT","BOB","BRL","GBP","CAD","CLP","CNY","COP","CRC","CZK","DKK","EUR","GHS","HKD","HUF","IDR","INR","JPY","KES","KRW","MAD","MXN","NGN","NZD","NOK","PEN","PHP","PKR","PLN","RON","RUB","SAR","SEK","SGD","THB","TRY","TZS","UGX","USD","VND","ZAR"] as const;
 const settingsSchema = z.object({
-  currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+  currency: z.enum(supportedCurrencies).optional(),
   pinEnabled: z.boolean().optional(),
   biometricEnabled: z.boolean().optional(),
 }).refine((value) => Object.keys(value).length > 0, "At least one setting is required.");
@@ -104,7 +105,7 @@ router.patch("/settings", authMiddleware, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid payment settings." });
   const value = parsed.data;
   const current = await pool.query(`SELECT currency, pin_enabled, biometric_enabled, currency_changed_at FROM payment_settings WHERE user_id = $1`, [userId]);
-  const base = current.rows[0] ?? { currency: "USD", pin_enabled: false, biometric_enabled: false, currency_changed_at: null };
+  const base = current.rows[0] ?? { currency: "NGN", pin_enabled: false, biometric_enabled: false, currency_changed_at: null };
   const currencyChanged = value.currency !== undefined && value.currency !== base.currency;
   if (currencyChanged && base.currency_changed_at) {
     const changedAt = new Date(base.currency_changed_at).getTime();
