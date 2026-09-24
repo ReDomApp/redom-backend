@@ -21,6 +21,7 @@ export function SubscriptionDetailsScreen(){
    <Info label="Status" value={expired ? (x.expiresAt ? `Expired on ${new Date(x.expiresAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}` : "Expired") : x.subscriptionStatus} colors={colors}/>
    <Info label="Date subscribed" value={x.startedAt?new Date(x.startedAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"Not available"} colors={colors}/>
    <Info label="Payment plan" value={priceForPlan(x.subscriptionType)} colors={colors}/>
+   <Info label="Payment method" value="Online payment" colors={colors}/>
    <View style={[styles.notice,{borderTopColor:colors.border,borderBottomColor:colors.border}]}><Text style={[styles.muted,{color:colors.textSecondary}]}>You have authorized ReDom to charge you on a recurring basis, and the terms of each payment are governed by the ReDom Payments Terms and applicable subscription terms.</Text></View>
    <Pressable onPress={()=>expired ? navigation.navigate("SubscriptionRenewal",{subscriptionId:x.id,subscriptionName:titleForPlan(x.subscriptionType)}) : Alert.alert("Manage subscription","Subscription management is handled through the supported payment provider.")} style={[styles.button,{backgroundColor:colors.primary}]}><Text style={styles.buttonText}>{expired?"Renew subscription":"Manage subscription"}</Text></Pressable>
    <Pressable onPress={()=>navigation.navigate("Support")}><Text style={[styles.help,{color:colors.primary}]}>Visit help center</Text></Pressable>
