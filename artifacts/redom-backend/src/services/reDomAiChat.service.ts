@@ -46,7 +46,7 @@ export async function generateReDomAiReply(userId: string, request: ReDomAiChatR
   const response = await openai.responses.create({
     model: MODEL,
     instructions: `${INSTRUCTIONS}\n${languageInstruction}`,
-    input: [{ role: "user", content: userContent }],
+    input: [{ role: "user", content: userContent }] as any,
     tools: [{ type: "web_search" } as any],
     safety_identifier: safetyIdentifier(userId),
   });
