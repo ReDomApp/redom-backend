@@ -19,7 +19,7 @@ export interface IPAPIResult {
   is_vpn?: boolean | null;
   is_abuser?: boolean | null;
   elapsed_ms?: number | null;
-  vpn?: { ip?: string | null; service?: string | null; url?: string | null; type?: string | null; last_seen?: number | null; last_seen_str?: string | null; exit_node_region?: string | null; country_code?: string | null; city_name?: string | null; latitude?: number | null; longitude?: number | null } | null;
+  vpn_details?: { ip?: string | null; service?: string | null; url?: string | null; type?: string | null; last_seen?: number | null; last_seen_str?: string | null; exit_node_region?: string | null; country_code?: string | null; city_name?: string | null; latitude?: number | null; longitude?: number | null } | null;
   datacenter?: { datacenter?: string | null; domain?: string | null; network?: string | null; region?: string | null; service?: string | null; network_border_group?: string | null; code?: string | null; city?: string | null; state?: string | null; country?: string | null } | null;
   company?: { name?: string | null; abuser_score?: string | null; domain?: string | null; type?: string | null; network?: string | null; netname?: string | null } | null;
   abuse?: { name?: string | null; address?: string | null; email?: string | null; phone?: string | null } | null;
