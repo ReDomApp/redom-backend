@@ -14,7 +14,7 @@ function buildMemory(reservation: typeof registrationFlowReservations.$inferSele
     flow: { flowId: reservation.flowId, reservationId: reservation.id, status: reservation.status, expiresAt: reservation.expiresAt.toISOString() },
     screens, identity: { firstName: reservation.firstName, lastName: reservation.lastName }, birthday: { dateOfBirth: reservation.dateOfBirth }, gender: { gender: reservation.gender, pronouns: reservation.pronouns },
     phoneLookup: { phoneNumber: reservation.phoneNumber, lookupStatus: reservation.phoneLookupStatus, valid: reservation.phoneValid, active: reservation.phoneActive, voip: reservation.phoneVoip, fraudScore: reservation.phoneFraudScore, lineType: reservation.phoneLineType, carrier: reservation.phoneCarrier, lookupRequestId: reservation.phoneLookupRequestId },
-    networkSecurity: { ...existingNetworkSecurity, ipFraudScore: reservation.ipFraudScore, proxy: reservation.ipProxy, vpn: reservation.ipVpn, tor: reservation.ipTor, botStatus: reservation.ipBotStatus, countryCode: reservation.ipCountryCode },
+    networkSecurity: { ...existingNetworkSecurity, ipFraudScore: reservation.ipFraudScore, proxy: reservation.ipProxy ?? undefined, vpn: reservation.ipVpn ?? undefined, tor: reservation.ipTor ?? undefined, botStatus: reservation.ipBotStatus ?? undefined, countryCode: reservation.ipCountryCode },
     ...(existingEmail ? { email: existingEmail } : {}), ...(existingPassword ? { password: existingPassword } : {}),
   };
 }
