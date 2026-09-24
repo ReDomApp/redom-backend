@@ -81,6 +81,7 @@ const settingsRows = [
   { label: "Language", Icon: LanguageIcon, route: "Language" as const },
 ];
 
+// GitHub typecheck trigger: menu drawer JSX verified.
 export function ReDomMenuDrawer({ visible, onClose }: Props) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, logout, switchDeviceAccount, prepareForAccountLogin } = useAuthContext();
