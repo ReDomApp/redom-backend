@@ -43,6 +43,8 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
     if (!claimed.rows[0]) return;
     try {
       const paidAt = row.paid_at ? new Date(row.paid_at) : new Date();
+      let emailMetadata: any = {};
+      try { emailMetadata = row.metadata ? (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata) : {}; } catch { emailMetadata = {}; }
       await sendPaymentConfirmationEmail({
         to: String(row.customer_email || row.email),
         firstName: [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || null,
@@ -53,8 +55,10 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
         reference: String(row.reference),
         redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
         paidAt,
-        details: row.metadata?.paymentDetails ?? undefined,
+        details: emailMetadata?.paymentDetails ?? undefined,
         nextBillingAt: row.expires_at ? new Date(row.expires_at) : null,
+        outcome: String(row.status) === "paid" ? "paid" : "failed",
+        refund: row.refund_status ? { status: String(row.refund_status), id: row.refund_id ? String(row.refund_id) : null, expectedAt: row.refund_expected_at ? new Date(row.refund_expected_at) : null, processedAt: row.refund_processed_at ? new Date(row.refund_processed_at) : null, error: row.refund_error ? String(row.refund_error) : null } : null,
       });
       await client.query("UPDATE payment_transactions SET customer_email_status='sent', customer_email_sent_at=now(), customer_email_error=NULL, updated_at=now() WHERE id=$1", [transactionId]);
     } catch (error) {
