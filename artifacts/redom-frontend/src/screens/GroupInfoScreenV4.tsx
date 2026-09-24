@@ -30,6 +30,8 @@ const timerLabel = (value: DisappearingTimer) => {
 };
 
 export function GroupInfoScreenV4({ route, navigation }: Props) {
+  const { colors } = useTheme();
+  const s = makeStyles(colors);
   const [group, setGroup] = useState<GroupSettings | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [menu, setMenu] = useState(false);
