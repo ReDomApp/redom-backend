@@ -25,7 +25,7 @@ export function ReDomScreen({ children, footer, keyboardAvoiding = true, scroll 
 
   const screen = (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.surface }] edges={["top", "bottom", "left", "right"]}>
-      <View style={[styles.main, { backgroundColor: colors.background }]>{body}</View>
+      <View style={[styles.main, { backgroundColor: colors.background }]}>{body}</View>
       {footer ? <View style={[styles.footer, { paddingHorizontal: horizontalPadding, backgroundColor: colors.surface }]}>{footer}</View> : null}
     </SafeAreaView>
   );
