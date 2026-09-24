@@ -10,6 +10,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "Call">;
 const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
 export function CallScreen({ route, navigation }: Props) {
+  const { colors } = useTheme();
+  const s = makeStyles(colors);
   const { conversationId, callType, callId: suppliedCallId } = route.params;
   const peer = useRef<RTCPeerConnection | null>(null); const stream = useRef<any>(null); const timer = useRef<ReturnType<typeof setInterval> | null>(null); const last = useRef<string | undefined>();
   const [call, setCall] = useState<CallRecord | null>(null); const [remote, setRemote] = useState<any>(null); const [muted, setMuted] = useState(false); const [camera, setCamera] = useState(callType === "video"); const [status, setStatus] = useState("Connecting…");
