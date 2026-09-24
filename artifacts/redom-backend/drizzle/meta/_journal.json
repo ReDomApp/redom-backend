@@ -274,6 +274,13 @@
       "when": 1790274600000,
       "tag": "0038_support_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790276400000,
+      "tag": "0039_payment_processing",
+      "breakpoints": true
     }
   ]
 }
