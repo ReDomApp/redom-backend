@@ -59,7 +59,7 @@ const supportRows = [
 
 const moreRows = [
   { label: "Friends", Icon: FriendsIcon, route: "Friends" as const },
-  { label: "Events", Icon: EventsIcon },
+  { label: "Events", Icon: EventsIcon, route: "Events" as const },
   { label: "Pages", Icon: PagesIcon },
   { label: "Professional dashboard", Icon: ProfessionalDashboardIcon },
   { label: "Creator tools", Icon: CreatorToolsIcon },
