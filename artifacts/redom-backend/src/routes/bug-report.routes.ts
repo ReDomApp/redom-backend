@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
+import { authRateLimit } from "../middleware/rate-limit.middleware";
 import { submitBugReport } from "../services/bug-report.service";
 
 const router = Router();
@@ -20,7 +21,7 @@ const reportSchema = z.object({
   attachments: z.array(attachmentSchema).max(3).default([]),
 }).strict();
 
-router.post("/", authMiddleware, async (req, res) => {
+router.post("/", authMiddleware, authRateLimit, async (req, res) => {
   const parsed = reportSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid problem report.", details: parsed.error.flatten() });
   try {
