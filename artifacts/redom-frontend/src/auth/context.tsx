@@ -96,8 +96,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const logout = useCallback(async () => {
-    try { await authService.logout(); } finally { await clearStoredSession(); setState(unauthenticatedState); }
-  }, []);
+    const currentUserId = state.user?.id;
+    try { await authService.logout(); } finally {
+      await clearStoredSession();
+      if (currentUserId) await removeDeviceAccount(currentUserId);
+      setState(unauthenticatedState);
+    }
+  }, [state.user?.id]);
 
   const value = useMemo<AuthContextValue>(() => ({ ...state, login, verifyLoginDevice, verifyLoginTwoFactor, register, adoptSession, switchDeviceAccount, prepareForAccountLogin, logout, refresh }), [state, login, verifyLoginDevice, verifyLoginTwoFactor, register, adoptSession, switchDeviceAccount, logout, refresh]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
