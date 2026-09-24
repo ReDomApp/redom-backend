@@ -4,9 +4,11 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { productService, type ReDomSettings } from "../product/productService";
+import { useLanguage } from "../i18n/LanguageProvider";
 
 export function SettingsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { languageName, t } = useLanguage();
   const [settings, setSettings] = useState<ReDomSettings | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const load = useCallback(async () => { const r = await productService.getSettings(); setSettings(r.settings); }, []);
@@ -25,6 +27,7 @@ export function SettingsScreen() {
     <Row label="Political content" value={settings.politicalContent} onValueChange={(v) => void update("politicalContent", v)} busy={saving === "politicalContent"} />
     <Row label="Auto-translate posts" value={settings.autoTranslatePosts} onValueChange={(v) => void update("autoTranslatePosts", v)} busy={saving === "autoTranslatePosts"} />
     <Row label="Auto-translate comments" value={settings.autoTranslateComments} onValueChange={(v) => void update("autoTranslateComments", v)} busy={saving === "autoTranslateComments"} />
+    <Link label={`${t("language")} · ${languageName}`} onPress={() => navigation.navigate("Language")} />
     <Text style={styles.sectionTitle}>Accessibility</Text>
     <Row label="Reduce motion" value={settings.reduceMotion} onValueChange={(v) => void update("reduceMotion", v)} busy={saving === "reduceMotion"} />
     <Row label="High contrast" value={settings.highContrast} onValueChange={(v) => void update("highContrast", v)} busy={saving === "highContrast"} />
