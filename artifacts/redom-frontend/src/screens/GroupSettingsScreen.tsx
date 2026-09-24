@@ -12,7 +12,9 @@ type Section = "storage" | "notifications" | "media" | "disappearing" | "lock" |
 type Props = NativeStackScreenProps<RootStackParamList, "GroupSettings">;
 const timers: Array<{ value: DisappearingTimer; label: string }> = [{value:86400,label:"24 hours"},{value:604800,label:"7 days"},{value:7776000,label:"90 days"},{value:0,label:"Off"}];
 
-export function GroupSettingsScreen({ route, navigation }: Props) {
+export function GroupSettingsScreen({
+  const { colors } = useTheme();
+  const s = makeStyles(colors); route, navigation }: Props) {
   const { conversationId, section } = route.params;
   const [chat,setChat]=useState<ChatInfoSettings|null>(null); const [messageSettings,setMessageSettings]=useState<ConversationSettings|null>(null); const [timer,setTimer]=useState<DisappearingTimer>(0); const [locked,setLocked]=useState(false); const [storageBytes,setStorageBytes]=useState(0); const [attachmentCount,setAttachmentCount]=useState(0); const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
   const load=useCallback(async()=>{setLoading(true);setError("");try{const [info,msg,policy,lock]=await Promise.all([chatInfoService.getSettings(conversationId),messageService.getSettings(conversationId),messageService.getDisappearingPolicy(conversationId),chatInfoService.getChatLock(conversationId)]);setChat(info.settings);setMessageSettings(msg.settings);setTimer(policy.timerSeconds);setLocked(lock);if(section==="storage"){const result=await messageService.getCompletedMessages(conversationId);let bytes=0,count=0;for(const item of result.messages){if(item.attachment?.fileSize)bytes+=item.attachment.fileSize;if(item.attachment)count++;}setStorageBytes(bytes);setAttachmentCount(count);}}catch(e){setError(e instanceof Error?e.message:"Unable to load group setting.")}finally{setLoading(false)}},[conversationId,section]);
