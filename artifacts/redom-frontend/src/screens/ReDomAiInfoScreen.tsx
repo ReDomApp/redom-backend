@@ -28,7 +28,6 @@ export function ReDomAiInfoScreen({ navigation }: Props) {
     <View style={styles.header}>
       <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.headerButton}><AiBackIcon size={27} /></Pressable>
       <View style={styles.headerSpacer} />
-      <Pressable accessibilityRole="button" accessibilityLabel="ReDom AI information" onPress={() => Alert.alert("ReDom AI", "This is ReDom AI information and settings.")} style={styles.headerButton}><AiInfoIcon size={25} color="#111111" /></Pressable>
     </View>
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <ReDomAiLogo width={108} height={108} />
