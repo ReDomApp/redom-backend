@@ -84,7 +84,7 @@ export class EmailService {
     const timezone = location?.timezone || null;
     const city = location?.city || null;
     const country = location?.country || null;
-    const region = location?.region || location?.state || null;
+    const region = location?.state || location?.state || null;
     const coordinates = location?.latitude != null && location?.longitude != null ? `${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}` : null;
     const timeParts = timezone ? new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short", timeZone: timezone }).formatToParts(params.invalidatedAt) : [];
     const part = (type: Intl.DateTimeFormatPartTypes) => timeParts.find((item) => item.type === type)?.value ?? "";
