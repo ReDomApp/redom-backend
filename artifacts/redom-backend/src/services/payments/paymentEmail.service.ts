@@ -73,6 +73,7 @@ export async function sendPaymentConfirmationEmail(input: {
   currency: string;
   interval: string;
   reference: string;
+  redomTransactionId?: string | null;
   paidAt: Date;
   nextBillingAt?: Date | null;
   details?: PaymentEmailDetails;
@@ -155,7 +156,8 @@ ${!isPaid ? `<div style="margin-top:18px;padding:14px 16px;background:#F0F2F5;bo
     "",
     "Transaction Details",
     `Plan: ${input.planName}`,
-    `ReDom Transaction ID: ${input.redomTransactionId || "Not assigned"}`,\n    `Provider Reference: ${input.details?.providerReference || input.reference}`,
+    `ReDom Transaction ID: ${input.redomTransactionId || "Not assigned"}`,
+    `Provider Reference: ${input.details?.providerReference || input.reference}`,
     `Date Paid: ${formatDateTime(input.paidAt)}`,
     `Bank: ${input.details?.bank || "Not available"}`,
     `Channel: ${channelLabel(input.details?.channel)}`,
