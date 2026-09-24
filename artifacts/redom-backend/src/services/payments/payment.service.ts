@@ -133,7 +133,18 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
       await client.query("COMMIT");
       return { transactionId: String(row.id), reference: referenceValue, status: "paid", amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
     }
-    await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, gateway_status=$2, paid_at=$3, updated_at=now() WHERE id=$4", [String(verified.id), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), row.id]);
+    const paymentDetails = {
+      providerReference: String(verified.reference),
+      channel: verified.channel ?? verified.authorization?.channel ?? null,
+      type: verified.authorization?.card_type || verified.authorization?.brand || null,
+      bank: verified.authorization?.bank || verified.authorization?.sender_bank || null,
+      account: verified.authorization?.sender_bank_account_number || (verified.authorization?.last4 ? "••••" + String(verified.authorization.last4) : null),
+      countryCode: verified.authorization?.country_code ?? null,
+    };
+    let metadata: any = {};
+    try { metadata = row.metadata ? JSON.parse(String(row.metadata)) : {}; } catch { metadata = {}; }
+    metadata.paymentDetails = paymentDetails;
+    await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, gateway_status=$2, paid_at=$3, metadata=$4::jsonb, updated_at=now() WHERE id=$5", [String(verified.id), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), JSON.stringify(metadata), row.id]);
     if (row.subscription_id) {
       await client.query(
         "UPDATE verification_subscriptions SET subscription_status='active', auto_renew=true, started_at=COALESCE(started_at, now()), renewed_at=now(), expires_at=CASE WHEN expires_at IS NULL OR expires_at < now() THEN now() + interval '1 month' ELSE expires_at + interval '1 month' END, payment_reference=$1, updated_at=now() WHERE id=$2",
