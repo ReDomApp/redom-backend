@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Modal, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Image, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
@@ -16,28 +16,11 @@ import AddMediaIcon from "../assets/home-feed/add-media.svg";
 import UploadStoryIcon from "../assets/home-feed/upload-story.svg";
 import ProfilePlaceholder from "../assets/home-feed/profile-placeholder.svg";
 import MoreIcon from "../assets/navigation/more.svg";
-import CloseIcon from "../assets/navigation/close.svg";
 import MusicIcon from "../assets/home-feed/music.svg";
-import HelpSupportIcon from "../assets/home-feed/help-support.svg";
-import ScamIcon from "../assets/home-feed/scam-protection-center.svg";
-import SupportIcon from "../assets/home-feed/support.svg";
-import ReportIcon from "../assets/home-feed/report-problem.svg";
-import TermsIcon from "../assets/home-feed/terms-policies.svg";
-import SettingsIcon from "../assets/home-feed/settings.svg";
-import PrivacyIcon from "../assets/home-feed/privacy-center.svg";
-import TimeIcon from "../assets/home-feed/time-management.svg";
-import DeviceRequestsIcon from "../assets/home-feed/device-requests.svg";
-import AdsIcon from "../assets/home-feed/recent-ad-activity.svg";
-import OrdersIcon from "../assets/home-feed/orders-payments.svg";
-import LinkHistoryIcon from "../assets/home-feed/link-history.svg";
-import DarkModeIcon from "../assets/home-feed/dark-mode.svg";
-import LanguageIcon from "../assets/home-feed/language.svg";
 import { useAuthContext } from "../auth/context";
 import { feedService, type HomeFeedFriendStory, type HomeFeedPost, type HomeFeedProfileSuggestion } from "../feed/service";
 import { PostCardV3 } from "./PostCardV3";
-
-const menuSupport = [["Scam Protection Center", ScamIcon], ["Support", SupportIcon], ["Report a problem", ReportIcon], ["Terms and Policies", TermsIcon]] as const;
-const menuSettings = [["Settings", SettingsIcon], ["Privacy Center", PrivacyIcon], ["Time management", TimeIcon], ["Device requests", DeviceRequestsIcon], ["Recent ad activity", AdsIcon], ["Orders and payments", OrdersIcon], ["Link history", LinkHistoryIcon], ["Dark mode", DarkModeIcon], ["Language", LanguageIcon]] as const;
+import { ReDomMenuDrawer } from "../components/ReDomMenuDrawer";
 
 function Avatar({ uri, size = 40 }: { uri?: string | null; size?: number }) {
   return uri ? <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} /> : <ProfilePlaceholder width={size} height={size} />;
@@ -55,8 +38,6 @@ export function HomeFeedScreenV3() {
   const [suggestions, setSuggestions] = useState<HomeFeedProfileSuggestion[]>([]);
   const [stories, setStories] = useState<HomeFeedFriendStory[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [supportOpen, setSupportOpen] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(true);
 
   const refreshFeed = useCallback(async () => {
     setRefreshing(true);
@@ -136,24 +117,8 @@ export function HomeFeedScreenV3() {
       {!posts.length ? <View style={ui.empty}><Text style={ui.emptyTitle}>Your Home Feed is ready</Text><Text style={ui.emptyText}>Posts from people, pages and recommendations will appear here.</Text></View> : null}
     </ScrollView>
 
-    <Modal visible={menuOpen} transparent animationType="slide" onRequestClose={() => setMenuOpen(false)}>
-      <View style={ui.modalBackdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
-        <View style={ui.menuSheet}>
-          <View style={ui.menuTop}><ReDomLogo width={108} height={31} /><Pressable onPress={() => setMenuOpen(false)}><CloseIcon width={26} height={26} /></Pressable></View>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <Pressable style={ui.menuSection} onPress={() => setSupportOpen(value => !value)}><HelpSupportIcon width={30} height={30} /><Text style={ui.menuSectionText}>Help and support</Text><Text style={ui.chevron}>{supportOpen ? "⌃" : "⌄"}</Text></Pressable>
-            {supportOpen ? menuSupport.map(([label, Icon]) => <Pressable key={label} style={ui.menuRow}><Icon width={28} height={28} /><Text style={ui.menuText}>{label}</Text></Pressable>) : null}
-            <View style={ui.divider} />
-            <Pressable style={ui.menuSection} onPress={() => setSettingsOpen(value => !value)}><SettingsIcon width={30} height={30} /><Text style={ui.menuSectionText}>Settings and privacy</Text><Text style={ui.chevron}>{settingsOpen ? "⌃" : "⌄"}</Text></Pressable>
-            {settingsOpen ? menuSettings.map(([label, Icon]) => <Pressable key={label} style={ui.menuRow}><Icon width={28} height={28} /><Text style={ui.menuText}>{label}</Text></Pressable>) : null}
-            <Pressable style={ui.logoutRow} onPress={() => { setMenuOpen(false); void logout(); }}><Text style={ui.logoutText}>Log out</Text></Pressable>
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    <ReDomMenuDrawer visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
-    <Pressable style={ui.hiddenMenuTrigger} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu"><MenuIcon width={1} height={1} /></Pressable>
   </SafeAreaView>;
 }
 
@@ -199,17 +164,7 @@ function makeStyles(scale: number) {
     empty: { marginTop: s(8), backgroundColor: "#FFFFFF", padding: s(28), alignItems: "center" },
     emptyTitle: { color: "#050505", fontSize: s(18), fontWeight: "700" },
     emptyText: { color: "#65676B", fontSize: s(14), textAlign: "center", marginTop: s(7) },
-    modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.38)", justifyContent: "flex-end" },
-    menuSheet: { maxHeight: "86%", backgroundColor: "#FFFFFF", borderTopLeftRadius: s(18), borderTopRightRadius: s(18), paddingHorizontal: s(16), paddingTop: s(12), paddingBottom: s(20) },
-    menuTop: { height: s(46), flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    menuSection: { minHeight: s(50), flexDirection: "row", alignItems: "center", gap: s(10) },
-    menuSectionText: { flex: 1, color: "#050505", fontSize: s(16), fontWeight: "700" },
-    chevron: { fontSize: s(22), fontWeight: "700", color: "#050505" },
-    menuRow: { minHeight: s(46), flexDirection: "row", alignItems: "center", gap: s(12), paddingLeft: s(12) },
-    menuText: { color: "#050505", fontSize: s(15), fontWeight: "500" },
-    divider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: s(5) },
-    logoutRow: { minHeight: s(50), justifyContent: "center", borderTopWidth: 1, borderTopColor: "#E4E6EB", marginTop: s(6) },
-    logoutText: { color: "#050505", fontSize: s(16), fontWeight: "700" },
+
     hiddenMenuTrigger: { position: "absolute", width: 1, height: 1, left: -10, bottom: -10 },
   });
 }
