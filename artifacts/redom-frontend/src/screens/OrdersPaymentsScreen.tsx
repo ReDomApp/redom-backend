@@ -33,9 +33,14 @@ export function OrdersPaymentsScreen() {
           <BackIcon width={24} height={24} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Orders and payments</Text>
-        <Pressable onPress={() => navigation.navigate("Cart")} accessibilityRole="button" accessibilityLabel="Cart">
-          <CartIcon width={24} height={24} color={colors.text} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => navigation.navigate("Cart")} accessibilityRole="button" accessibilityLabel="Cart" style={styles.headerButton}>
+            <CartIcon width={24} height={24} color={colors.text} />
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Menu" style={styles.headerButton}>
+            <MenuIcon width={24} height={24} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -87,7 +92,9 @@ function Row({ label, Icon, colors, onPress }: { label: string; Icon: ComponentT
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { height: 58, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", paddingHorizontal: 14 },\n  headerButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },\n  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  header: { height: 58, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", paddingHorizontal: 14 },
+  headerButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
   back: { fontSize: 40, width: 42 },
   headerTitle: { flex: 1, fontSize: 19, fontWeight: "800", textAlign: "center" },
   headerAction: { fontSize: 23, width: 42, textAlign: "right" },
