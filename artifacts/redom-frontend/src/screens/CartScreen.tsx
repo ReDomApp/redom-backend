@@ -11,9 +11,9 @@ export function CartScreen() {
   const { colors } = useTheme();
   return <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
     <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-      <Pressable onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Back"><Text style={[styles.back, { color: colors.text }]}>‹</Text></Pressable>
+      <Pressable onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Back" style={styles.button}><BackIcon width={24} height={24}/></Pressable>
       <Text style={[styles.title, { color: colors.text }]}>Cart</Text>
-      <View style={{ width: 42 }} />
+      <View style={{ width: 34 }} />
     </View>
     <View style={styles.empty}>
       <CartIcon width={64} height={64} color={colors.textSecondary}/>
@@ -22,4 +22,4 @@ export function CartScreen() {
     </View>
   </SafeAreaView>;
 }
-const styles = StyleSheet.create({ root:{flex:1}, header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",paddingHorizontal:14}, back:{fontSize:40,width:42}, title:{fontSize:19,fontWeight:"800",flex:1,textAlign:"center"}, empty:{alignItems:"center",paddingHorizontal:35,marginTop:115}, cart:{fontSize:72}, heading:{fontSize:28,fontWeight:"900",marginTop:24}, copy:{fontSize:16,lineHeight:23,textAlign:"center",marginTop:12} });
+const styles = StyleSheet.create({ root:{flex:1}, header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",paddingHorizontal:14},  title:{fontSize:19,fontWeight:"800",flex:1,textAlign:"center"}, empty:{alignItems:"center",paddingHorizontal:35,marginTop:115},  heading:{fontSize:28,fontWeight:"900",marginTop:24}, copy:{fontSize:16,lineHeight:23,textAlign:"center",marginTop:12} });
