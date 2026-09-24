@@ -34,8 +34,8 @@ const formatMonthYear = (value: string | Date | null) =>
 
 async function getProfile(req: Request, res: Response) {
   try {
-    const viewerId = req.user.userId;
-    const viewerProfileId = req.user.profileId;
+    const viewerId = req.user!.userId;
+    const viewerProfileId = req.user!.profileId;
     const requestedId = req.params.userId || viewerId;
 
     const profileResult = await pool.query(
@@ -290,7 +290,7 @@ router.post(
   authMiddleware,
   async (req: Request, res: Response) => {
     try {
-      const viewerId = req.user.userId;
+      const viewerId = req.user!.userId;
       const targetId = req.params.userId;
       const blocked = await pool.query(
         `SELECT 1 FROM blocked_users
