@@ -3,7 +3,7 @@ import{SafeAreaView,View,Text,Pressable,StyleSheet,ScrollView,TextInput,Activity
 import{useNavigation}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
 import BackIcon from"../assets/navigation/back.svg";
-import{ordersPaymentsService,PaymentAddress}from"../services/ordersPaymentsService";
+import{ordersPaymentsService}from"../services/ordersPaymentsService";import type{PaymentAddress}from"../services/ordersPaymentsService";
 
 export function PaymentAddressesScreen(){
  const n=useNavigation<any>();const{colors}=useTheme();const[addresses,setAddresses]=useState<PaymentAddress[]>([]);const[q,setQ]=useState("");const[suggestions,setSuggestions]=useState<any[]>([]);const[loading,setLoading]=useState(true);
