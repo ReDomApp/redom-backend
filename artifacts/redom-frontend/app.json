@@ -139,7 +139,13 @@
           }
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow ReDom to add events to your device calendar."
+        }
+      ]
     ],
     "extra": {
       "eas": {
