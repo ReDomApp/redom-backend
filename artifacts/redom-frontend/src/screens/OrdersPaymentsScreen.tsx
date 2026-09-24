@@ -29,7 +29,7 @@ export function OrdersPaymentsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <Pressable onPress={() => navigation.navigate("PaymentMethods")} style={[styles.payCard, { backgroundColor: colors.surface, borderColor: colors.border }]} accessibilityRole="button">
+        <Pressable onPress={() => navigation.navigate("MetaPaySupport")} style={[styles.payCard, { backgroundColor: colors.surface, borderColor: colors.border }]} accessibilityRole="button">
           <Text style={[styles.payTitle, { color: colors.text }]}>ReDom Pay</Text>
           <Text style={[styles.payDescription, { color: colors.textSecondary }]}>
             Transactions, credit cards, debit cards, shipping info and supported payment providers
