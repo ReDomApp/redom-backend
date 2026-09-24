@@ -3,7 +3,7 @@ import{SafeAreaView,View,Text,Pressable,StyleSheet,TextInput,ScrollView,Activity
 import{useNavigation,useRoute}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
 import BackIcon from"../assets/navigation/back.svg";
-import{ordersPaymentsService,StarPackage,SavedPaymentMethod}from"../services/ordersPaymentsService";
+import{ordersPaymentsService}from"../services/ordersPaymentsService";import type{StarPackage,SavedPaymentMethod}from"../services/ordersPaymentsService";
 
 export function StarsCheckoutScreen(){
  const n=useNavigation<any>();const route=useRoute<any>();const{colors}=useTheme();
