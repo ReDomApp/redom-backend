@@ -2,7 +2,7 @@ import React,{useEffect,useState}from"react";
 import{SafeAreaView,View,Text,Pressable,StyleSheet,ScrollView,ActivityIndicator}from"react-native";
 import{useNavigation}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
-import{ordersPaymentsService,StarCountry,StarPackage}from"../services/ordersPaymentsService";
+import{ordersPaymentsService}from"../services/ordersPaymentsService";import type{StarCountry,StarPackage}from"../services/ordersPaymentsService";
 import BackIcon from"../assets/navigation/back.svg";
 
 export function BuyStarsScreen(){
