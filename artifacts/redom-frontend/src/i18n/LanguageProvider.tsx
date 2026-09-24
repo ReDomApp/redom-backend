@@ -32,13 +32,17 @@ const runtimeTextCache = new Map<string, string>();
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setCurrentLanguage] = useState<LanguageCode>("en");
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(false);\n  const [deviceLanguageSelected, setDeviceLanguageSelected] = useState(true);
 
   useEffect(() => {
     let mounted = true;
-    loadLanguage().then((value) => {
+    Promise.all([
+      loadLanguage(),
+      AsyncStorage.getItem(LANGUAGE_EXPLICIT_KEY),
+    ]).then(([value, explicit]) => {
       if (mounted) {
         setCurrentLanguage(value);
+        setDeviceLanguageSelected(explicit !== "1");
         setReady(true);
       }
     }).catch(() => {
@@ -77,6 +81,20 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const useDeviceLanguage = useCallback(async () => {
+    const value = detectDeviceLanguage();
+    await AsyncStorage.multiRemove([LANGUAGE_EXPLICIT_KEY, LANGUAGE_STORAGE_KEY]);
+    setCurrentLanguage(value);
+    setDeviceLanguageSelected(true);
+    try {
+      await productService.updateSettings({ language: "system" });
+    } catch {}
+    void notifyLanguageUpdated(
+      t(value, "languageUpdated"),
+      t(value, "languageUpdatedBody", { language: languageName(value) }),
+    );
+  }, []);
+
   const localizeText = useCallback(async (text: string, context?: string) => {
     if (language === "en") return text;
 
@@ -97,7 +115,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     uiMessage: (key: string, vars?: Record<string, string>) => uiMessage(language, key, vars),
     localizeText,
     ready,
-  }), [language, localizeText, ready, setLanguage]);
+  }), [language, localizeText, ready, setLanguage, deviceLanguageSelected, useDeviceLanguage]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
