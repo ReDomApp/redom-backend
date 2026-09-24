@@ -281,6 +281,13 @@
       "when": 1790276400000,
       "tag": "0039_payment_processing",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790277000000,
+      "tag": "0040_payment_email_status",
+      "breakpoints": true
     }
   ]
 }
