@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ComponentType } from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -74,7 +75,7 @@ export function OrdersPaymentsScreen() {
   );
 }
 
-function Row({ label, icon, colors, onPress }: { label: string; icon: string; colors: any; onPress: () => void }) {
+function Row({ label, Icon, colors, onPress }: { label: string; Icon: ComponentType<{ width?: number; height?: number; color?: string }>; colors: any; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={[styles.row, { borderBottomColor: colors.border }]} accessibilityRole="button">
       <Icon width={28} height={28} color={colors.text} />
@@ -86,7 +87,7 @@ function Row({ label, icon, colors, onPress }: { label: string; icon: string; co
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { height: 58, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", paddingHorizontal: 14 },
+  header: { height: 58, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", paddingHorizontal: 14 },\n  headerButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },\n  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
   back: { fontSize: 40, width: 42 },
   headerTitle: { flex: 1, fontSize: 19, fontWeight: "800", textAlign: "center" },
   headerAction: { fontSize: 23, width: 42, textAlign: "right" },
@@ -95,10 +96,10 @@ const styles = StyleSheet.create({
   payTitle: { fontSize: 23, fontWeight: "800" },
   payDescription: { fontSize: 15, lineHeight: 21, marginTop: 8 },
   section: { fontSize: 20, fontWeight: "800", marginTop: 28, marginBottom: 8 },
-  row: { minHeight: 64, borderBottomWidth: 1, flexDirection: "row", alignItems: "center" },
-  icon: { fontSize: 29, width: 48 },
+  row: { minHeight: 64, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", gap: 16 },
+  
   label: { fontSize: 17, fontWeight: "600", flex: 1 },
-  chevron: { fontSize: 30 },
+  
   order: { padding: 14, borderWidth: 1, borderRadius: 12, marginTop: 8 },
   orderTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
   loader: { marginTop: 18 },
