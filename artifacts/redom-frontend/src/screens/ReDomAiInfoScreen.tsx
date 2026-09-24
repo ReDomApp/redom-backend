@@ -61,7 +61,7 @@ export function ReDomAiInfoScreen({ navigation }: Props) {
 
       <Text style={styles.sectionLabel}>AI info</Text>
       <View style={styles.cardGroup}>
-        <Pressable style={styles.card} onPress={() => navigation.navigate("ReDomAI")}>
+        <Pressable style={styles.card} onPress={() => navigation.navigate("ReDomAI", {})}>
           <View style={styles.cardIcon}><AiSparkIcon size={25} /></View>
           <View style={styles.cardCopy}><Text style={styles.cardTitle}>ReDom AI app</Text><Text style={styles.cardBody}>Start talking to ReDom AI for answers, ideas, writing and supported creative tasks.</Text></View>
           <Text style={styles.chevron}>›</Text>
