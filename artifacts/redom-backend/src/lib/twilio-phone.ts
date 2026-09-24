@@ -25,7 +25,7 @@ export async function checkTwilioPhone(
   return {
     phone_number: result.phoneNumber || phoneNumber,
     national_format: result.nationalFormat || null,
-    country: result.country || null,
+    country: null,
     country_code: countryCode,
     calling_country_code: result.callingCountryCode || null,
     validation_errors: result.validationErrors?.length
