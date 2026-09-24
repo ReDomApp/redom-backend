@@ -24,6 +24,8 @@ type PickerKind = "camera" | "gallery";
 const EMOJIS = ["😀", "😎", "😂", "😍", "🥳", "🔥", "⭐", "💙", "🌎", "🚀", "🎯", "💬", "🤝", "🎉", "🛡️", "💡"];
 
 export function GroupIconScreen({ route, navigation }: Props) {
+  const { colors } = useTheme();
+  const s = makeStyles(colors);
   const [group, setGroup] = useState<GroupSettings | null>(null);
   const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -180,7 +182,7 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) { return Styl
   empty: { width: 280, height: 280, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   emptyText: { fontSize: 100, fontWeight: "800", color: colors.primary, marginTop: -80 },
   busy: { position: "absolute", top: 64, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "#0008" },
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "#0008", justifyContent: "flex-end" },
+  scrim: { ...StyleSheet.absoluteFill, backgroundColor: "#0008", justifyContent: "flex-end" },
   sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingTop: 12, paddingBottom: 28 },
   handle: { alignSelf: "center", width: 62, height: 6, borderRadius: 3, backgroundColor: "#98A2B3", marginBottom: 10 },
   sheetTitle: { height: 58, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
