@@ -33,7 +33,7 @@ async function saveVerificationToFlow(reservationId: string, flowId: string, ver
   memory.flow = { ...(memory.flow ?? {}), flowId: current.flowId, reservationId: current.id, status: current.status, expiresAt: current.expiresAt.toISOString() };
   memory.verification = { challengeId: verification.challengeId, channel: verification.channel, target: verification.target, maskedTarget: maskTarget(verification.target, verification.channel === "sms" ? "phone" : "email"), expiresAt: verification.expiresAt instanceof Date ? verification.expiresAt.toISOString() : verification.expiresAt, status: "pending", updatedAt: new Date().toISOString() };
   const registeredTables = [...new Set([...(current.registeredTables ?? []), "registration_flow_reservations", "verifications"])] as string[];
-  const [updated] = await db.update(registrationFlowReservations).set({ memory, registeredTables }).where(and(eq(registrationFlowReservations.id, current.id), eq(registrationFlowReservations.flowId, flowId), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
+  const [updated] = await db.update(registrationFlowReservations).set({ memory: memory as any, registeredTables }).where(and(eq(registrationFlowReservations.id, current.id), eq(registrationFlowReservations.flowId, flowId), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
   if (!updated) throw new Error("Unable to update verification details inside the Registration Flow ID.");
   return updated;
 }
