@@ -11,7 +11,7 @@ const router = Router();
 const r2 = new S3Client({ region: env.cloudflare.r2.region || "auto", endpoint: env.cloudflare.r2.endpoint, credentials: { accessKeyId: env.cloudflare.r2.accessKeyId, secretAccessKey: env.cloudflare.r2.secretAccessKey } });
 
 function parseImage(value: string) {
-  const match = /^data:(image\\/(?:jpeg|jpg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(value);
+  const match = /^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(value);
   if (!match) throw new Error("Only JPEG, PNG, WebP and GIF event images are supported.");
   const body = Buffer.from(match[2], "base64");
   if (!body.length || body.length > 8 * 1024 * 1024) throw new Error("Event images must be 8 MB or smaller.");
