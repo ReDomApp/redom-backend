@@ -47,7 +47,7 @@ function parseIntent(text: string): { policy_requested: boolean; policy_slug: st
 }
 
 async function detectPolicyIntent(message: string, subject: string | null, baseReply: string | null) {
-  const policyCatalog = ["terms", "privacy", "community", "messaging", "media", "calls", "notifications", "security", "verification", "ai", "regional", "refunds", "support"];
+  const policyCatalog = ["terms", "privacy", "community", "messaging", "media", "calls", "notifications", "security", "verification", "ai", "regional", "refunds", "support", "link_history"];
   const input = JSON.stringify({
     task: "Identify whether this ReDom support request asks for an official policy or a policy-derived explanation. Select only a policy from the supplied catalog. Never invent a policy or section.",
     allowed_policy_slugs: policyCatalog,
