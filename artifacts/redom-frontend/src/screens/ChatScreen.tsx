@@ -37,7 +37,7 @@ function messagePreview(message: ReDomMessage | undefined) { if (!message) retur
 export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList, "Chat">) {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
-  const navigation = useNavigation(); const { user } = useAuthContext();
+  const navigation = useNavigation<import("@react-navigation/native-stack").NativeStackNavigationProp<RootStackParamList>>(); const { user } = useAuthContext();
   const [messages, setMessages] = useState<ReDomMessage[]>([]); const [replyTargets, setReplyTargets] = useState<ReDomMessage[]>([]); const [settings, setSettings] = useState<ConversationSettings | null>(null); const [conversationName, setConversationName] = useState("Chat"); const [contactProfileId, setContactProfileId] = useState<string | null>(null);
   const [group, setGroup] = useState<GroupSettings | null>(null); const [showGroupIntro, setShowGroupIntro] = useState(false);
   const [timer, setTimer] = useState<DisappearingTimer>(0); const [typing, setTyping] = useState(false); const [remoteTyping, setRemoteTyping] = useState(false);
