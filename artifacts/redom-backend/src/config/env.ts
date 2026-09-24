@@ -17,6 +17,7 @@ export const env = {
     moderationReplyTo: optional("MODERATION_EMAIL_REPLY_TO") ?? "no-reply@wnncompany.com",
     bugReportsFrom: optional("BUG_REPORTS_EMAIL_FROM") ?? "bugs@wnncompany.com",
     problemReportsFrom: optional("PROBLEM_REPORTS_EMAIL_FROM") ?? "problem@wnncompany.com",
+    paymentFrom: optional("PAYMENT_EMAIL_FROM") ?? "payment@wnncompany.com",
     bugReportRecipients: (optional("BUG_REPORT_RECIPIENTS") ?? "admin@wnncompany.com,christianuzamaosahuo@gmail.com").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean),
   },
   payments: { paystack: { secretKey: required("PAYSTACK_SECRET_KEY"), publicKey: required("PAYSTACK_PUBLIC_KEY") } },
