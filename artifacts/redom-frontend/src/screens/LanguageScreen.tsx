@@ -16,7 +16,6 @@ const SWITCHING_LABELS: Partial<Record<LanguageCode, string>> = {
   it: "Cambio lingua",
   nl: "Taal wijzigen",
   ar: "جارٍ تغيير اللغة",
-  zh: "正在切换语言",
   "zh-CN": "正在切换语言",
   "zh-HK": "正在切換語言",
   ja: "言語を切り替えています",
