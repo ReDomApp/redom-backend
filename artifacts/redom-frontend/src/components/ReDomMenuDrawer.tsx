@@ -183,7 +183,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
               </Pressable>
               {moreOpen ? (
                 <View style={styles.moreList}>
-                  {moreRows.map(({ label, Icon }) => (
+                  {moreRows.map(({ label, Icon, route }) => (
                     <Pressable
                       key={label}
                       style={styles.menuRow}
