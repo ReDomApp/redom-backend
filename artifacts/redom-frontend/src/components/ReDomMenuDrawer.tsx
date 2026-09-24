@@ -63,7 +63,7 @@ const settingsRows = [
 
 export function ReDomMenuDrawer({ visible, onClose }: Props) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { user, logout, switchDeviceAccount } = useAuthContext();
+  const { user, logout, switchDeviceAccount, prepareForAccountLogin } = useAuthContext();
   const { width } = useWindowDimensions();
   const translateX = useRef(new Animated.Value(-Math.min(width * 0.88, 390))).current;
   const [supportOpen, setSupportOpen] = useState(false);
@@ -123,7 +123,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
     setAccountsOpen(false);
     close();
     await new Promise((resolve) => setTimeout(resolve, 190));
-    await logout();
+    await prepareForAccountLogin();
   };
 
   const row = (label: string, Icon: any, onPress?: () => void) => (
