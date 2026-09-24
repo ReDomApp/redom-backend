@@ -45,6 +45,7 @@ import { scheduledPosts } from "./scheduledPosts";
 import { polls } from "./polls";
 import { reactions } from "./reactions";
 import { saves } from "./saves";
+import { savedCollections, savedCollectionContributors } from "./savedCollections";
 import { shares } from "./shares";
 import { stories } from "./stories";
 import { storyViewers } from "./storyViewers";
@@ -77,7 +78,7 @@ export const db = drizzle(pool, { schema: {
   followers, following, friends, friendRequests,
   conversations, conversationParticipants, messages, messageDeletions, messageAttachments, messageReads,
   messageRequests, messageDrafts, calls,
-  posts, postMedia, postMentions, draftPosts, scheduledPosts, polls, reactions, saves,
+  posts, postMedia, postMentions, draftPosts, scheduledPosts, polls, reactions, saves, savedCollections, savedCollectionContributors,
   shares, stories, storyViewers, feedPreferences, notifications, searchHistory,
   marketplaceCategories, marketplaceListings, marketplaceInteractions, marketplaceReviews,
   marketplaceTransactions, videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
