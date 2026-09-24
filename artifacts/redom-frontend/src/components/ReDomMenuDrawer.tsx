@@ -31,6 +31,14 @@ import UpgradesIcon from "../assets/home-feed/upgrades.svg";
 import AlsoFromReDomIcon from "../assets/home-feed/also-from-redom.svg";
 import CloseIcon from "../assets/navigation/close.svg";
 import DropdownIcon from "../assets/home-feed/profile-dropdown.svg";
+import FriendsIcon from "../assets/home-feed/friends.svg";
+import EventsIcon from "../assets/home-feed/events.svg";
+import PagesIcon from "../assets/home-feed/pages.svg";
+import ProfessionalDashboardIcon from "../assets/home-feed/professional-dashboard.svg";
+import CreatorToolsIcon from "../assets/home-feed/creator-tools.svg";
+import GamingIcon from "../assets/home-feed/gaming.svg";
+import FundraisersIcon from "../assets/home-feed/fundraisers.svg";
+import ActivityIcon from "../assets/home-feed/activity.svg";
 
 type Props = { visible: boolean; onClose: () => void };
 
@@ -47,6 +55,17 @@ const supportRows = [
   { label: "Support", Icon: SupportIcon, route: "Support" as const },
   { label: "Report a problem", Icon: ReportIcon, route: "Support" as const },
   { label: "Terms and Policies", Icon: TermsIcon, route: "Policy" as const, params: { slug: "terms" as const } },
+];
+
+const moreRows = [
+  { label: "Friends", Icon: FriendsIcon },
+  { label: "Events", Icon: EventsIcon },
+  { label: "Pages", Icon: PagesIcon },
+  { label: "Professional dashboard", Icon: ProfessionalDashboardIcon },
+  { label: "Creator tools", Icon: CreatorToolsIcon },
+  { label: "Gaming", Icon: GamingIcon },
+  { label: "Fundraisers", Icon: FundraisersIcon },
+  { label: "Activity", Icon: ActivityIcon },
 ];
 
 const settingsRows = [
@@ -71,6 +90,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
   const [upgradesOpen, setUpgradesOpen] = useState(false);
   const [productsOpen, setProductsOpen] = useState(false);
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [accounts, setAccounts] = useState<DeviceAccount[]>([]);
 
   const drawerWidth = Math.min(width * 0.88, 390);
@@ -83,6 +103,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
     setUpgradesOpen(false);
     setProductsOpen(false);
     setAccountsOpen(false);
+    setMoreOpen(false);
     void getDeviceAccounts().then(setAccounts);
     translateX.setValue(-drawerWidth);
     Animated.spring(translateX, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 220, mass: 0.8 }).start();
@@ -157,9 +178,31 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
               <Text style={styles.sectionLabel}>Your shortcuts</Text>
               {shortcuts.map(({ label, Icon, route }) => row(label, Icon, route ? () => go(route) : undefined))}
-              <Pressable style={styles.seeMore} onPress={() => Alert.alert("ReDom", "More ReDom shortcuts will appear here as they become available.")}>
-                <Text style={styles.seeMoreText}>See more</Text>
+              <Pressable style={styles.seeMore} onPress={() => setMoreOpen((value) => !value)} accessibilityRole="button" accessibilityLabel="See more ReDom destinations">
+                <Text style={styles.seeMoreText}>{moreOpen ? "See less" : "See more"}</Text>
               </Pressable>
+              {moreOpen ? (
+                <View style={styles.moreList}>
+                  {moreRows.map(({ label, Icon }) => (
+                    <Pressable
+                      key={label}
+                      style={styles.menuRow}
+                      onPress={() => {
+                        if (label === "Gaming") {
+                          Alert.alert("Gaming", "Gaming is not available in your region right now.");
+                          return;
+                        }
+                        Alert.alert("ReDom", `${label} is ready in the menu. We’ll connect its full ReDom experience next.`);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={label}
+                    >
+                      <Icon width={32} height={32} />
+                      <Text style={styles.menuText}>{label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
 
               <View style={styles.divider} />
               <Pressable style={styles.sectionHeader} onPress={() => setSupportOpen((v) => !v)}>
@@ -253,6 +296,7 @@ const styles = StyleSheet.create({
   menuText: { color: "#050505", fontSize: 16, fontWeight: "600", flex: 1 },
   seeMore: { height: 46, borderRadius: 12, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center", marginTop: 4 },
   seeMoreText: { color: "#050505", fontSize: 15, fontWeight: "800" },
+  moreList: { marginTop: 4 },
   divider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: 12 },
   sectionHeader: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: 10 },
   sectionTitle: { flex: 1, color: "#050505", fontSize: 17, fontWeight: "800" },
