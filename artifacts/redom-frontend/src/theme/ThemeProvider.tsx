@@ -14,9 +14,9 @@ const isDarkMode=(mode:ThemeMode, system:ColorSchemeName)=>mode==="dark" || (mod
 const applyNative=(mode:ThemeMode)=>Appearance.setColorScheme(mode==="system"?null:mode);
 
 export function ThemeProvider({children}:{children:ReactNode}){
- const [mode,setMode]=useState<ThemeMode>("system"); const [system,setSystem]=useState<ColorSchemeName>(Appearance.getColorScheme());
- useEffect(()=>{let mounted=true; AsyncStorage.getItem(STORAGE_KEY).then(v=>{if(!mounted)return; const m:ThemeMode=v==="dark"||v==="light"||v==="system"?v:"system"; setMode(m); applyNative(m);}).catch(()=>{}); const s=Appearance.addChangeListener(({colorScheme})=>setSystem(colorScheme)); return()=>{mounted=false;s.remove();};},[]);
- useEffect(()=>{const refresh=async(s:AppStateStatus)=>{if(s!=="active")return;setSystem(Appearance.getColorScheme());const v=await AsyncStorage.getItem(STORAGE_KEY);if(v==="dark"||v==="light"||v==="system")setMode(v);};const s=AppState.addEventListener("change",refresh);return()=>s.remove();},[]);
+ const [mode,setMode]=useState<ThemeMode>("system"); const [system,setSystem]=useState<ColorSchemeName>(Appearance.getColorScheme() ?? "light");
+ useEffect(()=>{let mounted=true; AsyncStorage.getItem(STORAGE_KEY).then(v=>{if(!mounted)return; const m:ThemeMode=v==="dark"||v==="light"||v==="system"?v:"system"; setMode(m); applyNative(m);}).catch(()=>{}); const s=Appearance.addChangeListener(({colorScheme})=>setSystem(colorScheme ?? "light")); return()=>{mounted=false;s.remove();};},[]);
+ useEffect(()=>{const refresh=async(s:AppStateStatus)=>{if(s!=="active")return;setSystem(Appearance.getColorScheme() ?? "light");const v=await AsyncStorage.getItem(STORAGE_KEY);if(v==="dark"||v==="light"||v==="system")setMode(v);};const s=AppState.addEventListener("change",refresh);return()=>s.remove();},[]);
  const setTheme=useCallback(async(value:ThemeMode)=>{setMode(value);applyNative(value);await AsyncStorage.setItem(STORAGE_KEY,value);try{await productService.updateSettings({theme:value});}catch{}},[]);
  const isDark=isDarkMode(mode,system); const colors=isDark?DARK_COLORS:LIGHT_COLORS;
  const value=useMemo(()=>({mode,isDark,colors,setTheme}),[mode,isDark,colors,setTheme]);
