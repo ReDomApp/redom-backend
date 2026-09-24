@@ -130,7 +130,7 @@ export const REDOM_SUPPORT_POLICY_DOCUMENTS: ReDomPolicyDocument[] = [
     { heading: "Case updates", body: "Support state shown in the application comes from the backend and is never fabricated by AI." },
     { heading: "Email replies", body: "ReDom support email replies are presented as focused support conversations rather than marketing messages. Replies identify the support case in compact metadata, keep the verified response as the main content, and provide a direct instruction to reply to the email to continue the case." },
     { heading: "Response quality", body: "Support replies should use clear, professional, human communication. ReDom does not add promotional content, decorative messaging, invented response-time promises, or unverified account actions to support replies." },
-    { heading: "Payment support provides authenticated payment FAQs, issue reporting, support case history and article helpfulness feedback.\n\nEmail continuity", body: "Support replies use the configured ReDom support address for continued correspondence. The case number remains the permanent reference for the support conversation." },
+    { heading: "Payment support", body: "ReDom Pay support provides authenticated payment FAQs, payment issue reporting, support case history and article helpfulness feedback." },\n    { heading: "Email continuity", body: "Support replies use the configured ReDom support address for continued correspondence. The case number remains the permanent reference for the support conversation." },
   ] },
 ];
 
