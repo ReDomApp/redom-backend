@@ -21,4 +21,7 @@ export const paymentTransactions = pgTable("payment_transactions", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  customerEmailStatus: varchar("customer_email_status", { length: 20 }).notNull().default("pending"),
+  customerEmailSentAt: timestamp("customer_email_sent_at"),
+  customerEmailError: varchar("customer_email_error", { length: 500 }),
 });
