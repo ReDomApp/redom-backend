@@ -117,7 +117,7 @@ router.post("/groups/:conversationId/report", async (req, res) => {
   }
 
   const result = await moderateGroupReport(created.id);
-  res.status(201).json({ success: true, reported: true, reportId: created.id, groupName: group.groupName, ...result });
+  res.status(201).json({ success: true, reported: true, groupName: group.groupName, ...result });
 });
 
 router.get("/reports/:reportId", async (req, res) => {
