@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { openExternalLink } from "../utils/openExternalLink";
 import { Alert, Image, Modal, Pressable, SafeAreaView, Share, StyleSheet, Text, View } from "react-native";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
