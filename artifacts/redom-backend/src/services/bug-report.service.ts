@@ -1,8 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Resend } from "resend";
-import { env } from "../../config/env";
-import { pool } from "../../database/db";
+import { env } from "../config/env";
+import { pool } from "../database/db";
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const GEMINI_MODEL = "gemini-3.8-flash";
