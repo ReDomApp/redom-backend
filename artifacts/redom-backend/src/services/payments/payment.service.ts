@@ -15,7 +15,7 @@ type PaymentContext = { transactionId: string; reference: string; status: string
 async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
   const client = await pool.connect();
   try {
-    const result = await client.query("SELECT pt.id, pt.reference, pt.amount_minor, pt.currency, pt.paid_at, pt.metadata, pt.customer_email_status, u.email, u.first_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
+    const result = await client.query("SELECT pt.id, pt.reference, pt.amount_minor, pt.currency, pt.paid_at, pt.metadata, pt.customer_email_status, u.email, u.first_name, u.last_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
     const row = result.rows[0];
     if (!row?.email || row.customer_email_status === "sent" || row.customer_email_status === "sending") return;
     const claimed = await client.query("UPDATE payment_transactions SET customer_email_status='sending', customer_email_error=NULL, updated_at=now() WHERE id=$1 AND status='paid' AND customer_email_status IN ('pending','failed') RETURNING id", [transactionId]);
@@ -24,7 +24,7 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
       const paidAt = row.paid_at ? new Date(row.paid_at) : new Date();
       await sendPaymentConfirmationEmail({
         to: String(row.email),
-        firstName: row.first_name ? String(row.first_name) : null,
+        firstName: [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || null,
         planName: row.plan_name ? String(row.plan_name) : "ReDom subscription",
         amountMinor: String(row.amount_minor),
         currency: String(row.currency),
