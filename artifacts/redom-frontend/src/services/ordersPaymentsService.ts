@@ -25,6 +25,7 @@ export const ordersPaymentsService = {
   },
   starsActivity() { return api.get<{ success:boolean; balance:number; activity:StarTransaction[] }>("/orders-payments/stars/activity"); },
   starsCatalog(countryCode?: string) { return api.get<{ success:boolean; countries:StarCountry[]; packages:StarPackage[] }>(countryCode ? "/orders-payments/stars/catalog?country="+encodeURIComponent(countryCode) : "/orders-payments/stars/catalog"); },
+  verifyPayment(reference:string) { return api.get<{success:boolean;payment:{status:string;transactionId:string;redomTransactionId?:string|null;amountMinor:string;currency:string;purpose:string}}>("/payments/verify/"+encodeURIComponent(reference)); },
   initializeStars(input:{packageKey:string;countryCode:string;email:string;pin?:string;paymentMethodId?:string;address?:{countryCode:string;countryName:string;fullName:string;addressLine1:string;addressLine2?:string|null;city:string;state?:string|null;postalCode?:string|null;mapboxPlaceId?:string|null;latitude?:number|null;longitude?:number|null}}) {
     return api.post<{success:boolean;mode:string;checkoutUrl:string|null;accessCode:string|null;reference:string;redomTransactionId:string;status?:string}>("/orders-payments/stars/initialize",input);
   },
