@@ -3,7 +3,7 @@ import{SafeAreaView,View,Text,Pressable,StyleSheet,ScrollView,ActivityIndicator}
 import{useNavigation}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
 import BackIcon from"../assets/navigation/back.svg";
-import{ordersPaymentsService,SavedPaymentMethod}from"../services/ordersPaymentsService";
+import{ordersPaymentsService}from"../services/ordersPaymentsService";import type{SavedPaymentMethod}from"../services/ordersPaymentsService";
 
 export function PaymentMethodsScreen(){
  const n=useNavigation<any>();const{colors}=useTheme();const[methods,setMethods]=useState<SavedPaymentMethod[]>([]);const[loading,setLoading]=useState(true);
