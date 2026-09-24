@@ -2,6 +2,9 @@ import React from "react";
 import { SafeAreaView, View, Text, Pressable, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../theme/ThemeProvider";
+import BackIcon from "../assets/navigation/back.svg";
+import CartIcon from "../assets/home-feed/cart.svg";
+import MenuIcon from "../assets/home-feed/menu.svg";
 
 export function CartScreen() {
   const navigation = useNavigation();
@@ -13,7 +16,7 @@ export function CartScreen() {
       <View style={{ width: 42 }} />
     </View>
     <View style={styles.empty}>
-      <Text style={[styles.cart, { color: colors.textSecondary }]}>🛒</Text>
+      <CartIcon width={64} height={64} color={colors.textSecondary}/>
       <Text style={[styles.heading, { color: colors.text }]}>Add to your cart</Text>
       <Text style={[styles.copy, { color: colors.textSecondary }]}>Now you can buy items from supported ReDom brands without leaving ReDom.</Text>
     </View>
