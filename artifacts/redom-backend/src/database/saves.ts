@@ -7,6 +7,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { userProfiles } from "./userProfiles";
+import { savedCollections } from "./savedCollections";
 
 export const saves = pgTable("saves", {
 
@@ -59,6 +60,8 @@ export const saves = pgTable("saves", {
    * watch_later
    * custom
    */
+
+  collectionId: uuid("collection_id").references(() => savedCollections.id, { onDelete: "set null" }),
 
   collectionType: varchar("collection_type", {
     length: 30,
