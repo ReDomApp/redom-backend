@@ -1,32 +1,98 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getLocales } from "expo-localization";
 
-export type LanguageCode = "en" | "es" | "fr" | "de" | "pt" | "it" | "nl" | "ar" | "zh" | "ja" | "ko" | "hi" | "ru" | "tr";
+export type LanguageCode = "en" | "en-GB" | "es" | "es-ES" | "fr" | "de" | "pt" | "pt-PT" | "it" | "nl" | "ar" | "zh-CN" | "zh-HK" | "ja" | "ko" | "hi" | "ru" | "tr" | "af" | "as" | "az" | "be" | "bg" | "bn" | "bs" | "ca" | "ckb" | "cs" | "da" | "el" | "et" | "fa" | "fi" | "fil" | "gu" | "hr" | "hu" | "hy" | "id" | "he" | "jv" | "ka" | "kk" | "km" | "kn" | "ku" | "lt" | "lv" | "mk" | "ml" | "mr" | "ms" | "my" | "nb" | "ne" | "pa" | "pl" | "ps" | "ro" | "si" | "sk" | "sl" | "so" | "sq" | "sr" | "sv" | "sw" | "ta" | "te" | "tg" | "th" | "tr" | "uk" | "ur" | "uz" | "vi";
 export const LANGUAGE_STORAGE_KEY = "redom.language";
 export const LANGUAGE_EXPLICIT_KEY = "redom.language.explicit";
 
 export const LANGUAGES: Array<{ code: LanguageCode; nativeName: string; englishName: string }> = [
-  { code: "en", nativeName: "English", englishName: "English" },
-  { code: "es", nativeName: "Español", englishName: "Spanish" },
-  { code: "fr", nativeName: "Français", englishName: "French" },
-  { code: "de", nativeName: "Deutsch", englishName: "German" },
-  { code: "pt", nativeName: "Português", englishName: "Portuguese" },
-  { code: "it", nativeName: "Italiano", englishName: "Italian" },
-  { code: "nl", nativeName: "Nederlands", englishName: "Dutch" },
+  { code: "af", nativeName: "Afrikaans", englishName: "Afrikaans" },
   { code: "ar", nativeName: "العربية", englishName: "Arabic" },
-  { code: "zh", nativeName: "中文", englishName: "Chinese" },
-  { code: "ja", nativeName: "日本語", englishName: "Japanese" },
-  { code: "ko", nativeName: "한국어", englishName: "Korean" },
+  { code: "as", nativeName: "অসমীয়া", englishName: "Assamese" },
+  { code: "az", nativeName: "Azərbaycan", englishName: "Azerbaijani" },
+  { code: "be", nativeName: "Беларуская", englishName: "Belarusian" },
+  { code: "bg", nativeName: "Български", englishName: "Bulgarian" },
+  { code: "bn", nativeName: "বাংলা", englishName: "Bengali" },
+  { code: "bs", nativeName: "Bosanski", englishName: "Bosnian" },
+  { code: "ca", nativeName: "Català", englishName: "Catalan" },
+  { code: "ckb", nativeName: "کوردی ناوەندی", englishName: "Kurdî" },
+  { code: "cs", nativeName: "Čeština", englishName: "Czech" },
+  { code: "da", nativeName: "Dansk", englishName: "Danish" },
+  { code: "de", nativeName: "Deutsch", englishName: "German" },
+  { code: "el", nativeName: "Ελληνικά", englishName: "Greek" },
+  { code: "en", nativeName: "English", englishName: "English" },
+  { code: "en-GB", nativeName: "English (United Kingdom)", englishName: "English (United Kingdom)" },
+  { code: "es", nativeName: "Español", englishName: "Spanish" },
+  { code: "es-ES", nativeName: "Español (España)", englishName: "Spanish (Spain)" },
+  { code: "et", nativeName: "Eesti", englishName: "Estonian" },
+  { code: "fa", nativeName: "فارسی", englishName: "Persian" },
+  { code: "fi", nativeName: "Suomi", englishName: "Finnish" },
+  { code: "fil", nativeName: "Filipino", englishName: "Filipino" },
+  { code: "fr", nativeName: "Français", englishName: "French" },
+  { code: "gu", nativeName: "ગુજરાતી", englishName: "Gujarati" },
+  { code: "he", nativeName: "עברית", englishName: "Hebrew" },
   { code: "hi", nativeName: "हिन्दी", englishName: "Hindi" },
+  { code: "hr", nativeName: "Hrvatski", englishName: "Croatian" },
+  { code: "hu", nativeName: "Magyar", englishName: "Hungarian" },
+  { code: "hy", nativeName: "Հայերեն", englishName: "Armenian" },
+  { code: "id", nativeName: "Indonesia", englishName: "Indonesian" },
+  { code: "it", nativeName: "Italiano", englishName: "Italian" },
+  { code: "ja", nativeName: "日本語", englishName: "Japanese" },
+  { code: "jv", nativeName: "Jawa", englishName: "Javanese" },
+  { code: "ka", nativeName: "ქართული", englishName: "Georgian" },
+  { code: "kk", nativeName: "Қазақ Тілі", englishName: "Kazakh" },
+  { code: "km", nativeName: "ខ្មែរ", englishName: "Khmer" },
+  { code: "kn", nativeName: "ಕನ್ನಡ", englishName: "Kannada" },
+  { code: "ko", nativeName: "한국어", englishName: "Korean" },
+  { code: "ku", nativeName: "Kurdî", englishName: "Kurdish" },
+  { code: "lt", nativeName: "Lietuvių", englishName: "Lithuanian" },
+  { code: "lv", nativeName: "Latviešu", englishName: "Latvian" },
+  { code: "mk", nativeName: "Македонски", englishName: "Macedonian" },
+  { code: "ml", nativeName: "മലയാളം", englishName: "Malayalam" },
+  { code: "mr", nativeName: "मराठी", englishName: "Marathi" },
+  { code: "ms", nativeName: "Melayu", englishName: "Malay" },
+  { code: "my", nativeName: "မြန်မာ", englishName: "Burmese" },
+  { code: "nb", nativeName: "Norsk Bokmål", englishName: "Norwegian Bokmål" },
+  { code: "ne", nativeName: "नेपाली", englishName: "Nepali" },
+  { code: "nl", nativeName: "Nederlands", englishName: "Dutch" },
+  { code: "pa", nativeName: "ਪੰਜਾਬੀ", englishName: "Punjabi" },
+  { code: "pl", nativeName: "Polski", englishName: "Polish" },
+  { code: "ps", nativeName: "پښتو", englishName: "Pashto" },
+  { code: "pt", nativeName: "Português", englishName: "Portuguese" },
+  { code: "pt-PT", nativeName: "Português (Portugal)", englishName: "Portuguese (Portugal)" },
+  { code: "ro", nativeName: "Română", englishName: "Romanian" },
   { code: "ru", nativeName: "Русский", englishName: "Russian" },
+  { code: "si", nativeName: "සිංහල", englishName: "Sinhala" },
+  { code: "sk", nativeName: "Slovenčina", englishName: "Slovak" },
+  { code: "sl", nativeName: "Slovenščina", englishName: "Slovenian" },
+  { code: "so", nativeName: "Soomaali", englishName: "Somali" },
+  { code: "sq", nativeName: "Shqip", englishName: "Albanian" },
+  { code: "sr", nativeName: "Српски", englishName: "Serbian" },
+  { code: "sv", nativeName: "Svenska", englishName: "Swedish" },
+  { code: "sw", nativeName: "Kiswahili", englishName: "Swahili" },
+  { code: "ta", nativeName: "தமிழ்", englishName: "Tamil" },
+  { code: "te", nativeName: "తెలుగు", englishName: "Telugu" },
+  { code: "tg", nativeName: "Тоҷикӣ", englishName: "Tajik" },
+  { code: "th", nativeName: "ไทย", englishName: "Thai" },
   { code: "tr", nativeName: "Türkçe", englishName: "Turkish" },
+  { code: "uk", nativeName: "Українська", englishName: "Ukrainian" },
+  { code: "ur", nativeName: "اردو", englishName: "Urdu" },
+  { code: "uz", nativeName: "O‘zbek", englishName: "Uzbek" },
+  { code: "vi", nativeName: "Tiếng Việt", englishName: "Vietnamese" },
+  { code: "zh-CN", nativeName: "中文 (中国)", englishName: "Chinese (China)" },
+  { code: "zh-HK", nativeName: "中文 (香港)", englishName: "Chinese (Hong Kong)" },
 ];
 
 const FALLBACK: LanguageCode = "en";
 
 export function detectDeviceLanguage(): LanguageCode {
-  const locale = getLocales()[0]?.languageCode?.toLowerCase() ?? FALLBACK;
-  return LANGUAGES.some((item) => item.code === locale) ? locale as LanguageCode : FALLBACK;
+  const locale = getLocales()[0];
+  const languageCode = locale?.languageCode?.toLowerCase() ?? FALLBACK;
+  const region = locale?.regionCode?.toUpperCase();
+  const regional = region ? `${languageCode}-${region}` : languageCode;
+  if (LANGUAGES.some((item) => item.code === regional)) return regional as LanguageCode;
+  if (LANGUAGES.some((item) => item.code === languageCode)) return languageCode as LanguageCode;
+  return FALLBACK;
 }
 
 export async function loadLanguage(): Promise<LanguageCode> {
@@ -67,6 +133,8 @@ const base: Record<string, string> = {
   continue: "Continue",
   flowId: "Your ReDom Flow ID is {flowId}, Use it within 30 Minutes.",
   language: "Language",
+  switchingLanguage: "Switching Language",
+  deviceLanguage: "Device Language",
   terms: "Terms & Conditions",
   privacy: "Privacy Policy",
   guidelines: "Community Guidelines",
