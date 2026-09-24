@@ -1,4 +1,5 @@
 import { useMemo, useState, type ComponentType } from "react";
+import { useTheme } from "../theme/ThemeProvider";
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
@@ -57,6 +58,8 @@ const groups: PolicyGroup[] = [
 ];
 
 export function TermsPoliciesScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   const [query, setQuery] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(Object.fromEntries(groups.map((group, index) => [group.title, index === 0])));
   const filteredGroups = useMemo(() => {
@@ -93,24 +96,24 @@ export function TermsPoliciesScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#FFFFFF" },
-  header: { height: 58, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#E4E6EB", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14 },
+function makeStyles(colors:ReturnType<typeof useTheme>["colors"]){return StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.surface },
+  header: { height: 58, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14 },
   backButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  back: { fontSize: 38, lineHeight: 38, color: "#050505", marginTop: -3 },
-  headerTitle: { flex: 1, textAlign: "center", fontSize: 18, fontWeight: "800", color: "#050505" },
+  back: { fontSize: 38, lineHeight: 38, color: colors.text, marginTop: -3 },
+  headerTitle: { flex: 1, textAlign: "center", fontSize: 18, fontWeight: "800", color: colors.text },
   headerSpacer: { width: 40 }, content: { padding: 16, paddingBottom: 48 },
   hero: { backgroundColor: "#1877F2", borderRadius: 16, padding: 18, flexDirection: "row", alignItems: "center" },
-  heroIcon: { width: 68, height: 68, borderRadius: 34, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", marginRight: 14 },
+  heroIcon: { width: 68, height: 68, borderRadius: 34, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginRight: 14 },
   heroCopy: { flex: 1 }, heroTitle: { color: "#FFFFFF", fontSize: 23, fontWeight: "800" }, heroText: { color: "#FFFFFF", fontSize: 13, lineHeight: 19, marginTop: 5 },
-  searchBox: { marginTop: 16, minHeight: 54, borderRadius: 28, backgroundColor: "#F0F2F5", flexDirection: "row", alignItems: "center", paddingHorizontal: 16 },
-  searchGlyph: { fontSize: 30, color: "#65676B", marginRight: 8, marginTop: -3 }, searchInput: { flex: 1, color: "#050505", fontSize: 16, paddingVertical: 12 },
-  sectionIntro: { marginTop: 24, color: "#050505", fontSize: 22, fontWeight: "800" }, sectionHint: { marginTop: 4, marginBottom: 10, color: "#65676B", fontSize: 14, lineHeight: 20 },
-  group: { borderBottomWidth: 1, borderBottomColor: "#E4E6EB" }, groupHeader: { minHeight: 66, flexDirection: "row", alignItems: "center" },
-  groupIcon: { width: 46, height: 46, borderRadius: 23, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", marginRight: 12 }, groupTitle: { flex: 1, color: "#050505", fontSize: 17, fontWeight: "800" },
-  chevron: { color: "#65676B", fontSize: 23, fontWeight: "800", width: 28, textAlign: "center" }, items: { paddingBottom: 7 },
-  item: { minHeight: 68, flexDirection: "row", alignItems: "center", paddingVertical: 7, paddingLeft: 16 }, itemIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", marginRight: 12 },
-  itemCopy: { flex: 1, paddingRight: 8 }, itemTitle: { color: "#050505", fontSize: 15, fontWeight: "700" }, itemDescription: { color: "#65676B", fontSize: 12, lineHeight: 17, marginTop: 2 }, itemArrow: { color: "#65676B", fontSize: 28, width: 25, textAlign: "center" },
-  empty: { alignItems: "center", paddingVertical: 60 }, emptyTitle: { marginTop: 12, fontSize: 18, fontWeight: "800", color: "#050505" }, emptyText: { marginTop: 4, color: "#65676B", fontSize: 14 },
-  footer: { marginTop: 28, color: "#8A8D91", fontSize: 12, lineHeight: 18 },
-});
+  searchBox: { marginTop: 16, minHeight: 54, borderRadius: 28, backgroundColor: colors.background, flexDirection: "row", alignItems: "center", paddingHorizontal: 16 },
+  searchGlyph: { fontSize: 30, color: colors.textSecondary, marginRight: 8, marginTop: -3 }, searchInput: { flex: 1, color: colors.text, fontSize: 16, paddingVertical: 12 },
+  sectionIntro: { marginTop: 24, color: colors.text, fontSize: 22, fontWeight: "800" }, sectionHint: { marginTop: 4, marginBottom: 10, color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
+  group: { borderBottomWidth: 1, borderBottomColor: colors.border }, groupHeader: { minHeight: 66, flexDirection: "row", alignItems: "center" },
+  groupIcon: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", marginRight: 12 }, groupTitle: { flex: 1, color: colors.text, fontSize: 17, fontWeight: "800" },
+  chevron: { color: colors.textSecondary, fontSize: 23, fontWeight: "800", width: 28, textAlign: "center" }, items: { paddingBottom: 7 },
+  item: { minHeight: 68, flexDirection: "row", alignItems: "center", paddingVertical: 7, paddingLeft: 16 }, itemIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", marginRight: 12 },
+  itemCopy: { flex: 1, paddingRight: 8 }, itemTitle: { color: colors.text, fontSize: 15, fontWeight: "700" }, itemDescription: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 2 }, itemArrow: { color: colors.textSecondary, fontSize: 28, width: 25, textAlign: "center" },
+  empty: { alignItems: "center", paddingVertical: 60 }, emptyTitle: { marginTop: 12, fontSize: 18, fontWeight: "800", color: colors.text }, emptyText: { marginTop: 4, color: colors.textSecondary, fontSize: 14 },
+  footer: { marginTop: 28, color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+}); }
