@@ -164,9 +164,9 @@ export function GroupIconScreen({ route, navigation }: Props) {
 
 function Action({ icon, title, onPress, styles }: { icon: any; title: string; onPress: () => void; styles: ReturnType<typeof makeStyles> }) {
   return (
-    <Pressable style={s.action} onPress={onPress}>
+    <Pressable style={styles.action} onPress={onPress}>
       <GroupActionIcon kind={icon} />
-      <Text style={s.actionText}>{title}</Text>
+      <Text style={styles.actionText}>{title}</Text>
     </Pressable>
   );
 }
