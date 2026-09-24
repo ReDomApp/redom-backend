@@ -19,6 +19,7 @@ export const env = {
     problemReportsFrom: optional("PROBLEM_REPORTS_EMAIL_FROM") ?? "problem@wnncompany.com",
     bugReportRecipients: (optional("BUG_REPORT_RECIPIENTS") ?? "admin@wnncompany.com,christianuzamaosahuo@gmail.com").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean),
   },
+  payments: { paystack: { secretKey: required("PAYSTACK_SECRET_KEY"), publicKey: required("PAYSTACK_PUBLIC_KEY") } },
   refunds: { enabled: optionalBoolean("REDOM_REFUNDS_ENABLED", false), from: optional("REFUND_EMAIL_FROM") ?? "refund@wnncompany.com" },
   twilio: { accountSid: required("TWILIO_ACCOUNT_SID"), authToken: required("TWILIO_AUTH_TOKEN"), verifyServiceSid: required("TWILIO_VERIFY_SERVICE_SID"), phoneNumber: required("TWILIO_PHONE_NUMBER"), whatsappFrom: optional("TWILIO_WHATSAPP_FROM") },
   msg91: { authKey: required("MSG91_AUTH_KEY"), senderId: required("MSG91_SENDER_ID") },
