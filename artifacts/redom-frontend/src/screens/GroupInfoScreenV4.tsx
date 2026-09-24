@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTheme } from "../theme/ThemeProvider";
 import {
   Alert,
   Image,
@@ -28,7 +29,9 @@ const timerLabel = (value: DisappearingTimer) => {
   return "Off";
 };
 
-export function GroupInfoScreenV4({ route, navigation }: Props) {
+export function GroupInfoScreenV4({
+  const { colors } = useTheme();
+  const s = makeStyles(colors); route, navigation }: Props) {
   const [group, setGroup] = useState<GroupSettings | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [menu, setMenu] = useState(false);
@@ -481,26 +484,26 @@ function Menu({
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F5F6F7" },
+function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) { return StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.background },
   header: {
     height: 60,
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: colors.border,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  headerTitle: { fontSize: 20, fontWeight: "700", color: "#111827" },
+  headerTitle: { fontSize: 20, fontWeight: "700", color: colors.text },
   menu: {
     position: "absolute",
     right: 10,
     top: 56,
     zIndex: 30,
     width: 240,
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 8,
     paddingVertical: 6,
@@ -512,21 +515,21 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 15,
   },
-  menuText: { fontSize: 16, color: "#111827" },
+  menuText: { fontSize: 16, color: colors.text },
   content: { paddingBottom: 45 },
-  hero: { backgroundColor: "#FFF", alignItems: "center", padding: 24 },
+  hero: { backgroundColor: colors.surface, alignItems: "center", padding: 24 },
   avatar: { width: 128, height: 128, borderRadius: 64 },
   avatarFallback: {
     width: 128,
     height: 128,
     borderRadius: 64,
-    backgroundColor: "#1877F2",
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarLetter: { fontSize: 50, fontWeight: "800", color: "#FFF" },
-  name: { fontSize: 27, color: "#101828", marginTop: 14 },
-  count: { color: "#667085", marginTop: 3 },
+  name: { fontSize: 27, color: colors.text, marginTop: 14 },
+  count: { color: colors.textSecondary, marginTop: 3 },
   description: { color: "#218B67", fontSize: 16, marginTop: 12 },
   quick: {
     width: "100%",
@@ -543,21 +546,21 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  quickLabel: { marginTop: 6, color: "#101828" },
+  quickLabel: { marginTop: 6, color: colors.text },
   info: {
     minHeight: 72,
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     paddingHorizontal: 22,
     flexDirection: "row",
     alignItems: "center",
     gap: 18,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F2F5",
+    borderBottomColor: colors.border,
   },
-  rowTitle: { fontSize: 17, color: "#101828" },
-  rowDesc: { fontSize: 13, color: "#667085", marginTop: 3, lineHeight: 18 },
+  rowTitle: { fontSize: 17, color: colors.text },
+  rowDesc: { fontSize: 13, color: colors.textSecondary, marginTop: 3, lineHeight: 18 },
   memberHeader: {
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     padding: 18,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -565,25 +568,25 @@ const s = StyleSheet.create({
   section: { fontSize: 17, fontWeight: "700", color: "#344054" },
   action: {
     minHeight: 62,
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     paddingHorizontal: 22,
     flexDirection: "row",
     alignItems: "center",
     gap: 18,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F2F5",
+    borderBottomColor: colors.border,
   },
-  actionText: { fontSize: 17, color: "#101828" },
+  actionText: { fontSize: 17, color: colors.text },
   dangerText: { color: "#C9184A" },
   member: {
     minHeight: 72,
-    backgroundColor: "#FFF",
+    backgroundColor: colors.surface,
     paddingHorizontal: 22,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F2F5",
+    borderBottomColor: colors.border,
   },
   memberAvatar: {
     width: 50,
@@ -595,9 +598,9 @@ const s = StyleSheet.create({
     overflow: "hidden",
   },
   memberPhoto: { width: 50, height: 50 },
-  memberInitial: { fontSize: 20, fontWeight: "700", color: "#667085" },
-  memberName: { fontSize: 16, color: "#101828" },
-  memberMeta: { fontSize: 13, color: "#667085", marginTop: 3 },
+  memberInitial: { fontSize: 20, fontWeight: "700", color: colors.textSecondary },
+  memberName: { fontSize: 16, color: colors.text },
+  memberMeta: { fontSize: 13, color: colors.textSecondary, marginTop: 3 },
   error: { padding: 22, color: "#B42318" },
   flex: { flex: 1 },
-});
+}); }
