@@ -8,7 +8,7 @@ export interface OrderSummary {
 export interface PaymentSettings { currency: string; pin_enabled: boolean; biometric_enabled: boolean; }
 export interface SubscriptionSummary {
   id: string; subscriptionType: string; subscriptionStatus: string; billingCycle: string;
-  paymentProvider: string | null; autoRenew: boolean; startedAt: string | null; renewedAt: string | null;
+  autoRenew: boolean; startedAt: string | null; renewedAt: string | null;
   expiresAt: string | null; cancelledAt: string | null; createdAt: string; updatedAt: string;
 }
 export const ordersPaymentsService = {
