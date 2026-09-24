@@ -23,9 +23,7 @@ type PickerKind = "camera" | "gallery";
 
 const EMOJIS = ["😀", "😎", "😂", "😍", "🥳", "🔥", "⭐", "💙", "🌎", "🚀", "🎯", "💬", "🤝", "🎉", "🛡️", "💡"];
 
-export function GroupIconScreen({
-  const { colors } = useTheme();
-  const styles = makeStyles(colors); route, navigation }: Props) {
+export function GroupIconScreen({ route, navigation }: Props) {
   const [group, setGroup] = useState<GroupSettings | null>(null);
   const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -144,14 +142,14 @@ export function GroupIconScreen({
               <Text style={styles.sheetHeading}>Group icon</Text>
               <Pressable onPress={() => void remove()} hitSlop={8}><GroupActionIcon kind="trash" size={26} color="#111" /></Pressable>
             </View>
-            <Action icon="camera" title="Camera" onPress={() => void choose("camera")} />
-            <Action icon="image" title="Gallery" onPress={() => void choose("gallery")} />
-            <Action icon="emoji" title="Emoji & stickers" onPress={showEmojiPicker} />
-            <Action icon="search" title="Search web" onPress={() => {
+            <Action styles={styles} icon="camera" title="Camera" onPress={() => void choose("camera")} />
+            <Action styles={styles} icon="image" title="Gallery" onPress={() => void choose("gallery")} />
+            <Action styles={styles} icon="emoji" title="Emoji & stickers" onPress={showEmojiPicker} />
+            <Action styles={styles} icon="search" title="Search web" onPress={() => {
               setSheet(false);
               void Linking.openURL("https://www.google.com/search?tbm=isch&q=group+icon");
             }} />
-            <Action icon="sparkle" title="AI images" onPress={() => {
+            <Action styles={styles} icon="sparkle" title="AI images" onPress={() => {
               setSheet(false);
               navigation.navigate("ReDomAI", { context: `Create a square group icon for ${group.groupName}` });
             }} />
@@ -162,7 +160,7 @@ export function GroupIconScreen({
   );
 }
 
-function Action({ icon, title, onPress }: { icon: any; title: string; onPress: () => void }) {
+function Action({ icon, title, onPress, styles }: { icon: any; title: string; onPress: () => void; styles: ReturnType<typeof makeStyles> }) {
   return (
     <Pressable style={styles.action} onPress={onPress}>
       <GroupActionIcon kind={icon} />
