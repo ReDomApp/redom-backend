@@ -80,6 +80,15 @@ export const REDOM_SUPPORT_POLICY_DOCUMENTS: ReDomPolicyDocument[] = [
     { heading: "Refusals and safety", body: "Conflicting or unsafe requests receive an explanation and a supported safe path where possible. ReDom AI does not override ReDom safety, moderation, authorization or regional controls." },
     { heading: "Language", body: "AI follows the user's language when the requested operation supports localization." },
   ] },
+  { slug: "language", title: "ReDom Language Policy", summary: "How ReDom language selection, localization and device-language preferences work.", version: "1.0.0", effectiveAt: "2026-09-24T00:00:00.000Z", sections: [
+    { heading: "Language selection", body: "Users can select a supported ReDom language from the Language settings screen. The selected language applies to the ReDom app interface and supported localized product experiences." },
+    { heading: "Device Language", body: "When Device Language is selected, ReDom follows the supported language and regional locale provided by the device. If a device language is not supported, ReDom uses its designated fallback language." },
+    { heading: "Applying a language change", body: "When a user selects a language, ReDom applies the change across supported app surfaces. A temporary language-switching indicator may be shown while the change is being applied." },
+    { heading: "Persistence", body: "A manually selected language is stored for the user and remains selected across supported app restarts until the user chooses another language or returns to Device Language." },
+    { heading: "Localization coverage", body: "Some product content may be unavailable in a selected language. ReDom may use an approved fallback or supported localization mechanism for content that has not yet been translated." },
+    { heading: "Account synchronization", body: "Where account settings are available, ReDom synchronizes the selected language with the user's account so supported experiences can use the same preference." },
+    { heading: "Privacy and control", body: "Changing language does not change account permissions, content visibility, privacy controls, security controls or regional eligibility." },
+  ] },
   { slug: "regional", title: "ReDom Regional Policy", summary: "Country and region-specific availability and policy controls.", sections: [
     { heading: "Availability", body: "Features can differ by country or region based on product availability, provider support and applicable requirements." },
     { heading: "Server enforcement", body: "Regional restrictions are enforced by the ReDom backend; client settings cannot override server policy." },
