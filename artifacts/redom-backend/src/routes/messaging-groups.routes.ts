@@ -72,7 +72,7 @@ router.get("/groups/:conversationId/members", async (req, res) => {
   const id = z.string().uuid().safeParse(req.params.conversationId); if (!req.user?.userId || !id.success) return void res.status(400).json({ success: false, message: "Invalid group." });
   const me = await profileId(req.user.userId); if (!me || !await member(id.data, me)) return void res.status(403).json({ success: false, message: "You do not have access to this group." });
   const rows = await db.select({ id: conversationParticipants.id, profileId: conversationParticipants.userId, role: conversationParticipants.role, joinedAt: conversationParticipants.joinedAt, online: conversationParticipants.online, memberTag: conversationParticipants.memberTag }).from(conversationParticipants).where(and(eq(conversationParticipants.conversationId, id.data), eq(conversationParticipants.activeMember, true), eq(conversationParticipants.permanentlyRemoved, false))).orderBy(conversationParticipants.joinedAt);
-  res.json({ success: true, members: rows });
+  return res.json({ success: true, members: rows });
 });
 
 router.get("/groups/:conversationId/settings", async (req, res) => {
@@ -81,7 +81,7 @@ router.get("/groups/:conversationId/settings", async (req, res) => {
   const [group] = await db.select({ id: conversations.id, groupName: conversations.groupName, groupDescription: conversations.groupDescription, groupPhoto: conversations.groupPhoto, anyoneCanEditInfo: conversations.anyoneCanEditInfo, anyoneCanInvite: conversations.anyoneCanInvite, anyoneCanRemoveMembers: conversations.anyoneCanRemoveMembers, anyoneCanPinMessages: conversations.anyoneCanPinMessages, anyoneCanSendMessages: conversations.anyoneCanSendMessages, anyoneCanSendHistory: conversations.anyoneCanSendHistory, joinApprovalRequired: conversations.joinApprovalRequired, encrypted: conversations.encrypted, participantCount: conversations.participantCount }).from(conversations).where(eq(conversations.id, id.data)).limit(1);
   if (!group) return void res.status(404).json({ success: false, message: "Group not found." });
   const invite = canCreateInvite(group, actor.role) ? await activeInvite(id.data) : null;
-  res.json({ success: true, settings: { ...group, isAdmin: canAdmin(actor.role), inviteLink: invite ? `https://redom.app/group-invite/${invite.token}` : null } });
+  return res.json({ success: true, settings: { ...group, isAdmin: canAdmin(actor.role), inviteLink: invite ? `https://redom.app/group-invite/${invite.token}` : null } });
 });
 
 router.patch("/groups/:conversationId/settings", async (req, res) => {
@@ -98,7 +98,7 @@ router.patch("/groups/:conversationId/settings", async (req, res) => {
   const patch = { ...body.data } as Record<string, unknown>;
   if (body.data.anyoneCanEditInfo === true && group.participantCount > 256) patch.anyoneCanEditInfo = false;
   await db.update(conversations).set({ ...patch, updatedAt: new Date() }).where(eq(conversations.id, id.data));
-  res.json({ success: true });
+  return res.json({ success: true });
 });
 
 router.post("/groups/:conversationId/members", async (req, res) => {
@@ -119,14 +119,14 @@ router.delete("/groups/:conversationId/members/:profileId", async (req, res) => 
   const me = await profileId(req.user.userId); const actor = me ? await member(id.data, me) : null; const targetMember = await member(id.data, target.data); if (!actor || !targetMember) return void res.status(403).json({ success: false, message: "Member access denied." });
   const [group] = await db.select({ anyoneCanRemoveMembers: conversations.anyoneCanRemoveMembers, participantCount: conversations.participantCount }).from(conversations).where(eq(conversations.id, id.data)).limit(1); if (!group) return void res.status(404).json({ success: false, message: "Group not found." });
   if (!group.anyoneCanRemoveMembers && !canAdmin(actor.role)) return void res.status(403).json({ success: false, message: "Only group admins can remove members." }); if (targetMember.role === "owner") return void res.status(403).json({ success: false, message: "The group owner cannot be removed." });
-  await db.update(conversationParticipants).set({ activeMember: false, permanentlyRemoved: true, removedByAdmin: canAdmin(actor.role), leftAt: new Date(), updatedAt: new Date() }).where(eq(conversationParticipants.id, targetMember.id)); await db.update(conversations).set({ participantCount: Math.max(0, group.participantCount - 1), updatedAt: new Date() }).where(eq(conversations.id, id.data)); res.json({ success: true, removed: true });
+  await db.update(conversationParticipants).set({ activeMember: false, permanentlyRemoved: true, removedByAdmin: canAdmin(actor.role), leftAt: new Date(), updatedAt: new Date() }).where(eq(conversationParticipants.id, targetMember.id)); await db.update(conversations).set({ participantCount: Math.max(0, group.participantCount - 1), updatedAt: new Date() }).where(eq(conversations.id, id.data)); return res.json({ success: true, removed: true });
 });
 
 router.patch("/groups/:conversationId/members/:profileId/role", async (req, res) => {
   const id = z.string().uuid().safeParse(req.params.conversationId); const target = z.string().uuid().safeParse(req.params.profileId); const body = z.object({ role: z.enum(["admin", "member"]) }).strict().safeParse(req.body); if (!req.user?.userId || !id.success || !target.success || !body.success) return void res.status(400).json({ success: false, message: "Invalid group role." });
   const me = await profileId(req.user.userId); const actor = me ? await member(id.data, me) : null; const targetMember = await member(id.data, target.data); if (!actor || !targetMember || actor.role !== "owner") return void res.status(403).json({ success: false, message: "Only the group owner can manage admin roles." });
   if (targetMember.role === "owner") return void res.status(409).json({ success: false, message: "The group owner is always an admin." });
-  await db.update(conversationParticipants).set({ role: body.data.role, updatedAt: new Date() }).where(eq(conversationParticipants.id, targetMember.id)); res.json({ success: true, role: body.data.role });
+  await db.update(conversationParticipants).set({ role: body.data.role, updatedAt: new Date() }).where(eq(conversationParticipants.id, targetMember.id)); return res.json({ success: true, role: body.data.role });
 });
 
 router.patch("/groups/:conversationId/members/:profileId/tag", async (req, res) => {
@@ -134,21 +134,21 @@ router.patch("/groups/:conversationId/members/:profileId/tag", async (req, res) 
   if (!req.user?.userId || !id.success || !target.success || !body.success) return void res.status(400).json({ success: false, message: "Invalid member tag." });
   const me = await profileId(req.user.userId); const actor = me ? await member(id.data, me) : null; const targetMember = await member(id.data, target.data); if (!actor || !targetMember) return void res.status(403).json({ success: false, message: "Member access denied." });
   if (target.data !== me && !canAdmin(actor.role)) return void res.status(403).json({ success: false, message: "Only admins can change another member's tag." });
-  await db.update(conversationParticipants).set({ memberTag: body.data.tag || null, updatedAt: new Date() }).where(eq(conversationParticipants.id, targetMember.id)); res.json({ success: true, tag: body.data.tag || null });
+  await db.update(conversationParticipants).set({ memberTag: body.data.tag || null, updatedAt: new Date() }).where(eq(conversationParticipants.id, targetMember.id)); return res.json({ success: true, tag: body.data.tag || null });
 });
 
 router.get("/groups/:conversationId/member-changes", async (req, res) => {
   const id = z.string().uuid().safeParse(req.params.conversationId); if (!req.user?.userId || !id.success) return void res.status(400).json({ success: false, message: "Invalid group." });
   const me = await profileId(req.user.userId); if (!me || !await member(id.data, me)) return void res.status(403).json({ success: false, message: "You do not have access to this group." });
   const rows = await db.select({ id: activityLog.id, type: activityLog.activityType, title: activityLog.activityTitle, description: activityLog.activityDescription, createdAt: activityLog.createdAt }).from(activityLog).where(eq(activityLog.targetId, id.data)).orderBy(desc(activityLog.createdAt)).limit(100);
-  res.json({ success: true, changes: rows });
+  return res.json({ success: true, changes: rows });
 });
 
 router.post("/groups/:conversationId/transfer-owner", async (req, res) => {
   const id = z.string().uuid().safeParse(req.params.conversationId); const body = z.object({ profileId: z.string().uuid() }).strict().safeParse(req.body); if (!req.user?.userId || !id.success || !body.success) return void res.status(400).json({ success: false, message: "Invalid ownership transfer." });
   const me = await profileId(req.user.userId); const actor = me ? await member(id.data, me) : null; const target = await member(id.data, body.data.profileId); if (!actor || actor.role !== "owner" || !target) return void res.status(403).json({ success: false, message: "Only the group owner can transfer ownership." });
   await db.transaction(async (tx) => { await tx.update(conversationParticipants).set({ role: "admin", updatedAt: new Date() }).where(eq(conversationParticipants.id, actor.id)); await tx.update(conversationParticipants).set({ role: "owner", updatedAt: new Date() }).where(eq(conversationParticipants.id, target.id)); });
-  res.json({ success: true, ownerProfileId: body.data.profileId });
+  return res.json({ success: true, ownerProfileId: body.data.profileId });
 });
 
 router.get("/groups/:conversationId/invite-link", async (req, res) => {
@@ -156,21 +156,21 @@ router.get("/groups/:conversationId/invite-link", async (req, res) => {
   const me = await profileId(req.user.userId); const actor = me ? await member(id.data, me) : null; if (!actor) return void res.status(403).json({ success: false, message: "You do not have access to this group." });
   const [group] = await db.select({ participantCount: conversations.participantCount, anyoneCanInvite: conversations.anyoneCanInvite, groupName: conversations.groupName, groupPhoto: conversations.groupPhoto, joinApprovalRequired: conversations.joinApprovalRequired }).from(conversations).where(eq(conversations.id, id.data)).limit(1); if (!group) return void res.status(404).json({ success: false, message: "Group not found." });
   if (!canCreateInvite(group, actor.role)) return void res.status(403).json({ success: false, message: "Only group admins can create invite links for this group." });
-  const invite = await ensureInvite(id.data, me!); res.json({ success: true, group, token: invite.token, link: `https://redom.app/group-invite/${invite.token}`, active: invite.active });
+  const invite = await ensureInvite(id.data, me!); return res.json({ success: true, group, token: invite.token, link: `https://redom.app/group-invite/${invite.token}`, active: invite.active });
 });
 
 router.post("/groups/:conversationId/invite-link/reset", async (req, res) => {
   const id = z.string().uuid().safeParse(req.params.conversationId); if (!req.user?.userId || !id.success) return void res.status(400).json({ success: false, message: "Invalid group." });
   const me = await profileId(req.user.userId); const actor = me ? await member(id.data, me) : null; if (!actor || !canAdmin(actor.role)) return void res.status(403).json({ success: false, message: "Only group admins can reset the invite link." });
   await db.update(groupInviteLinks).set({ active: false, resetAt: new Date() }).where(and(eq(groupInviteLinks.conversationId, id.data), eq(groupInviteLinks.active, true)));
-  const invite = await ensureInvite(id.data, me!); res.json({ success: true, token: invite.token, link: `https://redom.app/group-invite/${invite.token}` });
+  const invite = await ensureInvite(id.data, me!); return res.json({ success: true, token: invite.token, link: `https://redom.app/group-invite/${invite.token}` });
 });
 
 router.get("/groups/invite/:token", async (req, res) => {
   const token = z.string().min(20).max(128).safeParse(req.params.token); if (!token.success) return void res.status(400).json({ success: false, message: "Invalid group invite." });
   const [invite] = await db.select({ token: groupInviteLinks.token, conversationId: groupInviteLinks.conversationId, active: groupInviteLinks.active }).from(groupInviteLinks).where(and(eq(groupInviteLinks.token, token.data), eq(groupInviteLinks.active, true))).limit(1); if (!invite) return void res.status(404).json({ success: false, message: "This group invite link is no longer valid." });
   const [group] = await db.select({ id: conversations.id, groupName: conversations.groupName, groupDescription: conversations.groupDescription, groupPhoto: conversations.groupPhoto, participantCount: conversations.participantCount, joinApprovalRequired: conversations.joinApprovalRequired, encrypted: conversations.encrypted }).from(conversations).where(and(eq(conversations.id, invite.conversationId), eq(conversations.deleted, false), eq(conversations.status, "active"))).limit(1); if (!group) return void res.status(404).json({ success: false, message: "This group is unavailable." });
-  res.json({ success: true, group, link: `https://redom.app/group-invite/${invite.token}` });
+  return res.json({ success: true, group, link: `https://redom.app/group-invite/${invite.token}` });
 });
 
 router.post("/groups/invite/:token/join", async (req, res) => {
@@ -197,7 +197,7 @@ router.post("/groups/:conversationId/leave", async (req, res) => {
   const id = z.string().uuid().safeParse(req.params.conversationId); if (!req.user?.userId || !id.success) return void res.status(400).json({ success: false, message: "Invalid group." });
   const me = await profileId(req.user.userId); const actor = me ? await member(id.data, me) : null; if (!actor) return void res.status(403).json({ success: false, message: "You are not a group member." }); if (actor.role === "owner") return void res.status(409).json({ success: false, message: "Transfer group ownership before leaving." });
   const [group] = await db.select({ participantCount: conversations.participantCount }).from(conversations).where(eq(conversations.id, id.data)).limit(1); if (!group) return void res.status(404).json({ success: false, message: "Group not found." });
-  await db.update(conversationParticipants).set({ activeMember: false, leftGroup: true, leftAt: new Date(), updatedAt: new Date() }).where(eq(conversationParticipants.id, actor.id)); await db.update(conversations).set({ participantCount: Math.max(0, group.participantCount - 1), updatedAt: new Date() }).where(eq(conversations.id, id.data)); res.json({ success: true, left: true });
+  await db.update(conversationParticipants).set({ activeMember: false, leftGroup: true, leftAt: new Date(), updatedAt: new Date() }).where(eq(conversationParticipants.id, actor.id)); await db.update(conversations).set({ participantCount: Math.max(0, group.participantCount - 1), updatedAt: new Date() }).where(eq(conversations.id, id.data)); return res.json({ success: true, left: true });
 });
 
 export default router;
