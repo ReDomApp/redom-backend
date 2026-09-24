@@ -52,7 +52,7 @@ export class RegistrationVerificationService {
       userAgent: registrationChallenge?.userAgent ?? undefined,
       sessionId: old.sessionId ?? undefined,
     });
-    const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, result);
+    const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, { challengeId: result.challengeId, channel: result.channel === "sms" ? "sms" : "email", target: result.target, expiresAt: result.expiresAt });
     const contactType: ContactType = result.channel === "sms" ? "phone" : "email";
     return { success: true, verificationChallengeId: result.challengeId, flowId: maskFlowId(updated.flowId), rawFlowId: updated.flowId, channel: result.channel, maskedTarget: maskTarget(result.target, contactType), expiresAt: result.expiresAt.toISOString() };
   }
@@ -107,8 +107,8 @@ export class RegistrationVerificationService {
     await db.update(verifications).set({ status: "invalidated", updatedAt: new Date() }).where(and(eq(verifications.id, verification.id), eq(verifications.status, "pending")));
     const purpose = channel === "sms" ? "PHONE_VERIFICATION" : "EMAIL_VERIFICATION";
     const created = await verificationService.createVerification({ userId: user?.id ?? null, purpose, target: normalizedTarget, channel, requestedLength: 6, firstName: registrationChallenge?.firstName ?? user?.firstName ?? undefined, requestIp: registrationChallenge?.requestIp ?? undefined, userAgent: registrationChallenge?.userAgent ?? undefined, deviceId: params.deviceId, sessionId: registrationChallenge?.id ?? verification.sessionId ?? reservation.id });
-    const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, created);
-    return { success: true, verificationChallengeId: created.challengeId, flowId: maskFlowId(updated.flowId), rawFlowId: updated.flowId, channel, maskedTarget: maskTarget(normalizedTarget, params.contactType), expiresAt: created.expiresAt.toISOString() };
+    const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, { challengeId: created.challengeId, channel: created.channel === "sms" ? "sms" : "email", target: created.target, expiresAt: created.expiresAt });
+    return { success: true, verificationChallengeId: created.challengeId, flowId: maskFlowId(updated.flowId), rawFlowId: updated.flowId, channel, maskedTarget: maskTarget(normalizedTarget, params.contactType as ContactType), expiresAt: created.expiresAt.toISOString() };
   }
 }
 
