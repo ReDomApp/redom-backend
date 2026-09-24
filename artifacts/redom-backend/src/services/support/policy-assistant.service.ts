@@ -108,10 +108,13 @@ export const REDOM_SUPPORT_POLICY_DOCUMENTS: ReDomPolicyDocument[] = [
     { heading: "Privacy", body: "ReDom does not expose a list of people who saved content." },
     { heading: "Unavailable content", body: "Deleted, private, restricted or otherwise unavailable content may no longer be displayed in Saved." },
   ] },
-  { slug: "support", title: "ReDom Support and Reporting Policy", summary: "How users can get help, report problems and follow supported cases.", sections: [
+  { slug: "support", title: "ReDom Support and Reporting Policy", summary: "How users can get help, report problems and follow supported cases.", version: "1.1.0", effectiveAt: "2026-09-24T00:00:00.000Z", sections: [
     { heading: "Support", body: "Use supported ReDom support channels for account, product and safety issues." },
     { heading: "Reports", body: "Reports should contain enough information to evaluate the issue without exposing unrelated private information." },
     { heading: "Case updates", body: "Support state shown in the application comes from the backend and is never fabricated by AI." },
+    { heading: "Email replies", body: "ReDom support email replies are presented as focused support conversations rather than marketing messages. Replies identify the support case in compact metadata, keep the verified response as the main content, and provide a direct instruction to reply to the email to continue the case." },
+    { heading: "Response quality", body: "Support replies should use clear, professional, human communication. ReDom does not add promotional content, decorative messaging, invented response-time promises, or unverified account actions to support replies." },
+    { heading: "Email continuity", body: "Support replies use the configured ReDom support address for continued correspondence. The case number remains the permanent reference for the support conversation." },
   ] },
 ];
 
