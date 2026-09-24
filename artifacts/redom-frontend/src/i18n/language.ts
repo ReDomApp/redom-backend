@@ -141,7 +141,7 @@ const base: Record<string, string> = {
   company: "ReDom Platforms, Inc.",
 };
 
-const translations: Record<LanguageCode, Record<string, string>> = {
+const translations: Partial<Record<LanguageCode, Record<string, string>>> = {
   en: base,
   es: {
     ...base,
