@@ -5,6 +5,15 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useTheme } from "../theme/ThemeProvider";
 import type { RootStackParamList } from "../routing/types";
 import { ordersPaymentsService, type OrderSummary } from "../services/ordersPaymentsService";
+import BackIcon from "../assets/navigation/back.svg";
+import CartIcon from "../assets/home-feed/cart.svg";
+import MenuIcon from "../assets/home-feed/menu.svg";
+import StarsIcon from "../assets/home-feed/stars.svg";
+import SubscriptionsIcon from "../assets/home-feed/subscriptions.svg";
+import SecurityIcon from "../assets/home-feed/security-controls.svg";
+import HelpIcon from "../assets/home-feed/help-support.svg";
+import TermsIcon from "../assets/home-feed/terms-policies.svg";
+import ChevronIcon from "../assets/home-feed/chevron-right.svg";
 
 export function OrdersPaymentsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -20,11 +29,11 @@ export function OrdersPaymentsScreen() {
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <Pressable onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Back">
-          <Text style={[styles.back, { color: colors.text }]}>‹</Text>
+          <BackIcon width={24} height={24} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Orders and payments</Text>
         <Pressable onPress={() => navigation.navigate("Cart")} accessibilityRole="button" accessibilityLabel="Cart">
-          <Text style={[styles.headerAction, { color: colors.text }]}>🛒</Text>
+          <CartIcon width={24} height={24} color={colors.text} />
         </Pressable>
       </View>
 
@@ -37,15 +46,15 @@ export function OrdersPaymentsScreen() {
         </Pressable>
 
         <Text style={[styles.section, { color: colors.text }]}>Balances</Text>
-        <Row label="ReDom Stars" icon="☆" colors={colors} onPress={() => navigation.navigate("StarsActivity")} />
+        <Row label="ReDom Stars" Icon={StarsIcon} colors={colors} onPress={() => navigation.navigate("StarsActivity")} />
 
         <Text style={[styles.section, { color: colors.text }]}>Payment information</Text>
-        <Row label="Subscriptions" icon="▣" colors={colors} onPress={() => navigation.navigate("Subscriptions")} />
+        <Row label="Subscriptions" Icon={SubscriptionsIcon} colors={colors} onPress={() => navigation.navigate("Subscriptions")} />
 
         <Text style={[styles.section, { color: colors.text }]}>Settings</Text>
-        <Row label="Security and controls" icon="♢" colors={colors} onPress={() => navigation.navigate("PaymentSecurity")} />
-        <Row label="Help" icon="?" colors={colors} onPress={() => navigation.navigate("Support")} />
-        <Row label="Terms and privacy" icon="▤" colors={colors} onPress={() => navigation.navigate("Policy", { slug: "payments" })} />
+        <Row label="Security and controls" Icon={SecurityIcon} colors={colors} onPress={() => navigation.navigate("PaymentSecurity")} />
+        <Row label="Help" Icon={HelpIcon} colors={colors} onPress={() => navigation.navigate("Support")} />
+        <Row label="Terms and privacy" Icon={TermsIcon} colors={colors} onPress={() => navigation.navigate("Policy", { slug: "payments" })} />
 
         {!loading && orders.length > 0 ? (
           <>
@@ -68,9 +77,9 @@ export function OrdersPaymentsScreen() {
 function Row({ label, icon, colors, onPress }: { label: string; icon: string; colors: any; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={[styles.row, { borderBottomColor: colors.border }]} accessibilityRole="button">
-      <Text style={[styles.icon, { color: colors.text }]}>{icon}</Text>
+      <Icon width={28} height={28} color={colors.text} />
       <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-      <Text style={[styles.chevron, { color: colors.muted }]}>›</Text>
+      <ChevronIcon width={20} height={20} />
     </Pressable>
   );
 }
