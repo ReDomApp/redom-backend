@@ -29,9 +29,7 @@ const timerLabel = (value: DisappearingTimer) => {
   return "Off";
 };
 
-export function GroupInfoScreenV4({
-  const { colors } = useTheme();
-  const s = makeStyles(colors); route, navigation }: Props) {
+export function GroupInfoScreenV4({ route, navigation }: Props) {
   const [group, setGroup] = useState<GroupSettings | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [menu, setMenu] = useState(false);
@@ -152,9 +150,9 @@ export function GroupInfoScreenV4({
               setMenu(false);
               navigation.navigate("GroupAddMembers", { conversationId: id });
             }}
-          />
-          <Menu icon="edit" title="Edit name" onPress={editGroupName} />
-          <Menu icon="edit" title="Edit description" onPress={editGroupDescription} />
+           styles={s}/>
+          <Menu icon="edit" title="Edit name" onPress={editGroupName}  styles={s}/>
+          <Menu icon="edit" title="Edit description" onPress={editGroupDescription}  styles={s}/>
           <Menu
             icon="settings"
             title="Group permissions"
@@ -162,7 +160,7 @@ export function GroupInfoScreenV4({
               setMenu(false);
               navigation.navigate("GroupPermissions", { conversationId: id });
             }}
-          />
+           styles={s}/>
           <Menu
             icon="share"
             title="Export chat"
@@ -170,7 +168,7 @@ export function GroupInfoScreenV4({
               setMenu(false);
               void Share.share({ message: `ReDom group: ${group.groupName}` });
             }}
-          />
+           styles={s}/>
         </View>
       ) : null}
 
@@ -195,18 +193,18 @@ export function GroupInfoScreenV4({
               icon="audio"
               label="Audio"
               onPress={() => navigation.navigate("Call", { conversationId: id, callType: "voice" })}
-            />
+             styles={s}/>
             <Quick
               icon="video"
               label="Video"
               onPress={() => navigation.navigate("Call", { conversationId: id, callType: "video" })}
-            />
+             styles={s}/>
             <Quick
               icon="add"
               label="Add"
               onPress={() => navigation.navigate("GroupAddMembers", { conversationId: id })}
-            />
-            <Quick icon="search" label="Search" onPress={() => navigation.navigate("Search")} />
+             styles={s}/>
+            <Quick icon="search" label="Search" onPress={() => navigation.navigate("Search")}  styles={s}/>
           </View>
         </Pressable>
 
@@ -222,43 +220,43 @@ export function GroupInfoScreenV4({
           <GroupActionIcon kind="chevron" color="#98A2B3" />
         </Pressable>
 
-        <Info icon="list" title="Manage storage" sub="View encrypted media usage" onPress={() => setting("storage")} />
+        <Info icon="list" title="Manage storage" sub="View encrypted media usage" onPress={() => setting("storage")}  styles={s}/>
         <Info
           icon="settings"
           title="Notifications"
           sub={chatSettings?.muted ? "Muted" : "All"}
           onPress={() => setting("notifications")}
-        />
+         styles={s}/>
         <Info
           icon="image"
           title="Media visibility"
           sub={chatSettings?.mediaVisibility ? "Private to this device" : "Not available in gallery workflow"}
           onPress={() => setting("media")}
-        />
+         styles={s}/>
         <Info
           icon="privacy"
           title="Encryption"
           sub="Messages and calls are end-to-end encrypted"
           onPress={() => navigation.navigate("ChatEncryptionVerification", { conversationId: id })}
-        />
+         styles={s}/>
         <Info
           icon="history"
           title="Disappearing messages"
           sub={timerLabel(timer)}
           onPress={() => setting("disappearing")}
-        />
+         styles={s}/>
         <Info
           icon="privacy"
           title="Chat lock"
           sub="Lock and hide this group on this device"
           onPress={() => setting("lock")}
-        />
+         styles={s}/>
         <Info
           icon="privacy"
           title="Advanced chat privacy"
           sub={chatSettings?.advancedChatPrivacy ? "On" : "Off"}
           onPress={() => setting("advanced")}
-        />
+         styles={s}/>
 
         <Pressable
           style={s.info}
@@ -290,17 +288,17 @@ export function GroupInfoScreenV4({
           icon="add"
           title="Add members"
           onPress={() => navigation.navigate("GroupAddMembers", { conversationId: id })}
-        />
+         styles={s}/>
         <MemberAction
           icon="link"
           title="Invite via link or QR code"
           onPress={() => navigation.navigate("GroupInvite", { conversationId: id })}
-        />
+         styles={s}/>
         <MemberAction
           icon="tag"
           title="Add member tags"
           onPress={() => Alert.alert("Member tags", "Use the tag icon beside a member to add or remove their tag.")}
-        />
+         styles={s}/>
 
         {members.map((member) => (
           <View style={s.member} key={member.id}>
@@ -347,7 +345,7 @@ export function GroupInfoScreenV4({
           icon="list"
           title="View member changes"
           onPress={() => navigation.navigate("GroupMemberChanges", { conversationId: id })}
-        />
+         styles={s}/>
         <MemberAction
           icon="star"
           title={chatSettings?.favorite ? "Remove from Favorites" : "Add to Favorites"}
@@ -361,12 +359,12 @@ export function GroupInfoScreenV4({
               setError(e instanceof Error ? e.message : "Favorites could not be updated.");
             }
           }}
-        />
+         styles={s}/>
         <MemberAction
           icon="list"
           title="Add to list"
           onPress={() => Alert.alert("Lists", "Private group lists are not available in this group yet.")}
-        />
+         styles={s}/>
         <MemberAction
           icon="clear"
           title="Clear chat"
@@ -391,14 +389,14 @@ export function GroupInfoScreenV4({
               ],
             )
           }
-        />
-        <MemberAction icon="leave" title="Exit group" danger onPress={leave} />
+         styles={s}/>
+        <MemberAction icon="leave" title="Exit group" danger onPress={leave}  styles={s}/>
         <MemberAction
           icon="report"
           title="Report group"
           danger
           onPress={() => navigation.navigate("GroupReport", { conversationId: id })}
-        />
+         styles={s}/>
 
         {error ? <Text style={s.error}>{error}</Text> : null}
       </ScrollView>
@@ -410,17 +408,19 @@ function Quick({
   icon,
   label,
   onPress,
+  styles,
 }: {
   icon: any;
   label: string;
   onPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <Pressable style={s.quickItem} onPress={onPress}>
-      <View style={s.quickCircle}>
+    <Pressable style={styles.quickItem} onPress={onPress}>
+      <View style={styles.quickCircle}>
         <GroupActionIcon kind={icon} color="#111" />
       </View>
-      <Text style={s.quickLabel}>{label}</Text>
+      <Text style={styles.quickLabel}>{label}</Text>
     </Pressable>
   );
 }
@@ -430,18 +430,20 @@ function Info({
   title,
   sub,
   onPress,
+  styles,
 }: {
   icon: any;
   title: string;
   sub: string;
   onPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <Pressable style={s.info} onPress={onPress}>
+    <Pressable style={styles.info} onPress={onPress}>
       <GroupActionIcon kind={icon} />
-      <View style={s.flex}>
-        <Text style={s.rowTitle}>{title}</Text>
-        <Text style={s.rowDesc}>{sub}</Text>
+      <View style={styles.flex}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <Text style={styles.rowDesc}>{sub}</Text>
       </View>
       <GroupActionIcon kind="chevron" size={22} color="#98A2B3" />
     </Pressable>
@@ -453,16 +455,18 @@ function MemberAction({
   title,
   onPress,
   danger = false,
+  styles,
 }: {
   icon: any;
   title: string;
   onPress: () => void;
   danger?: boolean;
+  styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <Pressable style={s.action} onPress={onPress}>
+    <Pressable style={styles.action} onPress={onPress}>
       <GroupActionIcon kind={icon} color={danger ? "#C9184A" : "#667085"} />
-      <Text style={[s.actionText, danger && s.dangerText]}>{title}</Text>
+      <Text style={[styles.actionText, danger && styles.dangerText]}>{title}</Text>
     </Pressable>
   );
 }
@@ -471,15 +475,17 @@ function Menu({
   icon,
   title,
   onPress,
+  styles,
 }: {
   icon: any;
   title: string;
   onPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <Pressable style={s.menuItem} onPress={onPress}>
+    <Pressable style={styles.menuItem} onPress={onPress}>
       <GroupActionIcon kind={icon} />
-      <Text style={s.menuText}>{title}</Text>
+      <Text style={styles.menuText}>{title}</Text>
     </Pressable>
   );
 }
