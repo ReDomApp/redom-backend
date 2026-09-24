@@ -1,11 +1,144 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
-import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { groupService } from "../messages/groupService";
 import { GroupActionIcon } from "../components/GroupActionIcon";
-export function GroupMemberChangesScreen({
+
+type Props = NativeStackScreenProps<RootStackParamList, "GroupMemberChanges">;
+
+type MemberChange = {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  createdAt: string;
+};
+
+export function GroupMemberChangesScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
-  const s = makeStyles(colors);route,navigation}:NativeStackScreenProps<RootStackParamList,"GroupMemberChanges">){const[data,setData]=useState<any[]>([]);const[loading,setLoading]=useState(true);useEffect(()=>{void groupService.getMemberChanges(route.params.conversationId).then(r=>setData(r.changes)).finally(()=>setLoading(false));},[route.params.conversationId]);return <SafeAreaView style={s.root}><View style={s.header}><Text onPress={()=>navigation.goBack()}><GroupActionIcon kind="back" size={30} color="#111"/></Text><Text style={s.title}>Member changes</Text><View style={{width:30}}/></View>{loading?<ActivityIndicator style={{marginTop:40}} color="#1877F2"/>:<ScrollView>{data.length===0?<Text style={s.empty}>No recorded member changes yet.</Text>:data.map(x=><View style={s.row} key={x.id}><GroupActionIcon kind="list"/><View style={{flex:1}}><Text style={s.name}>{x.title||x.type}</Text><Text style={s.desc}>{x.description}</Text><Text style={s.time}>{new Date(x.createdAt).toLocaleString()}</Text></View></View>)}</ScrollView>}</SafeAreaView>}
-function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) { return StyleSheet.create({root:{flex:1,backgroundColor:colors.surface},header:{height:60,borderBottomWidth:1,borderBottomColor:colors.border,paddingHorizontal:18,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},title:{fontSize:20,fontWeight:"700",color:colors.text},row:{padding:18,borderBottomWidth:1,borderBottomColor:colors.border,flexDirection:"row",gap:18},name:{fontSize:16,fontWeight:"700",color:colors.text},desc:{marginTop:4,color:colors.textSecondary},time:{marginTop:5,fontSize:12,color:"#98A2B3"},empty:{padding:24,color:colors.textSecondary}}); }
+  const s = makeStyles(colors);
+  const [data, setData] = useState<MemberChange[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    void groupService
+      .getMemberChanges(route.params.conversationId)
+      .then((result) => {
+        if (active) setData(result.changes);
+      })
+      .catch(() => {
+        if (active) setData([]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [route.params.conversationId]);
+
+  return (
+    <SafeAreaView style={s.root}>
+      <View style={s.header}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+          <GroupActionIcon kind="back" size={30} color={colors.text} />
+        </Pressable>
+
+        <Text style={s.title}>Member changes</Text>
+
+        <View style={s.headerSpacer} />
+      </View>
+
+      {loading ? (
+        <ActivityIndicator style={s.loading} color="#1877F2" />
+      ) : (
+        <ScrollView contentContainerStyle={s.list}>
+          {data.length === 0 ? (
+            <Text style={s.empty}>No recorded member changes yet.</Text>
+          ) : (
+            data.map((change) => (
+              <View style={s.row} key={change.id}>
+                <GroupActionIcon kind="list" size={28} color="#1877F2" />
+                <View style={s.rowContent}>
+                  <Text style={s.name}>{change.title || change.type}</Text>
+                  {!!change.description && (
+                    <Text style={s.desc}>{change.description}</Text>
+                  )}
+                  <Text style={s.time}>
+                    {new Date(change.createdAt).toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+
+function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: colors.surface,
+    },
+    header: {
+      height: 60,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      paddingHorizontal: 18,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    headerSpacer: {
+      width: 30,
+    },
+    title: {
+      fontSize: 20,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    loading: {
+      marginTop: 40,
+    },
+    list: {
+      paddingBottom: 30,
+    },
+    row: {
+      padding: 18,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      flexDirection: "row",
+      gap: 18,
+    },
+    rowContent: {
+      flex: 1,
+    },
+    name: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    desc: {
+      marginTop: 4,
+      color: colors.textSecondary,
+    },
+    time: {
+      marginTop: 5,
+      fontSize: 12,
+      color: "#98A2B3",
+    },
+    empty: {
+      padding: 24,
+      color: colors.textSecondary,
+      textAlign: "center",
+    },
+  });
+}
