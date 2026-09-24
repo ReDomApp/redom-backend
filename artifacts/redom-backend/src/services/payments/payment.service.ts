@@ -169,7 +169,7 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
     }
     if (row.status === "paid") {
       await client.query("COMMIT");
-      return { transactionId: String(row.id), redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : redomTransactionId, reference: referenceValue, status: "paid", amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
+      return { transactionId: String(row.id), redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null, reference: referenceValue, status: "paid", amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
     }
     const paymentDetails = {
       providerReference: String(verified.reference),
