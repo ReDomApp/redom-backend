@@ -1,14 +1,49 @@
-import React,{useState}from"react";
-import{SafeAreaView,View,Text,Pressable,StyleSheet,TextInput}from"react-native";
+import React,{useEffect,useMemo,useState}from"react";
+import{SafeAreaView,View,Text,Pressable,StyleSheet,TextInput,ScrollView,ActivityIndicator,Alert,Linking}from"react-native";
 import{useNavigation,useRoute}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
 import BackIcon from"../assets/navigation/back.svg";
+import{ordersPaymentsService,StarPackage,SavedPaymentMethod}from"../services/ordersPaymentsService";
 
 export function StarsCheckoutScreen(){
- const n=useNavigation<any>();const route=useRoute<any>();const{colors}=useTheme();const[email,setEmail]=useState("");
+ const n=useNavigation<any>();const route=useRoute<any>();const{colors}=useTheme();
+ const countryCode=String(route.params.countryCode);const packageKey=String(route.params.packageKey);
+ const[email,setEmail]=useState("");const[pin,setPin]=useState("");const[pinEnabled,setPinEnabled]=useState(false);
+ const[pkg,setPkg]=useState<StarPackage|null>(null);const[methods,setMethods]=useState<SavedPaymentMethod[]>([]);const[selectedMethod,setSelectedMethod]=useState<string|null>(null);
+ const[fullName,setFullName]=useState("");const[address,setAddress]=useState("");const[city,setCity]=useState("");const[state,setState]=useState("");const[zip,setZip]=useState("");const[query,setQuery]=useState("");const[suggestions,setSuggestions]=useState<any[]>([]);
+ const[loading,setLoading]=useState(true);const[paying,setPaying]=useState(false);const[status,setStatus]=useState<string|null>(null);const[reference,setReference]=useState<string|null>(null);
+
+ useEffect(()=>{(async()=>{try{const[catalog,settings,pm]=await Promise.all([ordersPaymentsService.starsCatalog(countryCode),ordersPaymentsService.getSettings(),ordersPaymentsService.paymentMethods()]);setPkg(catalog.packages.find(x=>x.key===packageKey)||null);setPinEnabled(Boolean(settings.settings.pin_enabled));setMethods(pm.methods);}catch(e){Alert.alert("ReDom Pay",e instanceof Error?e.message:"Unable to load checkout.");}finally{setLoading(false)}})()},[countryCode,packageKey]);
+
+ useEffect(()=>{const timer=setTimeout(()=>{if(query.trim().length>=3)void ordersPaymentsService.addressSearch(query).then(r=>setSuggestions(r.suggestions)).catch(()=>setSuggestions([]));else setSuggestions([])},350);return()=>clearTimeout(timer)},[query]);
+
+ useEffect(()=>{const sub=Linking.addEventListener("url",({url})=>{if(url.indexOf("redom://payment/callback")!==0)return;const match=url.match(/[?&]reference=([^&]+)/);const ref=match?decodeURIComponent(match[1]):reference;if(ref){setReference(ref);void ordersPaymentsService.verifyPayment(ref).then(result=>{setStatus(result.payment.status);if(result.payment.status==="paid"){Alert.alert("Payment successful",String(pkg?.stars??"")+" ReDom Stars were added to your balance.",[{text:"OK",onPress:()=>n.navigate("StarsActivity")}])}}).catch(e=>setStatus(e instanceof Error?e.message:"Payment could not be verified."));}});return()=>sub.remove()},[n,reference,pkg]);
+
+ const submit=async()=>{if(!pkg||!email.trim())return;setPaying(true);try{const result=await ordersPaymentsService.initializeStars({packageKey:packageKey,countryCode:countryCode,email:email.trim(),pin:pinEnabled?pin:undefined,paymentMethodId:selectedMethod||undefined,address:{countryCode:countryCode,countryName:countryCode,fullName:fullName.trim()||"ReDom Customer",addressLine1:address.trim()||"Not provided",city:city.trim()||"Not provided",state:state.trim()||null,postalCode:zip.trim()||null}});setReference(result.reference);if(result.checkoutUrl){await Linking.openURL(result.checkoutUrl)}else if(result.status==="success"){setStatus("paid");n.navigate("StarsActivity")}else{setStatus(result.status||"pending");Alert.alert("Payment",result.status==="ongoing"?"Your payment needs further authentication.":"Payment started.")}}catch(e){Alert.alert("Payment failed",e instanceof Error?e.message:"Unable to start payment.")}finally{setPaying(false)}};
+
+ const title=useMemo(()=>pkg?String(pkg.stars)+" ReDom Stars":"ReDom Stars",[pkg]);
+ if(loading)return <SafeAreaView style={[s.root,{backgroundColor:colors.background}]}><ActivityIndicator style={{marginTop:40}} color={colors.primary}/></SafeAreaView>;
  return <SafeAreaView style={[s.root,{backgroundColor:colors.background}]}>
   <View style={[s.header,{backgroundColor:colors.surface,borderBottomColor:colors.border}]}><Pressable onPress={()=>n.goBack()}><BackIcon width={24} height={24}/></Pressable><Text style={[s.title,{color:colors.text}]}>Pay for ReDom Stars?</Text></View>
-  <View style={s.content}><Text style={[s.heading,{color:colors.text}]}>Confirm your purchase</Text><Text style={[s.muted,{color:colors.textSecondary}]}>Package: {route.params.packageKey}</Text><Text style={[s.muted,{color:colors.textSecondary}]}>Country: {route.params.countryCode}</Text><Text style={[s.label,{color:colors.text}]}>Email for transaction updates</Text><TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@example.com" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/><Pressable style={[s.button,{backgroundColor:colors.primary}]}><Text style={s.buttonText}>Continue</Text></Pressable></View>
+  <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+   <Text style={[s.heading,{color:colors.text}]}>{title}</Text>
+   {pkg&&<Text style={[s.price,{color:colors.text}]}>{pkg.localAmountFormatted+" · $"+pkg.usdPrice.toFixed(2)+" USD"}</Text>}
+   <Text style={[s.muted,{color:colors.textSecondary}]}>Your payment is processed securely by Paystack. ReDom does not store your card number or CVV.</Text>
+   <Text style={[s.label,{color:colors.text}]}>Email for transaction updates</Text>
+   <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@example.com" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/>
+   {methods.length>0&&<><Text style={[s.label,{color:colors.text}]}>Payment method</Text>{methods.map(m=><Pressable key={m.id} onPress={()=>setSelectedMethod(m.id)} style={[s.method,{borderColor:selectedMethod===m.id?colors.primary:colors.border,backgroundColor:colors.surface}]}><Text style={[s.methodTitle,{color:colors.text}]}>{(m.brand||"Card")+" "+(m.last4?"•••• "+m.last4:"")}</Text><Text style={[s.muted,{color:colors.textSecondary}]}>Saved securely with Paystack</Text></Pressable>)}</>}
+   {pinEnabled&&<><Text style={[s.label,{color:colors.text}]}>Payment PIN</Text><TextInput value={pin} onChangeText={setPin} keyboardType="number-pad" secureTextEntry maxLength={8} placeholder="Enter PIN" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/></>}
+   <Text style={[s.label,{color:colors.text}]}>Billing address</Text>
+   <TextInput value={query} onChangeText={setQuery} placeholder="Search address" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/>
+   {suggestions.map(x=><Pressable key={x.id} onPress={()=>{setAddress(x.placeName);setQuery(x.placeName);setSuggestions([])}} style={[s.suggestion,{borderColor:colors.border,backgroundColor:colors.surface}]}><Text style={{color:colors.text}}>{x.placeName}</Text></Pressable>)}
+   <TextInput value={fullName} onChangeText={setFullName} placeholder="Full name" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/>
+   <TextInput value={address} onChangeText={setAddress} placeholder="Address" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/>
+   <View style={s.row}><TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor={colors.textSecondary} style={[s.input,s.half,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/><TextInput value={state} onChangeText={setState} placeholder="State" placeholderTextColor={colors.textSecondary} style={[s.input,s.half,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/></View>
+   <TextInput value={zip} onChangeText={setZip} placeholder="Zip code" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/>
+   {status&&<Text style={[s.status,{color:status==="paid"?colors.primary:colors.textSecondary}]}>{"Status: "+status+(reference?" · "+reference:"")}</Text>}
+   <Pressable disabled={paying||!pkg||pkg.payable===false} onPress={submit} style={[s.button,{backgroundColor:paying||!pkg||pkg.payable===false?colors.border:colors.primary}]}><Text style={s.buttonText}>{paying?"Opening secure checkout…":"Continue"}</Text></Pressable>
+   {pkg?.availabilityReason&&<Text style={[s.muted,{color:colors.textSecondary,marginTop:10}]}>{pkg.availabilityReason}</Text>}
+  </ScrollView>
  </SafeAreaView>
 }
-const s=StyleSheet.create({root:{flex:1},header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",paddingHorizontal:14},title:{fontSize:18,fontWeight:"800",marginLeft:12},content:{padding:22},heading:{fontSize:25,fontWeight:"900",marginBottom:12},muted:{fontSize:16,marginBottom:7},label:{fontSize:16,fontWeight:"700",marginTop:24,marginBottom:8},input:{height:54,borderWidth:1,borderRadius:13,paddingHorizontal:15,fontSize:16},button:{height:54,borderRadius:27,alignItems:"center",justifyContent:"center",marginTop:24},buttonText:{color:"#fff",fontSize:17,fontWeight:"800"}});
+const s=StyleSheet.create({root:{flex:1},header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",paddingHorizontal:14},title:{fontSize:18,fontWeight:"800",marginLeft:12},content:{padding:20,paddingBottom:40},heading:{fontSize:25,fontWeight:"900"},price:{fontSize:21,fontWeight:"800",marginTop:6},muted:{fontSize:14,lineHeight:20,marginTop:7},label:{fontSize:16,fontWeight:"700",marginTop:22,marginBottom:8},input:{height:54,borderWidth:1,borderRadius:13,paddingHorizontal:15,fontSize:16,marginBottom:10},method:{borderWidth:1,borderRadius:14,padding:14,marginBottom:8},methodTitle:{fontSize:17,fontWeight:"800"},row:{flexDirection:"row",gap:10},half:{flex:1},suggestion:{padding:13,borderWidth:1,borderRadius:10,marginBottom:6},status:{fontSize:13,marginTop:12},button:{height:54,borderRadius:27,alignItems:"center",justifyContent:"center",marginTop:20},buttonText:{color:"#fff",fontSize:17,fontWeight:"800"}});
