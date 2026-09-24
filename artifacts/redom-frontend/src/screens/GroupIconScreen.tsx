@@ -25,7 +25,7 @@ const EMOJIS = ["😀", "😎", "😂", "😍", "🥳", "🔥", "⭐", "💙", "
 
 export function GroupIconScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
-  const styles = makeStyles(colors);
+  const s = makeStyles(colors);
   const [group, setGroup] = useState<GroupSettings | null>(null);
   const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -144,14 +144,14 @@ export function GroupIconScreen({ route, navigation }: Props) {
               <Text style={s.sheetHeading}>Group icon</Text>
               <Pressable onPress={() => void remove()} hitSlop={8}><GroupActionIcon kind="trash" size={26} color="#111" /></Pressable>
             </View>
-            <Action styles={styles} icon="camera" title="Camera" onPress={() => void choose("camera")} />
-            <Action styles={styles} icon="image" title="Gallery" onPress={() => void choose("gallery")} />
-            <Action styles={styles} icon="emoji" title="Emoji & stickers" onPress={showEmojiPicker} />
-            <Action styles={styles} icon="search" title="Search web" onPress={() => {
+            <Action styles={s} icon="camera" title="Camera" onPress={() => void choose("camera")} />
+            <Action styles={s} icon="image" title="Gallery" onPress={() => void choose("gallery")} />
+            <Action styles={s} icon="emoji" title="Emoji & stickers" onPress={showEmojiPicker} />
+            <Action styles={s} icon="search" title="Search web" onPress={() => {
               setSheet(false);
               void Linking.openURL("https://www.google.com/search?tbm=isch&q=group+icon");
             }} />
-            <Action styles={styles} icon="sparkle" title="AI images" onPress={() => {
+            <Action styles={s} icon="sparkle" title="AI images" onPress={() => {
               setSheet(false);
               navigation.navigate("ReDomAI", { context: `Create a square group icon for ${group.groupName}` });
             }} />
