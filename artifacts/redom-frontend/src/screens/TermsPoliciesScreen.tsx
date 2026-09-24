@@ -45,7 +45,7 @@ const groups: PolicyGroup[] = [
     { slug: "events", title: "Events Terms of Use", description: "Rules for creating, discovering and attending Events.", Icon: EventsIcon },
     { slug: "regional", title: "Regional Policy", description: "Country and region-specific availability and controls.", Icon: OrdersIcon },
     { slug: "refunds", title: "Refund Policy", description: "Rules for supported refund requests.", Icon: OrdersIcon },
-    { slug: "payments", title: "Payments Terms", description: "Orders, payment methods, subscriptions and payment security controls.", Icon: OrdersIcon },\n    { slug: "payments", title: "Payments Terms", description: "Orders, payment methods, subscriptions and payment security controls.", Icon: OrdersIcon },
+    { slug: "payments", title: "Payments Terms", description: "Orders, payment methods, subscriptions and payment security controls.", Icon: OrdersIcon },
     { slug: "link_history", title: "Link History Policy", description: "How ReDom records and lets you manage links opened from the app.", Icon: OrdersIcon },
   ] },
   { title: "Appearance and Preferences", Icon: LanguageIcon, items: [
