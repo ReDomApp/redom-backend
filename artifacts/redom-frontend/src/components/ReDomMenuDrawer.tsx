@@ -276,7 +276,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 <View style={styles.accountRowCopy}><Text style={styles.accountRowName}>Add another ReDom account</Text><Text style={styles.accountRowMeta}>Sign in to another profile on this device</Text></View>
               </Pressable>
               <View style={[styles.pageNotice, { backgroundColor: colors.background }]}>
-<Text style={[styles.pageNoticeTitle, { color: colors.text }]>ReDom Pages</Text><Text style={[styles.pageNoticeText, { color: colors.textSecondary }]}>Creator and business Pages that you manage will appear in this switcher when Page access is available in ReDom.</Text></View>
+<Text style={[styles.pageNoticeTitle, { color: colors.text }]}>ReDom Pages</Text><Text style={[styles.pageNoticeText, { color: colors.textSecondary }]}>Creator and business Pages that you manage will appear in this switcher when Page access is available in ReDom.</Text></View>
             </ScrollView>
           </View>
         </View>
