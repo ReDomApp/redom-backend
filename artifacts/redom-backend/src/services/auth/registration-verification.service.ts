@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { db } from "../../database/db";
 import { registrationChallenges } from "../../database/registration-challenges.schema";
 import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
@@ -80,7 +80,7 @@ export class RegistrationVerificationService {
         await db.update(registrationChallenges).set({ contactType: "email", target: normalizedTarget, normalizedTarget, email: normalizedTarget, updatedAt: new Date() }).where(eq(registrationChallenges.id, registrationChallenge.id));
         const memory = { ...((reservation.memory ?? {}) as Record<string, any>) };
         memory.email = { ...(memory.email ?? {}), address: normalizedTarget, domain, provider: domain.includes("google") ? "google" : domain.includes("yahoo") ? "yahoo" : "microsoft", verificationStatus: "pending", savedAt: new Date().toISOString() };
-        await db.update(registrationFlowReservations).set({ memory: memory as any, registeredTables: [...new Set([...(reservation.registeredTables ?? []), "registration_flow_reservations", "email"])] as string[]  }).where(eq(registrationFlowReservations.id, reservation.id));
+        await db.update(registrationFlowReservations).set({ memory: sql`${JSON.stringify(memory)}::jsonb`, registeredTables: [...new Set([...(reservation.registeredTables ?? []), "registration_flow_reservations", "email"])] as string[]  }).where(eq(registrationFlowReservations.id, reservation.id));
       } else if (user) {
         await db.update(users).set({ email: normalizedTarget, emailVerified: false, updatedAt: new Date() }).where(eq(users.id, user.id));
       }
