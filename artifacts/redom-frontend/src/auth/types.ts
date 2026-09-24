@@ -8,9 +8,6 @@ export interface VerifyLoginDeviceInput { challengeId: string; code: string; cha
 export interface VerifyLoginTwoFactorInput { challengeId: string; code: string; channel?: "sms" | "email" | "whatsapp" | "authenticator"; deviceId: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; loginSource?: string; appVersion?: string; }
 export interface RegisterInput { firstName: string; lastName: string; username: string; email?: string; phoneNumber?: string; password: string; dateOfBirth?: string; gender?: "male" | "female" | "custom"; userAgent?: string; platform?: string; browser?: string; deviceName?: string; deviceId?: string; deviceType?: string; loginSource?: string; appVersion?: string; }
 export interface RegistrationFlowReservation { success: boolean; reservationId: string; flowId: string; expiresAt: string; }
-export interface RegistrationFlowEmailSaveResult extends RegistrationFlowNameSaveResult {}
-export interface RegistrationFlowPasswordSaveResult extends RegistrationFlowNameSaveResult {}
-export interface PasswordRecoveryChangeResult { success: boolean; message: string; }
 export interface RegistrationFlowNameSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; }
 export interface RegistrationFlowBirthdaySaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; age: number; ageBand: "underage" | "teen" | "adult"; flowStatus: "active" | "completed"; }
 export interface RegistrationFlowGenderSaveResult { success: boolean; reservationId: string; flowId: string; expiresAt: string; gender: "female" | "male" | "custom" | null; pronouns?: "She / Her" | "He / Him" | "They / Them" | "Prefer not to say" | null; }
