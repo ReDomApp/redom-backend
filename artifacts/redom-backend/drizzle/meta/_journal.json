@@ -288,6 +288,13 @@
       "when": 1790277000000,
       "tag": "0040_payment_email_status",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790288054156,
+      "tag": "0041_payment_failure_refunds",
+      "breakpoints": true
     }
   ]
 }
