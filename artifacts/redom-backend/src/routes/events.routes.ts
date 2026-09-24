@@ -35,7 +35,7 @@ async function publicEvent(id: string, viewer: string | null) {
 
 router.get("/media/:id", authMiddleware, async (req,res)=>{
   try{
-    const event=await publicEvent(req.params.id, req.user?.userId ?? null); if(!event?.cover_key)return res.status(404).end();
+    const event=await publicEvent(String(req.params.id), req.user?.userId ?? null); if(!event?.cover_key)return res.status(404).end();
     const object=await r2.send(new GetObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:event.cover_key}));
     if(!object.Body)return res.status(404).end();
     res.setHeader("Cache-Control","public,max-age=600");res.setHeader("Content-Type",object.ContentType||"image/jpeg");
