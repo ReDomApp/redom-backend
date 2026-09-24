@@ -193,7 +193,7 @@ async function storeAttachments(report: BugReport, attachments: BugReportAttachm
     await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: key, Body: parsed.body, ContentType: parsed.contentType }));
     await pool.query(
       `INSERT INTO bug_report_attachments (report_id,storage_key,filename,content_type,byte_size) VALUES ($1,$2,$3,$4,$5)`,
-      [report.id, key, safeName, input.contentType, parsed.size],
+      [report.id, key, safeName, parsed.contentType, parsed.size],
     );
     stored.push({ filename: safeName, contentType: parsed.contentType, body: parsed.body, size: parsed.size });
   }
