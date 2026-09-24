@@ -23,12 +23,26 @@ const countries: Country[] = [
 ];
 
 const packages = [
-  { key: "stars_10", stars: 10, usdPrice: 1.12 },
-  { key: "stars_20", stars: 20, usdPrice: 3.00 },
-  { key: "stars_50", stars: 50, usdPrice: 6.50 },
-  { key: "stars_100", stars: 100, usdPrice: 12.00 },
-  { key: "stars_250", stars: 250, usdPrice: 25.00 },
-  { key: "stars_500", stars: 500, usdPrice: 45.00 },
+  { key: "stars_10", stars: 10, usdPrice: 2.21, firstPurchaseUsdPrice: 1.99, firstPurchaseDiscountPercent: 10, popular: false },
+  { key: "stars_20", stars: 20, usdPrice: 2.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_50", stars: 50, usdPrice: 4.87, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_100", stars: 100, usdPrice: 10.76, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: true },
+  { key: "stars_150", stars: 150, usdPrice: 14.00, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_200", stars: 200, usdPrice: 19.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_500", stars: 500, usdPrice: 50.00, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_700", stars: 700, usdPrice: 70.00, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_1000", stars: 1000, usdPrice: 99.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_1500", stars: 1500, usdPrice: 149.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_2000", stars: 2000, usdPrice: 199.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_2500", stars: 2500, usdPrice: 249.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_5000", stars: 5000, usdPrice: 499.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_7500", stars: 7500, usdPrice: 749.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_10000", stars: 10000, usdPrice: 999.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_15000", stars: 15000, usdPrice: 1499.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_20000", stars: 20000, usdPrice: 1999.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_50000", stars: 50000, usdPrice: 4999.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_75000", stars: 75000, usdPrice: 7499.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_100000", stars: 100000, usdPrice: 9999.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
 ] as const;
 
 function getCountry(code: string): Country {
@@ -49,14 +63,15 @@ function fxRate(country: Country): number {
     return Number.isFinite(parsed[country.currency]) && parsed[country.currency] > 0 ? parsed[country.currency] : country.rate;
   } catch { return country.rate; }
 }
-function quote(country: Country, pkg: typeof packages[number]) {
+function quote(country: Country, pkg: typeof packages[number], firstPurchaseEligible = false) {
   const rate = fxRate(country);
-  const amountMinor = Math.round(pkg.usdPrice * rate * 100);
+  const effectiveUsdPrice = firstPurchaseEligible && pkg.firstPurchaseUsdPrice != null ? pkg.firstPurchaseUsdPrice : pkg.usdPrice;
+  const amountMinor = Math.round(effectiveUsdPrice * rate * 100);
   const localAmount = amountMinor / 100;
   const minimumMinor: Record<Currency, number> = { NGN: 5000, USD: 200, GHS: 10, KES: 300, ZAR: 100, XOF: 100 };
   const payable = amountMinor >= minimumMinor[country.currency];
   return {
-    key: pkg.key, stars: pkg.stars, usdPrice: pkg.usdPrice, localAmount, amountMinor, currency: country.currency,
+    key: pkg.key, stars: pkg.stars, usdPrice: effectiveUsdPrice, regularUsdPrice: pkg.usdPrice, firstPurchaseUsdPrice: pkg.firstPurchaseUsdPrice, firstPurchaseDiscountPercent: pkg.firstPurchaseDiscountPercent, popular: pkg.popular, localAmount, amountMinor, currency: country.currency,
     localAmountFormatted: new Intl.NumberFormat(undefined, { style: "currency", currency: country.currency, minimumFractionDigits: country.currency === "XOF" ? 0 : 2 }).format(localAmount),
     payable, availabilityReason: payable ? null : `The selected payment provider minimum for ${country.currency} is ${minimumMinor[country.currency] / 100} ${country.currency}.`,
   };
@@ -113,10 +128,17 @@ async function assertPinIfRequired(userId: string, pin: string | undefined) {
 router.get("/stars/catalog", authMiddleware, async (req, res) => {
   const selected = typeof req.query.country === "string" ? req.query.country.toUpperCase() : null;
   const selectedCountry = selected ? getCountry(selected) : null;
+  const userId = req.user?.userId;
+  let firstPurchaseEligible = false;
+  if (userId) {
+    const prior = await pool.query("SELECT 1 FROM redom_stars_transactions WHERE user_id=$1 AND type='purchase' LIMIT 1", [userId]);
+    firstPurchaseEligible = !prior.rows[0];
+  }
   return res.json({
     success: true,
+    firstPurchaseEligible,
     countries: countries.map((country) => ({ name: country.name, isoCode: country.isoCode, currency: country.currency })),
-    packages: selectedCountry ? packages.map((pkg) => quote(selectedCountry, pkg)) : [],
+    packages: selectedCountry ? packages.map((pkg) => quote(selectedCountry, pkg, firstPurchaseEligible)) : [],
   });
 });
 
@@ -167,7 +189,8 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
     await assertPinIfRequired(userId, parsed.data.pin);
     const country = getCountry(parsed.data.countryCode);
     const pkg = getPackage(parsed.data.packageKey);
-    const priced = quote(country, pkg);
+    const priorPurchase = await pool.query("SELECT 1 FROM redom_stars_transactions WHERE user_id=$1 AND type='purchase' LIMIT 1", [userId]);
+    const priced = quote(country, pkg, !priorPurchase.rows[0]);
     if (!priced.payable) return res.status(400).json({ success: false, message: priced.availabilityReason });
 
     const client = await pool.connect();
