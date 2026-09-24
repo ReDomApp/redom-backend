@@ -72,6 +72,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     // Persist locally first so the language change is immediate and survives a restart.
     await saveLanguage(value);
     setCurrentLanguage(value);
+    setDeviceLanguageSelected(false);
     // Keep the authenticated profile setting in sync so the same language follows the account.
     try {
       await productService.updateSettings({ language: value });
