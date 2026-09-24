@@ -192,7 +192,7 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
       countryCode: verified.authorization?.country_code ?? null,
     };
     let metadata: any = {};
-    try { metadata = row.metadata ? JSON.parse(String(row.metadata)) : {}; } catch { metadata = {}; }
+    try { metadata = row.metadata ? (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata) : {}; } catch { metadata = {}; }
     metadata.paymentDetails = paymentDetails;
     const redomTransactionId = row.redom_transaction_id ? String(row.redom_transaction_id) : await createUniqueRedomTransactionId(client);
     metadata.redomTransactionId = redomTransactionId;
@@ -205,7 +205,7 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
         await client.query(
           `INSERT INTO redom_payment_methods(user_id,provider,authorization_code_encrypted,authorization_signature,customer_email,brand,card_type,last4,exp_month,exp_year,bank,country_code,currency,reusable)
            VALUES($1,'paystack',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)
-           ON CONFLICT (user_id, authorization_signature) DO UPDATE SET active=true,reusable=true,updated_at=now()`,
+           ON CONFLICT DO UPDATE SET active=true,reusable=true,updated_at=now()`,
           [row.user_id, encryptAuthorizationCode(authorizationCode), signature, customerEmail, verified.authorization.brand ?? null, verified.authorization.card_type ?? null, verified.authorization.last4 ?? null, verified.authorization.exp_month ? Number(verified.authorization.exp_month) : null, verified.authorization.exp_year ? Number(verified.authorization.exp_year) : null, verified.authorization.bank ?? null, verified.authorization.country_code ?? null, row.currency],
         );
       }
