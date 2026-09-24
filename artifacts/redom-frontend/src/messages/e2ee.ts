@@ -19,7 +19,7 @@ interface ConversationKeyState { keyVersion: number; envelope?: ReDomEncryptedEn
 function concat(a: Uint8Array, b: Uint8Array): Uint8Array { const out = new Uint8Array(a.length + b.length); out.set(a, 0); out.set(b, a.length); return out; }
 function randomSecretKey(): Uint8Array { return Crypto.getRandomBytes(32); }
 function randomConversationKey(): Uint8Array { return Crypto.getRandomBytes(32); }
-async function deriveAesKey(shared: Uint8Array, context: string): Promise<Uint8Array> { const contextBytes = new TextEncoder().encode(`ReDom-E2EE-v1|${context}`); return new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, concat(shared, contextBytes))); }
+async function deriveAesKey(shared: Uint8Array, context: string): Promise<Uint8Array> { const contextBytes = new TextEncoder().encode(`ReDom-E2EE-v1|${context}`); return new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, (concat(shared, contextBytes) as unknown as BufferSource))); }
 function encryptAesGcm(plaintext: Uint8Array, key: Uint8Array): Uint8Array { const nonce = Crypto.getRandomBytes(AES_GCM_NONCE_BYTES); return concat(nonce, gcm(key, nonce).encrypt(plaintext)); }
 function decryptAesGcm(combined: Uint8Array, key: Uint8Array): Uint8Array { if (combined.length <= AES_GCM_NONCE_BYTES + 16) throw new Error("Invalid ReDom encrypted message."); const nonce = combined.slice(0, AES_GCM_NONCE_BYTES); return gcm(key, nonce).decrypt(combined.slice(AES_GCM_NONCE_BYTES)); }
 function conversationIdFromContext(context: string): string { return context.split("|")[0]; }
