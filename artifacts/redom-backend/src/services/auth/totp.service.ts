@@ -85,7 +85,7 @@ export class TotpService {
     const secret = decrypt(security.totpSetupSecretEncrypted); const step = verifyTotp(secret, code);
     if (step === null) throw new Error("Invalid code. Enter the 6-digit code shown in your authenticator app.");
     const codes = Array.from({ length: 10 }, recoveryCode);
-    await db.update(accountSecurity).set({ twoFactorEnabled: true, twoFactorMethod: "authenticator", totpEnabled: true, totpSecretEncrypted: encrypt(secret), totpAlgorithm: "SHA1", totpDigits: DIGITS, totpPeriod: PERIOD, totpConfirmedAt: new Date(), totpLastUsedStep: String(step), totpSetupSecretEncrypted: null, totpSetupExpiresAt: null, recoveryCodesHashes: JSON.stringify(codes.map(recoveryHash)), recoveryCodesGeneratedAt: new Date(), updatedAt: new Date() }).where(eq(accountSecurity.userId, userId));
+    await db.update(accountSecurity).set({ twoFactorEnabled: true, twoFactorMethod: "authenticator", totpEnabled: true, totpSecretEncrypted: encrypt(secret), totpAlgorithm: "SHA1", totpDigits: String(DIGITS), totpPeriod: String(PERIOD), totpConfirmedAt: new Date(), totpLastUsedStep: String(step), totpSetupSecretEncrypted: null, totpSetupExpiresAt: null, recoveryCodesHashes: JSON.stringify(codes.map(recoveryHash)), recoveryCodesGeneratedAt: new Date(), updatedAt: new Date() }).where(eq(accountSecurity.userId, userId));
     return { success: true as const, recoveryCodes: codes };
   }
 
