@@ -10,8 +10,8 @@ export const DARK_COLORS:ThemeColors = { background:"#18191A", surface:"#242526"
 type ThemeContextValue = { mode:ThemeMode; isDark:boolean; colors:ThemeColors; setTheme:(mode:ThemeMode)=>Promise<void> };
 const STORAGE_KEY="redom.theme.mode";
 const Context=createContext<ThemeContextValue|null>(null);
-const isDarkMode=(mode:ThemeMode, system:ColorSchemeName)=>mode==="dark" || (mode==="system" && system==="dark");
-const applyNative=(mode:ThemeMode)=>Appearance.setColorScheme(mode==="system"?null:mode);
+const isDarkMode=(mode:ThemeMode, system:ColorSchemeName|null)=>mode==="dark" || (mode==="system" && system==="dark");
+const applyNative=(mode:ThemeMode)=>{if(mode!=="system") Appearance.setColorScheme(mode);};
 
 export function ThemeProvider({children}:{children:ReactNode}){
  const [mode,setMode]=useState<ThemeMode>("system"); const [system,setSystem]=useState<ColorSchemeName>(Appearance.getColorScheme() ?? "light");
