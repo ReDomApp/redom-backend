@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Image, Modal, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -32,6 +32,7 @@ export function FriendsScreen(){
  const [refreshing,setRefreshing]=useState(false);
  const [action,setAction]=useState<ActionTarget|null>(null);
  const [requestIds,setRequestIds]=useState<Record<string,string>>({});
+ const searchRef=useRef<TextInput>(null);
 
  const load=useCallback(async(refresh=false)=>{
    refresh?setRefreshing(true):setLoading(true);
@@ -68,9 +69,9 @@ export function FriendsScreen(){
  };
 
  return <SafeAreaView style={s.root}>
-  <View style={s.header}><Pressable onPress={()=>navigation.goBack()} hitSlop={8}><BackIcon width={30} height={30}/></Pressable><Text style={s.headerTitle}>{viewedName||((user?user.firstName+" "+user.lastName:"Friends"))}</Text><View style={s.headerSearch}/></View>
+  <View style={s.header}><Pressable onPress={()=>navigation.goBack()} hitSlop={8}><BackIcon width={30} height={30}/></Pressable><Text style={s.headerTitle}>{viewedName||((user?user.firstName+" "+user.lastName:"Friends"))}</Text><Pressable style={s.headerSearch} onPress={()=>searchRef.current?.focus()}><FriendSearchIcon width={31} height={31}/></Pressable></View>
   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabs}>{tabs.map(([id,label])=><Pressable key={id} onPress={()=>setTab(id)} style={[s.tab,tab===id&&s.activeTab]}><Text style={[s.tabText,tab===id&&s.activeTabText]}>{label}</Text></Pressable>)}</ScrollView>
-  <View style={s.searchBox}><FriendSearchIcon width={27} height={27}/><TextInput value={query} onChangeText={setQuery} placeholder="Search friends" placeholderTextColor="#667085" style={s.searchInput}/></View>
+  <View style={s.searchBox}><FriendSearchIcon width={27} height={27}/><TextInput ref={searchRef} value={query} onChangeText={setQuery} placeholder="Search friends" placeholderTextColor="#667085" style={s.searchInput}/></View>
   <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>void load(true)}/>} contentContainerStyle={s.content}>
    {!viewedUserId&&tab==="friends"&&incoming.length>0?<View style={s.requests}><Text style={s.sectionTitle}>Friend requests</Text>{incoming.slice(0,5).map(p=><View key={p.userId} style={s.requestRow}><View style={s.identity}>{p.profilePhoto?<Image source={{uri:p.profilePhoto}} style={s.avatar}/>:<View style={s.avatarFallback}><Text style={s.initial}>{p.firstName?.[0]}</Text></View>}<View style={s.nameWrap}><Text style={s.name}>{p.firstName} {p.lastName}</Text><Text style={s.sub}>Wants to be your friend</Text></View></View><View style={s.requestActions}><Pressable style={s.primaryBtn} onPress={()=>void accept(p)}><Text style={s.primaryText}>Confirm</Text></Pressable><Pressable style={s.secondaryBtn} onPress={()=>void decline(p)}><Text style={s.secondaryText}>Delete</Text></Pressable></View></View>)}</View>:null}
    <Text style={s.sectionTitle}>{viewedUserId?(tab==="suggested"?"Suggestions":tab==="common"?"Mutual":"All friends"):tab==="friends"?"Friends":tab==="following"?(people.length+" following"):tab==="suggested"?"People you may know":"Things in common"}</Text>
