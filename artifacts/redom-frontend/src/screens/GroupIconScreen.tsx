@@ -17,6 +17,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { groupService, type GroupSettings } from "../messages/groupService";
 import { GroupActionIcon } from "../components/GroupActionIcon";
+import { openExternalLink } from "../utils/openExternalLink";
 
 type Props = NativeStackScreenProps<RootStackParamList, "GroupIcon">;
 type PickerKind = "camera" | "gallery";
