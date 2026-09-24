@@ -54,7 +54,7 @@ const supportRows = [
   { label: "Scam Protection Center", Icon: ScamIcon, route: "Support" as const },
   { label: "Support", Icon: SupportIcon, route: "Support" as const },
   { label: "Report a problem", Icon: ReportIcon, route: "ReportProblem" as const },
-  { label: "Terms and Policies", Icon: TermsIcon, route: "Policy" as const, params: { slug: "terms" as const } },
+  { label: "Terms and Policies", Icon: TermsIcon, route: "TermsPolicies" as const },
 ];
 
 const moreRows = [
