@@ -7,7 +7,6 @@ import { useAuthContext } from "../auth/context";
 import { friendsService, type FriendPerson } from "../friends/friendsService";
 import { messageService } from "../messages/messageService";
 import FriendAddIcon from "../assets/home-feed/friend-add.svg";
-import FriendCancelIcon from "../assets/home-feed/friend-request-cancel.svg";
 import FriendRemoveIcon from "../assets/home-feed/friend-remove.svg";
 import FriendMessageIcon from "../assets/home-feed/friend-message.svg";
 import FriendMoreIcon from "../assets/home-feed/friend-more.svg";
