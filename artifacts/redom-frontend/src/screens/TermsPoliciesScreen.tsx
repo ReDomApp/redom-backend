@@ -45,7 +45,9 @@ const groups: PolicyGroup[] = [
     { slug: "regional", title: "Regional Policy", description: "Country and region-specific availability and controls.", Icon: OrdersIcon },
     { slug: "refunds", title: "Refund Policy", description: "Rules for supported refund requests.", Icon: OrdersIcon },
   ] },
-  { title: "Language", description: "Language selection, localization and device-language preferences.", slug: "language", Icon: LanguageIcon },
+  { title: "Account, Language and Preferences", Icon: LanguageIcon, items: [
+    { slug: "language", title: "Language Policy", description: "Language selection, localization and device-language preferences.", Icon: LanguageIcon },
+  ] },
   { title: "Support and Reporting", Icon: SupportIcon, items: [
     { slug: "support", title: "Support and Reporting Policy", description: "How users can get help, report problems and follow supported cases.", Icon: SupportIcon },
   ] },
