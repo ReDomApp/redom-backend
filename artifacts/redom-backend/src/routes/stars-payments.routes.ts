@@ -6,7 +6,7 @@ import { authMiddleware } from "../middleware/auth.middleware";
 import { pool } from "../database/db";
 import { env } from "../config/env";
 import { hashPassword, verifyPassword } from "../utils/password";
-import { geocodePlace } from "../lib/mapbox";
+import { geocodePlace } from "../lib/mapbox"; import { recordPaymentFailureAndEmail } from "../services/payments/payment.service";
 
 const router = Router();
 const API = "https://api.paystack.co";
