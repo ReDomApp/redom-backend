@@ -47,7 +47,7 @@ const shortcuts = [
   { label: "Saved", Icon: SavedIcon, route: "Saved" as const },
   { label: "Memories", Icon: MemoriesIcon },
   { label: "Marketplace", Icon: MarketplaceIcon, route: "Marketplace" as const },
-  { label: "Groups", Icon: GroupsIcon },
+  { label: "Groups", Icon: GroupsIcon, route: "Groups" as const },
 ];
 
 const supportRows = [
