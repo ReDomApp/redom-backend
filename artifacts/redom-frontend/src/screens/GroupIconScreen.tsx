@@ -105,43 +105,43 @@ export function GroupIconScreen({ route, navigation }: Props) {
   };
 
   if (!group) {
-    return <SafeAreaView style={styles.root}><ActivityIndicator style={styles.loading} color="#1877F2" /></SafeAreaView>;
+    return <SafeAreaView style={s.root}><ActivityIndicator style={s.loading} color="#1877F2" /></SafeAreaView>;
   }
 
   return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
+    <SafeAreaView style={s.root}>
+      <View style={s.header}>
         <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
           <GroupActionIcon kind="back" size={30} color="#FFF" />
         </Pressable>
-        <Text style={styles.headerTitle}>Group icon</Text>
-        <View style={styles.headerActions}>
+        <Text style={s.headerTitle}>Group icon</Text>
+        <View style={s.headerActions}>
           <Pressable onPress={() => setSheet(true)} hitSlop={8}><GroupActionIcon kind="edit" size={27} color="#FFF" /></Pressable>
           <Pressable onPress={() => void share()} hitSlop={8}><GroupActionIcon kind="share" size={27} color="#FFF" /></Pressable>
         </View>
       </View>
 
-      <View style={styles.viewer}>
+      <View style={s.viewer}>
         {group.groupPhoto ? (
-          <Image source={{ uri: group.groupPhoto }} style={styles.photo} resizeMode="contain" />
+          <Image source={{ uri: group.groupPhoto }} style={s.photo} resizeMode="contain" />
         ) : (
-          <View style={styles.empty}>
+          <View style={s.empty}>
             <GroupActionIcon kind="members" size={100} color="#1877F2" />
-            <Text style={styles.emptyText}>{group.groupName.slice(0, 1).toUpperCase()}</Text>
+            <Text style={s.emptyText}>{group.groupName.slice(0, 1).toUpperCase()}</Text>
           </View>
         )}
       </View>
 
-      {busy ? <View style={styles.busy}><ActivityIndicator color="#FFF" /></View> : null}
+      {busy ? <View style={s.busy}><ActivityIndicator color="#FFF" /></View> : null}
 
       {sheet ? (
-        <View style={styles.scrim}>
+        <View style={s.scrim}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSheet(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <View style={styles.sheetTitle}>
+          <View style={s.sheet}>
+            <View style={s.handle} />
+            <View style={s.sheetTitle}>
               <Pressable onPress={() => setSheet(false)} hitSlop={8}><GroupActionIcon kind="close" size={26} color="#111" /></Pressable>
-              <Text style={styles.sheetHeading}>Group icon</Text>
+              <Text style={s.sheetHeading}>Group icon</Text>
               <Pressable onPress={() => void remove()} hitSlop={8}><GroupActionIcon kind="trash" size={26} color="#111" /></Pressable>
             </View>
             <Action styles={styles} icon="camera" title="Camera" onPress={() => void choose("camera")} />
@@ -164,9 +164,9 @@ export function GroupIconScreen({ route, navigation }: Props) {
 
 function Action({ icon, title, onPress, styles }: { icon: any; title: string; onPress: () => void; styles: ReturnType<typeof makeStyles> }) {
   return (
-    <Pressable style={styles.action} onPress={onPress}>
+    <Pressable style={s.action} onPress={onPress}>
       <GroupActionIcon kind={icon} />
-      <Text style={styles.actionText}>{title}</Text>
+      <Text style={s.actionText}>{title}</Text>
     </Pressable>
   );
 }
