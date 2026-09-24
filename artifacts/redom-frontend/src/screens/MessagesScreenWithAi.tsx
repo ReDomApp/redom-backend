@@ -2,6 +2,6 @@ import type { ComponentProps } from "react";
 import { MessagesScreen } from "./MessagesScreen";
 import { GlobalReDomAiAssistant } from "./GlobalReDomAiAssistant";
 
-export function MessagesScreenWithAi(props: ComponentProps<typeof MessagesScreen>) {
+export function MessagesScreenWithAi(props: Record<string, never>) {
   return <><MessagesScreen {...props} /><GlobalReDomAiAssistant /></>;
 }
