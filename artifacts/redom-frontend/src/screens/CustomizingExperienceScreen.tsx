@@ -66,7 +66,6 @@ export function CustomizingExperienceScreen({ route }: Props) {
           language,
           deviceType: "mobile",
           platform: "expo",
-          loginSource: "registration",
         });
         const remaining = Math.max(0, MINIMUM_MS - (Date.now() - startedAt.current));
         await wait(remaining);
