@@ -32,7 +32,8 @@ const runtimeTextCache = new Map<string, string>();
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setCurrentLanguage] = useState<LanguageCode>("en");
-  const [ready, setReady] = useState(false);\n  const [deviceLanguageSelected, setDeviceLanguageSelected] = useState(true);
+  const [ready, setReady] = useState(false);
+  const [deviceLanguageSelected, setDeviceLanguageSelected] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -115,6 +116,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     uiMessage: (key: string, vars?: Record<string, string>) => uiMessage(language, key, vars),
     localizeText,
     ready,
+    deviceLanguageSelected,
+    useDeviceLanguage,
   }), [language, localizeText, ready, setLanguage, deviceLanguageSelected, useDeviceLanguage]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
