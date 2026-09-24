@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "../theme/ThemeProvider";
 import { Image, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -31,7 +32,8 @@ export function HomeFeedScreenV3() {
   const { user, logout } = useAuthContext();
   const { width } = useWindowDimensions();
   const scale = Math.min(1, Math.max(0.86, width / 412));
-  const ui = useMemo(() => makeStyles(scale), [scale]);
+  const { colors } = useTheme();
+  const ui = useMemo(() => makeStyles(scale, colors), [scale, colors]);
   const scrollRef = useRef<ScrollView>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [posts, setPosts] = useState<HomeFeedPost[]>([]);
@@ -124,30 +126,30 @@ export function HomeFeedScreenV3() {
 
 function n(value: number, scale: number) { return Math.round(value * scale); }
 
-function makeStyles(scale: number) {
+function makeStyles(scale: number, colors: ReturnType<typeof useTheme>["colors"]) {
   const s = (v: number) => n(v, scale);
   return StyleSheet.create({
-    root: { flex: 1, backgroundColor: "#F0F2F5" },
-    topHeader: { height: s(60), paddingHorizontal: s(12), backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    root: { flex: 1, backgroundColor: colors.background },
+    topHeader: { height: s(60), paddingHorizontal: s(12), backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     brandRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: s(8) },
     menuButton: { width: s(40), height: s(40), borderRadius: s(20), alignItems: "center", justifyContent: "center" },
     brand: { justifyContent: "center" },
     topActions: { flexDirection: "row", alignItems: "center", gap: s(7) },
-    topButton: { width: s(40), height: s(40), borderRadius: s(20), backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", zIndex: 10, elevation: 10 },
+    topButton: { width: s(40), height: s(40), borderRadius: s(20), backgroundColor: colors.background, alignItems: "center", justifyContent: "center", zIndex: 10, elevation: 10 },
     messengerIcon: { transform: [{ translateY: s(3) }] },
-    navigationBar: { height: s(54), backgroundColor: "#FFFFFF", flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
+    navigationBar: { height: s(54), backgroundColor: colors.surface, flexDirection: "row", justifyContent: "space-around", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.border },
     navItem: { width: s(58), height: s(54), alignItems: "center", justifyContent: "center" },
     activeNav: { borderBottomWidth: 3, borderBottomColor: "#1877F2" },
     feed: { paddingBottom: s(24) },
-    composer: { backgroundColor: "#FFFFFF", minHeight: s(66), paddingHorizontal: s(12), paddingVertical: s(11), flexDirection: "row", alignItems: "center", gap: s(9) },
-    composerInput: { flex: 1, minHeight: s(42), borderRadius: s(21), backgroundColor: "#F0F2F5", paddingHorizontal: s(16), justifyContent: "center" },
-    composerText: { fontSize: s(15), color: "#65676B", fontWeight: "400" },
+    composer: { backgroundColor: colors.surface, minHeight: s(66), paddingHorizontal: s(12), paddingVertical: s(11), flexDirection: "row", alignItems: "center", gap: s(9) },
+    composerInput: { flex: 1, minHeight: s(42), borderRadius: s(21), backgroundColor: colors.background, paddingHorizontal: s(16), justifyContent: "center" },
+    composerText: { fontSize: s(15), color: colors.textSecondary, fontWeight: "400" },
     mediaButton: { width: s(32), alignItems: "center", justifyContent: "center" },
-    storyHeader: { backgroundColor: "#FFFFFF", paddingHorizontal: s(12), paddingTop: s(12), paddingBottom: s(8), flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    storyHeader: { backgroundColor: colors.surface, paddingHorizontal: s(12), paddingTop: s(12), paddingBottom: s(8), flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     sectionRow: { paddingHorizontal: s(12), paddingVertical: s(12), flexDirection: "row", alignItems: "center" },
-    sectionTitle: { fontSize: s(18), lineHeight: s(23), color: "#050505", fontWeight: "700" },
+    sectionTitle: { fontSize: s(18), lineHeight: s(23), color: colors.text, fontWeight: "700" },
     seeAll: { color: "#1877F2", fontSize: s(14), fontWeight: "600" },
-    storyRail: { backgroundColor: "#FFFFFF", paddingHorizontal: s(10), paddingBottom: s(12), gap: s(8) },
+    storyRail: { backgroundColor: colors.surface, paddingHorizontal: s(10), paddingBottom: s(12), gap: s(8) },
     storyCard: { width: s(112), height: s(200), borderRadius: s(10), backgroundColor: "#E4E6EB", overflow: "hidden", alignItems: "center", paddingTop: s(18), position: "relative" },
     storyPhoto: { marginTop: s(2) },
     storyPlus: { position: "absolute", top: s(68), width: s(30), height: s(30), borderRadius: s(15), backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#FFFFFF" },
@@ -156,14 +158,14 @@ function makeStyles(scale: number) {
     musicCard: { width: s(112), height: s(200), borderRadius: s(10), overflow: "hidden", backgroundColor: "#6B4CE6", alignItems: "center", justifyContent: "center", paddingHorizontal: s(10) },
     musicTitle: { color: "#FFFFFF", fontSize: s(15), fontWeight: "700", marginTop: s(12) },
     musicSub: { color: "#FFFFFF", fontSize: s(13), fontWeight: "400" },
-    suggestionsBlock: { marginTop: s(8), backgroundColor: "#FFFFFF" },
+    suggestionsBlock: { marginTop: s(8), backgroundColor: colors.surface },
     suggestionRail: { paddingHorizontal: s(10), paddingBottom: s(12), gap: s(8) },
-    suggestionCard: { width: s(132), borderWidth: 1, borderColor: "#E4E6EB", borderRadius: s(10), backgroundColor: "#FFFFFF", padding: s(9), alignItems: "center" },
-    suggestionName: { marginTop: s(7), color: "#050505", fontSize: s(14), fontWeight: "700", width: "100%", textAlign: "center" },
-    suggestionHandle: { marginTop: s(2), color: "#65676B", fontSize: s(12), width: "100%", textAlign: "center" },
-    empty: { marginTop: s(8), backgroundColor: "#FFFFFF", padding: s(28), alignItems: "center" },
-    emptyTitle: { color: "#050505", fontSize: s(18), fontWeight: "700" },
-    emptyText: { color: "#65676B", fontSize: s(14), textAlign: "center", marginTop: s(7) },
+    suggestionCard: { width: s(132), borderWidth: 1, borderColor: colors.border, borderRadius: s(10), backgroundColor: colors.surface, padding: s(9), alignItems: "center" },
+    suggestionName: { marginTop: s(7), color: colors.text, fontSize: s(14), fontWeight: "700", width: "100%", textAlign: "center" },
+    suggestionHandle: { marginTop: s(2), color: colors.textSecondary, fontSize: s(12), width: "100%", textAlign: "center" },
+    empty: { marginTop: s(8), backgroundColor: colors.surface, padding: s(28), alignItems: "center" },
+    emptyTitle: { color: colors.text, fontSize: s(18), fontWeight: "700" },
+    emptyText: { color: colors.textSecondary, fontSize: s(14), textAlign: "center", marginTop: s(7) },
 
     hiddenMenuTrigger: { position: "absolute", width: 1, height: 1, left: -10, bottom: -10 },
   });
