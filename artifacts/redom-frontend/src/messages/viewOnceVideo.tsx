@@ -1,4 +1,5 @@
-import { useEvent, useVideoPlayer, VideoView } from "expo-video";
+import { useEvent } from "expo";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { StyleSheet, View } from "react-native";
 
 export function ViewOnceVideo({ uri }: { uri: string }) {
