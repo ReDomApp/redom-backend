@@ -15,7 +15,7 @@ type PaymentContext = { transactionId: string; reference: string; status: string
 async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
   const client = await pool.connect();
   try {
-    const result = await client.query("SELECT pt.id, pt.reference, pt.amount_minor, pt.currency, pt.paid_at, pt.customer_email_status, u.email, u.first_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
+    const result = await client.query("SELECT pt.id, pt.reference, pt.amount_minor, pt.currency, pt.paid_at, pt.metadata, pt.customer_email_status, u.email, u.first_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
     const row = result.rows[0];
     if (!row?.email || row.customer_email_status === "sent" || row.customer_email_status === "sending") return;
     const claimed = await client.query("UPDATE payment_transactions SET customer_email_status='sending', customer_email_error=NULL, updated_at=now() WHERE id=$1 AND status='paid' AND customer_email_status IN ('pending','failed') RETURNING id", [transactionId]);
@@ -31,6 +31,7 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
         interval: row.interval ? String(row.interval) : "monthly",
         reference: String(row.reference),
         paidAt,
+        details: row.metadata?.paymentDetails ?? undefined,
         nextBillingAt: row.expires_at ? new Date(row.expires_at) : null,
       });
       await client.query("UPDATE payment_transactions SET customer_email_status='sent', customer_email_sent_at=now(), customer_email_error=NULL, updated_at=now() WHERE id=$1", [transactionId]);
