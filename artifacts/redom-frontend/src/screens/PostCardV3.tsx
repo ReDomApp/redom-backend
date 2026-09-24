@@ -72,7 +72,9 @@ export function PostCardV3({ post, onHidden, onUnhidden }: { post: HomeFeedPost;
   </View>;
 }
 
-function ReactionTray({ visible, onSelect }: { visible: boolean; onSelect: (type: PostReactionType) => void }) { if (!visible) return null; return <View style={styles.tray}>{(Object.keys(GRAPHICS) as PostReactionType[]).map((type) => <Pressable key={type} onPress={() => onSelect(type)} style={styles.trayItem}><AnimatedReaction type={type} size={38} pulse /></Pressable>)}</View>; }
+function ReactionTray({ visible, onSelect }: { visible: boolean; onSelect: (type: PostReactionType) => void }) {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors); if (!visible) return null; return <View style={styles.tray}>{(Object.keys(GRAPHICS) as PostReactionType[]).map((type) => <Pressable key={type} onPress={() => onSelect(type)} style={styles.trayItem}><AnimatedReaction type={type} size={38} pulse /></Pressable>)}</View>; }
 function relativeTime(value: string) { const s = Math.max(1, Math.floor((Date.now() - new Date(value).getTime()) / 1000)); if (s < 60) return `${s}s`; if (s < 3600) return `${Math.floor(s / 60)}m`; if (s < 86400) return `${Math.floor(s / 3600)}h`; return `${Math.floor(s / 86400)}d`; }
 
 function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) { return StyleSheet.create({
