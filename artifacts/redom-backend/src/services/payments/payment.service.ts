@@ -9,12 +9,12 @@ const STANDARD_NGN = 4500;
 
 type PaystackResponse<T> = { status: boolean; message: string; data: T };
 type InitializeData = { authorization_url: string; access_code: string; reference: string };
-type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };
+type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; message?: string | null; gateway_response?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };
 type RefundData = { id?: number; status?: string; amount?: number; currency?: string; expected_at?: string | null; refunded_at?: string | null; transaction?: { id?: number; reference?: string }; message?: string };
 type PaymentContext = { transactionId: string; redomTransactionId?: string | null; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
 
-async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string): Promise<void> {
-  if (verified.status === "success" || !verified.id || verified.amount <= 0) return;
+async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string, force = false): Promise<void> {
+  if ((!force && verified.status === "success") || !verified.id || verified.amount <= 0) return;
   try {
     const refund = await paystack<RefundData>("post", "/refund", {
       transaction: String(verified.id),
@@ -36,17 +36,17 @@ async function requestAutomaticRefund(reference: string, verified: VerifyData, t
 async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
   const client = await pool.connect();
   try {
-    const result = await client.query("SELECT pt.id, pt.redom_transaction_id, pt.reference, pt.amount_minor, pt.currency, pt.status, pt.paid_at, pt.metadata, pt.customer_email_status, pt.refund_status, pt.refund_id, pt.refund_expected_at, pt.refund_processed_at, pt.refund_error, u.email, u.first_name, u.last_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
+    const result = await client.query("SELECT pt.id, pt.redom_transaction_id, pt.reference, pt.amount_minor, pt.currency, pt.status, pt.paid_at, pt.metadata, pt.customer_email, pt.customer_email_status, pt.refund_status, pt.refund_id, pt.refund_expected_at, pt.refund_processed_at, pt.refund_error, u.email, u.first_name, u.last_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
     const row = result.rows[0];
-    if (!row?.email || row.customer_email_status === "sent" || row.customer_email_status === "sending") return;
+    if (!(row?.customer_email || row?.email) || row.customer_email_status === "sent" || row.customer_email_status === "sending") return;
     const claimed = await client.query("UPDATE payment_transactions SET customer_email_status='sending', customer_email_error=NULL, updated_at=now() WHERE id=$1 AND customer_email_status IN ('pending','failed') RETURNING id", [transactionId]);
     if (!claimed.rows[0]) return;
     try {
       const paidAt = row.paid_at ? new Date(row.paid_at) : new Date();
       await sendPaymentConfirmationEmail({
-        to: String(row.email),
+        to: String(row.customer_email || row.email),
         firstName: [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || null,
-        planName: row.plan_name ? String(row.plan_name) : "ReDom subscription",
+        planName: row.plan_name ? String(row.plan_name) : (() => { try { const m = row.metadata ? (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata) : {}; return m?.purpose === "stars_purchase" ? `ReDom Stars • ${Number(m?.stars ?? 0)} Stars` : "ReDom subscription"; } catch { return "ReDom payment"; } })(),
         amountMinor: String(row.amount_minor),
         currency: String(row.currency),
         interval: row.interval ? String(row.interval) : "monthly",
@@ -54,7 +54,6 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
         redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
         paidAt,
         details: row.metadata?.paymentDetails ?? undefined,
-        redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
         nextBillingAt: row.expires_at ? new Date(row.expires_at) : null,
       });
       await client.query("UPDATE payment_transactions SET customer_email_status='sent', customer_email_sent_at=now(), customer_email_error=NULL, updated_at=now() WHERE id=$1", [transactionId]);
@@ -65,6 +64,14 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
   } finally {
     client.release();
   }
+}
+
+function encryptAuthorizationCode(value: string): string {
+  const key = crypto.createHash("sha256").update(env.authentication.sessionSecret).digest();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), ciphertext.toString("base64url")].join(".");
 }
 
 function makeReference(): string { return "rd_" + Date.now() + "_" + crypto.randomBytes(6).toString("hex"); }
@@ -164,7 +171,7 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
       throw new Error("Payment amount or currency did not match the authorized transaction.");
     }
     if (verified.status !== "success") {
-      await client.query("UPDATE payment_transactions SET status = $1, gateway_status = $2, updated_at = now() WHERE id = $3", [verified.status, verified.status, row.id]);
+      await client.query("UPDATE payment_transactions SET status = $1, gateway_status = $2, failure_message = $3, updated_at = now() WHERE id = $4", [verified.status, verified.status, (verified.message || verified.gateway_response || "Payment did not complete.").slice(0, 500), row.id]);
       await client.query("COMMIT");
       return { transactionId: String(row.id), redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null, reference: referenceValue, status: verified.status, amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
     }
@@ -186,6 +193,37 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
     const redomTransactionId = row.redom_transaction_id ? String(row.redom_transaction_id) : await createUniqueRedomTransactionId(client);
     metadata.redomTransactionId = redomTransactionId;
     await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, gateway_status=$2, paid_at=$3, metadata=$4::jsonb, redom_transaction_id=$5, updated_at=now() WHERE id=$6", [String(verified.id), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), JSON.stringify(metadata), redomTransactionId, row.id]);
+    if (verified.authorization?.reusable && verified.authorization?.authorization_code && verified.authorization?.signature) {
+      const authorizationCode = String(verified.authorization.authorization_code);
+      const signature = String(verified.authorization.signature);
+      const customerEmail = verified.customer?.email ? String(verified.customer.email) : (row.customer_email ? String(row.customer_email) : null);
+      if (customerEmail) {
+        await client.query(
+          `INSERT INTO redom_payment_methods(user_id,provider,authorization_code_encrypted,authorization_signature,customer_email,brand,card_type,last4,exp_month,exp_year,bank,country_code,currency,reusable)
+           VALUES($1,'paystack',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)
+           ON CONFLICT (user_id, authorization_signature) DO UPDATE SET active=true,reusable=true,updated_at=now()`,
+          [row.user_id, encryptAuthorizationCode(authorizationCode), signature, customerEmail, verified.authorization.brand ?? null, verified.authorization.card_type ?? null, verified.authorization.last4 ?? null, verified.authorization.exp_month ? Number(verified.authorization.exp_month) : null, verified.authorization.exp_year ? Number(verified.authorization.exp_year) : null, verified.authorization.bank ?? null, verified.authorization.country_code ?? null, row.currency],
+        );
+      }
+    }
+    if (String(row.purpose) === "stars_purchase") {
+      const stars = Number(metadata?.stars ?? 0);
+      const packageKey = metadata?.packageKey ? String(metadata.packageKey) : null;
+      const countryCode = metadata?.countryCode ? String(metadata.countryCode) : row.country_code ? String(row.country_code) : null;
+      if (!Number.isInteger(stars) || stars <= 0) throw new Error("Invalid Stars fulfillment metadata.");
+      await client.query("INSERT INTO redom_stars_accounts(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING", [row.user_id]);
+      const balance = await client.query("SELECT balance FROM redom_stars_accounts WHERE user_id=$1 FOR UPDATE", [row.user_id]);
+      const currentBalance = BigInt(String(balance.rows[0]?.balance ?? "0"));
+      const nextBalance = currentBalance + BigInt(stars);
+      await client.query("UPDATE redom_stars_accounts SET balance=$1, updated_at=now() WHERE user_id=$2", [nextBalance.toString(), row.user_id]);
+      const duplicate = await client.query("SELECT 1 FROM redom_stars_transactions WHERE payment_transaction_id=$1 AND type='purchase' LIMIT 1", [row.id]);
+      if (!duplicate.rows[0]) {
+        await client.query(
+          "INSERT INTO redom_stars_transactions(user_id,payment_transaction_id,type,stars,balance_after,package_key,country_code,currency,amount_minor,reference) VALUES($1,$2,'purchase',$3,$4,$5,$6,$7,$8,$9)",
+          [row.user_id, row.id, stars, nextBalance.toString(), packageKey, countryCode, row.currency, row.amount_minor, referenceValue],
+        );
+      }
+    }
     if (row.subscription_id) {
       await client.query(
         "UPDATE verification_subscriptions SET subscription_status='active', auto_renew=true, started_at=COALESCE(started_at, now()), renewed_at=now(), expires_at=CASE WHEN expires_at IS NULL OR expires_at < now() THEN now() + interval '1 month' ELSE expires_at + interval '1 month' END, payment_reference=$1, updated_at=now() WHERE id=$2",
@@ -211,16 +249,45 @@ export async function sendPaymentEmailForReference(referenceValue: string): Prom
   if (result.rows[0]?.id) await sendPaymentEmailIfNeeded(String(result.rows[0].id));
 }
 
+export async function recordPaymentFailureAndEmail(referenceValue: string, message: string): Promise<void> {
+  const result = await pool.query(
+    "UPDATE payment_transactions SET status='failed', failure_message=$1, updated_at=now() WHERE reference=$2 RETURNING id",
+    [message.slice(0, 500), referenceValue],
+  );
+  if (result.rows[0]?.id) await sendPaymentEmailIfNeeded(String(result.rows[0].id));
+}
+
 export async function verifyPayment(userId: string, referenceValue: string): Promise<PaymentContext> {
-  const tx = await pool.query("SELECT user_id FROM payment_transactions WHERE reference = $1", [referenceValue]);
+  const tx = await pool.query("SELECT user_id, id FROM payment_transactions WHERE reference = $1", [referenceValue]);
   if (!tx.rows[0] || String(tx.rows[0].user_id) !== userId) throw new Error("Payment transaction not found.");
   const verified = await verifyWithProvider(referenceValue);
-  return applyVerifiedPayment(referenceValue, verified);
+  try {
+    const payment = await applyVerifiedPayment(referenceValue, verified);
+    if (payment.status !== "paid") {
+      await requestAutomaticRefund(referenceValue, verified, payment.transactionId);
+    }
+    await sendPaymentEmailIfNeeded(payment.transactionId);
+    return payment;
+  } catch (error) {
+    await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), true);
+    await recordPaymentFailureAndEmail(referenceValue, error instanceof Error ? error.message : "Payment verification failed.");
+    throw error;
+  }
 }
 
 export async function verifyPaymentFromCallback(referenceValue: string): Promise<PaymentContext> {
   const verified = await verifyWithProvider(referenceValue);
-  return applyVerifiedPayment(referenceValue, verified);
+  const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [referenceValue]);
+  try {
+    const payment = await applyVerifiedPayment(referenceValue, verified);
+    if (payment.status !== "paid" && tx.rows[0]?.id) await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id));
+    if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id));
+    return payment;
+  } catch (error) {
+    if (tx.rows[0]?.id) await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), true);
+    await recordPaymentFailureAndEmail(referenceValue, error instanceof Error ? error.message : "Payment verification failed.");
+    throw error;
+  }
 }
 
 export async function handlePaymentWebhook(rawBody: Buffer, signature: string | undefined, payload: any): Promise<void> {
@@ -238,7 +305,7 @@ export async function handlePaymentWebhook(rawBody: Buffer, signature: string | 
   try {
     if (event === "charge.success" && data.reference) {
       const verified = await verifyWithProvider(String(data.reference));
-      await applyVerifiedPayment(String(data.reference), verified);
+      const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [String(data.reference)]); try { const payment = await applyVerifiedPayment(String(data.reference), verified); if (payment.status !== "paid" && tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id)); if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id)); } catch (error) { if (tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), true); throw error; }
     }
     if (event === "subscription.create" && data.subscription_code) {
       const email = data.customer?.email ? String(data.customer.email).toLowerCase() : null;
