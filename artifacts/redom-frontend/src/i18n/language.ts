@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getLocales } from "expo-localization";
 
-export type LanguageCode = "en" | "en-GB" | "es" | "es-ES" | "fr" | "de" | "pt" | "pt-PT" | "it" | "nl" | "ar" | "zh-CN" | "zh-HK" | "ja" | "ko" | "hi" | "ru" | "tr" | "af" | "as" | "az" | "be" | "bg" | "bn" | "bs" | "ca" | "ckb" | "cs" | "da" | "el" | "et" | "fa" | "fi" | "fil" | "gu" | "hr" | "hu" | "hy" | "id" | "he" | "jv" | "ka" | "kk" | "km" | "kn" | "ku" | "lt" | "lv" | "mk" | "ml" | "mr" | "ms" | "my" | "nb" | "ne" | "pa" | "pl" | "ps" | "ro" | "si" | "sk" | "sl" | "so" | "sq" | "sr" | "sv" | "sw" | "ta" | "te" | "tg" | "th" | "tr" | "uk" | "ur" | "uz" | "vi";
+export type LanguageCode = "zh" | "en" | "en-GB" | "es" | "es-ES" | "fr" | "de" | "pt" | "pt-PT" | "it" | "nl" | "ar" | "zh-CN" | "zh-HK" | "ja" | "ko" | "hi" | "ru" | "tr" | "af" | "as" | "az" | "be" | "bg" | "bn" | "bs" | "ca" | "ckb" | "cs" | "da" | "el" | "et" | "fa" | "fi" | "fil" | "gu" | "hr" | "hu" | "hy" | "id" | "he" | "jv" | "ka" | "kk" | "km" | "kn" | "ku" | "lt" | "lv" | "mk" | "ml" | "mr" | "ms" | "my" | "nb" | "ne" | "pa" | "pl" | "ps" | "ro" | "si" | "sk" | "sl" | "so" | "sq" | "sr" | "sv" | "sw" | "ta" | "te" | "tg" | "th" | "tr" | "uk" | "ur" | "uz" | "vi";
 export const LANGUAGE_STORAGE_KEY = "redom.language";
 export const LANGUAGE_EXPLICIT_KEY = "redom.language.explicit";
 
