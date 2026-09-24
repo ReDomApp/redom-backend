@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from "../theme/ThemeProvider";
 
 type Props = {
   children: ReactNode;
@@ -11,6 +12,7 @@ type Props = {
 
 export function ReDomScreen({ children, footer, keyboardAvoiding = true, scroll = true }: Props) {
   const { width } = useWindowDimensions();
+  const { colors } = useTheme();
   const horizontalPadding = Math.min(28, Math.max(16, Math.round(width * 0.055)));
 
   const body = scroll ? (
@@ -22,9 +24,9 @@ export function ReDomScreen({ children, footer, keyboardAvoiding = true, scroll 
   );
 
   const screen = (
-    <SafeAreaView style={styles.screen} edges={["top", "bottom", "left", "right"]}>
-      <View style={styles.main}>{body}</View>
-      {footer ? <View style={[styles.footer, { paddingHorizontal: horizontalPadding }]}>{footer}</View> : null}
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.surface }] edges={["top", "bottom", "left", "right"]}>
+      <View style={[styles.main, { backgroundColor: colors.background }]>{body}</View>
+      {footer ? <View style={[styles.footer, { paddingHorizontal: horizontalPadding, backgroundColor: colors.surface }]}>{footer}</View> : null}
     </SafeAreaView>
   );
 
