@@ -25,6 +25,8 @@ type LanguageContextValue = {
   uiMessage: (key: string, vars?: Record<string, string>) => string;
   localizeText: (text: string, context?: string) => Promise<string>;
   ready: boolean;
+  deviceLanguageSelected: boolean;
+  useDeviceLanguage: () => Promise<void>;
 };
 
 const Context = createContext<LanguageContextValue | null>(null);
