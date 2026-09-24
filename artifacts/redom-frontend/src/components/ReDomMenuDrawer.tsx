@@ -121,8 +121,8 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
   const go = (route: keyof RootStackParamList, params?: never) => {
     close();
     setTimeout(() => {
-      if (params) navigation.navigate(route as never, params as never);
-      else navigation.navigate(route as never);
+      if (params) navigation.navigate(route as any, params as any);
+      else navigation.navigate(route as any);
     }, 190);
   };
 
