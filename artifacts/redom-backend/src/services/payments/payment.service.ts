@@ -11,7 +11,7 @@ type PaystackResponse<T> = { status: boolean; message: string; data: T };
 type InitializeData = { authorization_url: string; access_code: string; reference: string };
 type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };
 type RefundData = { id?: number; status?: string; amount?: number; currency?: string; expected_at?: string | null; refunded_at?: string | null; transaction?: { id?: number; reference?: string }; message?: string };
-type PaymentContext = { transactionId: string; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
+type PaymentContext = { transactionId: string; redomTransactionId?: string | null; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
 
 async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string): Promise<void> {
   if (verified.status === "success" || !verified.id || verified.amount <= 0) return;
@@ -36,7 +36,7 @@ async function requestAutomaticRefund(reference: string, verified: VerifyData, t
 async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
   const client = await pool.connect();
   try {
-    const result = await client.query("SELECT pt.id, pt.reference, pt.amount_minor, pt.currency, pt.status, pt.paid_at, pt.metadata, pt.customer_email_status, pt.refund_status, pt.refund_id, pt.refund_expected_at, pt.refund_processed_at, pt.refund_error, u.email, u.first_name, u.last_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
+    const result = await client.query("SELECT pt.id, pt.redom_transaction_id, pt.reference, pt.amount_minor, pt.currency, pt.status, pt.paid_at, pt.metadata, pt.customer_email_status, pt.refund_status, pt.refund_id, pt.refund_expected_at, pt.refund_processed_at, pt.refund_error, u.email, u.first_name, u.last_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
     const row = result.rows[0];
     if (!row?.email || row.customer_email_status === "sent" || row.customer_email_status === "sending") return;
     const claimed = await client.query("UPDATE payment_transactions SET customer_email_status='sending', customer_email_error=NULL, updated_at=now() WHERE id=$1 AND customer_email_status IN ('pending','failed') RETURNING id", [transactionId]);
@@ -51,6 +51,7 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
         currency: String(row.currency),
         interval: row.interval ? String(row.interval) : "monthly",
         reference: String(row.reference),
+        redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
         paidAt,
         details: row.metadata?.paymentDetails ?? undefined,
         nextBillingAt: row.expires_at ? new Date(row.expires_at) : null,
@@ -66,6 +67,21 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
 }
 
 function makeReference(): string { return "rd_" + Date.now() + "_" + crypto.randomBytes(6).toString("hex"); }
+
+function makeRedomTransactionId(): string {
+  const max = 10_000_000_000_000n;
+  const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max;
+  return "R-" + value.toString().padStart(13, "0");
+}
+
+async function createUniqueRedomTransactionId(client: import("pg").PoolClient): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const id = makeRedomTransactionId();
+    const existing = await client.query("SELECT 1 FROM payment_transactions WHERE redom_transaction_id = $1 LIMIT 1", [id]);
+    if (!existing.rows[0]) return id;
+  }
+  throw new Error("Unable to generate a unique ReDom transaction ID.");
+}
 function minorAmount(subscriptionType: string, currency: string): number {
   if (currency === "NGN" && subscriptionType === "standard") return STANDARD_NGN * 100;
   throw new Error("This subscription is not currently available for online renewal.");
@@ -149,11 +165,11 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
     if (verified.status !== "success") {
       await client.query("UPDATE payment_transactions SET status = $1, gateway_status = $2, updated_at = now() WHERE id = $3", [verified.status, verified.status, row.id]);
       await client.query("COMMIT");
-      return { transactionId: String(row.id), reference: referenceValue, status: verified.status, amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
+      return { transactionId: String(row.id), redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null, reference: referenceValue, status: verified.status, amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
     }
     if (row.status === "paid") {
       await client.query("COMMIT");
-      return { transactionId: String(row.id), reference: referenceValue, status: "paid", amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
+      return { transactionId: String(row.id), redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : redomTransactionId, reference: referenceValue, status: "paid", amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
     }
     const paymentDetails = {
       providerReference: String(verified.reference),
@@ -166,7 +182,9 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
     let metadata: any = {};
     try { metadata = row.metadata ? JSON.parse(String(row.metadata)) : {}; } catch { metadata = {}; }
     metadata.paymentDetails = paymentDetails;
-    await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, gateway_status=$2, paid_at=$3, metadata=$4::jsonb, updated_at=now() WHERE id=$5", [String(verified.id), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), JSON.stringify(metadata), row.id]);
+    const redomTransactionId = row.redom_transaction_id ? String(row.redom_transaction_id) : await createUniqueRedomTransactionId(client);
+    metadata.redomTransactionId = redomTransactionId;
+    await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, gateway_status=$2, paid_at=$3, metadata=$4::jsonb, redom_transaction_id=$5, updated_at=now() WHERE id=$6", [String(verified.id), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), JSON.stringify(metadata), redomTransactionId, row.id]);
     if (row.subscription_id) {
       await client.query(
         "UPDATE verification_subscriptions SET subscription_status='active', auto_renew=true, started_at=COALESCE(started_at, now()), renewed_at=now(), expires_at=CASE WHEN expires_at IS NULL OR expires_at < now() THEN now() + interval '1 month' ELSE expires_at + interval '1 month' END, payment_reference=$1, updated_at=now() WHERE id=$2",
