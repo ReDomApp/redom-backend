@@ -157,6 +157,8 @@ export function LanguageScreen() {
 }
 
 function Radio({ selected }: { selected: boolean }) {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   return (
     <View style={[styles.radio, selected && styles.radioSelected]}>
       {selected ? <View style={styles.radioDot} /> : null}
