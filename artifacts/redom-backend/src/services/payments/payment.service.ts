@@ -154,6 +154,11 @@ async function verifyWithProvider(referenceValue: string): Promise<VerifyData> {
   return paystack<VerifyData>("get", "/transaction/verify/" + encodeURIComponent(referenceValue));
 }
 
+export async function sendPaymentEmailForReference(referenceValue: string): Promise<void> {
+  const result = await pool.query("SELECT id FROM payment_transactions WHERE reference = $1 LIMIT 1", [referenceValue]);
+  if (result.rows[0]?.id) await sendPaymentEmailIfNeeded(String(result.rows[0].id));
+}
+
 export async function verifyPayment(userId: string, referenceValue: string): Promise<PaymentContext> {
   const tx = await pool.query("SELECT user_id FROM payment_transactions WHERE reference = $1", [referenceValue]);
   if (!tx.rows[0] || String(tx.rows[0].user_id) !== userId) throw new Error("Payment transaction not found.");
