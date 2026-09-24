@@ -66,7 +66,7 @@ export function ProfileScreen({ navigation, route }: Props) {
   const { user } = useAuthContext();
   const { width } = useWindowDimensions();
   const { colors } = useTheme();
-  const ui = useMemo(() => makeStyles(width, colors), [width, colors]);
+  const ui: any = useMemo(() => makeStyles(width, colors), [width, colors]);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
