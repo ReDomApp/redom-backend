@@ -50,28 +50,45 @@ export function ChatContactInfoScreen({ route, navigation }: Props) {
   <InfoModal visible={modal === "list"} title="Add to list" onClose={() => setModal(null)}><TextInput value={listName} onChangeText={setListName} placeholder="List name" style={styles.input}/><Pressable style={styles.primary} onPress={() => { void update({ listName: listName.trim() || null }); setModal(null); }}><Text style={styles.primaryText}>Save list</Text></Pressable><Option label="Remove from list" selected={!settings.listName} onPress={() => { void update({ listName: null }); setModal(null); }}/></InfoModal>
   </SafeAreaView>;
 }
-function QuickAction({
+function QuickAction({ icon, label, onPress }: { icon: "call"|"video"|"search"; label: string; onPress: () => void }) {
   const { colors } = useTheme();
-  const styles = makeStyles(colors); icon, label, onPress }: { icon: "call"|"video"|"search"; label: string; onPress: () => void }) { return <Pressable onPress={onPress} style={styles.quick}><View style={styles.quickIcon}><ChatInfoIcon name={icon} size={23} color="#101828"/></View><Text style={styles.quickLabel}>{label}</Text></Pressable>; }
+  const styles = makeStyles(colors);
+  return <Pressable onPress={onPress} style={styles.quick}><View style={styles.quickIcon}><ChatInfoIcon name={icon} size={23} color="#101828"/></View><Text style={styles.quickLabel}>{label}</Text></Pressable>;
+}
 function Section({ title, trailing, children }: { title: string; trailing?: string; children: ReactNode }) {
   const { colors } = useTheme();
-  const s = makeStyles(colors); return <><View style={styles.sectionTitle}><Text style={styles.sectionLabel}>{title}</Text>{trailing ? <Text style={styles.trailing}>{trailing} ›</Text> : null}</View>{children}</>; }
-function Row({
+  const styles = makeStyles(colors);
+  return <><View style={styles.sectionTitle}><Text style={styles.sectionLabel}>{title}</Text>{trailing ? <Text style={styles.trailing}>{trailing} ›</Text> : null}</View>{children}</>;
+}
+function Row({ icon, title, subtitle, onPress, chevron }: { icon: any; title: string; subtitle?: string; onPress?: () => void; chevron?: boolean }) {
   const { colors } = useTheme();
-  const styles = makeStyles(colors); icon, title, subtitle, onPress, chevron }: { icon: any; title: string; subtitle?: string; onPress?: () => void; chevron?: boolean }) { const body=<View style={styles.row}><ChatInfoIcon name={icon} size={25}/><View style={styles.copy}><Text style={styles.rowTitle}>{title}</Text>{subtitle ? <Text style={styles.rowSub}>{subtitle}</Text>:null}</View>{chevron||onPress ? <Text style={styles.chevron}>›</Text>:null}</View>; return onPress ? <Pressable onPress={onPress}>{body}</Pressable>:body; }
-function GroupAction({
+  const styles = makeStyles(colors);
+  const body=<View style={styles.row}><ChatInfoIcon name={icon} size={25}/><View style={styles.copy}><Text style={styles.rowTitle}>{title}</Text>{subtitle ? <Text style={styles.rowSub}>{subtitle}</Text>:null}</View>{chevron||onPress ? <Text style={styles.chevron}>›</Text>:null}</View>;
+  return onPress ? <Pressable onPress={onPress}>{body}</Pressable>:body;
+}
+function GroupAction({ icon, title, subtitle, onPress }: { icon: "group"|"groupAdd"; title: string; subtitle?: string; onPress: () => void }) {
   const { colors } = useTheme();
-  const styles = makeStyles(colors); icon, title, subtitle, onPress }: { icon: "group"|"groupAdd"; title: string; subtitle?: string; onPress: () => void }) { return <Pressable style={styles.groupRow} onPress={onPress}><View style={styles.groupIcon}><ChatInfoIcon name={icon} size={27} color="#FFF"/></View><View style={styles.copy}><Text style={styles.rowTitle}>{title}</Text>{subtitle ? <Text style={styles.rowSub}>{subtitle}</Text>:null}</View></Pressable>; }
+  const styles = makeStyles(colors);
+  return <Pressable style={styles.groupRow} onPress={onPress}><View style={styles.groupIcon}><ChatInfoIcon name={icon} size={27} color="#FFF"/></View><View style={styles.copy}><Text style={styles.rowTitle}>{title}</Text>{subtitle ? <Text style={styles.rowSub}>{subtitle}</Text>:null}</View></Pressable>;
+}
 function Stat({ icon, title, value }: { icon: any; title: string; value: string }) {
   const { colors } = useTheme();
-  const s = makeStyles(colors); return <View style={styles.stat}><ChatInfoIcon name={icon} size={25}/><Text style={styles.statTitle}>{title}</Text><Text style={styles.statValue}>{value}</Text></View>; }
-function Setting({
+  const styles = makeStyles(colors);
+  return <View style={styles.stat}><ChatInfoIcon name={icon} size={25}/><Text style={styles.statTitle}>{title}</Text><Text style={styles.statValue}>{value}</Text></View>;
+}
+function Setting({ title, subtitle, value, onChange }: { title: string; subtitle: string; value: boolean; onChange: (value: boolean) => void }) {
   const { colors } = useTheme();
-  const styles = makeStyles(colors); title, subtitle, value, onChange }: { title: string; subtitle: string; value: boolean; onChange: (value: boolean) => void }) { return <View style={styles.setting}><View style={styles.copy}><Text style={styles.rowTitle}>{title}</Text><Text style={styles.rowSub}>{subtitle}</Text></View><Switch value={value} onValueChange={onChange}/></View>; }
-function Option({
+  const styles = makeStyles(colors);
+  return <View style={styles.setting}><View style={styles.copy}><Text style={styles.rowTitle}>{title}</Text><Text style={styles.rowSub}>{subtitle}</Text></View><Switch value={value} onValueChange={onChange}/></View>;
+}
+function Option({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   const { colors } = useTheme();
-  const styles = makeStyles(colors); label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable style={styles.option} onPress={onPress}><Text style={styles.optionText}>{label}</Text><View style={[styles.radio, selected && styles.radioSelected]}>{selected ? <View style={styles.dot}/>:null}</View></Pressable>; }
-function InfoModal({
+  const styles = makeStyles(colors);
+  return <Pressable style={styles.option} onPress={onPress}><Text style={styles.optionText}>{label}</Text><View style={[styles.radio, selected && styles.radioSelected]}>{selected ? <View style={styles.dot}/>:null}</View></Pressable>;
+}
+function InfoModal({ visible, title, onClose, children }: { visible: boolean; title: string; onClose: () => void; children: ReactNode }) {
   const { colors } = useTheme();
-  const styles = makeStyles(colors); visible, title, onClose, children }: { visible: boolean; title: string; onClose: () => void; children: ReactNode }) { return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.overlay}><View style={styles.sheet}><View style={styles.handle}/><View style={styles.modalHeader}><Text style={styles.modalTitle}>{title}</Text><Pressable onPress={onClose}><Text style={styles.close}>Close</Text></Pressable></View><ScrollView>{children}</ScrollView></View></View></Modal>; }
+  const styles = makeStyles(colors);
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.overlay}><View style={styles.sheet}><View style={styles.handle}/><View style={styles.modalHeader}><Text style={styles.modalTitle}>{title}</Text><Pressable onPress={onClose}><Text style={styles.close}>Close</Text></Pressable></View><ScrollView>{children}</ScrollView></View></View></Modal>;
+}
 function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) { return StyleSheet.create({root:{flex:1,backgroundColor:colors.background},header:{height:58,backgroundColor:colors.surface,borderBottomWidth:1,borderBottomColor:"#E4E6EB",flexDirection:"row",alignItems:"center",paddingHorizontal:12},headerTitle:{flex:1,marginHorizontal:10,fontSize:19,fontWeight:"800",color:colors.text},content:{paddingBottom:48},hero:{backgroundColor:colors.surface,alignItems:"center",paddingVertical:22},avatar:{width:94,height:94,borderRadius:47},avatarFallback:{width:94,height:94,borderRadius:47,backgroundColor:"#EAF3FF",alignItems:"center",justifyContent:"center"},initials:{fontSize:31,fontWeight:"800",color:"#1877F2"},name:{marginTop:10,fontSize:23,fontWeight:"800",color:colors.text},verified:{marginTop:4,color:"#1877F2",fontSize:12,fontWeight:"700"},quickActions:{flexDirection:"row",gap:34,marginTop:18},quick:{alignItems:"center"},quickIcon:{width:48,height:48,borderRadius:24,backgroundColor:colors.background,alignItems:"center",justifyContent:"center"},quickLabel:{marginTop:5,fontSize:12,fontWeight:"600",color:colors.textSecondary},sectionTitle:{paddingHorizontal:14,paddingTop:18,paddingBottom:7,flexDirection:"row",justifyContent:"space-between"},sectionLabel:{fontSize:14,fontWeight:"800",color:colors.textSecondary},trailing:{fontSize:13,color:colors.textSecondary},card:{backgroundColor:colors.surface,marginHorizontal:8,borderRadius:10,overflow:"hidden"},row:{minHeight:66,paddingHorizontal:14,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:colors.border},copy:{flex:1,marginLeft:12,paddingVertical:8},rowTitle:{fontSize:15,fontWeight:"600",color:colors.text},rowSub:{fontSize:12,lineHeight:18,color:colors.textSecondary,marginTop:2},chevron:{fontSize:27,color:"#98A2B3"},switchRow:{minHeight:72,paddingHorizontal:14,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:colors.border},groupRow:{minHeight:72,paddingHorizontal:14,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:colors.border},groupIcon:{width:48,height:48,borderRadius:24,backgroundColor:"#19A974",alignItems:"center",justifyContent:"center"},noGroups:{padding:15,color:colors.textSecondary,fontWeight:"700"},danger:{marginTop:14,backgroundColor:colors.surface,borderTopWidth:1,borderBottomWidth:1,borderColor:colors.border},dangerRow:{minHeight:64,paddingHorizontal:22,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:colors.border},dangerText:{marginLeft:14,color:"#C01048",fontSize:15,fontWeight:"600"},errorBox:{margin:10,padding:12,borderRadius:10,backgroundColor:"#FFF1F1"},error:{color:"#B42318",textAlign:"center"},center:{flex:1,alignItems:"center",justifyContent:"center"},overlay:{flex:1,backgroundColor:"rgba(0,0,0,.3)",justifyContent:"flex-end"},sheet:{maxHeight:"82%",backgroundColor:colors.surface,borderTopLeftRadius:24,borderTopRightRadius:24,padding:18,paddingBottom:30},handle:{width:40,height:4,borderRadius:2,backgroundColor:"#98A2B3",alignSelf:"center",marginBottom:10},modalHeader:{flexDirection:"row",alignItems:"center",paddingVertical:8},modalTitle:{flex:1,fontSize:20,fontWeight:"800",color:colors.text},close:{color:"#1877F2",fontWeight:"800"},stat:{minHeight:62,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:colors.border,paddingHorizontal:4},statTitle:{flex:1,marginLeft:14,fontSize:16,color:colors.text},statValue:{fontWeight:"700",color:colors.textSecondary},setting:{minHeight:76,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:colors.border},modalHeading:{marginTop:18,marginBottom:6,fontSize:14,fontWeight:"800",color:colors.textSecondary},option:{minHeight:54,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:colors.border},optionText:{flex:1,fontSize:16,color:colors.text},radio:{width:22,height:22,borderRadius:11,borderWidth:2,borderColor:"#98A2B3",alignItems:"center",justifyContent:"center"},radioSelected:{borderColor:"#1877F2"},dot:{width:11,height:11,borderRadius:6,backgroundColor:"#1877F2"},input:{minHeight:50,borderWidth:1,borderColor:"#D0D5DD",borderRadius:12,paddingHorizontal:14,fontSize:16},primary:{marginTop:12,minHeight:50,borderRadius:12,backgroundColor:"#1877F2",alignItems:"center",justifyContent:"center"},primaryText:{color:"#FFF",fontWeight:"800",fontSize:16}}); }
