@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-export type FriendPerson={userId:string;profileId:string;firstName:string;lastName:string;username?:string|null;profilePhoto?:string|null;currentCity?:string|null;hometown?:string|null;profileType?:string|null;verified?:boolean;friend:boolean;requestSent:boolean;requestReceived:boolean;following:boolean;requestId?:string|null};
+export type FriendPerson={userId:string;profileId:string;firstName:string;lastName:string;username?:string|null;profilePhoto?:string|null;currentCity?:string|null;hometown?:string|null;profileType?:string|null;verified?:boolean;friend:boolean;requestSent:boolean;requestReceived:boolean;following:boolean;requestId?:string|null;outgoingRequestId?:string|null;incomingRequestId?:string|null};
 export const friendsService={
  list(q?:string){return api.get<{success:boolean;people:FriendPerson[]}>(`/friends${q?`?q=${encodeURIComponent(q)}`:""}`);},
  following(){return api.get<{success:boolean;people:FriendPerson[]}>("/friends/following");},
