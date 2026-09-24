@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useTheme } from "../theme/ThemeProvider";
 import { Alert, Animated, Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import CloseIcon from "../assets/navigation/close.svg";
@@ -62,6 +63,8 @@ function formatLikes(total: number) {
 }
 
 export function CommentSheet({ visible, postId, onClose }: { visible: boolean; postId: string; onClose: () => void }) {
+ const { colors } = useTheme();
+ const styles = makeStyles(colors);
   const [comments, setComments] = useState<HomeFeedComment[]>([]);
   const [loading, setLoading] = useState(false);
   const [composer, setComposer] = useState("");
@@ -214,52 +217,53 @@ export function CommentSheet({ visible, postId, onClose }: { visible: boolean; p
   </Modal>;
 }
 
-const styles = StyleSheet.create({
+function makeStyles(colors:ReturnType<typeof useTheme>["colors"]){return StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.38)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#FFF", height: "88%", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflow: "hidden" },
+  sheet: { backgroundColor: colors.surface, height: "88%", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflow: "hidden" },
   handle: { width: 72, height: 5, borderRadius: 4, backgroundColor: "#8A8D91", alignSelf: "center", marginTop: 9 },
-  header: { height: 58, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-  title: { fontSize: 21, fontWeight: "700", color: "#050505" },
+  header: { height: 58, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: colors.border },
+  title: { fontSize: 21, fontWeight: "700", color: colors.text },
   list: { flex: 1 },
   listContent: { padding: 12, paddingBottom: 24 },
-  status: { color: "#65676B", textAlign: "center", padding: 28 },
+  status: { color: colors.textSecondary, textAlign: "center", padding: 28 },
   commentRow: { flexDirection: "row", paddingVertical: 10 },
   commentBody: { flex: 1, marginLeft: 10 },
   nameLine: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 4 },
-  name: { fontSize: 15, fontWeight: "700", color: "#050505" },
-  dot: { color: "#65676B" },
-  time: { fontSize: 12, color: "#65676B" },
+  name: { fontSize: 15, fontWeight: "700", color: colors.text },
+  dot: { color: colors.textSecondary },
+  time: { fontSize: 12, color: colors.textSecondary },
   creatorBadge: { flexDirection: "row", alignItems: "center", marginLeft: 3, gap: 2 },
   creatorText: { color: "#1877F2", fontSize: 12, fontWeight: "600" },
-  commentText: { fontSize: 16, lineHeight: 21, color: "#050505", marginTop: 3 },
+  commentText: { fontSize: 16, lineHeight: 21, color: colors.text, marginTop: 3 },
   commentMeta: { flexDirection: "row", alignItems: "center", marginTop: 7, gap: 13 },
   likeButton: { flexDirection: "row", alignItems: "center", gap: 4 },
-  likeText: { fontSize: 12, fontWeight: "700", color: "#65676B" },
+  likeText: { fontSize: 12, fontWeight: "700", color: colors.textSecondary },
   likeCount: { flexDirection: "row", alignItems: "center", gap: 3 },
-  likeNumber: { fontSize: 12, color: "#65676B", fontWeight: "600" },
+  likeNumber: { fontSize: 12, color: colors.textSecondary, fontWeight: "600" },
   metaAction: { paddingVertical: 2 },
-  metaActionText: { fontSize: 12, fontWeight: "700", color: "#65676B" },
-  replyCount: { fontSize: 12, color: "#65676B" },
-  composerArea: { borderTopWidth: 1, borderTopColor: "#E4E6EB", backgroundColor: "#FFF", padding: 10 },
+  metaActionText: { fontSize: 12, fontWeight: "700", color: colors.textSecondary },
+  replyCount: { fontSize: 12, color: colors.textSecondary },
+  composerArea: { borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, padding: 10 },
   replying: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 8, paddingBottom: 6 },
   replyingText: { color: "#1877F2", fontSize: 12, fontWeight: "600" },
   composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
-  input: { flex: 1, maxHeight: 110, minHeight: 42, borderRadius: 20, backgroundColor: "#F0F2F5", paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: "#050505" },
+  input: { flex: 1, maxHeight: 110, minHeight: 42, borderRadius: 20, backgroundColor: colors.background, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: colors.text },
   send: { minHeight: 42, justifyContent: "center", paddingHorizontal: 8 },
   sendText: { color: "#1877F2", fontWeight: "700" },
   actionBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.38)", justifyContent: "flex-end" },
-  actionSheet: { backgroundColor: "#FFF", borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 16, paddingBottom: 16 },
+  actionSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 16, paddingBottom: 16 },
   reactionTray: { flexDirection: "row", justifyContent: "center", gap: 7, paddingTop: 18 },
   reactionItem: { padding: 2 },
-  reactHint: { textAlign: "center", color: "#65676B", fontSize: 14, marginBottom: 12 },
+  reactHint: { textAlign: "center", color: colors.textSecondary, fontSize: 14, marginBottom: 12 },
   actionItem: { flexDirection: "row", alignItems: "center", paddingVertical: 15, gap: 14 },
-  actionText: { fontSize: 18, color: "#111" },
-  reactionsSheet: { backgroundColor: "#FFF", height: "75%", borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 12 },
-  total: { paddingHorizontal: 18, paddingTop: 14, fontSize: 16, color: "#65676B" },
+  actionText: { fontSize: 18, color: colors.text },
+  reactionsSheet: { backgroundColor: colors.surface, height: "75%", borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 12 },
+  total: { paddingHorizontal: 18, paddingTop: 14, fontSize: 16, color: colors.textSecondary },
   topReactions: { flexDirection: "row", gap: 18, padding: 18 },
   topReaction: { flexDirection: "row", alignItems: "center", gap: 5 },
   count: { fontSize: 15, color: "#333" },
-  privacy: { color: "#65676B", paddingHorizontal: 18, paddingBottom: 12, fontSize: 12 },
+  privacy: { color: colors.textSecondary, paddingHorizontal: 18, paddingBottom: 12, fontSize: 12 },
   reactor: { flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingVertical: 8, gap: 10 },
-  reactorName: { flex: 1, fontSize: 16, fontWeight: "600", color: "#111" },
-});
+  reactorName: { flex: 1, fontSize: 16, fontWeight: "600", color: colors.text },
+}); }
+
