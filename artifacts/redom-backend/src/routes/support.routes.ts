@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Resend } from "resend";
 import { z } from "zod";
 import { env } from "../config/env";
+import { pool } from "../database/db";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, markInboundEvent, type SupportCase } from "../services/support/support.service";
 import { generatePolicyAwareSupportReply } from "../services/support/policy-aware-support.service";
