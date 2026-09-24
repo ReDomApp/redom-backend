@@ -77,7 +77,7 @@ const settingsRows = [
   { label: "Orders and payments", Icon: OrdersIcon, route: "Settings" as const },
   { label: "Link history", Icon: LinkHistoryIcon, route: "Settings" as const },
   { label: "Dark mode", Icon: DarkModeIcon, route: "Settings" as const },
-  { label: "Language", Icon: LanguageIcon, route: "Settings" as const },
+  { label: "Language", Icon: LanguageIcon, route: "Language" as const },
 ];
 
 export function ReDomMenuDrawer({ visible, onClose }: Props) {
