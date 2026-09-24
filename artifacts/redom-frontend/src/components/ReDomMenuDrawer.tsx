@@ -58,7 +58,7 @@ const supportRows = [
 ];
 
 const moreRows = [
-  { label: "Friends", Icon: FriendsIcon },
+  { label: "Friends", Icon: FriendsIcon, route: "Friends" as const },
   { label: "Events", Icon: EventsIcon },
   { label: "Pages", Icon: PagesIcon },
   { label: "Professional dashboard", Icon: ProfessionalDashboardIcon },
@@ -188,6 +188,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                       key={label}
                       style={styles.menuRow}
                       onPress={() => {
+                        if (route) { go(route); return; }
                         if (label === "Gaming") {
                           Alert.alert("Gaming", "Gaming is not available in your region right now.");
                           return;
