@@ -104,7 +104,7 @@ router.patch("/settings", authMiddleware, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid payment settings." });
   const value = parsed.data;
   const current = await pool.query(`SELECT currency, pin_enabled, biometric_enabled FROM payment_settings WHERE user_id = $1`, [userId]);
-  const base = current.rows[0] ?? { currency: "USD", pin_enabled: false, biometric_enabled: false };
+  const base = current.rows[0] ?? { currency: "NGN", pin_enabled: false, biometric_enabled: false };
   const next = {
     currency: value.currency ?? base.currency,
     pin_enabled: value.pinEnabled ?? base.pin_enabled,
