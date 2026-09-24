@@ -28,6 +28,13 @@ const products = [
 ];
 
 const categories = ["Bug / error", "Crash", "Feature not working", "Performance", "Login / account", "Other"];
+const MAX_REPORT_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+function base64Bytes(value: string): number {
+  const comma = value.indexOf(",");
+  const encoded = comma >= 0 ? value.slice(comma + 1) : value;
+  return Math.floor((encoded.length * 3) / 4);
+}
 
 async function dataUriFromFile(uri: string, contentType: string): Promise<string> {
   const bytes = await (await fetch(uri)).arrayBuffer();
@@ -80,17 +87,32 @@ export function ReportProblemScreen({}: Props) {
         const asset = result.assets[0];
         const contentType = asset.mimeType || "image/jpeg";
         const data = asset.base64 ? `data:${contentType};base64,${asset.base64}` : await dataUriFromFile(asset.uri, contentType);
-        if (data.length * 0.75 > 10 * 1024 * 1024) return Alert.alert("File too large", "Each attachment must be 10 MB or smaller.");
-        setAttachments((current) => [...current, { filename: `screenshot-${Date.now()}.jpg`, contentType, data, previewUri: asset.uri }]);
+        const size = base64Bytes(data);
+        if (size > MAX_REPORT_ATTACHMENT_BYTES) return Alert.alert("File too large", "Each attachment must be 10 MB or smaller.");
+        setAttachments((current) => {
+          if (current.reduce((sum, item) => sum + base64Bytes(item.data), 0) + size > MAX_REPORT_ATTACHMENT_BYTES) {
+            Alert.alert("Attachments too large", "All screenshots and videos together must be 10 MB or smaller.");
+            return current;
+          }
+          return [...current, { filename: `screenshot-${Date.now()}.jpg`, contentType, data, previewUri: asset.uri }];
+        });
       } else {
         const result = await DocumentPicker.getDocumentAsync({ type: "video/*", multiple: false, copyToCacheDirectory: true });
         if (result.canceled || !result.assets[0]) return;
         const asset = result.assets[0];
-        if ((asset.size ?? 0) > 10 * 1024 * 1024) return Alert.alert("Video too large", "Each attachment must be 10 MB or smaller.");
+        const sourceSize = asset.size ?? 0;
+        if (sourceSize > MAX_REPORT_ATTACHMENT_BYTES) return Alert.alert("Video too large", "Each attachment must be 10 MB or smaller.");
         const contentType = asset.mimeType || "video/mp4";
         const data = await dataUriFromFile(asset.uri, contentType);
-        if (data.length * 0.75 > 10 * 1024 * 1024) return Alert.alert("Video too large", "Each attachment must be 10 MB or smaller.");
-        setAttachments((current) => [...current, { filename: asset.name || `screen-recording-${Date.now()}.mp4`, contentType, data, previewUri: asset.uri }]);
+        const size = base64Bytes(data);
+        if (size > MAX_REPORT_ATTACHMENT_BYTES) return Alert.alert("Video too large", "Each attachment must be 10 MB or smaller.");
+        setAttachments((current) => {
+          if (current.reduce((sum, item) => sum + base64Bytes(item.data), 0) + size > MAX_REPORT_ATTACHMENT_BYTES) {
+            Alert.alert("Attachments too large", "All screenshots and videos together must be 10 MB or smaller.");
+            return current;
+          }
+          return [...current, { filename: asset.name || `screen-recording-${Date.now()}.mp4`, contentType, data, previewUri: asset.uri }];
+        });
       }
     } catch (error) {
       Alert.alert("Attachment", error instanceof Error ? error.message : "Unable to add the attachment.");
