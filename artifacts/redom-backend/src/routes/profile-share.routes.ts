@@ -73,7 +73,7 @@ router.get("/profile/username/:shareCode", async (req: Request, res: Response) =
     const description = profile.username ? `@${profile.username} on ReDom` : `View ${name}'s profile on ReDom`;
     const appUrl = `redom://profile/username/${profile.profile_share_code}`;
 
-    res.status(200).type("html").send(`<!doctype html>
+    return res.status(200).type("html").send(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
