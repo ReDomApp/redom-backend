@@ -15,6 +15,7 @@ import {
 import { uiMessage } from "./uiMessages";
 import { localizeUiTexts } from "./aiLocalization";
 import { notifyLanguageUpdated } from "../notifications/notificationService";
+import { productService } from "../product/productService";
 
 type LanguageContextValue = {
   language: LanguageCode;
@@ -61,8 +62,15 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setLanguage = useCallback(async (value: LanguageCode) => {
+    // Persist locally first so the language change is immediate and survives a restart.
     await saveLanguage(value);
     setCurrentLanguage(value);
+    // Keep the authenticated profile setting in sync so the same language follows the account.
+    try {
+      await productService.updateSettings({ language: value });
+    } catch {
+      // Local language remains authoritative for this device if the network is unavailable.
+    }
     void notifyLanguageUpdated(
       t(value, "languageUpdated"),
       t(value, "languageUpdatedBody", { language: languageName(value) }),
