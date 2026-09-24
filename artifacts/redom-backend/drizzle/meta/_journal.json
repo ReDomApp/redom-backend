@@ -253,6 +253,13 @@
       "when": 1790269000000,
       "tag": "0035_link_history",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790270000000,
+      "tag": "0036_payment_settings",
+      "breakpoints": true
     }
   ]
 }
