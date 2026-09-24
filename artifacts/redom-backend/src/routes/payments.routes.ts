@@ -1,13 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { initializeSubscriptionRenewal, verifyPayment, handlePaymentWebhook, verifyPaymentFromCallback, getPublicPaymentKey } from "../services/payments/payment.service";
+import { initializeSubscriptionRenewal, verifyPayment, handlePaymentWebhook, verifyPaymentFromCallback } from "../services/payments/payment.service";
 
 const router = Router();
 
-router.get("/config", authMiddleware, async (_req, res) => {
-  return res.json({ success: true, publicKey: getPublicPaymentKey() });
-});
 
 router.post("/subscription/renew", authMiddleware, async (req, res) => {
   const parsed = z.object({ subscriptionId: z.string().uuid() }).safeParse(req.body);
