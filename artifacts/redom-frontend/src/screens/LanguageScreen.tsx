@@ -205,7 +205,7 @@ function makeStyles(colors:ReturnType<typeof useTheme>["colors"]){return StyleSh
   radioSelected: { borderColor: "#D9DCE2" },
   radioDot: { width: 23, height: 23, borderRadius: 12, backgroundColor: "#6E9DF7" },
   loadingBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.82)",
     alignItems: "center",
     justifyContent: "center",
