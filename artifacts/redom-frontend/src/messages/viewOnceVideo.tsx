@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { StyleSheet, View } from "react-native";
 
+// Final Expo video typing check.
 export function ViewOnceVideo({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, (instance) => { instance.loop = false; });
   const [isPlaying, setIsPlaying] = useState(player.playing);
