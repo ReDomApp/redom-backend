@@ -66,7 +66,7 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
           } else setShowGroupIntro(false);
         } catch { setGroup(null); setShowGroupIntro(false); }
       }
-      setMessages(r.messages); setReplyTargets(r.replyTargets ?? []); setSettings(s.settings); setTimer(p.timerSeconds); setText(d.hasDraft ? d.draftMessage : "");
+      setMessages(r.messages); setReplyTargets(r.replyTargets ?? []); setSettings(s.settings); setTimer(p.timerSeconds); setText(d.draft?.hasDraft ? d.draft.draftMessage ?? "" : "");
       const reactionResults = await Promise.all(r.messages.map(async (message) => { try { return [message.id, await messageService.getReactions(message.id)] as const; } catch { return [message.id, null] as const; } }));
       const mine: Record<string, MessageReactionType | null> = {}; const totals: Record<string, number> = {};
       reactionResults.forEach(([id, result]) => { mine[id] = result?.myReaction ?? null; totals[id] = result?.reactions.reduce((sum, item) => sum + Number(item.total), 0) ?? 0; }); setMyReactions(mine); setReactionTotals(totals);
