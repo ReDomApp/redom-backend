@@ -3,15 +3,15 @@ import { ActivityIndicator, Alert, Image, Modal, Pressable, RefreshControl, Safe
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
-import { messageService, type ConversationSummary } from "../messages/messageService";
+import { publicGroupService, type PublicGroup } from "../groups/publicGroupService";
 import { GroupActionIcon } from "../components/GroupActionIcon";
 
-type DiscoverGroup = { id:string; groupName:string|null; groupDescription:string|null; groupPhoto:string|null; participantCount:number; joinApprovalRequired:boolean; verified:boolean };
+type DiscoverGroup = PublicGroup;
 
 export function GroupsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [groups,setGroups]=useState<DiscoverGroup[]>([]);
-  const [joined,setJoined]=useState<ConversationSummary[]>([]);
+  const [joined,setJoined]=useState<PublicGroup[]>([]);
   const [dismissed,setDismissed]=useState<string[]>([]);
   const [loading,setLoading]=useState(true);
   const [refreshing,setRefreshing]=useState(false);
@@ -23,9 +23,9 @@ export function GroupsScreen() {
   const load=useCallback(async(refresh=false)=>{
     refresh?setRefreshing(true):setLoading(true);
     try{
-      const [discover,inbox]=await Promise.all([messageService.discoverGroups(query.trim()||undefined),messageService.listConversations()]);
+      const [discover,mine]=await Promise.all([publicGroupService.discover(query.trim()||undefined),publicGroupService.mine()]);
       setGroups(discover.groups??[]);
-      setJoined((inbox.conversations??[]).filter(c=>c.type==="group"));
+      setJoined(mine.groups??[]);
     }catch(e){Alert.alert("Groups",e instanceof Error?e.message:"Groups could not be loaded.");}
     finally{setLoading(false);setRefreshing(false);}
   },[query]);
@@ -35,11 +35,11 @@ export function GroupsScreen() {
 
   const join=async(group:DiscoverGroup)=>{
     try{
-      const result=await messageService.joinDiscoveredGroup(group.id);
-      if(result.pending) Alert.alert("Join request sent",(group.groupName||"This group")+" requires admin approval.");
-      else Alert.alert("Joined","You joined "+(group.groupName||"this group")+".");
+      const result=await publicGroupService.join(group.id);
+      if(result.pending) Alert.alert("Join request sent",(group.name||"This group")+" requires admin approval.");
+      else Alert.alert("Joined","You joined "+(group.name||"this group")+".");
       setDismissed(v=>[...v,group.id]);
-      if(!result.pending) navigation.navigate("Chat",{conversationId:group.id});
+      if(!result.pending) setJoined(v=>[...v,{...group,role:"member"}]);
     }catch(e){Alert.alert("Join group",e instanceof Error?e.message:"Unable to join this group.");}
   };
 
@@ -59,15 +59,15 @@ export function GroupsScreen() {
       {loading?<ActivityIndicator size="large" color="#1877F2" style={{marginTop:40}}/>:
       visibleGroups.length?<View style={s.grid}>{visibleGroups.map(group=><View key={group.id} style={s.card}>
         <View style={s.imageWrap}>{group.groupPhoto?<Image source={{uri:group.groupPhoto}} style={s.cover}/>:<View style={s.coverFallback}><GroupActionIcon kind="members" size={58} color="#1877F2"/></View>}<Pressable onPress={()=>setDismissed(v=>[...v,group.id])} style={s.dismiss}><GroupActionIcon kind="close" size={22} color="#FFF"/></Pressable></View>
-        <View style={s.cardBody}><Text style={s.groupName} numberOfLines={2}>{group.groupName||"ReDom group"}</Text><Text style={s.meta}>{group.joinApprovalRequired?"Private group · ":"Public group · "}{group.participantCount.toLocaleString()} members</Text><Pressable onPress={()=>void join(group)} style={s.join}><Text style={s.joinText}>Join</Text></Pressable></View>
+        <View style={s.cardBody}><Text style={s.groupName} numberOfLines={2}>{group.name||"ReDom group"}</Text><Text style={s.meta}>{group.memberApprovalRequired?"Public group · Approval required · ":"Public group · "}{group.memberCount.toLocaleString()} members</Text><Pressable onPress={()=>void join(group)} style={s.join}><Text style={s.joinText}>Join</Text></Pressable></View>
       </View>)}</View>:
       <View style={s.empty}><GroupActionIcon kind="members" size={62} color="#1877F2"/><Text style={s.emptyTitle}>No groups to discover yet</Text><Text style={s.emptyText}>{query.trim()?"Try a different group search.":"Public ReDom groups will appear here when available."}</Text></View>}
     </ScrollView>
 
-    <Modal visible={yourGroupsOpen} transparent animationType="slide" onRequestClose={()=>setYourGroupsOpen(false)}><Pressable style={s.modalBackdrop} onPress={()=>setYourGroupsOpen(false)}/><View style={s.sheet}><View style={s.handle}/><Text style={s.yourTitle}>Your groups</Text>{joined.length?joined.map(group=><Pressable key={group.id} style={s.yourRow} onPress={()=>{setYourGroupsOpen(false);navigation.navigate("Chat",{conversationId:group.id});}}><View style={s.yourIcon}><GroupActionIcon kind="members" size={25} color="#1877F2"/></View><Text style={s.yourName} numberOfLines={1}>{group.groupName||"ReDom group"}</Text><GroupActionIcon kind="chevron" size={22} color="#667085"/></Pressable>):<Text style={s.yourEmpty}>You haven't joined any groups yet.</Text>}</View></Modal>
+    <Modal visible={yourGroupsOpen} transparent animationType="slide" onRequestClose={()=>setYourGroupsOpen(false)}><Pressable style={s.modalBackdrop} onPress={()=>setYourGroupsOpen(false)}/><View style={s.sheet}><View style={s.handle}/><Text style={s.yourTitle}>Your groups</Text>{joined.length?joined.map(group=><Pressable key={group.id} style={s.yourRow} onPress={()=>{setYourGroupsOpen(false);Alert.alert(group.name||"ReDom group",group.description||"You are a member of this public group.");}}><View style={s.yourIcon}><GroupActionIcon kind="members" size={25} color="#1877F2"/></View><Text style={s.yourName} numberOfLines={1}>{group.groupName||"ReDom group"}</Text><GroupActionIcon kind="chevron" size={22} color="#667085"/></Pressable>):<Text style={s.yourEmpty}>You haven't joined any groups yet.</Text>}</View></Modal>
     <Modal visible={createOpen} transparent animationType="slide" onRequestClose={()=>setCreateOpen(false)}>
       <Pressable style={s.modalBackdrop} onPress={()=>setCreateOpen(false)}/>
-      <View style={s.sheet}><View style={s.handle}/><Pressable style={s.sheetRow} onPress={()=>{setCreateOpen(false);Alert.alert("Create a post","Choose a group you've joined to publish a group post. The group-post composer will be connected here.");}}><View style={s.sheetIcon}><GroupActionIcon kind="edit" size={28} color="#111"/></View><View><Text style={s.sheetTitle}>Create a post</Text><Text style={s.sheetSub}>Post in a group you've joined.</Text></View></Pressable><Pressable style={s.sheetRow} onPress={()=>{setCreateOpen(false);navigation.navigate("CreateGroup");}}><View style={s.sheetIcon}><GroupActionIcon kind="members" size={28} color="#111"/></View><View><Text style={s.sheetTitle}>Create a group</Text><Text style={s.sheetSub}>Create a public or private group.</Text></View></Pressable></View>
+      <View style={s.sheet}><View style={s.handle}/><Pressable style={s.sheetRow} onPress={()=>{setCreateOpen(false);Alert.alert("Create a post","Choose a group you've joined to publish a group post. The group-post composer will be connected here.");}}><View style={s.sheetIcon}><GroupActionIcon kind="edit" size={28} color="#111"/></View><View><Text style={s.sheetTitle}>Create a post</Text><Text style={s.sheetSub}>Post in a group you've joined.</Text></View></Pressable><Pressable style={s.sheetRow} onPress={()=>{setCreateOpen(false);navigation.navigate("CreatePublicGroup");}}><View style={s.sheetIcon}><GroupActionIcon kind="members" size={28} color="#111"/></View><View><Text style={s.sheetTitle}>Create a group</Text><Text style={s.sheetSub}>Create a public or private group.</Text></View></Pressable></View>
     </Modal>
   </SafeAreaView>;
 }
