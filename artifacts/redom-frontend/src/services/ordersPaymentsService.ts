@@ -18,5 +18,6 @@ export const ordersPaymentsService = {
   updateSettings(input: { currency?: string; pinEnabled?: boolean; biometricEnabled?: boolean }) {
     return api.patch<{ success: boolean; settings: PaymentSettings }>("/orders-payments/settings", input);
   },
-  starsActivity() { return api.get<{ success: boolean; activity: unknown[] }>("/orders-payments/stars/activity"); },
+  starsActivity() { return api.get<{ success: boolean; balance: number; activity: Array<{ id:string; type:string; stars:number; balanceAfter:number; packageKey:string|null; countryCode:string|null; currency:string|null; amountMinor:number|null; reference:string|null; createdAt:string }> }>("/orders-payments/stars/activity"); },
+  starsCatalog(countryCode?: string) { return api.get<{ success:boolean; countries:Array<{name:string;isoCode:string;currency:string}>; packages:Array<{key:string;stars:number;usdPrice:number;localAmount:number;localAmountFormatted:string;currency:string}> }>(countryCode ? "/orders-payments/stars/catalog?country="+encodeURIComponent(countryCode) : "/orders-payments/stars/catalog"); },
 };
