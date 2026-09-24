@@ -63,6 +63,8 @@ import { videoComments } from "./videoComments";
 import { videoQuality } from "./videoQuality";
 import { videoViews } from "./videoViews";
 import { comments } from "./comments";
+import { publicGroups } from "./publicGroups";
+import { publicGroupMembers } from "./publicGroupMembers";
 import { registrationChallenges } from "./registration-challenges.schema";
 import { registrationFlowReservations } from "./registration-flow-reservations.schema";
 
@@ -82,6 +84,6 @@ export const db = drizzle(pool, { schema: {
   shares, stories, storyViewers, feedPreferences, notifications, searchHistory,
   marketplaceCategories, marketplaceListings, marketplaceInteractions, marketplaceReviews,
   marketplaceTransactions, videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
-  comments, registrationChallenges, registrationFlowReservations,
+  comments, publicGroups, publicGroupMembers, registrationChallenges, registrationFlowReservations,
 } });
 export { pool };
