@@ -24,4 +24,11 @@ export const paymentTransactions = pgTable("payment_transactions", {
   customerEmailStatus: varchar("customer_email_status", { length: 20 }).notNull().default("pending"),
   customerEmailSentAt: timestamp("customer_email_sent_at"),
   customerEmailError: varchar("customer_email_error", { length: 500 }),
+  refundStatus: varchar("refund_status", { length: 30 }),
+  refundId: varchar("refund_id", { length: 100 }),
+  refundAmountMinor: bigint("refund_amount_minor", { mode: "bigint" }),
+  refundRequestedAt: timestamp("refund_requested_at"),
+  refundExpectedAt: timestamp("refund_expected_at"),
+  refundProcessedAt: timestamp("refund_processed_at"),
+  refundError: varchar("refund_error", { length: 500 }),
 });
