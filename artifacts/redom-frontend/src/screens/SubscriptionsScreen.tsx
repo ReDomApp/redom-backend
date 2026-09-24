@@ -16,7 +16,7 @@ export function SubscriptionsScreen(){
    {items.length ? items.map(x=><Pressable key={x.id} onPress={()=>navigation.navigate("SubscriptionDetails",{subscriptionId:x.id})} style={[styles.item,{borderBottomColor:colors.border}]}>
      <View style={[styles.logo,{borderColor:colors.border}]}><Text style={styles.logoText}>R</Text></View>
      <View style={styles.copy}><Text style={[styles.name,{color:colors.text}]}>{titleForPlan(x.subscriptionType)}</Text><Text style={[styles.meta,{color:colors.textSecondary}]}>{money(x.subscriptionType)} · {x.subscriptionStatus==="expired" ? "Expired" : x.subscriptionStatus}</Text>{x.expiresAt?<Text style={[styles.meta,{color:colors.textSecondary}]}>Expired on {new Date(x.expiresAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</Text>:null}</View>
-     <Text style={[styles.chev,{color:colors.muted}]}>›</Text>
+     <Text style={[styles.chev,{color:colors.textSecondary}]}>›</Text>
    </Pressable>):<View style={styles.empty}><Text style={[styles.emptyTitle,{color:colors.text}]}>No subscriptions</Text><Text style={[styles.meta,{color:colors.textSecondary}]}>Your active and past ReDom subscriptions will appear here.</Text></View>}
   </ScrollView>}
  </SafeAreaView>;
