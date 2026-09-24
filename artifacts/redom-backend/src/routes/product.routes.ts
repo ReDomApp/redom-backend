@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { db } from "../database/db";
@@ -8,6 +8,10 @@ import { notifications } from "../database/notifications";
 import { notificationPreferences } from "../database/notificationPreferences";
 import { userSettings } from "../database/userSettings";
 import { userProfiles } from "../database/userProfiles";
+import { saves } from "../database/saves";
+import { savedCollections, savedCollectionContributors } from "../database/savedCollections";
+import { friends } from "../database/friends";
+import { posts } from "../database/posts";
 
 const router = Router();
 const POLICY_DOCUMENTS: Record<string, { title: string; summary: string; sections: Array<{ heading: string; body: string }>; version?: string; effectiveAt?: string }> = {
@@ -28,6 +32,88 @@ const POLICY_DOCUMENTS: Record<string, { title: string; summary: string; section
 async function currentProfileUuid(userId: string) { const [profile] = await db.select({ id: userProfiles.id }).from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1); return profile?.id ?? null; }
 
 router.get("/policies/:slug", (req, res) => { const document = POLICY_DOCUMENTS[req.params.slug]; if (!document) { res.status(404).json({ success: false, code: "POLICY_NOT_FOUND", message: "Policy not found." }); return; } res.json({ success: true, slug: req.params.slug, version: document.version ?? "1.1.0", effectiveAt: document.effectiveAt ?? "2026-09-13T00:00:00.000Z", document }); });
+
+const savedCollectionInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  isPublic: z.boolean().default(false),
+  collaborative: z.boolean().default(false),
+  contributorUserIds: z.array(z.string().uuid()).max(50).default([]),
+}).strict();
+
+router.get("/saved", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) { res.status(401).json({ success: false, message: "Authentication required." }); return; }
+  const profileId = await currentProfileUuid(req.user.userId);
+  if (!profileId) { res.status(404).json({ success: false, message: "Profile not found." }); return; }
+  const tab = String(req.query.tab ?? "all");
+  const rows = await db.select().from(saves).where(and(eq(saves.userId, profileId), eq(saves.active, true))).orderBy(desc(saves.createdAt));
+  const filtered = tab === "reels" ? rows.filter((x) => x.contentType === "reel") :
+    tab === "posts" ? rows.filter((x) => ["post", "photo", "video"].includes(x.contentType)) :
+    tab === "marketplace" ? rows.filter((x) => x.contentType === "marketplace") : rows;
+  const postIds = filtered.filter((x) => ["post", "photo", "video", "reel"].includes(x.contentType)).map((x) => x.contentId);
+  const postRows = postIds.length ? await db.select({ id: posts.id, userId: posts.userId, content: posts.content, type: posts.type, visibility: posts.visibility, publishedAt: posts.publishedAt, deleted: posts.deleted }).from(posts).where(inArray(posts.id, postIds)) : [];
+  const postMap = new Map(postRows.map((x) => [x.id, x]));
+  const collections = await db.select().from(savedCollections).where(eq(savedCollections.userId, req.user.userId)).orderBy(desc(savedCollections.createdAt));
+  res.json({ success: true, tab, saved: filtered.map((x) => ({ id: x.id, contentType: x.contentType, contentId: x.contentId, collectionId: x.collectionId, favorite: x.favorite, createdAt: x.createdAt, content: postMap.get(x.contentId) ?? null })), collections });
+});
+
+router.post("/saved", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) { res.status(401).json({ success: false, message: "Authentication required." }); return; }
+  const profileId = await currentProfileUuid(req.user.userId);
+  if (!profileId) { res.status(404).json({ success: false, message: "Profile not found." }); return; }
+  const parsed = z.object({ contentType: z.enum(["post", "photo", "video", "reel", "page_post", "marketplace"]), contentId: z.string().uuid(), collectionId: z.string().uuid().nullable().optional() }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, message: "Invalid saved content." }); return; }
+  const existing = await db.select().from(saves).where(and(eq(saves.userId, profileId), eq(saves.contentType, parsed.data.contentType), eq(saves.contentId, parsed.data.contentId), eq(saves.active, true))).limit(1);
+  if (existing[0]) { res.json({ success: true, saved: existing[0], alreadySaved: true }); return; }
+  let collectionId = parsed.data.collectionId ?? null;
+  if (collectionId) {
+    const owned = await db.select({ id: savedCollections.id }).from(savedCollections).where(and(eq(savedCollections.id, collectionId), eq(savedCollections.userId, req.user.userId))).limit(1);
+    if (!owned[0]) {
+      const contributor = await db.select({ collectionId: savedCollectionContributors.collectionId }).from(savedCollectionContributors).where(and(eq(savedCollectionContributors.collectionId, collectionId), eq(savedCollectionContributors.userId, req.user.userId))).limit(1);
+      if (!contributor[0]) { res.status(403).json({ success: false, message: "You cannot save to this collection." }); return; }
+    }
+  }
+  const [saved] = await db.insert(saves).values({ userId: profileId, contentType: parsed.data.contentType, contentId: parsed.data.contentId, collectionId, collectionType: collectionId ? "custom" : "all_saves", active: true, updatedAt: new Date() }).returning();
+  res.status(201).json({ success: true, saved });
+});
+
+router.delete("/saved/:id", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) { res.status(401).json({ success: false, message: "Authentication required." }); return; }
+  const profileId = await currentProfileUuid(req.user.userId);
+  if (!profileId) { res.status(404).json({ success: false, message: "Profile not found." }); return; }
+  const id = z.string().uuid().safeParse(req.params.id);
+  if (!id.success) { res.status(400).json({ success: false, message: "Invalid saved item." }); return; }
+  await db.update(saves).set({ active: false, updatedAt: new Date() }).where(and(eq(saves.id, id.data), eq(saves.userId, profileId)));
+  res.json({ success: true });
+});
+
+router.post("/saved/collections", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) { res.status(401).json({ success: false, message: "Authentication required." }); return; }
+  const parsed = savedCollectionInput.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, message: "A collection name is required." }); return; }
+  const collaborative = parsed.data.collaborative && !parsed.data.isPublic;
+  const contributorIds = [...new Set(parsed.data.contributorUserIds)];
+  if (!collaborative && contributorIds.length) { res.status(400).json({ success: false, message: "Contributors require a collaborative collection." }); return; }
+  if (collaborative && contributorIds.length) {
+    const friendsRows = await db.select({ friendUserId: friends.friendUserId }).from(friends).where(and(eq(friends.userId, req.user.userId), eq(friends.friendshipStatus, "active"), inArray(friends.friendUserId, contributorIds)));
+    if (friendsRows.length !== contributorIds.length) { res.status(403).json({ success: false, message: "Only active ReDom friends can be added as contributors." }); return; }
+  }
+  const [collection] = await db.insert(savedCollections).values({ userId: req.user.userId, name: parsed.data.name, isPublic: parsed.data.isPublic && !collaborative, collaborative, updatedAt: new Date() }).returning();
+  if (!collection) { res.status(500).json({ success: false, message: "Unable to create collection." }); return; }
+  if (collaborative && contributorIds.length) await db.insert(savedCollectionContributors).values(contributorIds.map((userId) => ({ collectionId: collection.id, userId, invitedByUserId: req.user!.userId })));
+  res.status(201).json({ success: true, collection, contributorUserIds: contributorIds });
+});
+
+router.get("/saved/collections/:id", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) { res.status(401).json({ success: false, message: "Authentication required." }); return; }
+  const id = z.string().uuid().safeParse(req.params.id);
+  if (!id.success) { res.status(400).json({ success: false, message: "Invalid collection." }); return; }
+  const owned = await db.select().from(savedCollections).where(and(eq(savedCollections.id, id.data), eq(savedCollections.userId, req.user.userId))).limit(1);
+  const contributor = await db.select().from(savedCollectionContributors).where(and(eq(savedCollectionContributors.collectionId, id.data), eq(savedCollectionContributors.userId, req.user.userId))).limit(1);
+  if (!owned[0] && !contributor[0]) { res.status(403).json({ success: false, message: "You cannot access this collection." }); return; }
+  const profileId = await currentProfileUuid(req.user.userId);
+  const items = profileId ? await db.select().from(saves).where(and(eq(saves.userId, profileId), eq(saves.collectionId, id.data), eq(saves.active, true))).orderBy(desc(saves.createdAt)) : [];
+  res.json({ success: true, collection: owned[0] ?? null, items });
+});
 
 router.get("/notifications", authMiddleware, async (req, res) => { if (!req.user?.userId) { res.status(401).json({ success: false, message: "Authentication required." }); return; } const profileId = await currentProfileUuid(req.user.userId); if (!profileId) { res.status(404).json({ success: false, message: "Profile not found." }); return; } const rows = await db.select().from(notifications).where(and(eq(notifications.recipientUserId, profileId), eq(notifications.deleted, false))).orderBy(desc(notifications.createdAt)).limit(100); res.json({ success: true, notifications: rows }); });
 router.post("/notifications/:id/read", authMiddleware, async (req, res) => { if (!req.user?.userId) { res.status(401).json({ success: false, message: "Authentication required." }); return; } const profileId = await currentProfileUuid(req.user.userId); const id = z.string().uuid().safeParse(req.params.id); if (!profileId) { res.status(404).json({ success: false, message: "Profile not found." }); return; } if (!id.success) { res.status(400).json({ success: false, message: "Invalid notification id." }); return; } await db.update(notifications).set({ unread: false, read: true, readAt: new Date(), updatedAt: new Date() }).where(and(eq(notifications.id, id.data), eq(notifications.recipientUserId, profileId))); await db.insert(activityLog).values({ userId: req.user.userId, activityType: "notification_opened", activityCategory: "notifications", activityTitle: "Notification opened", activityDescription: "A ReDom notification was opened.", targetId: id.data, targetType: "notification", status: "success", triggeredBy: "user", source: "app", undoSupported: false, hidden: false, archived: false }); res.json({ success: true }); });
