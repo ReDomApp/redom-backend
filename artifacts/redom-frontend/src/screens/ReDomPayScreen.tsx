@@ -4,7 +4,7 @@ import{useNavigation}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
 import BackIcon from"../assets/navigation/back.svg";
 import ChevronIcon from"../assets/home-feed/chevron-right.svg";
-import{ordersPaymentsService,OrderSummary}from"../services/ordersPaymentsService";
+import{ordersPaymentsService}from"../services/ordersPaymentsService";import type{OrderSummary}from"../services/ordersPaymentsService";
 
 export function ReDomPayScreen(){
  const n=useNavigation<any>();const{colors}=useTheme();const[tab,setTab]=useState<"transactions"|"manage">("transactions");const[orders,setOrders]=useState<OrderSummary[]>([]);const[loading,setLoading]=useState(true);
