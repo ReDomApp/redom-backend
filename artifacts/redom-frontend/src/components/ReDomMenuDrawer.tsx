@@ -3,6 +3,7 @@ import { Alert, Animated, Image, Modal, Pressable, ScrollView, StyleSheet, Text,
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
+import { useTheme } from "../theme/ThemeProvider";
 import { useAuthContext } from "../auth/context";
 import { getDeviceAccounts, type DeviceAccount } from "../auth/deviceAccounts";
 import ReDomLogo from "../assets/brand/redom-logo.svg";
@@ -84,6 +85,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, logout, switchDeviceAccount, prepareForAccountLogin } = useAuthContext();
   const { width } = useWindowDimensions();
+  const { colors } = useTheme();
   const translateX = useRef(new Animated.Value(-Math.min(width * 0.88, 390))).current;
   const [supportOpen, setSupportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -150,7 +152,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
   const row = (label: string, Icon: any, onPress?: () => void) => (
     <Pressable key={label} style={styles.menuRow} onPress={onPress} accessibilityRole={onPress ? "button" : undefined} accessibilityLabel={label}>
       <Icon width={32} height={32} />
-      <Text style={styles.menuText}>{label}</Text>
+      <Text style={[styles.menuText, { color: colors.text }]>{label}</Text>
     </Pressable>
   );
 
@@ -159,14 +161,15 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
       <Modal visible={visible} transparent animationType="none" onRequestClose={close}>
         <View style={styles.root}>
           <Pressable style={styles.backdrop} onPress={close} />
-          <Animated.View style={[styles.drawer, { width: drawerWidth, transform: [{ translateX }] }]}>
+          <Animated.View style={[styles.drawer, { width: drawerWidth, transform: [{ translateX }], backgroundColor: colors.surface }]}>
             <View style={styles.topSafe}>
-              <View style={styles.accountHeader}>
+              <View style={[styles.accountHeader, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+
                 <Pressable style={styles.accountIdentity} onPress={openProfile} accessibilityRole="button" accessibilityLabel="Open my ReDom profile">
                   {user?.profilePhoto ? <Image source={{ uri: user.profilePhoto }} style={styles.avatar} /> : <ProfilePlaceholder width={styles.avatar.width} height={styles.avatar.height} />}
                   <View style={styles.accountCopy}>
-                    <Text style={styles.accountName} numberOfLines={1}>{displayName}</Text>
-                    {user?.username ? <Text style={styles.accountUsername} numberOfLines={1}>@{user.username.replace(/^@/, "")}</Text> : null}
+                    <Text style={[styles.accountName, { color: colors.text }] numberOfLines={1}>{displayName}</Text>
+                    {user?.username ? <Text style={[styles.accountUsername, { color: colors.textSecondary }] numberOfLines={1}>@{user.username.replace(/^@/, "")}</Text> : null}
                   </View>
                 </Pressable>
                 <Pressable style={styles.accountArrow} onPress={() => setAccountsOpen(true)} accessibilityRole="button" accessibilityLabel="Switch ReDom profile or Page">
@@ -176,7 +179,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-              <Text style={styles.sectionLabel}>Your shortcuts</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]>Your shortcuts</Text>
               {shortcuts.map(({ label, Icon, route }) => row(label, Icon, route ? () => go(route) : label === "Memories" ? () => Alert.alert("Memories", "Coming Soon") : undefined))}
               <Pressable style={styles.seeMore} onPress={() => setMoreOpen((value) => !value)} accessibilityRole="button" accessibilityLabel="See more ReDom destinations">
                 <Text style={styles.seeMoreText}>{moreOpen ? "See less" : "See more"}</Text>
@@ -205,11 +208,11 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 </View>
               ) : null}
 
-              <View style={styles.divider} />
+              <View style={[styles.divider, { backgroundColor: colors.border }] />
               <Pressable style={styles.sectionHeader} onPress={() => setSupportOpen((v) => !v)}>
                 <HelpSupportIcon width={35} height={35} />
-                <Text style={styles.sectionTitle}>Help and support</Text>
-                <Text style={styles.sectionChevron}>{supportOpen ? "⌃" : "⌄"}</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]>Help and support</Text>
+                <Text style={[styles.sectionChevron, { color: colors.text }]>{supportOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
               {supportOpen ? supportRows.map((item) => row(item.label, item.Icon, () => go(item.route, item.params as never))) : null}
 
@@ -227,7 +230,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 <Text style={styles.sectionTitle}>Upgrades</Text>
                 <Text style={styles.sectionChevron}>{upgradesOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
-              {upgradesOpen ? <View style={styles.subsection}><Text style={styles.subsectionText}>ReDom upgrades and professional features will appear here.</Text></View> : null}
+              {upgradesOpen ? <View style={styles.subsection}><Text style={[styles.subsectionText, { color: colors.textSecondary }]>ReDom upgrades and professional features will appear here.</Text></View> : null}
 
               <View style={styles.divider} />
               <Pressable style={styles.sectionHeader} onPress={() => setProductsOpen((v) => !v)}>
@@ -238,7 +241,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
               {productsOpen ? <Pressable style={styles.productRow} onPress={() => go("ReDomAI")}><ReDomAiIcon width={32} height={32} /><Text style={styles.menuText}>ReDom AI</Text></Pressable> : null}
 
               <Pressable style={styles.logoutRow} onPress={() => { close(); setTimeout(() => void logout(), 190); }} accessibilityRole="button" accessibilityLabel="Log out">
-                <Text style={styles.logoutText}>Log out</Text>
+                <Text style={[styles.logoutText, { color: colors.text }]>Log out</Text>
               </Pressable>
             </ScrollView>
           </Animated.View>
@@ -248,20 +251,21 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
       <Modal visible={accountsOpen} transparent animationType="slide" onRequestClose={() => setAccountsOpen(false)}>
         <View style={styles.accountModalRoot}>
           <Pressable style={styles.accountBackdrop} onPress={() => setAccountsOpen(false)} />
-          <View style={styles.accountSheet}>
+          <View style={[styles.accountSheet, { backgroundColor: colors.surface }]}>
+
             <View style={styles.handle} />
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Switch profile or Page</Text>
+              <Text style={[styles.sheetTitle, { color: colors.text }]>Switch profile or Page</Text>
               <Pressable onPress={() => setAccountsOpen(false)} accessibilityLabel="Close profile switcher"><CloseIcon width={25} height={25} /></Pressable>
             </View>
-            <Text style={styles.sheetHint}>Profiles signed in on this device and ReDom Pages you manage can appear here.</Text>
+            <Text style={[styles.sheetHint, { color: colors.textSecondary }]>Profiles signed in on this device and ReDom Pages you manage can appear here.</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               {accounts.map((account) => (
                 <Pressable key={account.user.id} style={styles.accountRow} onPress={() => void switchAccount(account)} accessibilityRole="button" accessibilityLabel={`Switch to ${account.user.firstName} ${account.user.lastName}`}>
                   {account.user.profilePhoto ? <Image source={{ uri: account.user.profilePhoto }} style={styles.accountAvatar} /> : <ProfilePlaceholder width={52} height={52} />}
                   <View style={styles.accountRowCopy}>
-                    <Text style={styles.accountRowName} numberOfLines={1}>{account.user.firstName} {account.user.lastName}</Text>
-                    <Text style={styles.accountRowMeta}>{account.user.id === user?.id ? "Current profile" : `@${account.user.username}`}</Text>
+                    <Text style={[styles.accountRowName, { color: colors.text }] numberOfLines={1}>{account.user.firstName} {account.user.lastName}</Text>
+                    <Text style={[styles.accountRowMeta, { color: colors.textSecondary }]>{account.user.id === user?.id ? "Current profile" : `@${account.user.username}`}</Text>
                   </View>
                   {account.user.id === user?.id ? <View style={styles.selected}><Text style={styles.selectedMark}>✓</Text></View> : null}
                 </Pressable>
@@ -270,7 +274,8 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 <AccountAddIcon width={52} height={52} />
                 <View style={styles.accountRowCopy}><Text style={styles.accountRowName}>Add another ReDom account</Text><Text style={styles.accountRowMeta}>Sign in to another profile on this device</Text></View>
               </Pressable>
-              <View style={styles.pageNotice}><Text style={styles.pageNoticeTitle}>ReDom Pages</Text><Text style={styles.pageNoticeText}>Creator and business Pages that you manage will appear in this switcher when Page access is available in ReDom.</Text></View>
+              <View style={[styles.pageNotice, { backgroundColor: colors.background }]}>
+<Text style={[styles.pageNoticeTitle, { color: colors.text }]>ReDom Pages</Text><Text style={[styles.pageNoticeText, { color: colors.textSecondary }]>Creator and business Pages that you manage will appear in this switcher when Page access is available in ReDom.</Text></View>
             </ScrollView>
           </View>
         </View>
