@@ -16,10 +16,24 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+function renderInlineFormatting(value: string): string {
+  const escaped = escapeHtml(value);
+  const tokens: string[] = [];
+  const protect = (html: string) => { const key = "__REDOM_FMT_" + tokens.length + "__"; tokens.push(html); return key; };
+  let output = escaped;
+  output = output.replace(/`([^`\n]+)`/g, (_, text) => protect('<span style="font-family:Consolas,\'Courier New\',monospace;font-size:14px;background-color:#F0F2F5;padding:2px 5px;">' + text + '</span>'));
+  output = output.replace(/\*\*([^*\n]+)\*\*/g, (_, text) => protect('<strong>' + text + '</strong>'));
+  output = output.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, (_, text) => protect('<em>' + text + '</em>'));
+  return output.replace(/__REDOM_FMT_(\d+)__/g, (_, index) => tokens[Number(index)]);
+}
+
+function renderSupportText(value: string): string {
+  return value.split(/\n/).map((line) => renderInlineFormatting(line)).join("<br>");
+}
 function fallbackHtml(caseNumber: string, reply: string): string {
   const safeCase = escapeHtml(caseNumber);
   const paragraphs = reply.trim().split(/\n\s*\n/).map((part) =>
-    `<p style="margin:0 0 18px 0;color:${REDOM_EMAIL_BRAND.text};font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.65;">${escapeHtml(part).replace(/\n/g, "<br>")}</p>`
+    `<p style="margin:0 0 18px 0;color:${REDOM_EMAIL_BRAND.text};font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.65;">${renderSupportText(part)}</p>`
   ).join("");
 
   return `<!DOCTYPE html>
