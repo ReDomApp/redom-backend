@@ -11,10 +11,59 @@ function formatAmount(amountMinor: string, currency: string): string {
   return new Intl.NumberFormat("en", { style: "currency", currency }).format(Number(amountMinor) / 100);
 }
 
+function ordinal(day: number): string {
+  const suffix = day % 10 === 1 && day % 100 !== 11 ? "st" : day % 10 === 2 && day % 100 !== 12 ? "nd" : day % 10 === 3 && day % 100 !== 13 ? "rd" : "th";
+  return day + suffix;
+}
+
 function formatDate(value: Date | null): string {
+  if (!value) return "Not available";
+  const day = ordinal(value.getUTCDate());
+  const month = new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(value);
+  return day + " " + month + ", " + value.getUTCFullYear();
+}
+
+function formatDateTime(value: Date | null): string {
   if (!value) return "Not available";
   return new Intl.DateTimeFormat("en", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(value) + " UTC";
 }
+
+function channelLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    card: "Card",
+    bank: "Bank",
+    bank_transfer: "Bank Transfer",
+    ussd: "USSD",
+    mobile_money: "Mobile Money",
+    qr: "QR",
+    apple_pay: "Apple Pay",
+    eft: "EFT",
+    payattitude: "Payattitude",
+  };
+  return labels[String(value ?? "").toLowerCase()] ?? (value ? String(value) : "Not available");
+}
+
+function continentForCountry(countryCode?: string | null): string {
+  const code = String(countryCode ?? "").toUpperCase();
+  const map: Record<string, string> = {
+    DZ: "Africa", NG: "Africa", GH: "Africa", KE: "Africa", ZA: "Africa", EG: "Africa", MA: "Africa", TZ: "Africa", UG: "Africa", RW: "Africa", CI: "Africa", SN: "Africa",
+    US: "North America", CA: "North America", MX: "North America",
+    BR: "South America", AR: "South America", CL: "South America", CO: "South America", PE: "South America",
+    GB: "Europe", DE: "Europe", FR: "Europe", ES: "Europe", IT: "Europe", NL: "Europe", PT: "Europe", SE: "Europe", NO: "Europe", DK: "Europe", CH: "Europe", PL: "Europe",
+    CN: "Asia", JP: "Asia", IN: "Asia", SG: "Asia", MY: "Asia", ID: "Asia", PH: "Asia", TH: "Asia", KR: "Asia", AE: "Asia", SA: "Asia",
+    AU: "Oceania", NZ: "Oceania",
+  };
+  return map[code] ?? "Global";
+}
+
+export type PaymentEmailDetails = {
+  providerReference: string;
+  channel?: string | null;
+  type?: string | null;
+  bank?: string | null;
+  account?: string | null;
+  countryCode?: string | null;
+};
 
 export async function sendPaymentConfirmationEmail(input: {
   to: string;
@@ -26,54 +75,90 @@ export async function sendPaymentConfirmationEmail(input: {
   reference: string;
   paidAt: Date;
   nextBillingAt?: Date | null;
+  details?: PaymentEmailDetails;
 }): Promise<void> {
   const firstName = escapeHtml(input.firstName?.trim() || "there");
   const plan = escapeHtml(input.planName);
   const amount = escapeHtml(formatAmount(input.amountMinor, input.currency));
   const interval = escapeHtml(input.interval);
   const reference = escapeHtml(input.reference);
-  const paidAt = escapeHtml(formatDate(input.paidAt));
-  const nextBillingAt = escapeHtml(formatDate(input.nextBillingAt ?? null));
+  const paidAt = escapeHtml(formatDateTime(input.paidAt));
+  const periodStart = escapeHtml(formatDate(input.paidAt));
+  const periodEnd = escapeHtml(formatDate(input.nextBillingAt ?? null));
+  const nextBilling = escapeHtml(formatDate(input.nextBillingAt ?? null));
+  const providerReference = escapeHtml(input.details?.providerReference || input.reference);
+  const channel = escapeHtml(channelLabel(input.details?.channel));
+  const type = escapeHtml(input.details?.type || "Not available");
+  const bank = escapeHtml(input.details?.bank || "Not available");
+  const account = escapeHtml(input.details?.account || "Not available");
+  const continent = escapeHtml(continentForCountry(input.details?.countryCode));
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#F0F2F5;font-family:Arial,Helvetica,sans-serif;color:#1C1E21;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F0F2F5;"><tr><td align="center" style="padding:36px 14px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#FFFFFF;border:1px solid #DADDE1;">
-<tr><td style="padding:22px 28px;border-bottom:1px solid #DADDE1;"><span style="color:#1877F2;font-size:23px;font-weight:700;">ReDom</span></td></tr>
-<tr><td style="padding:30px 28px 10px;"><h1 style="margin:0 0 12px;font-size:24px;">Payment confirmed</h1><p style="margin:0;font-size:16px;line-height:25px;">Hello ${firstName}, your ReDom subscription payment has been confirmed.</p></td></tr>
-<tr><td style="padding:20px 28px 28px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F0F2F5;"><tr><td align="center" style="padding:30px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:620px;background:#FFFFFF;border:1px solid #DADDE1;">
+<tr><td style="padding:24px 28px;border-bottom:1px solid #DADDE1;text-align:center;"><div style="font-size:24px;font-weight:700;color:#1877F2;">ReDom</div></td></tr>
+<tr><td style="padding:30px 28px 10px;">
+<h1 style="margin:0 0 12px;font-size:24px;line-height:32px;">Payment received</h1>
+<p style="margin:0;font-size:16px;line-height:25px;"><strong>${firstName}</strong> received your payment of</p>
+<div style="margin:18px 0 20px;font-size:30px;line-height:36px;font-weight:700;color:#1C1E21;">${amount}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #DADDE1;">
+<tr><td style="padding:13px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Currency</td><td align="right" style="padding:13px 16px;font-weight:700;border-bottom:1px solid #DADDE1;">${escapeHtml(input.currency)}</td></tr>
 <tr><td style="padding:13px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Plan</td><td align="right" style="padding:13px 16px;font-weight:700;border-bottom:1px solid #DADDE1;">${plan}</td></tr>
-<tr><td style="padding:13px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Amount</td><td align="right" style="padding:13px 16px;font-weight:700;border-bottom:1px solid #DADDE1;">${amount}</td></tr>
 <tr><td style="padding:13px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Billing</td><td align="right" style="padding:13px 16px;border-bottom:1px solid #DADDE1;">Recurring ${interval}</td></tr>
-<tr><td style="padding:13px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Payment date</td><td align="right" style="padding:13px 16px;border-bottom:1px solid #DADDE1;">${paidAt}</td></tr>
-<tr><td style="padding:13px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Next billing</td><td align="right" style="padding:13px 16px;border-bottom:1px solid #DADDE1;">${nextBillingAt}</td></tr>
-<tr><td style="padding:13px 16px;color:#65676B;">Reference</td><td align="right" style="padding:13px 16px;font-family:Consolas,'Courier New',monospace;font-size:13px;">${reference}</td></tr>
+<tr><td style="padding:13px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Billing Period</td><td align="right" style="padding:13px 16px;border-bottom:1px solid #DADDE1;">${periodStart} – ${periodEnd}</td></tr>
+<tr><td style="padding:13px 16px;color:#65676B;">Next Billing Date</td><td align="right" style="padding:13px 16px;">${nextBilling}</td></tr>
 </table>
-<p style="margin:20px 0 0;color:#65676B;font-size:13px;line-height:20px;">Keep this email for your records. The reference can be used by ReDom Support to locate the payment.</p>
 </td></tr>
-<tr><td style="padding:16px 28px;border-top:1px solid #DADDE1;color:#65676B;font-size:11px;line-height:16px;">ReDom Payments<br>© ReDom</td></tr>
+<tr><td style="padding:4px 28px 28px;">
+<h2 style="font-size:17px;margin:0 0 12px;">Transaction Details</h2>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #DADDE1;">
+<tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Plan</td><td align="right" style="padding:12px 16px;border-bottom:1px solid #DADDE1;">${plan}</td></tr>
+<tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Provider Reference</td><td align="right" style="padding:12px 16px;font-family:Consolas,'Courier New',monospace;font-size:13px;border-bottom:1px solid #DADDE1;">${providerReference}</td></tr>
+<tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Date Paid</td><td align="right" style="padding:12px 16px;border-bottom:1px solid #DADDE1;">${paidAt}</td></tr>
+<tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Bank</td><td align="right" style="padding:12px 16px;border-bottom:1px solid #DADDE1;">${bank}</td></tr>
+<tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Channel</td><td align="right" style="padding:12px 16px;border-bottom:1px solid #DADDE1;">${channel}</td></tr>
+<tr><td style="padding:12px 16px;color:#65676B;border-bottom:1px solid #DADDE1;">Type</td><td align="right" style="padding:12px 16px;border-bottom:1px solid #DADDE1;">${type}</td></tr>
+<tr><td style="padding:12px 16px;color:#65676B;">Account</td><td align="right" style="padding:12px 16px;">${account}</td></tr>
+</table>
+<p style="margin:18px 0 0;font-size:13px;line-height:20px;color:#65676B;">If you have any issues with payment, kindly reply to this email or send an email to <a href="mailto:support@wnncompany.com" style="color:#1877F2;">support@wnncompany.com</a>.</p>
+<p style="margin:10px 0 0;font-size:13px;line-height:20px;color:#65676B;">For refund cases where this payment was not intended, please contact <a href="mailto:support@wnncompany.com" style="color:#1877F2;">support@wnncompany.com</a>.</p>
+</td></tr>
+<tr><td style="padding:18px 28px;border-top:1px solid #DADDE1;color:#65676B;font-size:11px;line-height:17px;text-align:center;">Modern Payments for ${continent}<br>© ReDom Platforms, Inc.</td></tr>
 </table></td></tr></table>
 </body></html>`;
 
   const text = [
-    "ReDom payment confirmed",
+    `ReDom payment received`,
+    `\n${input.firstName?.trim() || "Customer"} received your payment of ${formatAmount(input.amountMinor, input.currency)}`,
     "",
-    `Hello ${input.firstName?.trim() || "there"}, your ReDom subscription payment has been confirmed.`,
-    "",
+    `Currency: ${input.currency}`,
     `Plan: ${input.planName}`,
-    `Amount: ${formatAmount(input.amountMinor, input.currency)}`,
     `Billing: Recurring ${input.interval}`,
-    `Payment date: ${formatDate(input.paidAt)}`,
-    `Next billing: ${formatDate(input.nextBillingAt ?? null)}`,
-    `Reference: ${input.reference}`,
+    `Billing Period: ${formatDate(input.paidAt)} - ${formatDate(input.nextBillingAt ?? null)}`,
+    `Next Billing Date: ${formatDate(input.nextBillingAt ?? null)}`,
+    "",
+    "Transaction Details",
+    `Plan: ${input.planName}`,
+    `Provider Reference: ${input.details?.providerReference || input.reference}`,
+    `Date Paid: ${formatDateTime(input.paidAt)}`,
+    `Bank: ${input.details?.bank || "Not available"}`,
+    `Channel: ${channelLabel(input.details?.channel)}`,
+    `Type: ${input.details?.type || "Not available"}`,
+    `Account: ${input.details?.account || "Not available"}`,
+    "",
+    "If you have any issues with payment, kindly reply to this email or send an email to support@wnncompany.com.",
+    "For refund cases where this payment was not intended, please contact support@wnncompany.com.",
+    "",
+    `Modern Payments for ${continentForCountry(input.details?.countryCode)}`,
+    "© ReDom Platforms, Inc.",
   ].join("\n");
 
   const { error } = await resend.emails.send({
     from: env.email.paymentFrom,
     to: [input.to],
-    subject: "Your ReDom subscription payment is confirmed",
+    subject: "Payment received — ReDom " + input.planName,
     text,
     html,
   });
