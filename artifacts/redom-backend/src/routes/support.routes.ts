@@ -7,6 +7,7 @@ import { authMiddleware } from "../middleware/auth.middleware";
 import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, markInboundEvent, type SupportCase } from "../services/support/support.service";
 import { generatePolicyAwareSupportReply } from "../services/support/policy-aware-support.service";
 import { sendGeneratedSupportEmail } from "../services/support/supportEmail.service";
+import { processRefundSupportEmail } from "../services/refund/refund.service";
 
 const router = Router();
 const resend = new Resend(env.email.resend.apiKey);
@@ -89,6 +90,17 @@ router.post("/email/webhook", async (req, res) => {
     const supportAddress = env.email.supportFrom.toLowerCase();
     if (!senderEmail || senderEmail === supportAddress || senderEmail === "noreply@wnncompany.com") return res.status(200).json({ received: true, ignored: true });
     const message = emailBody(email); if (!message) return res.status(200).json({ received: true, ignored: true });
+    const looksLikeRefund = /\\b(refund|refunds|money back|return (?:my|the) (?:payment|money)|charged in error)\\b/i.test(`${email.subject ?? ""}\\n${message}`);
+    if (looksLikeRefund) {
+      const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
+      const refundResult = await processRefundSupportEmail({senderEmail,message,subject:String(email.subject ?? "Refund Request"),caseNumber:referenced});
+      if (refundResult.caseNumber) {
+        const refundCase = await getSupportCase(refundResult.caseNumber);
+        if (refundCase) await linkInboundEvent(id, refundCase.id);
+      }
+      await markInboundEvent(id, emailId);
+      return res.status(200).json({ received: true, caseNumber: refundResult.caseNumber, refund: true });
+    }
     const account = await getAccountContextByEmail(senderEmail); const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
     const result = await processSupportMessage({ message, userId: account?.userId ?? null, senderEmail, senderDisplayName, subject: email.subject ?? "ReDom Support", caseNumber: referenced });
     if (result.isSafe && result.reply) { const baseSubject = String(email.subject || "ReDom Support").replace(/^\s*((re|fwd|fw):\s*)+/i, "").replace(/\s*\[?Case\s*R\d{11}\]?\s*$/i, "").trim() || "ReDom Support"; await sendGeneratedSupportEmail({ to: senderEmail, subject: `Re: ${baseSubject} [Case ${result.supportCase.caseNumber}]`, caseNumber: result.supportCase.caseNumber, category: result.supportCase.category, supportReply: result.reply }); }
