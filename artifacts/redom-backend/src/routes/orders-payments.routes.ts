@@ -22,23 +22,45 @@ router.get("/overview", authMiddleware, async (req, res) => {
     [userId],
   );
 
-  return res.json({
-    success: true,
-    orders: orders.rows.map((row) => ({
-      transactionId: String(row.transaction_id),
-      title: String(row.title),
-      quantity: Number(row.quantity),
-      totalPrice: String(row.total_price),
-      currency: String(row.currency),
-      paymentStatus: String(row.payment_status),
-      orderStatus: String(row.order_status),
-      trackingNumber: row.tracking_number ? String(row.tracking_number) : null,
-      courierName: row.courier_name ? String(row.courier_name) : null,
-      estimatedDeliveryDate: row.estimated_delivery_date ? new Date(row.estimated_delivery_date).toISOString() : null,
-      createdAt: new Date(row.created_at).toISOString(),
-      updatedAt: new Date(row.updated_at).toISOString(),
-    })),
-  });
+  const payments = await pool.query(
+    `SELECT id, reference, redom_transaction_id, amount_minor, currency, purpose, status,
+            created_at, paid_at, metadata
+       FROM payment_transactions
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT 100`,
+    [userId],
+  );
+
+  const mappedOrders = orders.rows.map((row) => ({
+    transactionId: String(row.transaction_id),
+    title: String(row.title),
+    quantity: Number(row.quantity),
+    totalPrice: String(row.total_price),
+    currency: String(row.currency),
+    paymentStatus: String(row.payment_status),
+    orderStatus: String(row.order_status),
+    trackingNumber: row.tracking_number ? String(row.tracking_number) : null,
+    courierName: row.courier_name ? String(row.courier_name) : null,
+    estimatedDeliveryDate: row.estimated_delivery_date ? new Date(row.estimated_delivery_date).toISOString() : null,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  }));
+
+  const mappedPayments = payments.rows.map((row) => ({
+    id: String(row.id),
+    reference: String(row.reference),
+    redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
+    amountMinor: String(row.amount_minor),
+    currency: String(row.currency),
+    purpose: String(row.purpose),
+    status: String(row.status),
+    createdAt: new Date(row.created_at).toISOString(),
+    paidAt: row.paid_at ? new Date(row.paid_at).toISOString() : null,
+    metadata: row.metadata ?? null,
+  }));
+
+  return res.json({ success: true, orders: mappedOrders, payments: mappedPayments });
 });
 
 router.get("/subscriptions", authMiddleware, async (req, res) => {
