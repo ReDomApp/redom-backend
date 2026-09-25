@@ -139,6 +139,7 @@ router.get("/stars/catalog", authMiddleware, async (req, res) => {
     success: true,
     firstPurchaseEligible,
     countries: countries.map((country) => ({ name: country.name, isoCode: country.isoCode, currency: country.currency })),
+    selectedCountry: selectedCountry ? { name: selectedCountry.name, isoCode: selectedCountry.isoCode, currency: selectedCountry.currency } : null,
     packages: selectedCountry ? packages.map((pkg) => quote(selectedCountry, pkg, firstPurchaseEligible)) : [],
   });
 });
