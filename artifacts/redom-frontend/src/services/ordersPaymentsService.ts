@@ -16,6 +16,17 @@ export interface StarCountry { name: string; isoCode: string; currency: string; 
 export interface StarPackage { key: string; stars: number; usdPrice: number; regularUsdPrice: number; firstPurchaseUsdPrice: number|null; firstPurchaseDiscountPercent: number; popular: boolean; localAmount: number; amountMinor: number; localAmountFormatted: string; currency: string; payable?: boolean; availabilityReason?: string | null; }
 export interface StarTransaction { id:string; type:string; stars:number; balanceAfter:number; packageKey:string|null; countryCode:string|null; currency:string|null; amountMinor:number|null; reference:string|null; createdAt:string; }
 export interface SavedPaymentMethod { id:string; provider:string; email:string; brand:string|null; cardType:string|null; last4:string|null; expMonth:number|null; expYear:number|null; bank:string|null; countryCode:string|null; currency:string|null; reusable:boolean; createdAt:string; }
+export interface RefundCaseMessage {
+  id:string; senderType:"user"|"ai"|"system"; senderEmail:string|null; body:string; createdAt:string;
+}
+export interface RefundCaseDetails {
+  caseNumber:string; caseStatus:string; caseCreatedAt:string; caseUpdatedAt:string; closedAt:string|null;
+  transactionNumber:string; providerReference:string|null; amountMinor:string; currency:string; paymentStatus:string;
+  paidAt:string|null; refundStatus:string|null; refundId:string|null; refundRequestStatus:string;
+  decision:string|null; decisionReason:string|null; refundExpectedBy:string|null; refundCompletedAt:string|null;
+  reviewAvailableAt:string|null; verificationSentAt:string|null; verifiedAt:string|null; refundTarget:string|null;
+  securityWarning:string; messages:RefundCaseMessage[];
+}
 export interface PaymentAddress { id:string; country_code:string; country_name:string; full_name:string; address_line1:string; address_line2:string|null; city:string; state:string|null; postal_code:string|null; mapbox_place_id:string|null; latitude:number|null; longitude:number|null; is_default:boolean; created_at:string; updated_at:string; }
 export interface SubscriptionSummary {
   id: string; subscriptionType: string; subscriptionStatus: string; billingCycle: string;
@@ -41,6 +52,8 @@ export const ordersPaymentsService = {
   validateStarsRefundTransaction(transactionNumber:string) { return api.post<{success:boolean;status:string;code?:string;reason?:string;transactionNumber?:string;caseNumber?:string;target?:string|null}>("/refunds/transaction",{transactionNumber}); },
   verifyStarsRefundAccountProfile(transactionNumber:string,accountProfileId:string) { return api.post<{success:boolean;status:string;code?:string;reason?:string;transactionNumber?:string;target?:string|null}>("/refunds/account-profile",{transactionNumber,accountProfileId}); },
   completeStarsRefund(transactionNumber:string,code:string) { return api.post<{success:boolean;status:string;code?:string;reason?:string;transactionNumber?:string;refundId?:string|null;refundStatus?:string|null;target?:string|null}>("/refunds/verify-code",{transactionNumber,code}); },
+  refundCase(caseNumber:string) { return api.get<{success:boolean;refundCase:RefundCaseDetails}>("/refunds/cases/"+encodeURIComponent(caseNumber)); },
+  sendRefundCaseMessage(caseNumber:string,message:string,useGemini=true) { return api.post<{success:boolean;refundCase:RefundCaseDetails}>("/refunds/cases/"+encodeURIComponent(caseNumber)+"/messages",{message,useGemini}); },
   initializeStars(input:{packageKey:string;countryCode:string;email:string;pin?:string;paymentMethodId?:string;preferredChannel?:"card"|"bank_transfer";address?:{countryCode:string;countryName:string;fullName:string;addressLine1:string;addressLine2?:string|null;city:string;state?:string|null;postalCode?:string|null;mapboxPlaceId?:string|null;latitude?:number|null;longitude?:number|null}}) {
     return api.post<{success:boolean;mode:string;checkoutUrl:string|null;accessCode:string|null;reference:string;redomTransactionId:string;status?:string;channel?:string}>("/orders-payments/stars/initialize",input);
   },
