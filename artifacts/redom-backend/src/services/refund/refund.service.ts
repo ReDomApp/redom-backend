@@ -231,6 +231,14 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
 }
 
 
+export async function sendRefundProviderEmail(input:{email:string;caseNumber:string;transactionNumber:string;status:string;reason:string;target?:string|null;refundId?:string|null;amount?:string;currency?:string}):Promise<void> {
+ const targetLine=input.target ? "\nRefund destination: "+input.target : "";
+ const amountLine=input.amount && input.currency ? "\nAmount: "+input.amount+" "+input.currency : "";
+ const refundLine=input.refundId ? "\nRefund ID: "+input.refundId : "";
+ const {error}=await resend.emails.send({from:env.refunds.from,to:[input.email],subject:"ReDom Refunds — "+input.status+" — "+input.transactionNumber,text:"ReDom Refund Services\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+amountLine+targetLine+refundLine+"\n\nCase Number: "+input.caseNumber});
+ if(error) throw new Error(error.message);
+}
+
 export async function processRefundSupportEmail(input:{senderEmail:string;message:string;subject?:string|null;caseNumber?:string|null}):Promise<{handled:boolean;caseNumber?:string|null}> {
  const email=input.senderEmail.trim().toLowerCase();
  const account=await pool.query("SELECT id,email,first_name,last_name,phone_number FROM users WHERE lower(email)=lower($1) LIMIT 1",[email]);
