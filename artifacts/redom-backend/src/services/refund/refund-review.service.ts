@@ -65,8 +65,48 @@ async function processOne(row:any):Promise<void>{
    if(!/^\\d+$/.test(merchantAmountMinor)) {
      throw new Error("Paystack returned an invalid original transaction amount.");
    }
-   if(BigInt(amountMinor)>BigInt(merchantAmountMinor)) {
+   const requestedRefundMinor=BigInt(amountMinor);
+   const providerOriginalMinor=BigInt(merchantAmountMinor);
+   if(requestedRefundMinor<=0n) {
+     throw new Error("The ReDom refund amount must be greater than zero.");
+   }
+   if(requestedRefundMinor>providerOriginalMinor) {
      throw new Error("The ReDom refund amount exceeds the provider's original merchant transaction amount.");
+   }
+
+   // Check existing Paystack refunds before creating another one. This prevents
+   // a duplicate/over-refund and avoids predictable "fully reversed" failures.
+   const refundList=await axios.get("https://api.paystack.co/refund",{
+     ...auth,
+     params:{reference:providerReference,perPage:100}
+   });
+   const existingRefunds=Array.isArray(refundList.data?.data)
+     ? refundList.data.data
+     : Array.isArray(refundList.data?.data?.data)
+       ? refundList.data.data.data
+       : [];
+   let alreadyRefundedMinor=0n;
+   let activeRefund=false;
+   for(const existing of existingRefunds){
+     const existingStatus=String(existing?.status??"").toLowerCase();
+     const existingAmount=String(existing?.amount??"");
+     if(/^\\d+$/.test(existingAmount) && existingStatus!=="failed") alreadyRefundedMinor+=BigInt(existingAmount);
+     if(existingStatus==="pending" || existingStatus==="processing" || existingStatus==="needs-attention") activeRefund=true;
+   }
+   if(activeRefund) {
+     throw new Error("A Paystack refund is already pending or processing for this transaction.");
+   }
+   if(alreadyRefundedMinor>=providerOriginalMinor) {
+     throw new Error("The Paystack transaction has already been fully refunded.");
+   }
+   if(requestedRefundMinor+alreadyRefundedMinor>providerOriginalMinor) {
+     throw new Error("The requested ReDom refund would exceed the transaction's remaining refundable amount.");
+   }
+
+   // Paystack documents a minimum USD refund of $1.00. Reject locally rather
+   // than sending a request that Paystack will predictably reject.
+   if(String(refundCurrency).toUpperCase()==="USD" && requestedRefundMinor<100n) {
+     throw new Error("Paystack does not support refunds below USD 1.00 for this transaction.");
    }
 
    const response=await axios.post("https://api.paystack.co/refund",{
