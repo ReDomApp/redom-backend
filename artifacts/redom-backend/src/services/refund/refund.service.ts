@@ -1,7 +1,7 @@
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import axios from "axios";
 import { Resend } from "resend";
-import { createSupportCase, addSupportMessage, permanentlyCloseSupportCase, sendSupportEmail } from "../support/support.service";
+import { createSupportCase, addSupportMessage, permanentlyCloseSupportCase, sendSupportEmail, getSupportCase } from "../support/support.service";
 import { sendRefundCaseEmail } from "../support/supportEmail.service";
 import { pool } from "../../database/db";
 import { env } from "../../config/env";
@@ -349,8 +349,8 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    return {handled:true,caseNumber:null};
  }
  const user=account.rows[0];
- let caseRecord:any=null;
- if(input.caseNumber) caseRecord=await getSupportCaseForRefundCase(input.caseNumber,email);
+ const initialIdentifiers=extractRefundIdentifiers(input.message);
+ let caseRecord:any=await findCanonicalRefundCase({userId:String(user.id),email,caseNumber:input.caseNumber,identifiers:initialIdentifiers});
  if(!caseRecord) caseRecord=await createSupportCase({userId:String(user.id),requesterEmail:email,subject:"ReDom Refund Request",category:"refund_payment"});
  const records=await pool.query("SELECT pt.id,pt.redom_transaction_id,pt.reference,pt.purpose,pt.status,pt.amount_minor,pt.currency,pt.created_at,pt.metadata FROM payment_transactions pt WHERE pt.user_id=$1 ORDER BY pt.created_at DESC LIMIT 100",[user.id]);
  if(!records.rows.length) {
@@ -366,8 +366,20 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    const currentTransaction=String(current.rows[0].transaction_number);
    const codeMatch=input.message.match(/\b(\d{6}|\d{8})\b/);
    if(codeMatch && ["verification_code_sent","awaiting_verification"].includes(currentStatus)) {
-     await completeStarsRefund({userId:String(user.id),transactionNumber:currentTransaction,code:codeMatch[1]});
-     return {handled:true,caseNumber:caseRecord.caseNumber};
+     try {
+       const codeResult=await completeStarsRefund({userId:String(user.id),transactionNumber:currentTransaction,code:codeMatch[1]});
+       if(codeResult.status==="verification_code_sent") {
+         const reply="The previous verification code is no longer valid. A new security code has been sent for transaction "+currentTransaction+". This is the next verification attempt.\n\nCase Number: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
+         await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+         await sendSupportEmail(email,"ReDom Security Verification — New Code Required",reply);
+       }
+       return {handled:true,caseNumber:caseRecord.caseNumber};
+     } catch(error) {
+       const reply="We received your verification code for transaction "+currentTransaction+", but ReDom could not complete the verification at this time. The code was not silently accepted. Please use the refund verification flow to request a current code, or reply again if ReDom asks for another code.\n\nCase Number: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
+       await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+       await sendSupportEmail(email,"ReDom Refund Verification — Action Required",reply);
+       throw error;
+     }
    }
 
    // A follow-up containing the transaction/reference must never be silently dropped.
@@ -399,7 +411,7 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    await sendSupportEmail(email,"ReDom Refund Request — Next Step",reply);
    return {handled:true,caseNumber:caseRecord.caseNumber};
  }
- const identifiers=extractRefundIdentifiers(input.message);
+ const identifiers=initialIdentifiers;
  if(!identifiers.length) {
    const name=[user.first_name,user.last_name].filter(Boolean).join(" ")||"there";
    const reply="Hello "+name+",\n\nYour refund request is under review for account authentication. We found transaction records for "+email+". Please enter the 13 digits after R- or the complete ReDom Transaction ID, or provide the Provider Reference Number. Transaction IDs and references are matched case-insensitively and may be sent with or without the R- prefix.\n\nCase Number: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
@@ -430,8 +442,22 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
 }
 
 async function getSupportCaseForRefundCase(caseNumber:string,email:string):Promise<any|null> {
- const r=await pool.query("SELECT * FROM support_cases WHERE case_number=$1 AND lower(requester_email)=lower($2) AND category='refund_payment' AND closed_at IS NULL LIMIT 1",[caseNumber.toUpperCase(),email]);
+ const r=await pool.query("SELECT * FROM support_cases WHERE case_number=$1 AND lower(requester_email)=lower($2) AND category='refund_payment' LIMIT 1",[caseNumber.toUpperCase(),email]);
  return r.rows[0]??null;
+}
+
+async function findCanonicalRefundCase(input:{userId:string;email:string;caseNumber?:string|null;identifiers?:string[]}):Promise<any|null> {
+ if(input.caseNumber) {
+   const exact=await getSupportCaseForRefundCase(input.caseNumber,input.email);
+   if(exact) return exact;
+ }
+ const identifiers=[...(input.identifiers??[])].map((value)=>normalizeRefundTransactionNumber(value).toUpperCase()).filter(Boolean);
+ if(!identifiers.length) return null;
+ const result=await pool.query(
+   "SELECT sc.*,rr.transaction_number FROM refund_requests rr JOIN support_cases sc ON sc.id=rr.case_id LEFT JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number WHERE rr.user_id=$1 AND (upper(COALESCE(rr.transaction_number,''))=ANY($2::text[]) OR upper(COALESCE(pt.reference,''))=ANY($2::text[]) OR upper(COALESCE(pt.redom_transaction_id,''))=ANY($2::text[])) ORDER BY rr.created_at ASC, sc.created_at ASC LIMIT 1",
+   [input.userId,identifiers],
+ );
+ return result.rows[0]??null;
 }
 
 export async function applyStarsRefundWebhook(event:string,data:any):Promise<void> {
