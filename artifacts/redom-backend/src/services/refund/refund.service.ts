@@ -191,19 +191,34 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
  if(String(row.purpose)!=="stars_purchase") return {success:false,status:"not_refundable_product",code:"NOT_STARS_PURCHASE",reason:"Only ReDom Stars purchases use this refund policy.",transactionNumber};
  if(String(row.status)!=="paid") return {success:false,status:"not_refundable_status",code:"TRANSACTION_NOT_PAID",reason:"This transaction is not a completed Stars purchase.",transactionNumber};
  const paidAt=row.paid_at?new Date(String(row.paid_at)):null; if(!paidAt) return {success:false,status:"not_refundable_status",code:"PAID_AT_MISSING",reason:"The completed payment has no refund timestamp.",transactionNumber};
- const existingLock=await pool.query("SELECT outcome_status,case_number FROM refund_transaction_locks WHERE transaction_number=$1 LIMIT 1",[transactionNumber]);
- if(existingLock.rows[0]) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund request has already been recorded for this ReDom Transaction ID. The transaction cannot be submitted for refund a second time.",transactionNumber,caseNumber:existingLock.rows[0].case_number??input.caseNumber??undefined};
- const lock=await pool.query("INSERT INTO refund_transaction_locks(transaction_number,user_id,outcome_status) VALUES($1,$2,'requested') ON CONFLICT(transaction_number) DO NOTHING RETURNING transaction_number",[transactionNumber,input.userId]);
- if(!lock.rows[0]) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund request has already been recorded for this ReDom Transaction ID. The transaction cannot be submitted for refund a second time.",transactionNumber};
+ const existingLock=await pool.query("SELECT outcome_status,case_id,case_number,refund_request_id FROM refund_transaction_locks WHERE transaction_number=$1 AND user_id=$2 LIMIT 1",[transactionNumber,input.userId]);
  let caseRecord:any;
- if(input.caseId && input.caseNumber) {
-   caseRecord={id:input.caseId,caseNumber:input.caseNumber};
-   await pool.query("UPDATE refund_transaction_locks SET case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3",[caseRecord.id,caseRecord.caseNumber,transactionNumber]);
+ if(existingLock.rows[0]) {
+   const lockRow=existingLock.rows[0];
+   const priorRequests=await pool.query("SELECT COUNT(*)::int AS count FROM refund_requests WHERE transaction_number=$1 AND user_id=$2",[transactionNumber,input.userId]);
+   const priorAttemptCount=Number(priorRequests.rows[0]?.count??0);
+   // Only a first provider refund failure may reopen this exact support case, and only once.
+   if(String(lockRow.outcome_status)==="refund_failed" && priorAttemptCount===1 && lockRow.case_id && lockRow.case_number) {
+     const claimed=await pool.query("UPDATE refund_transaction_locks SET outcome_status='requested',outcome_reason='Second refund attempt authorized after the first provider refund attempt failed.',invalidated_at=NULL,updated_at=now() WHERE transaction_number=$1 AND user_id=$2 AND outcome_status='refund_failed' RETURNING case_id,case_number",[transactionNumber,input.userId]);
+     if(!claimed.rows[0]) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund attempt is already in progress for this ReDom Transaction ID.",transactionNumber,caseNumber:String(lockRow.case_number)};
+     caseRecord={id:String(claimed.rows[0].case_id),caseNumber:String(claimed.rows[0].case_number)};
+     await pool.query("UPDATE support_cases SET status='awaiting_support',updated_at=now() WHERE id=$1",[caseRecord.id]);
+   } else {
+     return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund request has already been recorded for this ReDom Transaction ID. A second attempt is allowed only when the first provider refund attempt failed.",transactionNumber,caseNumber:lockRow.case_number??input.caseNumber??undefined};
+   }
  } else {
-   try { caseRecord=await createSupportCase({userId:input.userId,subject:"ReDom Stars refund "+transactionNumber,category:"refund_payment"}); await pool.query("UPDATE refund_transaction_locks SET case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3",[caseRecord.id,caseRecord.caseNumber,transactionNumber]); } catch(error) { await pool.query("DELETE FROM refund_transaction_locks WHERE transaction_number=$1 AND user_id=$2",[transactionNumber,input.userId]); throw error; }
+   const lock=await pool.query("INSERT INTO refund_transaction_locks(transaction_number,user_id,outcome_status) VALUES($1,$2,'requested') ON CONFLICT(transaction_number) DO NOTHING RETURNING transaction_number",[transactionNumber,input.userId]);
+   if(!lock.rows[0]) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund request has already been recorded for this ReDom Transaction ID. A second attempt is allowed only when the first provider refund attempt failed.",transactionNumber};
+   if(input.caseId && input.caseNumber) {
+     caseRecord={id:input.caseId,caseNumber:input.caseNumber};
+     await pool.query("UPDATE refund_transaction_locks SET case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3",[caseRecord.id,caseRecord.caseNumber,transactionNumber]);
+   } else {
+     try { caseRecord=await createSupportCase({userId:input.userId,subject:"ReDom Stars refund "+transactionNumber,category:"refund_payment"}); await pool.query("UPDATE refund_transaction_locks SET case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3",[caseRecord.id,caseRecord.caseNumber,transactionNumber]); } catch(error) { await pool.query("DELETE FROM refund_transaction_locks WHERE transaction_number=$1 AND user_id=$2",[transactionNumber,input.userId]); throw error; }
+   }
  }
  const cutoff=starsRefundCutoff(paidAt); const eligible=Date.now()<cutoff.getTime(); const target=refundTargetFromMetadata(row.metadata);
- await pool.query("INSERT INTO refund_requests(case_id,user_id,product_key,transaction_number,account_profile_id,country_code,currency,amount,status,review_available_at,decision,decision_reason,refund_target_type,refund_target_masked) VALUES($1,$2,'stars_purchase',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",[caseRecord.id,input.userId,transactionNumber,row.profile_id??null,row.country_code??null,row.currency,Number(row.amount_minor??0)/100,eligible?"account_profile_required":"non_refundable",cutoff,eligible?null:"denied",eligible?null:"Stars are rigidly non-refundable after 1 hour.",target.type,target.masked]);
+ const refundRequestInsert=await pool.query("INSERT INTO refund_requests(case_id,user_id,product_key,transaction_number,account_profile_id,country_code,currency,amount,status,review_available_at,decision,decision_reason,refund_target_type,refund_target_masked) VALUES($1,$2,'stars_purchase',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id",[caseRecord.id,input.userId,transactionNumber,row.profile_id??null,row.country_code??null,row.currency,Number(row.amount_minor??0)/100,eligible?"account_profile_required":"non_refundable",cutoff,eligible?null:"denied",eligible?null:"Stars are rigidly non-refundable after 1 hour.",target.type,target.masked]);
+ await pool.query("UPDATE refund_transaction_locks SET refund_request_id=$1,case_id=$2,case_number=$3,outcome_status='requested',invalidated_at=NULL,updated_at=now() WHERE transaction_number=$4 AND user_id=$5",[String(refundRequestInsert.rows[0].id),caseRecord.id,caseRecord.caseNumber,transactionNumber,input.userId]);
  if(!eligible) {
   const reason="ReDom Stars are rigidly non-refundable after 1 hour.";
   await addSupportMessage({caseId:caseRecord.id,senderType:"system",body:"Refund denied: "+reason+" Status: non_refundable. Cutoff: "+cutoff.toISOString()+"."});
