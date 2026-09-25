@@ -12,7 +12,7 @@ export const REFUND_MINIMUM_REVIEW_MINUTES = 10;
 export const REFUND_FEATURE_ENABLED = true;
 export const STARS_REFUND_WINDOW_MINUTES = 10;
 const resend = new Resend(env.email.resend.apiKey);
-const REFUND_SECURITY_WARNING = "Security warning: ReDom will never ask for your password, payment PIN, CVV, full card number, bank login, or a one-time verification code outside the official refund verification flow. Never forward or share a verification code with anyone.";
+const REFUND_SECURITY_WARNING = REFUND_EMAIL_SECURITY_WARNING;
 
 export type RefundStatus =
   | "transaction_required"
@@ -92,10 +92,25 @@ export function buildRefundSupportClosureReply(input: { transactionNumber: strin
 
 export type StarsRefundResult = { success:boolean; status:string; code?:string; reason?:string; transactionNumber?:string; caseNumber?:string; refundId?:string|null; refundStatus?:string|null; target?:string|null };
 function normalizeRefundTransactionNumber(value:string):string {
- const raw=value.trim().toUpperCase().replace(/\s+/g,"");
+ const raw=value.trim().toUpperCase().replace(/[\s\u2010-\u2015]+/g,"");
  if(/^\d{13}$/.test(raw)) return "R-"+raw;
  if(/^R\d{13}$/.test(raw)) return "R-"+raw.slice(1);
  return raw;
+}
+function extractRefundIdentifiers(message:string):string[] {
+ const text=String(message??"").replace(/\r/g,"\n");
+ const candidates:string[]=[];
+ const add=(value:string|undefined)=>{ if(!value) return; const cleaned=value.trim().replace(/^[.,;:]+|[.,;:]+$/g,""); if(cleaned) candidates.push(normalizeRefundTransactionNumber(cleaned)); };
+ for(const match of text.matchAll(/\b(?:re?dom\s+)?transaction(?:\s+(?:id|number))?\s*[:#=\-]?\s*(R\s*-?\s*\d{13}|\d{13})\b/ig)) add(match[1]);
+ for(const match of text.matchAll(/\b(?:provider\s+)?reference(?:\s+(?:number|id))?\s*[:#=\-]?\s*([A-Z0-9][A-Z0-9._\/-]{3,63})\b/ig)) add(match[1]);
+ for(const match of text.matchAll(/\b(R\s*-?\s*\d{13}|\d{13}|T\d{6,})\b/ig)) add(match[1]);
+ return [...new Set(candidates.filter(Boolean))];
+}
+function refundIdentifierMatches(candidate:string,row:any):boolean {
+ const c=normalizeRefundTransactionNumber(candidate).toUpperCase();
+ const tx=String(row.redom_transaction_id??"").trim().toUpperCase();
+ const ref=String(row.reference??"").trim().toUpperCase();
+ return c===tx || c===ref || c===normalizeRefundTransactionNumber(tx).toUpperCase() || c===normalizeRefundTransactionNumber(ref).toUpperCase();
 }
 function starsRefundCutoff(paidAt:Date):Date { return new Date(paidAt.getTime()+STARS_REFUND_WINDOW_MINUTES*60_000); }
 function nonRefundablePayload(transactionNumber:string,caseNumber:string,cutoff:Date):StarsRefundResult { return {success:false,status:"non_refundable",code:"STARS_NON_REFUNDABLE",reason:"ReDom Stars are non-refundable 10 minutes after the purchase is completed.",transactionNumber,caseNumber}; }
@@ -131,7 +146,13 @@ async function closeAndInvalidateRefund(input:{refundRequestId:string;caseId:str
   await permanentlyCloseSupportCase(input.caseId);
 }
 
-async function sendRefundVerificationEmail(email:string,code:string,transactionNumber:string):Promise<void> { const r=await resend.emails.send({from:env.refunds.from,to:[email],subject:"ReDom Refund Verification — "+transactionNumber,text:"Your ReDom Stars refund verification code is "+code+". It expires in 10 minutes. If you did not request this refund, do not use the code and contact ReDom Support.\n\n"+REFUND_SECURITY_WARNING}); if(r.error) throw new Error(r.error.message); }
+async function sendRefundVerificationEmail(email:string,code:string,transactionNumber:string):Promise<void> {
+  const subject="ReDom Security Verification — Refund "+transactionNumber;
+  const text="ReDom Security Verification\n\nYour ReDom refund verification code is "+code+".\n\nIt expires in 10 minutes. If you did not request this refund, do not use the code and contact ReDom Support.\n\n"+REFUND_SECURITY_WARNING;
+  const html="<!doctype html><html><body style=\"margin:0;padding:24px;background:#f0f2f5;font-family:Arial,sans-serif;color:#1c1e21\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td align=\"center\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:560px;background:#fff;border:1px solid #dadde1\"><tr><td style=\"padding:22px;border-bottom:1px solid #dadde1\"><strong style=\"font-size:24px;color:#1877f2\">ReDom</strong><span style=\"float:right;font-size:11px;color:#65676b\">SECURITY</span></td></tr><tr><td style=\"padding:28px\"><div style=\"font-size:12px;font-weight:700;color:#65676b;letter-spacing:.6px\">REFUND VERIFICATION</div><h1 style=\"font-size:24px;margin:8px 0 18px\">Your security code</h1><div style=\"font-size:34px;font-weight:800;letter-spacing:8px;text-align:center;padding:20px;background:#f7f8fa;border:1px solid #dadde1\">"+code+"</div><p style=\"font-size:14px;line-height:21px\">This code expires in 10 minutes. It can be used only for transaction <strong>"+transactionNumber+"</strong>.</p><div style=\"margin-top:20px;padding:14px;background:#fff4d6;border:1px solid #f1d48a;font-size:12px;line-height:18px\"><strong>Security warning</strong><br>"+REFUND_SECURITY_WARNING+"</div></td></tr><tr><td style=\"padding:16px 28px;background:#f7f8fa;border-top:1px solid #dadde1;font-size:11px;color:#65676b\">ReDom Security · Automated security message.</td></tr></table></td></tr></table></body></html>";
+  const result=await resend.emails.send({from:env.email.securityFrom,to:[email],subject,text,html});
+  if(result.error) throw new Error(result.error.message);
+}
 
 async function issueRefundSecurityChallenge(refundRequestId:string,userId:string,email:string,phone:string|null,transactionNumber:string):Promise<{channel:string;target:string}> {
   await pool.query("UPDATE refund_verification_challenges SET consumed_at=COALESCE(consumed_at,now()) WHERE refund_request_id=$1 AND consumed_at IS NULL",[refundRequestId]);
@@ -146,7 +167,7 @@ async function issueRefundSecurityChallenge(refundRequestId:string,userId:string
   }
   const fallback=randomInt(100_000,1_000_000).toString();
   await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'email',$3,$4,$5,0,3)",[refundRequestId,userId,email,hashRefundCode(fallback),expiresAt]);
-  await sendRefundVerificationEmail(email,fallback,transactionNumber);
+  try { await sendRefundVerificationEmail(email,fallback,transactionNumber); } catch(error) { await pool.query("UPDATE refund_verification_challenges SET consumed_at=COALESCE(consumed_at,now()),failed_at=COALESCE(failed_at,now()) WHERE refund_request_id=$1 AND consumed_at IS NULL",[refundRequestId]); throw error; }
   return {channel:"email",target:email};
 }
 
@@ -195,14 +216,14 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
     target:refundTargetDisplay(typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{},target.masked),
     amount:String(row.amount_minor??0),
     currency:String(row.currency??""),
-  }).catch(()=>undefined);
+  }).catch((error)=>{ throw error; });
   return nonRefundablePayload(transactionNumber,caseRecord.caseNumber,cutoff);
  }
  const challenge=await issueRefundSecurityChallenge(String((await pool.query("SELECT id FROM refund_requests WHERE transaction_number=$1 ORDER BY created_at DESC LIMIT 1",[transactionNumber])).rows[0].id),input.userId,String(row.email),row.phone_number?String(row.phone_number):null,transactionNumber);
  await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE transaction_number=$1",[transactionNumber]);
  const nextStep=challenge.channel==="sms" ? "Enter the 8-digit security code sent to your verified ReDom phone ("+challenge.target+")." : "Enter the 6-digit fallback security code sent to your ReDom email.";
  await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:"Refund request received and the transaction has been authenticated to your ReDom account.\n\nNext step: "+nextStep+"\n\nSupport Case: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING});
- await sendRefundSupportStatus({email:String(row.email??""),caseNumber:caseRecord.caseNumber,transactionNumber,status:"Refund request under review — security verification required",reason:"The transaction was matched to your ReDom account.",target:target.masked,nextStep}).catch(()=>undefined);
+ await sendRefundSupportStatus({email:String(row.email??""),caseNumber:caseRecord.caseNumber,transactionNumber,status:"Refund request under review — security verification required",reason:"The transaction was matched to your ReDom account.",target:target.masked,nextStep}).catch((error)=>{ throw error; });
  return {success:true,status:"verification_code_sent",transactionNumber,caseNumber:caseRecord.caseNumber,target:challenge.target};
 }
 
@@ -234,7 +255,7 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
     await client.query("COMMIT");
     const metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{};
     const target=refundTargetDisplay(metadata,row.refund_target_masked);
-    await sendRefundTerminalEmail({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Request Closed — Security Verification Failed",reason,target,amount:String(row.amount_minor??0),currency:String(row.currency??"")}).catch(()=>undefined);
+    await sendRefundTerminalEmail({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Request Closed — Security Verification Failed",reason,target,amount:String(row.amount_minor??0),currency:String(row.currency??"")}).catch((error)=>{ throw error; });
     await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"Your refund request has been processed. Security verification failed after 3 incorrect codes, so the refund case is permanently closed and cannot be reused.\n\n"+REFUND_SECURITY_WARNING});
     await permanentlyCloseSupportCase(String(row.case_id));
     return {success:false,status:"refund_verification_failed",code:"REFUND_VERIFICATION_LOCKED",reason,transactionNumber,caseNumber:String(row.case_number)};
@@ -286,9 +307,9 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
   const reviewNext="Your security verification was successful. ReDom will review the specific product, transaction state, refund rules, and whether the product has already been used. The automated review becomes available after the 10-minute review window.";
   await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"Security verification successful. Your refund request is now under review.\n\nNext step: "+reviewNext+"\n\nCase Number: "+String(row.case_number)+"\n\n"+REFUND_SECURITY_WARNING});
   await pool.query("UPDATE support_cases SET status='awaiting_support',updated_at=now() WHERE id=$1 AND status <> 'closed'",[row.case_id]);
-  await sendRefundSupportStatus({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Refund request under review",reason:"Security verification was successful and the refund review has started.",target:target.masked,nextStep:reviewNext}).catch(()=>undefined);
+  await sendRefundSupportStatus({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Refund request under review",reason:"Security verification was successful and the refund review has started.",target:target.masked,nextStep:reviewNext}).catch((error)=>{ throw error; });
   return {success:true,status:"account_under_review",transactionNumber,caseNumber:String(row.case_number),target:target.masked};
- } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
+ } catch(error) { await client.query("ROLLBACK").catch((error)=>{ throw error; }); throw error; } finally { client.release(); }
 }
 
 export async function sendRefundProviderEmail(input:{email:string;caseNumber:string;transactionNumber:string;status:string;reason:string;target?:string|null;refundId?:string|null;amount?:string;currency?:string}):Promise<void> {
@@ -350,12 +371,9 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    // A follow-up containing the transaction/reference must never be silently dropped.
    // If the refund request already exists, acknowledge the message and tell the user
    // exactly what the next step is instead of returning without sending an email.
-   const suppliedToken=input.message.match(/\b(R-?\d{13}|\d{13}|T\d{6,})\b/i);
-   if(suppliedToken) {
-     const supplied=normalizeRefundTransactionNumber(suppliedToken[1]);
-     const matchesCurrent= supplied.toUpperCase()===currentTransaction.toUpperCase()
-       || supplied.toUpperCase()===String(current.rows[0].redom_transaction_id??"").toUpperCase()
-       || supplied.toUpperCase()===String(current.rows[0].reference??"").toUpperCase();
+   const suppliedTokens=extractRefundIdentifiers(input.message);
+   if(suppliedTokens.length) {
+     const matchesCurrent=suppliedTokens.some((candidate)=>refundIdentifierMatches(candidate,current.rows[0]));
 
      if(matchesCurrent) {
        const name=[user.first_name,user.last_name].filter(Boolean).join(" ")||"there";
@@ -379,16 +397,15 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    await sendSupportEmail(email,"ReDom Refund Request — Next Step",reply);
    return {handled:true,caseNumber:caseRecord.caseNumber};
  }
- const token=input.message.match(/\b(R-?\d{13}|\d{13}|T\d{6,})\b/i);
- if(!token) {
+ const identifiers=extractRefundIdentifiers(input.message);
+ if(!identifiers.length) {
    const name=[user.first_name,user.last_name].filter(Boolean).join(" ")||"there";
-   const reply="Hello "+name+",\n\nYour refund request is under review for account authentication. We found transaction records for "+email+". Please enter the number after R- (the 13 digits only) or the whole ReDom Transaction ID, or enter the Provider Reference Number. The reference is matched case-insensitively.\n\nCase Number: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
+   const reply="Hello "+name+",\n\nYour refund request is under review for account authentication. We found transaction records for "+email+". Please enter the 13 digits after R- or the complete ReDom Transaction ID, or provide the Provider Reference Number. Transaction IDs and references are matched case-insensitively and may be sent with or without the R- prefix.\n\nCase Number: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
    await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
    await sendSupportEmail(email,"ReDom Refund Request — Transaction ID Required",reply);
    return {handled:true,caseNumber:caseRecord.caseNumber};
  }
- const supplied=normalizeRefundTransactionNumber(token[1]);
- const tx=await pool.query("SELECT redom_transaction_id,reference,purpose,status FROM payment_transactions WHERE user_id=$1 AND (upper(redom_transaction_id)=upper($2) OR upper(reference)=upper($2)) ORDER BY created_at DESC LIMIT 1",[user.id,supplied]);
+ const tx=await pool.query("SELECT redom_transaction_id,reference,purpose,status FROM payment_transactions WHERE user_id=$1 AND (upper(COALESCE(redom_transaction_id,''))=ANY($2::text[]) OR upper(COALESCE(reference,''))=ANY($2::text[])) ORDER BY created_at DESC LIMIT 1",[user.id,identifiers.map((v)=>v.toUpperCase())]);
  if(!tx.rows[0]) {
    const reply="The Transaction ID or Provider Reference Number you entered could not be verified against "+email+". Please reply with the exact ReDom Transaction ID or Provider Reference Number from your account. ReDom transaction numbers may be entered as the 13 digits after R- or as the complete R- transaction ID.\n\nCase Number: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
    await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
@@ -461,13 +478,13 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
     status:bankStatus+" — "+customerStatus,reason,target,
     refundId:data?.refund_reference?String(data.refund_reference):null,
     amount:String(row.amount_minor),currency:String(rr.currency)
-  }).catch(()=>undefined);
+  }).catch((error)=>{ throw error; });
   if(terminal) {
     await pool.query("UPDATE refund_requests SET case_invalidated_at=COALESCE(case_invalidated_at,now()),updated_at=now() WHERE id=$1",[rr.id]);
     await pool.query("UPDATE refund_transaction_locks SET invalidated_at=COALESCE(invalidated_at,now()),updated_at=now() WHERE transaction_number=$1",[row.redom_transaction_id]);
     await permanentlyCloseSupportCase(String(rr.case_id));
   }
- } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
+ } catch(error) { await client.query("ROLLBACK").catch((error)=>{ throw error; }); throw error; } finally { client.release(); }
 }
 
 
