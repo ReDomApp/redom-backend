@@ -120,6 +120,7 @@ export async function sendRefundCaseEmail(input: {
   refundId?: string | null;
   securityWarning: string;
   terminal?: boolean;
+  from?: string;
 }): Promise<void> {
   const safe = (value: string) => escapeHtml(value);
   const tone = /completed|successful|processed/i.test(input.status)
@@ -172,6 +173,6 @@ export async function sendRefundCaseEmail(input: {
 </table></td></tr></table></body></html>`;
 
   const text = "ReDom Refund Case\n\nCase: " + input.caseNumber + "\nTransaction: " + input.transactionNumber + "\nStatus: " + input.status + "\nReason: " + input.reason + (input.nextStep ? "\nNext step: " + input.nextStep : "") + "\n\n" + input.securityWarning;
-  const { error } = await resend.emails.send({ from: env.email.supportFrom, to: [input.to], subject: "ReDom Refunds — " + input.status + " — " + input.transactionNumber, text, html });
+  const { error } = await resend.emails.send({ from: input.from ?? env.email.supportFrom, to: [input.to], subject: "ReDom Refunds — " + input.status + " — " + input.transactionNumber, text, html });
   if (error) throw new Error("Refund case email could not be sent: " + error.message);
 }
