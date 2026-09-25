@@ -77,11 +77,11 @@ export function OrdersPaymentsScreen() {
         ) : (
           <>
             {visiblePayments.map((p) => (
-              <View key={"payment-" + p.id} style={[styles.transaction, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Pressable key={"payment-" + p.id} onPress={() => navigation.navigate("PaymentTransactionDetails", { transactionId: p.id })} style={[styles.transaction, { backgroundColor: colors.surface, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={"View " + purposeLabel(p.purpose) + " transaction"}>
                 <Text style={[styles.transactionTitle, { color: colors.text }]}>{purposeLabel(p.purpose)}</Text>
                 <Text style={{ color: colors.textSecondary }}>{p.currency} {(Number(p.amountMinor) / 100).toFixed(2)} · {p.status}</Text>
                 <Text style={{ color: colors.textSecondary }}>{p.redomTransactionId || p.reference}</Text>
-              </View>
+              </Pressable>
             ))}
             {visibleOrders.map((o) => (
               <View key={"order-" + o.transactionId} style={[styles.transaction, { backgroundColor: colors.surface, borderColor: colors.border }]}>
