@@ -36,6 +36,10 @@ export async function ensurePaymentSchema(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_user_idx ON payment_transactions(user_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_subscription_idx ON payment_transactions(subscription_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_status_idx ON payment_transactions(status, created_at DESC)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS country_code varchar(2)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email varchar(255)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS failure_message varchar(500)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_country_idx ON payment_transactions(country_code)`);
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS redom_transaction_id varchar(15)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_redom_transaction_id_idx ON payment_transactions(redom_transaction_id) WHERE redom_transaction_id IS NOT NULL`);
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_status varchar(20) NOT NULL DEFAULT 'pending'`);
