@@ -11,6 +11,7 @@ import { startSupportCaseCleanup, stopSupportCaseCleanup } from "./services/supp
 import { ensurePaymentSchema } from "./services/payments/payment-schema-bootstrap";
 import { ensureBugReportSchema } from "./services/bug-report-schema-bootstrap";
 import { ensureStarsSchema } from "./services/stars-schema-bootstrap";
+import { ensureRefundSchema } from "./services/refund-schema-bootstrap";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -22,6 +23,7 @@ async function start(): Promise<void> {
   await ensurePaymentSchema();
   await ensureBugReportSchema();
   await ensureStarsSchema();
+  await ensureRefundSchema();
   const server = app.listen(port, host, () => {
     startRegistrationChallengeCleanup();
     startRegistrationFlowReservationCleanup();
