@@ -10,7 +10,7 @@ const transactionSchema = z.object({
 });
 
 const verificationSchema = z.object({
-  transactionNumber: z.string().trim().regex(/^R-\d{13}$/i),
+  transactionNumber: z.string().trim().regex(/^(?:R-?\d{13}|\d{13})$/i),
   code: z.string().regex(/^\d{6}$|^\d{8}$/),
 });
 
