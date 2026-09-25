@@ -104,6 +104,8 @@ function extractRefundIdentifiers(message:string):string[] {
  for(const match of text.matchAll(/\b(?:re?dom\s+)?transaction(?:\s+(?:id|number))?\s*[:#=\-]?\s*(R\s*-?\s*\d{13}|\d{13})\b/ig)) add(match[1]);
  for(const match of text.matchAll(/\b(?:provider\s+)?reference(?:\s+(?:number|id))?\s*[:#=\-]?\s*([A-Z0-9][A-Z0-9._\/-]{3,63})\b/ig)) add(match[1]);
  for(const match of text.matchAll(/\b(R\s*-?\s*\d{13}|\d{13}|T\d{6,})\b/ig)) add(match[1]);
+ const firstLine=text.split(/\n/)[0].trim().replace(/^>+\s*/,"");
+ if(/^[A-Z0-9][A-Z0-9._\/-]{3,63}$/i.test(firstLine)) add(firstLine);
  return [...new Set(candidates.filter(Boolean))];
 }
 function refundIdentifierMatches(candidate:string,row:any):boolean {
