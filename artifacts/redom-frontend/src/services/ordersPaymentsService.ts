@@ -1,6 +1,11 @@
 import { api } from "../api/client";
 
 export interface PaymentTransactionSummary { id:string; reference:string; redomTransactionId:string|null; amountMinor:string; currency:string; purpose:string; status:string; createdAt:string; paidAt:string|null; metadata:any; }
+export interface PaymentTransactionDetails {
+  id:string; reference:string; redomTransactionId:string|null; amountMinor:string; totalAmountMinor:string; currency:string;
+  purpose:string; productName:string; status:string; refundStatus:string|null; createdAt:string; paidAt:string|null;
+  providerReference:string|null; failureMessage:string|null; metadata:any;
+}
 export interface OrderSummary {
   transactionId: string; title: string; quantity: number; totalPrice: string; currency: string;
   paymentStatus: string; orderStatus: string; trackingNumber: string | null; courierName: string | null;
@@ -26,6 +31,9 @@ export const ordersPaymentsService = {
   },
   starsActivity() { return api.get<{ success:boolean; balance:number; activity:StarTransaction[] }>("/orders-payments/stars/activity"); },
   starsCatalog(countryCode?: string) { return api.get<{ success:boolean; countries:StarCountry[]; selectedCountry:StarCountry|null; packages:StarPackage[] }>(countryCode ? "/orders-payments/stars/catalog?country="+encodeURIComponent(countryCode) : "/orders-payments/stars/catalog"); },
+  transactionDetails(transactionId:string) {
+    return api.get<{success:boolean;transaction:PaymentTransactionDetails}>("/orders-payments/transactions/"+encodeURIComponent(transactionId));
+  },
   verifyPayment(reference:string) { return api.get<{success:boolean;payment:{status:string;transactionId:string;redomTransactionId?:string|null;amountMinor:string;currency:string;purpose:string}}>("/payments/verify/"+encodeURIComponent(reference)); },
   sendStars(recipientUserId:string,stars:number) { return api.post<{success:boolean;starsSent:number;creatorEligible:boolean;rewardValueUsd:number;creatorShareUsd:number;redomGrossUsd:number;senderBalance:number;recipientBalance:number;reference:string}>("/orders-payments/stars/send",{recipientUserId,stars}); },
   creatorEarnings() { return api.get<{success:boolean;sharePercent:number;starRewardValueUsd:number;months:Array<{earningMonth:string;stars:number;rewardValueUsd:number;creatorShareUsd:number;status:string}>}>("/orders-payments/stars/creator/earnings"); },
