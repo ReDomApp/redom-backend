@@ -7,7 +7,8 @@ import{ordersPaymentsService}from"../services/ordersPaymentsService";import type
 
 export function PaymentMethodsScreen(){
  const n=useNavigation<any>();const{colors}=useTheme();const[removeTarget,setRemoveTarget]=useState<SavedPaymentMethod|null>(null);const[password,setPassword]=useState("");const[removing,setRemoving]=useState(false);const[methods,setMethods]=useState<SavedPaymentMethod[]>([]);const[loading,setLoading]=useState(true);
- const load=useCallback(async()=>{setLoading(true);try{const r=await ordersPaymentsService.paymentMethods();setMethods(r.methods)}catch(e){Alert.alert("Payment methods",e instanceof Error?e.message:"Unable to load payment methods.")}finally{setLoading(false)}},[]);\n const remove=async()=>{if(!removeTarget)return;setRemoving(true);try{await ordersPaymentsService.removePaymentMethod(removeTarget.id,password);setRemoveTarget(null);setPassword("");await load();Alert.alert("Payment methods","Payment method removed.");}catch(e){Alert.alert("Payment methods",e instanceof Error?e.message:"Unable to remove payment method.");}finally{setRemoving(false)}};
+ const load=useCallback(async()=>{setLoading(true);try{const r=await ordersPaymentsService.paymentMethods();setMethods(r.methods)}catch(e){Alert.alert("Payment methods",e instanceof Error?e.message:"Unable to load payment methods.")}finally{setLoading(false)}},[]);
+ const remove=async()=>{if(!removeTarget)return;setRemoving(true);try{await ordersPaymentsService.removePaymentMethod(removeTarget.id,password);setRemoveTarget(null);setPassword("");await load();Alert.alert("Payment methods","Payment method removed.");}catch(e){Alert.alert("Payment methods",e instanceof Error?e.message:"Unable to remove payment method.");}finally{setRemoving(false)}};
  useFocusEffect(useCallback(()=>{void load()},[load]));
 
  return <SafeAreaView style={[s.root,{backgroundColor:colors.background}]}>
