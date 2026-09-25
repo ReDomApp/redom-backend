@@ -48,7 +48,8 @@
     "react-native-webrtc": "124.0.6",
     "zod": "^3.25.76",
     "expo-system-ui": "~57.0.4",
-    "@expo/dom-webview": "~57.0.1"
+    "@expo/dom-webview": "~57.0.1",
+    "react-native-webview": "13.16.1"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",
