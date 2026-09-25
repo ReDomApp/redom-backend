@@ -103,6 +103,23 @@ export function PaymentTransactionDetailsScreen() {
           {transaction.failureMessage ? <InfoRow label="Reason" value={transaction.failureMessage} colors={colors} /> : null}
         </View>
 
+        {transaction.status === "paid" && !["processed","pending","processing","needs-attention"].includes(String(transaction.refundStatus ?? "")) ? (
+          <Pressable
+            onPress={async () => {
+              try {
+                const result = await ordersPaymentsService.requestStarsRefund(transactionId);
+                if (result.caseNumber) navigation.navigate("RefundCase", { caseNumber: result.caseNumber, transactionNumber: result.transactionNumber });
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Unable to start the refund case.");
+              }
+            }}
+            style={[styles.refundButton, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.refundButtonText}>Request a refund</Text>
+          </Pressable>
+        ) : null}
+
         <Pressable
           onPress={() => navigation.navigate("MetaPaySupport")}
           style={[styles.help, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -218,6 +235,8 @@ const styles = StyleSheet.create({
   infoRow: { paddingVertical: 19, borderBottomWidth: 1, borderBottomColor: "transparent" },
   infoLabel: { fontSize: 16, marginBottom: 5 },
   infoValue: { fontSize: 16, fontWeight: "600" },
+  refundButton: { minHeight: 54, borderRadius: 14, marginTop: 26, alignItems: "center", justifyContent: "center" },
+  refundButtonText: { color: "#FFF", fontSize: 17, fontWeight: "800" },
   help: { minHeight: 74, borderWidth: 1, borderRadius: 18, marginTop: 26, paddingHorizontal: 28, flexDirection: "row", alignItems: "center", gap: 18 },
   helpIcon: { width: 31, height: 31, borderRadius: 16, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   helpQuestion: { fontSize: 20, fontWeight: "800" },
