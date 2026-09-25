@@ -8,7 +8,7 @@ import{ordersPaymentsService}from"../services/ordersPaymentsService";import type
 export function PaymentMethodsScreen(){
  const n=useNavigation<any>();const route=useRoute<any>();const{colors}=useTheme();const[removeTarget,setRemoveTarget]=useState<SavedPaymentMethod|null>(null);const[password,setPassword]=useState("");const[removing,setRemoving]=useState(false);const[methods,setMethods]=useState<SavedPaymentMethod[]>([]);const[loading,setLoading]=useState(true);
  const load=useCallback(async()=>{setLoading(true);try{const r=await ordersPaymentsService.paymentMethods();setMethods(r.methods)}catch(e){Alert.alert("Payment methods",e instanceof Error?e.message:"Unable to load payment methods.")}finally{setLoading(false)}},[]);
- useEffect(()=>{void load()},[load]);useFocusEffect(useCallback(()=>{void load()},[load]));
+ useFocusEffect(useCallback(()=>{void load()},[load]));
  useEffect(()=>{if(route.params?.autoAdd){Alert.alert("Add payment method","For security, ReDom adds a reusable Paystack card after an eligible card checkout. No raw card details are stored by ReDom.",[{text:"CANCEL",style:"cancel"},{text:"Continue to checkout",onPress:()=>n.navigate("BuyStars")}]);n.setParams?.({autoAdd:false})}},[route.params?.autoAdd]);
  const remove=async()=>{if(!removeTarget||!password.trim())return;setRemoving(true);try{await ordersPaymentsService.removePaymentMethod(removeTarget.id,password);setRemoveTarget(null);setPassword("");await load()}catch(e){Alert.alert("Unable to remove",e instanceof Error?e.message:"Password verification failed.")}finally{setRemoving(false)}};
  return <SafeAreaView style={[s.root,{backgroundColor:colors.background}]}>
