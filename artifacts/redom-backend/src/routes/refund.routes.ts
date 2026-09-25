@@ -43,9 +43,16 @@ router.post("/request", authMiddleware, async (req, res) => {
 });
 
 router.post("/transaction", authMiddleware, async (req,res) => {
+  if (!REFUND_FEATURE_ENABLED) return unavailable(res);
   const parsed=transactionSchema.safeParse(req.body);
   if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_TRANSACTION_NUMBER",message:"Enter a valid ReDom Transaction ID."});
-  return router.handle({} as any,res,()=>undefined);
+  try {
+    const result=await startStarsRefund({userId:req.user!.userId,transactionNumber:parsed.data.transactionNumber});
+    if(result.status==="non_refundable") return res.status(409).json(result);
+    return res.status(result.success?200:400).json(result);
+  } catch(error) {
+    return res.status(500).json({success:false,code:"REFUND_TRANSACTION_FAILED",message:error instanceof Error?error.message:"Unable to validate the transaction."});
+  }
 });
 
 router.post("/account-profile", authMiddleware, async (req,res) => {
