@@ -39,8 +39,10 @@ export function minimumReviewAvailableAt(from = new Date()): Date {
 export function maskRefundTarget(value: string | null | undefined): string | null {
   if (!value) return null;
   const normalized = value.replace(/\s+/g, "");
+  if (normalized.includes("•")) return normalized;
   if (normalized.length <= 4) return "••••";
-  return `${normalized.slice(0, 2)}••••••${normalized.slice(-2)}`;
+  if (normalized.length >= 10) return normalized.slice(0, 3)+"••••••••"+normalized.slice(-1);
+  return normalized.slice(0, 2)+"••••••"+normalized.slice(-2);
 }
 
 export async function createDormantRefundRequest(input: {
