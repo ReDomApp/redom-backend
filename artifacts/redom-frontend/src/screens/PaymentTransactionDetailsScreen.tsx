@@ -6,6 +6,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { useTheme } from "../theme/ThemeProvider";
 import type { RootStackParamList } from "../routing/types";
 import { ordersPaymentsService, type PaymentTransactionDetails } from "../services/ordersPaymentsService";
+import { ApiError } from "../api/client";
 import BackIcon from "../assets/navigation/back.svg";
 
 export function PaymentTransactionDetailsScreen() {
@@ -110,6 +111,11 @@ export function PaymentTransactionDetailsScreen() {
                 const result = await ordersPaymentsService.requestStarsRefund(transactionId);
                 if (result.caseNumber) navigation.navigate("RefundCase", { caseNumber: result.caseNumber, transactionNumber: result.transactionNumber });
               } catch (err) {
+                const details = err instanceof ApiError && err.details && typeof err.details === "object" ? err.details as any : null;
+                if (details?.caseNumber) {
+                  navigation.navigate("RefundCase", { caseNumber: details.caseNumber, transactionNumber });
+                  return;
+                }
                 setError(err instanceof Error ? err.message : "Unable to start the refund case.");
               }
             }}
