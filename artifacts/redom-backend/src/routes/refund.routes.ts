@@ -1,21 +1,21 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { REFUND_FEATURE_ENABLED } from "../services/refund/refund.service";
+import { REFUND_FEATURE_ENABLED, startStarsRefund, verifyStarsRefundAccountProfile, completeStarsRefund } from "../services/refund/refund.service";
 
 const router = Router();
 
 const transactionSchema = z.object({
-  transactionNumber: z.string().trim().min(1).max(120),
+  transactionNumber: z.string().trim().regex(/^R-\d{13}$/i),
 });
 
 const accountProfileSchema = z.object({
-  refundRequestId: z.string().uuid(),
-  accountProfileId: z.string().trim().min(1).max(64),
+  transactionNumber: z.string().trim().regex(/^R-\d{13}$/i),
+  accountProfileId: z.string().uuid(),
 });
 
 const verificationSchema = z.object({
-  refundRequestId: z.string().uuid(),
+  transactionNumber: z.string().trim().regex(/^R-\d{13}$/i),
   code: z.string().regex(/^\d{6}$/),
 });
 
@@ -23,37 +23,68 @@ function unavailable(res: Response) {
   return res.status(503).json({
     success: false,
     code: "REFUNDS_NOT_AVAILABLE",
-    message: "ReDom refunds are not currently available. This refund workflow is reserved for future product requirements.",
+    message: "ReDom refunds are not currently available.",
   });
 }
 
-router.post("/request", authMiddleware, async (_req, res) => {
+router.post("/request", authMiddleware, async (req, res) => {
   if (!REFUND_FEATURE_ENABLED) return unavailable(res);
-  return res.status(501).json({ success: false, code: "REFUND_WORKFLOW_PENDING_IMPLEMENTATION" });
-});
-
-// Contract endpoint reserved for the future transaction-number step.
-router.post("/transaction", authMiddleware, async (req, res) => {
   const parsed = transactionSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid transaction number." });
-  if (!REFUND_FEATURE_ENABLED) return unavailable(res);
-  return res.status(501).json({ success: false, code: "REFUND_WORKFLOW_PENDING_IMPLEMENTATION" });
+  if (!parsed.success) return res.status(400).json({ success:false, code:"INVALID_TRANSACTION_NUMBER", message:"Enter a valid ReDom Transaction ID." });
+  try {
+    const result = await startStarsRefund({ userId:req.user!.userId, transactionNumber:parsed.data.transactionNumber });
+    if (result.status === "non_refundable") return res.status(409).json(result);
+    if (!result.success) return res.status(400).json(result);
+    return res.status(201).json(result);
+  } catch (error) {
+    req.log?.error?.({err:error},"Stars refund request failed");
+    return res.status(500).json({success:false,code:"REFUND_REQUEST_FAILED",message:error instanceof Error?error.message:"Unable to start the refund request."});
+  }
 });
 
-// Contract endpoint reserved for the future Account Profile ID step.
-router.post("/account-profile", authMiddleware, async (req, res) => {
-  const parsed = accountProfileSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid Account Profile ID." });
-  if (!REFUND_FEATURE_ENABLED) return unavailable(res);
-  return res.status(501).json({ success: false, code: "REFUND_WORKFLOW_PENDING_IMPLEMENTATION" });
+router.post("/transaction", authMiddleware, async (req,res) => {
+  const parsed=transactionSchema.safeParse(req.body);
+  if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_TRANSACTION_NUMBER",message:"Enter a valid ReDom Transaction ID."});
+  return router.handle({} as any,res,()=>undefined);
 });
 
-// Contract endpoint reserved for the future linked-email/phone verification step.
-router.post("/verify-code", authMiddleware, async (req, res) => {
-  const parsed = verificationSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid verification code." });
-  if (!REFUND_FEATURE_ENABLED) return unavailable(res);
-  return res.status(501).json({ success: false, code: "REFUND_WORKFLOW_PENDING_IMPLEMENTATION" });
+router.post("/account-profile", authMiddleware, async (req,res) => {
+  const parsed=accountProfileSchema.safeParse(req.body);
+  if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_ACCOUNT_PROFILE",message:"A valid Account Profile ID is required."});
+  try {
+    const result=await verifyStarsRefundAccountProfile({userId:req.user!.userId,transactionNumber:parsed.data.transactionNumber,accountProfileId:parsed.data.accountProfileId});
+    if(result.status==="non_refundable") return res.status(409).json(result);
+    return res.status(result.success?200:400).json(result);
+  } catch(error) {
+    req.log?.error?.({err:error},"Stars refund account-profile verification failed");
+    return res.status(500).json({success:false,code:"REFUND_PROFILE_FAILED",message:error instanceof Error?error.message:"Unable to verify the Account Profile ID."});
+  }
+});
+
+router.post("/verify-code", authMiddleware, async (req,res) => {
+  const parsed=verificationSchema.safeParse(req.body);
+  if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_VERIFICATION_CODE",message:"Enter the 6-digit refund verification code."});
+  try {
+    const result=await completeStarsRefund({userId:req.user!.userId,transactionNumber:parsed.data.transactionNumber,code:parsed.data.code});
+    if(result.status==="non_refundable") return res.status(409).json(result);
+    return res.status(result.success?200:400).json(result);
+  } catch(error) {
+    req.log?.error?.({err:error},"Stars refund verification failed");
+    return res.status(400).json({success:false,code:"REFUND_VERIFICATION_FAILED",message:error instanceof Error?error.message:"Unable to complete refund verification."});
+  }
+});
+
+router.post("/stars", authMiddleware, async (req,res) => {
+  if(!REFUND_FEATURE_ENABLED) return unavailable(res);
+  const parsed=transactionSchema.safeParse(req.body);
+  if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_TRANSACTION_NUMBER",message:"Enter a valid ReDom Transaction ID."});
+  try {
+    const result=await startStarsRefund({userId:req.user!.userId,transactionNumber:parsed.data.transactionNumber});
+    if(result.status==="non_refundable") return res.status(409).json(result);
+    return res.status(result.success?201:400).json(result);
+  } catch(error) {
+    return res.status(500).json({success:false,code:"REFUND_REQUEST_FAILED",message:error instanceof Error?error.message:"Unable to start the Stars refund."});
+  }
 });
 
 export default router;
