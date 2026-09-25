@@ -11,7 +11,6 @@ export const REFUND_FEATURE_ENABLED = true;
 export const STARS_REFUND_WINDOW_MINUTES = 10;
 const resend = new Resend(env.email.resend.apiKey);
 const REFUND_SECURITY_WARNING = "Security warning: ReDom will never ask for your password, payment PIN, CVV, full card number, bank login, or a one-time verification code outside the official refund verification flow. Never forward or share a verification code with anyone.";
-const REFUND_SECURITY_WARNING = "Security warning: ReDom will never ask for your password, payment PIN, CVV, full card number, bank login, or a security code outside the official refund verification flow. Never forward or share a verification code with anyone.";
 
 export type RefundStatus =
   | "transaction_required"
@@ -90,12 +89,6 @@ export function buildRefundSupportClosureReply(input: { transactionNumber: strin
 
 
 export type StarsRefundResult = { success:boolean; status:string; code?:string; reason?:string; transactionNumber?:string; caseNumber?:string; refundId?:string|null; refundStatus?:string|null; target?:string|null };
-function normalizeRefundTransactionNumber(value:string):string {
- const raw=value.trim().toUpperCase().replace(/\s+/g,"");
- if(/^\d{13}$/.test(raw)) return "R-"+raw;
- if(/^R\d{13}$/.test(raw)) return "R-"+raw.slice(1);
- return raw;
-}
 function normalizeRefundTransactionNumber(value:string):string {
  const raw=value.trim().toUpperCase().replace(/\s+/g,"");
  if(/^\d{13}$/.test(raw)) return "R-"+raw;
