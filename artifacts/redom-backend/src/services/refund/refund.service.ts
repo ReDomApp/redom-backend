@@ -95,7 +95,7 @@ function refundTargetDisplay(metadata:any, fallbackMasked:string|null):string {
   const brand=d.brand?String(d.brand):d.type?String(d.type):channel.includes("card")?"Card":channel.includes("bank")||channel.includes("transfer")?"Bank Account":"Original Payment";
   const fullAccount=d.account??d.accountNumber??d.refundAccountNumber;
   const masked=fullAccount ? maskRefundTarget(String(fullAccount)) : (fallbackMasked ?? "original payment rail");
-  if(channel.includes("card")) return brand+" "+masked;
+  if(channel.includes("card")) return brand.split(/\\s+/)[0]+" Card "+masked;
   if(channel.includes("bank")||channel.includes("transfer")) return "Bank Account "+masked;
   return brand+" "+masked;
 }
