@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { env } from "../../config/env";
 import { openai } from "../../lib/openai";
+import { sendRefundCaseEmail } from "../support/supportEmail.service";
 
 const resend = new Resend(env.email.resend.apiKey);
 
@@ -118,7 +119,7 @@ function validateSubject(subject: string, facts: RefundDecisionEmailFacts): stri
   return clean;
 }
 
-async function generateWithOpenAI(facts: RefundDecisionEmailFacts): Promise<GeneratedRefundEmail> {
+async function generateWithOpenAI(facts: RefundDecisionEmailFacts, model: string): Promise<GeneratedRefundEmail> {
   const schema = {
     type: "object",
     additionalProperties: false,
@@ -127,7 +128,7 @@ async function generateWithOpenAI(facts: RefundDecisionEmailFacts): Promise<Gene
   };
 
   const response = await openai.responses.create({
-    model: "gpt-5.6-luna",
+    model,
     store: false,
     instructions: [
       "Generate the final customer-facing ReDom refund decision email.",
@@ -164,39 +165,71 @@ export async function sendRefundDecisionEmail(facts: RefundDecisionEmailFacts): 
   let generated: GeneratedRefundEmail | null = null;
   let lastError: unknown = null;
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      generated = await generateWithOpenAI(facts);
-      break;
-    } catch (error) {
-      lastError = error;
+  // OpenAI is only responsible for formatting the customer-facing email.
+  // The backend facts and refund decision remain authoritative.
+  // Try two models, with two attempts per model, before using the deterministic backend template.
+  const models = ["gpt-5.6-luna", "gpt-5.6-sol"];
+
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        generated = await generateWithOpenAI(facts, model);
+        break;
+      } catch (error) {
+        lastError = error;
+      }
     }
+    if (generated) break;
   }
 
-  if (!generated) {
-    throw lastError instanceof Error ? lastError : new Error("OpenAI could not produce a validated refund decision email.");
+  if (generated) {
+    const text = [
+      "ReDom Refund Services", "",
+      "Case Number: " + facts.caseNumber,
+      "Transaction: " + facts.transactionNumber,
+      "Status: " + facts.status,
+      "Decision: " + facts.decision,
+      "Reason: " + facts.reason,
+      "Amount: " + facts.amount + " " + facts.currency,
+      "Refund destination: " + facts.target,
+      facts.refundId ? "Refund ID: " + facts.refundId : "",
+      "", REFUND_EMAIL_SECURITY_WARNING
+    ].filter(Boolean).join("\n");
+
+    const { error } = await resend.emails.send({
+      from: env.refunds.from,
+      to: [facts.customerEmail],
+      subject: generated.subject,
+      text,
+      html: generated.html
+    });
+
+    if (!error) return;
+    lastError = new Error("OpenAI-generated refund decision email could not be sent: " + error.message);
   }
 
-  const text = [
-    "ReDom Refund Services", "",
-    "Case Number: " + facts.caseNumber,
-    "Transaction: " + facts.transactionNumber,
-    "Status: " + facts.status,
-    "Decision: " + facts.decision,
-    "Reason: " + facts.reason,
-    "Amount: " + facts.amount + " " + facts.currency,
-    "Refund destination: " + facts.target,
-    facts.refundId ? "Refund ID: " + facts.refundId : "",
-    "", REFUND_EMAIL_SECURITY_WARNING
-  ].filter(Boolean).join("\n");
-
-  const { error } = await resend.emails.send({
-    from: env.refunds.from,
-    to: [facts.customerEmail],
-    subject: generated.subject,
-    text,
-    html: generated.html
-  });
-
-  if (error) throw new Error("Refund decision email could not be sent: " + error.message);
+  // If all OpenAI attempts fail, the backend sends the standard deterministic
+  // refund template. It still uses refunds@ so the final decision stays on the
+  // dedicated refund sender and does not depend on AI availability.
+  try {
+    await sendRefundCaseEmail({
+      to: facts.customerEmail,
+      caseNumber: facts.caseNumber,
+      transactionNumber: facts.transactionNumber,
+      status: facts.status,
+      reason: facts.reason,
+      amount: facts.amount,
+      currency: facts.currency,
+      target: facts.target,
+      refundId: facts.refundId ?? null,
+      securityWarning: REFUND_EMAIL_SECURITY_WARNING,
+      terminal: ["approved", "rejected", "provider_failure", "non_refundable"].includes(facts.decision),
+      from: env.refunds.from,
+    });
+    return;
+  } catch (fallbackError) {
+    const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "unknown fallback error";
+    const openAIMessage = lastError instanceof Error ? lastError.message : "unknown OpenAI error";
+    throw new Error("Refund decision email failed through OpenAI and the standard backend fallback: " + fallbackMessage + " (OpenAI: " + openAIMessage + ")");
+  }
 }
