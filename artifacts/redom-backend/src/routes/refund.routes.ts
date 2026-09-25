@@ -56,17 +56,13 @@ router.post("/transaction", authMiddleware, async (req,res) => {
 });
 
 router.post("/account-profile", authMiddleware, async (req,res) => {
-  const parsed=accountProfileSchema.safeParse(req.body);
-  if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_ACCOUNT_PROFILE",message:"A valid Account Profile ID is required."});
+  const parsed=z.object({transactionNumber:z.string().trim().min(1)}).safeParse(req.body);
+  if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_TRANSACTION",message:"A valid transaction number is required."});
   try {
-    const result=await verifyStarsRefundAccountProfile({userId:req.user!.userId,transactionNumber:parsed.data.transactionNumber,accountProfileId:parsed.data.accountProfileId});
+    const result=await verifyStarsRefundAccountProfile({userId:req.user!.userId,transactionNumber:parsed.data.transactionNumber,accountProfileId:""});
     if(result.status==="non_refundable") return res.status(409).json(result);
     return res.status(result.success?200:400).json(result);
-  } catch(error) {
-    req.log?.error?.({err:error},"Stars refund account-profile verification failed");
-    return res.status(500).json({success:false,code:"REFUND_PROFILE_FAILED",message:error instanceof Error?error.message:"Unable to verify the Account Profile ID."});
-  }
-});
+  } catch(error) {});
 
 router.post("/verify-code", authMiddleware, async (req,res) => {
   const parsed=verificationSchema.safeParse(req.body);
