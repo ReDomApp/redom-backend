@@ -360,7 +360,7 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    await permanentlyCloseSupportCase(caseRecord.id);
    return {handled:true,caseNumber:caseRecord.caseNumber};
  }
- const current=await pool.query("SELECT rr.transaction_number,rr.status,pt.reference,pt.redom_transaction_id FROM refund_requests rr LEFT JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number WHERE rr.case_id=$1 ORDER BY rr.created_at DESC LIMIT 1",[caseRecord.id]);
+ const current=await pool.query("SELECT rr.transaction_number,rr.status,pt.reference,pt.redom_transaction_id FROM refund_requests rr LEFT JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number WHERE rr.case_id=$1 ORDER BY rr.created_at ASC LIMIT 1",[caseRecord.id]);
  if(current.rows[0]) {
    const currentStatus=String(current.rows[0].status);
    const currentTransaction=String(current.rows[0].transaction_number);
@@ -399,9 +399,24 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
        } else if(["refunded","closed","denied","non_refundable","refund_verification_failed"].includes(currentStatus)) {
          nextStep="This refund request has already reached a terminal state and cannot be restarted with the same transaction.";
        }
-       const reply="Hello "+name+",\\n\\nWe received your transaction/reference number and matched it to your existing ReDom refund request.\\n\\n"+nextStep+"\\n\\nTransaction: "+currentTransaction+"\\nCase Number: "+caseRecord.caseNumber+"\\n\\n"+REFUND_SECURITY_WARNING;
+       const reply="Hello "+name+"\n\nWe received your transaction/reference number and matched it to your existing ReDom refund request.\n\n"+nextStep+"\n\nTransaction: "+currentTransaction+"\nCase Number: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
        await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
-       await sendSupportEmail(email,"ReDom Refund Request — Transaction Received",reply);
+       const terminal = ["refunded","closed","denied","non_refundable","refund_verification_failed"].includes(currentStatus);
+       const templateStatus =
+         currentStatus==="refunded" ? "Refund Successful" :
+         currentStatus==="denied" || currentStatus==="non_refundable" || currentStatus==="refund_verification_failed" ? "Refund Rejected" :
+         currentStatus==="closed" ? "Refund Case Closed" :
+         "Refund Request Received";
+       await sendRefundCaseEmail({
+         to:email,
+         caseNumber:String(caseRecord.caseNumber),
+         transactionNumber:currentTransaction,
+         status:templateStatus,
+         reason:nextStep,
+         securityWarning:REFUND_SECURITY_WARNING,
+         terminal,
+         from:terminal ? env.refunds.from : env.email.supportFrom,
+       });
        return {handled:true,caseNumber:caseRecord.caseNumber};
      }
    }
@@ -441,9 +456,14 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
  return {handled:true,caseNumber:result.caseNumber??caseRecord.caseNumber};
 }
 
+function normalizeRefundCaseRecord(row:any):any|null {
+ if(!row) return null;
+ return {...row, caseNumber:String(row.caseNumber??row.case_number??"")};
+}
+
 async function getSupportCaseForRefundCase(caseNumber:string,email:string):Promise<any|null> {
  const r=await pool.query("SELECT * FROM support_cases WHERE case_number=$1 AND lower(requester_email)=lower($2) AND category='refund_payment' LIMIT 1",[caseNumber.toUpperCase(),email]);
- return r.rows[0]??null;
+ return normalizeRefundCaseRecord(r.rows[0]??null);
 }
 
 async function findCanonicalRefundCase(input:{userId:string;email:string;caseNumber?:string|null;identifiers?:string[]}):Promise<any|null> {
@@ -457,7 +477,7 @@ async function findCanonicalRefundCase(input:{userId:string;email:string;caseNum
    "SELECT sc.*,rr.transaction_number FROM refund_requests rr JOIN support_cases sc ON sc.id=rr.case_id LEFT JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number WHERE rr.user_id=$1 AND (upper(COALESCE(rr.transaction_number,''))=ANY($2::text[]) OR upper(COALESCE(pt.reference,''))=ANY($2::text[]) OR upper(COALESCE(pt.redom_transaction_id,''))=ANY($2::text[])) ORDER BY rr.created_at ASC, sc.created_at ASC LIMIT 1",
    [input.userId,identifiers],
  );
- return result.rows[0]??null;
+ return normalizeRefundCaseRecord(result.rows[0]??null);
 }
 
 export async function applyStarsRefundWebhook(event:string,data:any):Promise<void> {
@@ -469,7 +489,7 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
   const tx=await client.query("SELECT id,user_id,amount_minor,metadata,redom_transaction_id,refund_status FROM payment_transactions WHERE reference=$1 FOR UPDATE",[reference]);
   if(!tx.rows[0]) { await client.query("COMMIT"); return; }
   const row=tx.rows[0];
-  const request=await client.query("SELECT rr.id,rr.case_id,sc.case_number,rr.user_id,rr.status,rr.refund_target_masked,rr.currency,rr.amount,u.email FROM refund_requests rr JOIN support_cases sc ON sc.id=rr.case_id JOIN users u ON u.id=rr.user_id WHERE rr.transaction_number=$1 ORDER BY rr.created_at DESC LIMIT 1 FOR UPDATE",[row.redom_transaction_id]);
+  const request=await client.query("SELECT rr.id,rr.case_id,sc.case_number,rr.user_id,rr.status,rr.refund_target_masked,rr.currency,rr.amount,u.email FROM refund_requests rr JOIN support_cases sc ON sc.id=rr.case_id JOIN users u ON u.id=rr.user_id WHERE rr.transaction_number=$1 ORDER BY rr.created_at ASC LIMIT 1 FOR UPDATE",[row.redom_transaction_id]);
   if(!request.rows[0]) { await client.query("COMMIT"); return; }
   const rr=request.rows[0];
   const previousStatus=String(rr.status);
