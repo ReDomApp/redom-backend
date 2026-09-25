@@ -428,7 +428,7 @@ export async function getOwnedRefundCase(input:{userId:string;caseNumber:string}
   transactionNumber:string; providerReference:string|null; amountMinor:string; currency:string; paymentStatus:string;
   paidAt:string|null; refundStatus:string|null; refundId:string|null; refundRequestStatus:string;
   decision:string|null; decisionReason:string|null; refundExpectedBy:string|null; refundCompletedAt:string|null;
-  reviewAvailableAt:string|null; verificationSentAt:string|null; verifiedAt:string|null; refundTarget:string|null;
+  reviewAvailableAt:string|null; verificationSentAt:string|null; verifiedAt:string|null; verificationChannel:string|null; verificationTarget:string|null; verificationExpiresAt:string|null; verificationAttempts:number; refundTarget:string|null;
   securityWarning:string;
   messages:Array<{id:string;senderType:string;senderEmail:string|null;body:string;createdAt:string}>;
 }|null> {
@@ -436,9 +436,16 @@ export async function getOwnedRefundCase(input:{userId:string;caseNumber:string}
     `SELECT sc.case_number,sc.status AS case_status,sc.created_at AS case_created_at,sc.updated_at AS case_updated_at,sc.closed_at,
       rr.transaction_number,rr.status AS refund_request_status,rr.decision,rr.decision_reason,rr.refund_expected_by,rr.refund_completed_at,
       rr.review_available_at,rr.verification_sent_at,rr.verified_at,rr.refund_target_masked,
+      rvc.channel_type AS verification_channel,rvc.target_masked AS verification_target,rvc.expires_at AS verification_expires_at,rvc.attempt_count AS verification_attempts,
       pt.reference AS provider_reference,pt.amount_minor,pt.currency,pt.status AS payment_status,pt.paid_at,pt.refund_status,pt.refund_id
       FROM support_cases sc
       JOIN refund_requests rr ON rr.case_id=sc.id
+      LEFT JOIN LATERAL (
+        SELECT channel_type,target_masked,expires_at,attempt_count
+        FROM refund_verification_challenges
+        WHERE refund_request_id=rr.id
+        ORDER BY created_at DESC LIMIT 1
+      ) rvc ON true
       JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number
       WHERE sc.case_number=$1 AND sc.user_id=$2
       ORDER BY rr.created_at DESC LIMIT 1`,
@@ -467,6 +474,10 @@ export async function getOwnedRefundCase(input:{userId:string;caseNumber:string}
     reviewAvailableAt:row.review_available_at?new Date(String(row.review_available_at)).toISOString():null,
     verificationSentAt:row.verification_sent_at?new Date(String(row.verification_sent_at)).toISOString():null,
     verifiedAt:row.verified_at?new Date(String(row.verified_at)).toISOString():null,
+    verificationChannel:row.verification_channel?String(row.verification_channel):null,
+    verificationTarget:row.verification_target?String(row.verification_target):null,
+    verificationExpiresAt:row.verification_expires_at?new Date(String(row.verification_expires_at)).toISOString():null,
+    verificationAttempts:Number(row.verification_attempts??0),
     refundTarget:row.refund_target_masked?String(row.refund_target_masked):null,
     securityWarning:REFUND_SECURITY_WARNING,
     messages:messages.rows.map((message:any)=>({id:String(message.id),senderType:String(message.sender_type),senderEmail:message.sender_email?String(message.sender_email):null,body:String(message.body),createdAt:new Date(String(message.created_at)).toISOString()})),
