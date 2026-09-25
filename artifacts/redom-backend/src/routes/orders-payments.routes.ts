@@ -63,6 +63,61 @@ router.get("/overview", authMiddleware, async (req, res) => {
   return res.json({ success: true, orders: mappedOrders, payments: mappedPayments });
 });
 
+router.get("/transactions/:transactionId", authMiddleware, async (req, res) => {
+  const userId = req.user?.userId;
+  const transactionId = String(req.params.transactionId || "");
+  if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  if (!transactionId) return res.status(400).json({ success: false, message: "Transaction ID is required." });
+
+  const result = await pool.query(
+    `SELECT pt.id, pt.reference, pt.redom_transaction_id, pt.amount_minor, pt.currency, pt.purpose,
+            pt.status, pt.refund_status, pt.created_at, pt.paid_at, pt.metadata, pt.failure_message,
+            pp.name AS plan_name
+       FROM payment_transactions pt
+       LEFT JOIN payment_plans pp ON pp.id = pt.plan_id
+      WHERE pt.id = $1 AND pt.user_id = $2
+      LIMIT 1`,
+    [transactionId, userId],
+  );
+  const row = result.rows[0];
+  if (!row) return res.status(404).json({ success: false, message: "Transaction not found." });
+
+  let metadata: any = {};
+  try { metadata = row.metadata ? (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata) : {}; } catch { metadata = {}; }
+  const paymentDetails = metadata?.paymentDetails ?? {};
+  const stars = Number(metadata?.stars ?? 0);
+  const productName =
+    row.plan_name ? String(row.plan_name) :
+    row.purpose === "stars_purchase" && Number.isFinite(stars) && stars > 0 ? `ReDom Stars • ${stars.toLocaleString()} Stars` :
+    row.purpose === "payment_method_setup" ? "Payment method verification" :
+    row.purpose === "subscription_renewal" ? "ReDom subscription renewal" :
+    String(row.purpose || "ReDom payment").replaceAll("_", " ");
+  const providerAmountMinor = paymentDetails?.providerAmountMinor != null ? Number(paymentDetails.providerAmountMinor) : null;
+  const totalAmountMinor = Number.isFinite(providerAmountMinor) && providerAmountMinor! > 0 ? String(providerAmountMinor) : String(row.amount_minor);
+  const providerReference = paymentDetails?.providerReference ? String(paymentDetails.providerReference) : String(row.reference);
+
+  return res.json({
+    success: true,
+    transaction: {
+      id: String(row.id),
+      reference: String(row.reference),
+      redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
+      amountMinor: String(row.amount_minor),
+      totalAmountMinor,
+      currency: String(row.currency),
+      purpose: String(row.purpose),
+      productName,
+      status: String(row.status),
+      refundStatus: row.refund_status ? String(row.refund_status) : null,
+      createdAt: new Date(row.created_at).toISOString(),
+      paidAt: row.paid_at ? new Date(row.paid_at).toISOString() : null,
+      providerReference,
+      failureMessage: row.failure_message ? String(row.failure_message) : null,
+      metadata,
+    },
+  });
+});
+
 router.get("/subscriptions", authMiddleware, async (req, res) => {
   const userId = req.user?.userId;
   if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
