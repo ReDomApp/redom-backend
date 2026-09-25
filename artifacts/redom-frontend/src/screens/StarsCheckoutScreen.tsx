@@ -43,8 +43,8 @@ export function StarsCheckoutScreen(){
    if(!pkg)return;
    const cleanEmail=email.trim();
    if(!cleanEmail)return Alert.alert("Transaction email","Enter the email address for this payment.");
-   if(!/^\\S+@\\S+\\.\\S+$/.test(cleanEmail))return Alert.alert("Transaction email","Enter a valid email address.");
-   if(pinEnabled&&!/^\\d{4,8}$/.test(pin))return Alert.alert("Payment PIN","Enter your 4 to 8 digit payment PIN.");
+   if(!/^\S+@\S+\.\S+$/.test(cleanEmail))return Alert.alert("Transaction email","Enter a valid email address.");
+   if(pinEnabled&&!/^\d{4,8}$/.test(pin))return Alert.alert("Payment PIN","Enter your 4 to 8 digit payment PIN.");
    setPaying(true);setResult(null);setErrorMessage("");setCheckoutUrl(null);
    try{
      const r=await ordersPaymentsService.initializeStars({packageKey,countryCode,email:cleanEmail,pin:pinEnabled?pin:undefined,preferredChannel:channel});
