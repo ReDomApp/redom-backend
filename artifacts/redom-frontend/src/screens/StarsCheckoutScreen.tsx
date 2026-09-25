@@ -110,7 +110,7 @@ export function StarsCheckoutScreen(){
    <Text style={[s.label,{color:colors.text}]}>Email</Text>
    <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@example.com" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/>
    {pinEnabled?<><Text style={[s.label,{color:colors.text}]}>Payment PIN</Text><TextInput value={pin} onChangeText={setPin} keyboardType="number-pad" secureTextEntry maxLength={8} placeholder="Enter your PIN" placeholderTextColor={colors.textSecondary} style={[s.input,{color:colors.text,borderColor:colors.border,backgroundColor:colors.surface}]}/></>:null}
-   <Text style={[s.muted,{color:colors.textSecondary}]}>Any applicable Paystack transaction charges are calculated by Paystack at checkout. citeturn5search0</Text>
+   <Text style={[s.muted,{color:colors.textSecondary}]}>Any applicable Paystack transaction charges are calculated by Paystack at checkout.</Text>
    <Pressable disabled={paying||!pkg||pkg.payable===false} onPress={()=>void initialize()} style={[s.button,{backgroundColor:paying||!pkg||pkg.payable===false?colors.border:colors.primary}]}><Text style={s.buttonText}>{paying?"Starting secure payment…":"Pay "+(pkg?.localAmountFormatted??"")}</Text></Pressable>
    {pkg?.availabilityReason?<Text style={[s.muted,{color:colors.textSecondary,marginTop:10}]}>{pkg.availabilityReason}</Text>:null}
   </View>
