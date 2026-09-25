@@ -123,7 +123,7 @@ export function SettingsScreen() {
           <Text style={styles.searchPlaceholder}>Search settings</Text>
         </View>
 
-        <SectionTitle title="Your account" />
+        <SectionTitle title="Your account" description="Manage your account information, account settings, and connected ReDom services." />
         <SettingRow
           label="Accounts Center"
           description="Password, security, personal details, connected experiences, ad preferences, verification"
@@ -131,22 +131,22 @@ export function SettingsScreen() {
           onPress={() => underDevelopment("Accounts Center")}
         />
 
-        <SectionTitle title="Tools and resources" description="Our tools help you control and manage your privacy." />
+        <SectionTitle title="Tools and resources" description="Access tools and resources that help you manage your ReDom experience." />
         {rows.tools.map((row) => <SettingRow key={row.label} {...row} />)}
 
-        <SectionTitle title="Preferences" description="Customize your experience on ReDom." />
+        <SectionTitle title="Preferences" description="Customize how ReDom looks, works, and responds to your preferences." />
         {rows.preferences.map((row) => <SettingRow key={row.label} {...row} />)}
 
-        <SectionTitle title="Audience and visibility" description="Control who can see what you share on ReDom." />
+        <SectionTitle title="Audience and visibility" description="Control who can see your profile, posts, stories, and other content on ReDom." />
         {rows.audience.map((row) => <SettingRow key={row.label} {...row} />)}
 
-        <SectionTitle title="Payments" description="Manage your payment info and activity." />
+        <SectionTitle title="Payments" description="This is where you'll handle your payments on ReDom." />
         <SettingRow label="Ads payments" icon="payment" onPress={() => underDevelopment("Ads payments")} />
 
-        <SectionTitle title="Your activity" description="Review your activity and content you're tagged in." />
+        <SectionTitle title="Your activity" description="Review and manage your activity, permissions, connected apps, and information on ReDom." />
         {rows.activity.map((row) => <SettingRow key={row.label} {...row} />)}
 
-        <SectionTitle title="Community Standards and legal policies" />
+        <SectionTitle title="Community Standards and legal policies" description="Review ReDom's community standards, terms, privacy policies, and other legal information." />
         <SettingRow label="Terms of Service" icon="terms" onPress={() => policy("terms")} />
         <SettingRow label="Privacy Policy" icon="privacy" onPress={() => policy("privacy")} />
         <SettingRow label="Cookies policy" icon="cookies" onPress={() => underDevelopment("Cookies policy")} />
