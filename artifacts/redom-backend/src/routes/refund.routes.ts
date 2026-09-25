@@ -57,7 +57,8 @@ router.post("/account-profile", authMiddleware, async (req,res) => {
     const result=await verifyStarsRefundAccountProfile({userId:req.user!.userId,transactionNumber:parsed.data.transactionNumber,accountProfileId:""});
     if(result.status==="non_refundable") return res.status(409).json(result);
     return res.status(result.success?200:400).json(result);
-  } catch(error) {});
+  } catch(error) { req.log?.error?.({err:error},"Stars refund account verification failed"); return res.status(500).json({success:false,code:"REFUND_ACCOUNT_VERIFICATION_FAILED",message:error instanceof Error?error.message:"Unable to start refund verification."}); }
+});
 
 router.post("/verify-code", authMiddleware, async (req,res) => {
   const parsed=verificationSchema.safeParse(req.body);
