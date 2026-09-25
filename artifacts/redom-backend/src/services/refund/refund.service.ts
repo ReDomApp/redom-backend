@@ -192,7 +192,7 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
  if(String(row.status)!=="paid") return {success:false,status:"not_refundable_status",code:"TRANSACTION_NOT_PAID",reason:"This transaction is not a completed Stars purchase.",transactionNumber};
  const paidAt=row.paid_at?new Date(String(row.paid_at)):null; if(!paidAt) return {success:false,status:"not_refundable_status",code:"PAID_AT_MISSING",reason:"The completed payment has no refund timestamp.",transactionNumber};
  const existingLock=await pool.query("SELECT outcome_status,case_number FROM refund_transaction_locks WHERE transaction_number=$1 LIMIT 1",[transactionNumber]);
- if(existingLock.rows[0]) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund request has already been recorded for this ReDom Transaction ID. The transaction cannot be submitted for refund a second time.",transactionNumber,caseNumber:existingLock.rows[0].case_number??undefined};
+ if(existingLock.rows[0]) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund request has already been recorded for this ReDom Transaction ID. The transaction cannot be submitted for refund a second time.",transactionNumber,caseNumber:existingLock.rows[0].case_number??input.caseNumber??undefined};
  const lock=await pool.query("INSERT INTO refund_transaction_locks(transaction_number,user_id,outcome_status) VALUES($1,$2,'requested') ON CONFLICT(transaction_number) DO NOTHING RETURNING transaction_number",[transactionNumber,input.userId]);
  if(!lock.rows[0]) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund request has already been recorded for this ReDom Transaction ID. The transaction cannot be submitted for refund a second time.",transactionNumber};
  let caseRecord:any;
@@ -415,6 +415,17 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    return {handled:true,caseNumber:caseRecord.caseNumber};
  }
  const result=await startStarsRefund({userId:String(user.id),transactionNumber:String(tx.rows[0].redom_transaction_id),caseId:String(caseRecord.id),caseNumber:String(caseRecord.caseNumber)});
+ if(result.status==="refund_already_requested") {
+  const existingCaseNumber=String(result.caseNumber??caseRecord.caseNumber).trim();
+  const existingCase=existingCaseNumber ? await getSupportCase(existingCaseNumber) : null;
+  const name=[user.first_name,user.last_name].filter(Boolean).join(" ")||"there";
+  const reply="Hello "+name+",\n\nWe received your ReDom Transaction ID/reference, but this transaction already has an active or previously recorded refund request. ReDom will not create a duplicate refund request for the same transaction.\n\nTransaction: "+String(tx.rows[0].redom_transaction_id)+"\nCase Number: "+existingCaseNumber+"\n\nNo new transaction number is required. If you are waiting for the next step, continue with the existing refund case.\n\n"+REFUND_SECURITY_WARNING;
+  if(existingCase) await addSupportMessage({caseId:String(existingCase.id),senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+  else await addSupportMessage({caseId:String(caseRecord.id),senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+  if(existingCase && String(existingCase.id)!==String(caseRecord.id)) await permanentlyCloseSupportCase(String(caseRecord.id));
+  await sendSupportEmail(email,"ReDom Refund Request — Transaction Already Received",reply);
+  return {handled:true,caseNumber:existingCaseNumber};
+ }
  return {handled:true,caseNumber:result.caseNumber??caseRecord.caseNumber};
 }
 
