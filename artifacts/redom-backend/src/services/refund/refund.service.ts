@@ -92,7 +92,7 @@ function refundTargetFromMetadata(metadata:any):{type:string;masked:string|null}
 function refundTargetDisplay(metadata:any, fallbackMasked:string|null):string {
   const d=metadata?.paymentDetails??{};
   const channel=String(d.channel??"").toLowerCase();
-  const brand=d.brand?String(d.brand):channel.includes("card")?"Card":channel.includes("bank")||channel.includes("transfer")?"Bank Account":"Original Payment";
+  const brand=d.brand?String(d.brand):d.type?String(d.type):channel.includes("card")?"Card":channel.includes("bank")||channel.includes("transfer")?"Bank Account":"Original Payment";
   const fullAccount=d.account??d.accountNumber??d.refundAccountNumber;
   const masked=fullAccount ? maskRefundTarget(String(fullAccount)) : (fallbackMasked ?? "original payment rail");
   if(channel.includes("card")) return brand+" "+masked;
@@ -174,7 +174,16 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
  try { await client.query("BEGIN");
  const q=await client.query("SELECT rr.*,sc.case_number,pt.id AS payment_id,pt.reference,pt.paid_at,pt.status AS payment_status,pt.amount_minor,pt.currency,pt.metadata,u.email FROM refund_requests rr JOIN support_cases sc ON sc.id=rr.case_id JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number JOIN users u ON u.id=pt.user_id WHERE rr.transaction_number=$1 AND rr.user_id=$2 ORDER BY rr.created_at DESC LIMIT 1 FOR UPDATE",[transactionNumber,input.userId]);
  if(!q.rows[0]) throw new Error("Refund request not found."); const row=q.rows[0]; const cutoff=starsRefundCutoff(new Date(String(row.paid_at)));
- if(Date.now()>=cutoff.getTime()) { await client.query("UPDATE refund_requests SET status='non_refundable',decision='denied',decision_reason='Stars are rigidly non-refundable after 10 minutes.',updated_at=now() WHERE id=$1",[row.id]); await client.query("COMMIT"); return nonRefundablePayload(transactionNumber,String(row.case_id),cutoff); }
+ if(Date.now()>=cutoff.getTime()) {
+  const reason="ReDom Stars are rigidly non-refundable after 10 minutes.";
+  await client.query("UPDATE refund_requests SET status='non_refundable',decision='denied',decision_reason=$1,case_invalidated_at=COALESCE(case_invalidated_at,now()),updated_at=now() WHERE id=$2",[reason,row.id]);
+  await client.query("UPDATE refund_transaction_locks SET outcome_status='non_refundable',outcome_reason=$1,invalidated_at=COALESCE(invalidated_at,now()),updated_at=now() WHERE transaction_number=$2",[reason,transactionNumber]);
+  await client.query("COMMIT");
+  await addSupportMessage({caseId:String(row.case_id),senderType:"system",body:"Refund denied: "+reason});
+  await sendRefundSupportStatus({email:String(row.email??""),caseNumber:String(row.case_number??""),transactionNumber,status:"Non-refundable",reason,target:refundTargetDisplay(typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{},row.refund_target_masked)}).catch(()=>undefined);
+  await permanentlyCloseSupportCase(String(row.case_id));
+  return nonRefundablePayload(transactionNumber,String(row.case_id),cutoff);
+ }
  const ch=await client.query("SELECT id,code_hash,expires_at,consumed_at,attempt_count,max_attempts FROM refund_verification_challenges WHERE refund_request_id=$1 ORDER BY created_at DESC LIMIT 1",[row.id]);
  if(!ch.rows[0]||ch.rows[0].consumed_at||new Date(String(ch.rows[0].expires_at)).getTime()<Date.now()) throw new Error("Refund verification code expired. Request a new code.");
  if(Number(ch.rows[0].attempt_count)>=Number(ch.rows[0].max_attempts)) throw new Error("Refund verification attempts exhausted.");
