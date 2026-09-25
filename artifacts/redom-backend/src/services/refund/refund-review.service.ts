@@ -39,7 +39,7 @@ async function processOne(row:any):Promise<void>{
  try{
    const providerReference=String(row.provider_reference ?? row.reference ?? "").trim();
   if(!providerReference) throw new Error("Provider reference could not be resolved from the ReDom Transaction ID.");
-  const response=await axios.post("https://api.paystack.co/refund",{transaction:providerReference,amount:amountMinor,currency:String(row.currency),customer_note:"ReDom Stars refund "+String(row.redom_transaction_id),merchant_note:"Approved ReDom Stars refund "+String(row.redom_transaction_id),{headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000});
+  const response=await axios.post("https://api.paystack.co/refund",{transaction:providerReference,amount:amountMinor,currency:String(row.currency),customer_note:"ReDom Stars refund "+String(row.redom_transaction_id),merchant_note:"Approved ReDom Stars refund "+String(row.redom_transaction_id)},{headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000});
    if(!response.data?.status) throw new Error(response.data?.message||"Refund provider rejected the request.");
    refund=response.data.data;
  }catch(error){
