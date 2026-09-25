@@ -1,6 +1,6 @@
 import { api } from "../api/client";
 
-export interface OrderSummary {
+export interface PaymentTransactionSummary { id:string; reference:string; redomTransactionId:string|null; amountMinor:string; currency:string; purpose:string; status:string; createdAt:string; paidAt:string|null; metadata:any; }\nexport interface OrderSummary {
   transactionId: string; title: string; quantity: number; totalPrice: string; currency: string;
   paymentStatus: string; orderStatus: string; trackingNumber: string | null; courierName: string | null;
   estimatedDeliveryDate: string | null; createdAt: string; updatedAt: string;
@@ -17,7 +17,7 @@ export interface SubscriptionSummary {
   expiresAt: string | null; cancelledAt: string | null; createdAt: string; updatedAt: string;
 }
 export const ordersPaymentsService = {
-  overview() { return api.get<{ success: boolean; orders: OrderSummary[] }>("/orders-payments/overview"); },
+  overview() { return api.get<{ success: boolean; orders: OrderSummary[]; payments: PaymentTransactionSummary[] }>("/orders-payments/overview"); },
   subscriptions() { return api.get<{ success: boolean; subscriptions: SubscriptionSummary[] }>("/orders-payments/subscriptions"); },
   getSettings() { return api.get<{ success: boolean; settings: PaymentSettings }>("/orders-payments/settings"); },
   updateSettings(input: { currency?: string; pinEnabled?: boolean; biometricEnabled?: boolean }) {
