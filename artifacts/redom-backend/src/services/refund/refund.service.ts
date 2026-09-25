@@ -213,7 +213,20 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
  const ch=await client.query("SELECT id,code_hash,expires_at,consumed_at,attempt_count,max_attempts FROM refund_verification_challenges WHERE refund_request_id=$1 ORDER BY created_at DESC LIMIT 1",[row.id]);
  if(!ch.rows[0]||ch.rows[0].consumed_at||new Date(String(ch.rows[0].expires_at)).getTime()<Date.now()) throw new Error("Refund verification code expired. Request a new code.");
  if(Number(ch.rows[0].attempt_count)>=Number(ch.rows[0].max_attempts)) throw new Error("Refund verification attempts exhausted.");
- if(hashRefundCode(input.code)!==String(ch.rows[0].code_hash)) { await client.query("UPDATE refund_verification_challenges SET attempt_count=attempt_count+1,failed_at=CASE WHEN attempt_count+1>=max_attempts THEN now() ELSE failed_at END WHERE id=$1",[ch.rows[0].id]); throw new Error("Incorrect refund verification code."); }
+ if(hashRefundCode(input.code)!==String(ch.rows[0].code_hash)) {
+   const nextAttempt=Number(ch.rows[0].attempt_count)+1;
+   await client.query("UPDATE refund_verification_challenges SET attempt_count=$1,failed_at=CASE WHEN $1>=max_attempts THEN now() ELSE failed_at END WHERE id=$2",[nextAttempt,ch.rows[0].id]);
+   if(nextAttempt>=Number(ch.rows[0].max_attempts) && String(ch.rows[0].channel_type)==="sms") {
+     const fallback=randomInt(100_000,1_000_000).toString();
+     const expiresAt=new Date(Date.now()+10*60_000);
+     await client.query("UPDATE refund_verification_challenges SET consumed_at=now() WHERE id=$1",[ch.rows[0].id]);
+     await client.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'email',$3,$4,$5,0,3)",[row.id,row.user_id,row.email,hashRefundCode(fallback),expiresAt]);
+     await sendRefundVerificationEmail(String(row.email),fallback,transactionNumber);
+     await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"The phone security-code verification could not be completed. A 6-digit fallback code has been sent to your ReDom email. Enter that code to continue."});
+     throw new Error("The phone verification attempts were exhausted. A 6-digit email fallback code has been sent.");
+   }
+   throw new Error("Incorrect refund verification code.");
+ }
  await client.query("UPDATE refund_verification_challenges SET consumed_at=now() WHERE id=$1",[ch.rows[0].id]);
  if(String(row.payment_status)!=="paid") throw new Error("The Stars payment is not currently refundable.");
  const existing=await client.query("SELECT refund_status FROM payment_transactions WHERE id=$1 FOR UPDATE",[row.payment_id]); if(["pending","processing","needs-attention","processed","initiating"].includes(String(existing.rows[0]?.refund_status??""))) throw new Error("A refund has already been initiated for this transaction.");
