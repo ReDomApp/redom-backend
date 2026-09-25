@@ -153,12 +153,12 @@ async function issueRefundSecurityChallenge(refundRequestId:string,userId:string
 }
 
 export async function issueStarsRefundSecurityChallenge(input:{userId:string;transactionNumber:string}):Promise<StarsRefundResult> {
-  const q=await pool.query("SELECT rr.id,rr.case_id,rr.status,u.email,u.phone_number,sc.case_number FROM refund_requests rr JOIN users u ON u.id=rr.user_id JOIN support_cases sc ON sc.id=rr.case_id WHERE rr.transaction_number=$1 AND rr.user_id=$2 ORDER BY rr.created_at DESC LIMIT 1",[input.transactionNumber.trim().toUpperCase(),input.userId]);
+  const normalized=normalizeRefundTransactionNumber(input.transactionNumber); const q=await pool.query("SELECT rr.id,rr.case_id,rr.status,u.email,u.phone_number,sc.case_number FROM refund_requests rr JOIN users u ON u.id=rr.user_id JOIN support_cases sc ON sc.id=rr.case_id WHERE rr.transaction_number=$1 AND rr.user_id=$2 ORDER BY rr.created_at DESC LIMIT 1",[normalized,input.userId]);
   if(!q.rows[0]) return {success:false,status:"transaction_required",code:"REFUND_REQUEST_NOT_FOUND",reason:"Refund request not found.",transactionNumber:input.transactionNumber};
   const row=q.rows[0];
-  const challenge=await issueRefundSecurityChallenge(String(row.id),input.userId,String(row.email),row.phone_number?String(row.phone_number):null,input.transactionNumber.trim().toUpperCase());
+  const challenge=await issueRefundSecurityChallenge(String(row.id),input.userId,String(row.email),row.phone_number?String(row.phone_number):null,normalized);
   await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE id=$1",[row.id]);
-  return {success:true,status:"verification_code_sent",transactionNumber:input.transactionNumber.trim().toUpperCase(),caseNumber:String(row.case_number),target:challenge.target};
+  return {success:true,status:"verification_code_sent",transactionNumber:normalized,caseNumber:String(row.case_number),target:challenge.target};
 }
 
 export async function startStarsRefund(input:{userId:string;transactionNumber:string;caseId?:string;caseNumber?:string}):Promise<StarsRefundResult> {
@@ -192,7 +192,7 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
  const challenge=await issueRefundSecurityChallenge(String((await pool.query("SELECT id FROM refund_requests WHERE transaction_number=$1 ORDER BY created_at DESC LIMIT 1",[transactionNumber])).rows[0].id),input.userId,String(row.email),row.phone_number?String(row.phone_number):null,transactionNumber);
  await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE transaction_number=$1",[transactionNumber]);
  const nextStep=challenge.channel==="sms" ? "Enter the 8-digit security code sent to your verified ReDom phone ("+challenge.target+")." : "Enter the 6-digit fallback security code sent to your ReDom email.";
- await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:"Refund request received and the transaction has been authenticated to your ReDom account.\n\nNext step: "+nextStep+"\n\nSupport Case: "+caseRecord.caseNumber});
+ await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:"Refund request received and the transaction has been authenticated to your ReDom account.\n\nNext step: "+nextStep+"\n\nSupport Case: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING});
  await sendRefundSupportStatus({email:String(row.email??""),caseNumber:caseRecord.caseNumber,transactionNumber,status:"Refund request under review — security verification required",reason:"The transaction was matched to your ReDom account.",target:target.masked,nextStep}).catch(()=>undefined);
  return {success:true,status:"verification_code_sent",transactionNumber,caseNumber:caseRecord.caseNumber,target:challenge.target};
 }
@@ -222,7 +222,8 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
 
   const ch=await client.query("SELECT id,channel_type,target_masked,code_hash,expires_at,consumed_at,attempt_count,max_attempts FROM refund_verification_challenges WHERE refund_request_id=$1 ORDER BY created_at DESC LIMIT 1",[row.id]);
   if(!ch.rows[0]||ch.rows[0].consumed_at||new Date(String(ch.rows[0].expires_at)).getTime()<Date.now()) throw new Error("Refund verification code expired. Request a new code.");
-  const attempts=Number(ch.rows[0].attempt_count??0);
+  const attemptsResult=await client.query("SELECT COALESCE(SUM(attempt_count),0) AS failed_attempts FROM refund_verification_challenges WHERE refund_request_id=$1",[row.id]);
+  const attempts=Number(attemptsResult.rows[0]?.failed_attempts??0);
   if(hashRefundCode(input.code)!==String(ch.rows[0].code_hash)) {
    const failedAttempt=attempts+1;
    await client.query("UPDATE refund_verification_challenges SET attempt_count=$1,failed_at=now(),consumed_at=now() WHERE id=$2",[failedAttempt,ch.rows[0].id]);
@@ -294,7 +295,7 @@ export async function sendRefundProviderEmail(input:{email:string;caseNumber:str
  const targetLine=input.target ? "\nRefund destination: "+input.target : "";
  const amountLine=input.amount && input.currency ? "\nAmount: "+input.amount+" "+input.currency : "";
  const refundLine=input.refundId ? "\nRefund ID: "+input.refundId : "";
- const {error}=await resend.emails.send({from:env.refunds.from,to:[input.email],subject:"ReDom Refunds — "+input.status+" — "+input.transactionNumber,text:"ReDom Refund Services\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+amountLine+targetLine+refundLine+"\n\nCase Number: "+input.caseNumber});
+ const {error}=await resend.emails.send({from:env.refunds.from,to:[input.email],subject:"ReDom Refunds — "+input.status+" — "+input.transactionNumber,text:"ReDom Refund Services\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+amountLine+targetLine+refundLine+"\n\nCase Number: "+input.caseNumber+"\n\n"+REFUND_SECURITY_WARNING});
  if(error) throw new Error(error.message);
 }
 
