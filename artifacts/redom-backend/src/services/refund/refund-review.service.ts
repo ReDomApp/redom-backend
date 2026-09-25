@@ -10,7 +10,10 @@ let timer:NodeJS.Timeout|undefined;
 async function processOne(row:any):Promise<void>{
  const metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{};
  const stars=Number(metadata?.stars??0);
- const amountMinor=String(metadata?.paymentDetails?.providerAmountMinor ?? row.amount_minor);
+ // Refund only the original ReDom product amount. The provider's gross/settled
+ // amount can include non-refundable processing/tax/transfer charges and must
+ // never be used as the refund amount.
+ const amountMinor=String(row.amount_minor);
  const target=String(row.refund_target_masked??"original payment rail");
  let eligible=true;
  let reason="The product and transaction passed ReDom's automated refund eligibility review.";
@@ -34,7 +37,9 @@ async function processOne(row:any):Promise<void>{
  }
  let refund:any;
  try{
-   const response=await axios.post("https://api.paystack.co/refund",{transaction:String(row.reference),amount:amountMinor,currency:String(row.currency),customer_note:"ReDom Stars refund "+String(row.redom_transaction_id),merchant_note:"Approved ReDom Stars refund "+String(row.redom_transaction_id)},{headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000});
+   const providerReference=String(row.provider_reference ?? row.reference ?? "").trim();
+  if(!providerReference) throw new Error("Provider reference could not be resolved from the ReDom Transaction ID.");
+  const response=await axios.post("https://api.paystack.co/refund",{transaction:providerReference,amount:amountMinor,currency:String(row.currency),customer_note:"ReDom Stars refund "+String(row.redom_transaction_id),merchant_note:"Approved ReDom Stars refund "+String(row.redom_transaction_id),{headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000});
    if(!response.data?.status) throw new Error(response.data?.message||"Refund provider rejected the request.");
    refund=response.data.data;
  }catch(error){
@@ -60,7 +65,7 @@ async function processOne(row:any):Promise<void>{
 async function processDueRefundReviews():Promise<void>{
  if(running)return; running=true;
  try{
-  const q=await pool.query(`SELECT rr.id AS refund_request_id,rr.case_id,rr.transaction_number AS redom_transaction_id,rr.refund_target_masked,sc.case_number,pt.id AS payment_id,pt.reference,pt.amount_minor,pt.currency,pt.metadata,pt.purpose,pt.status AS payment_status,u.id AS user_id,u.email
+  const q=await pool.query(`SELECT rr.id AS refund_request_id,rr.case_id,rr.transaction_number AS redom_transaction_id,rr.refund_target_masked,sc.case_number,pt.id AS payment_id,pt.reference,COALESCE(NULLIF(pt.metadata->'paymentDetails'->>'providerReference',''),pt.reference) AS provider_reference,pt.amount_minor,pt.currency,pt.metadata,pt.purpose,pt.status AS payment_status,u.id AS user_id,u.email
   FROM refund_requests rr JOIN support_cases sc ON sc.id=rr.case_id JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number JOIN users u ON u.id=rr.user_id
   WHERE rr.status='account_under_review' AND rr.review_available_at IS NOT NULL AND rr.review_available_at<=now() AND rr.case_invalidated_at IS NULL
   ORDER BY rr.review_available_at ASC LIMIT 25`);
