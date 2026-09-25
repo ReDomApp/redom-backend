@@ -32,6 +32,17 @@ const ALLOWED_ATTRS = new Set([
   "align", "valign", "bgcolor", "colspan", "rowspan", "charset", "name"
 ]);
 
+function formatRefundAmountFromMinor(value: string): string {
+  const raw = String(value ?? "").trim();
+  if (!/^-?\\d+$/.test(raw)) return raw || "0.00";
+  const negative = raw.startsWith("-");
+  const digits = negative ? raw.slice(1) : raw;
+  const minor = BigInt(digits || "0");
+  const major = minor / 100n;
+  const cents = (minor % 100n).toString().padStart(2, "0");
+  return (negative ? "-" : "") + major.toString() + "." + cents;
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
