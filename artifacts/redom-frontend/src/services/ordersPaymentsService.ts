@@ -45,7 +45,7 @@ export const ordersPaymentsService = {
     return api.post<{success:boolean;mode:string;checkoutUrl:string|null;accessCode:string|null;reference:string;redomTransactionId:string;status?:string;channel?:string}>("/orders-payments/stars/initialize",input);
   },
   paymentMethods() { return api.get<{success:boolean;methods:SavedPaymentMethod[]}>("/orders-payments/payment-methods"); },
-  setupPaymentMethod() { return api.post<{success:boolean;checkoutUrl:string;accessCode:string;reference:string;currency:string;amountMinor:number}>("/orders-payments/payment-methods/setup",{}); },
+  setupPaymentMethod() { return api.post<{success:boolean;checkoutUrl:string;accessCode:string;reference:string;currency:string;amountMinor:number;verificationUsdAmount:number}>("/orders-payments/payment-methods/setup",{}); },
   removePaymentMethod(id:string,password:string) { return api.delete<{success:boolean}>("/orders-payments/payment-methods/"+encodeURIComponent(id),{password}); },
   paymentAddresses() { return api.get<{success:boolean;addresses:PaymentAddress[]}>("/orders-payments/payment-addresses"); },
   createPaymentAddress(input:{countryCode:string;countryName:string;fullName:string;addressLine1:string;addressLine2?:string|null;city:string;state?:string|null;postalCode?:string|null;mapboxPlaceId?:string|null;latitude?:number|null;longitude?:number|null;isDefault?:boolean}) { return api.post<{success:boolean;address:PaymentAddress}>("/orders-payments/payment-addresses",input); },
