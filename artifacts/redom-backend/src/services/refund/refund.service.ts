@@ -102,9 +102,10 @@ function refundTargetDisplay(metadata:any, fallbackMasked:string|null):string {
   return brand+" "+masked;
 }
 
-async function sendRefundSupportStatus(input:{email:string;caseNumber:string;transactionNumber:string;status:string;reason:string;target?:string|null}):Promise<void> {
+async function sendRefundSupportStatus(input:{email:string;caseNumber:string;transactionNumber:string;status:string;reason:string;target?:string|null;nextStep?:string}):Promise<void> {
   const targetLine=input.target ? "\nRefund destination: "+input.target : "";
-  const body="Refund Support Update\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+targetLine+"\n\nSupport Case: "+input.caseNumber;
+  const nextLine=input.nextStep ? "\n\nNext step:\n"+input.nextStep : "";
+  const body="Refund Support Update\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+targetLine+nextLine+"\n\nSupport Case: "+input.caseNumber;
   await sendSupportEmail(input.email, "Re: Refund Support Case "+input.caseNumber+" — "+input.status, body);
 }
 
@@ -149,7 +150,9 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
   await closeAndInvalidateRefund({refundRequestId:String(request.rows[0].id),caseId:caseRecord.id,transactionNumber,userId:input.userId,caseNumber:caseRecord.caseNumber,outcomeStatus:"non_refundable",reason});
   return nonRefundablePayload(transactionNumber,caseRecord.caseNumber,cutoff);
  }
- await addSupportMessage({caseId:caseRecord.id,senderType:"system",body:"Stars refund transaction matched. Account Profile verification is required before the refund can be initiated."});
+ const nextStep="Provide your Account Profile ID in the refund verification step. Do not send card numbers, CVV, passwords, PINs, or full bank credentials by email.";
+ await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:"Refund request received. Your transaction is eligible for the 10-minute Stars refund review window.\n\nNext step: "+nextStep+"\n\nSupport Case: "+caseRecord.caseNumber});
+ await sendRefundSupportStatus({email:String(row.email??""),caseNumber:caseRecord.caseNumber,transactionNumber,status:"Action required — Account Profile verification",reason:"Your refund request has been received and the transaction passed the initial eligibility checks.",target:target.masked,nextStep}).catch(()=>undefined);
  return {success:true,status:"account_profile_required",transactionNumber,caseNumber:caseRecord.caseNumber,target:target.masked};
 }
 
@@ -163,7 +166,11 @@ export async function verifyStarsRefundAccountProfile(input:{userId:string;trans
  if(String(row.account_profile_id??"")!==input.accountProfileId) return {success:false,status:"account_profile_required",code:"ACCOUNT_PROFILE_MISMATCH",reason:"The Account Profile ID does not match this ReDom account.",transactionNumber};
  const cutoff=starsRefundCutoff(new Date(String(row.paid_at))); if(Date.now()>=cutoff.getTime()) return nonRefundablePayload(transactionNumber,String(row.case_id),cutoff);
  const code=generateRefundCode(); await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at) VALUES($1,$2,'email',$3,$4,now()+interval '10 minutes')",[row.id,row.user_id,String(row.email),hashRefundCode(code)]);
- await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE id=$1",[row.id]); await sendRefundVerificationEmail(String(row.email),code,transactionNumber);
+ await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE id=$1",[row.id]);
+ await sendRefundVerificationEmail(String(row.email),code,transactionNumber);
+ const verifyNextStep="Enter the 6-digit verification code sent to your email within 10 minutes. If you did not request this refund, do not enter the code.";
+ await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"Account Profile verified. A refund verification code has been sent to your email.\n\nNext step: "+verifyNextStep});
+ await sendRefundSupportStatus({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Verification code sent",reason:"Your Account Profile was verified successfully.",nextStep:verifyNextStep}).catch(()=>undefined);
  return {success:true,status:"verification_code_sent",transactionNumber,target:String(row.email)};
 }
 
@@ -201,6 +208,10 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
  return {success:false,status:"refund_failed",code:"REFUND_PROVIDER_ERROR",reason:failureReason,transactionNumber,target:target.masked}; }
  await pool.query("UPDATE payment_transactions SET refund_status=$1,refund_id=$2,refund_amount_minor=$3,refund_expected_at=$4,updated_at=now() WHERE id=$5",[String(refund.status||"pending"),refund.id?String(refund.id):null,String(refund.amount??refundAmountMinor),refund.expected_at?new Date(refund.expected_at):null,row.payment_id]);
  await pool.query("UPDATE refund_requests SET status='refund_processing',refund_expected_by=$1,updated_at=now() WHERE id=$2",[refund.expected_at?new Date(refund.expected_at):null,row.id]);
+ await pool.query("UPDATE support_cases SET status='awaiting_support',updated_at=now() WHERE id=$1 AND status <> 'closed'",[row.case_id]);
+ const processingNextStep="No further action is required right now. ReDom is waiting for the payment provider/bank to process the refund. We will email you when the status changes.";
+ await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"Refund request accepted by the payment provider and is now under review/processing.\n\nNext step: "+processingNextStep});
+ await sendRefundSupportStatus({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Refund under review",reason:"The payment provider accepted the refund request and is processing it.",target:target.masked,nextStep:processingNextStep}).catch(()=>undefined);
  return {success:true,status:"refund_processing",transactionNumber,refundId:refund.id?String(refund.id):null,refundStatus:String(refund.status||"pending"),target:target.masked};
  } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
 }
@@ -258,7 +269,12 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
 
   const supportText=terminal?bankStatus+" — "+customerStatus+". "+reason+" Destination: "+target+". The refund case is now closed and the transaction is permanently locked against another refund request.":bankStatus+" — "+customerStatus+". "+reason+" Destination: "+target+".";
   await addSupportMessage({caseId:String(rr.case_id),senderType:"system",body:supportText});
-  if(String(rr.email)) await sendRefundSupportStatus({email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),status:bankStatus+" — "+customerStatus,reason,target}).catch(()=>undefined);
+  if(!terminal) await pool.query("UPDATE support_cases SET status='awaiting_support',updated_at=now() WHERE id=$1 AND status <> 'closed'",[rr.case_id]);
+  if(String(rr.email)) await sendRefundSupportStatus({
+    email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),
+    status:bankStatus+" — "+customerStatus,reason,target,
+    nextStep:terminal ? "No further action is required. This refund case is closed." : "No reply is required while the refund is being processed. ReDom will email you automatically when the bank/provider reports another status change."
+  }).catch(()=>undefined);
 
   if(terminal) {
     if(String(rr.email)) await sendRefundTerminalEmail({email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),status:bankStatus+" — "+customerStatus,reason,target,amount:String(row.amount_minor),currency:String(rr.currency),refundId:data?.refund_reference?String(data.refund_reference):null}).catch(()=>undefined);
