@@ -256,6 +256,7 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
      await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"The previous verification code is no longer valid. A new 8-digit security code has been sent to your verified ReDom phone ("+nextTarget+"). This is failed attempt "+failedAttempt+" of 3. Enter the new code.\n\n"+REFUND_SECURITY_WARNING});
      return {success:false,status:"verification_code_sent",code:"NEW_CODE_REQUIRED",reason:"The previous code was incorrect and has been invalidated. A new 8-digit code was sent.",transactionNumber,caseNumber:String(row.case_number),target:nextTarget};
     } catch {
+     await pool.query("UPDATE refund_verification_challenges SET consumed_at=COALESCE(consumed_at,now()),failed_at=COALESCE(failed_at,now()) WHERE refund_request_id=$1 AND consumed_at IS NULL",[row.id]);
      const fallback=randomInt(100_000,1_000_000).toString();
      const fallbackExpiresAt=new Date(Date.now()+10*60_000);
      await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'email',$3,$4,$5,0,3)",[row.id,row.user_id,String(row.email),hashRefundCode(fallback),fallbackExpiresAt]);
