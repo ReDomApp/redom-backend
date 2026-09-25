@@ -90,7 +90,7 @@ router.post("/email/webhook", async (req, res) => {
     const supportAddress = env.email.supportFrom.toLowerCase();
     if (!senderEmail || senderEmail === supportAddress || senderEmail === "noreply@wnncompany.com") return res.status(200).json({ received: true, ignored: true });
     const message = emailBody(email); if (!message) return res.status(200).json({ received: true, ignored: true });
-    const looksLikeRefund = /\\b(refund|refunds|money back|return (?:my|the) (?:payment|money)|charged in error)\\b/i.test(`${email.subject ?? ""}\\n${message}`);
+    const looksLikeRefund = /\b(refund|refunds|money back|return (?:my|the) (?:payment|money)|charged in error)\b/i.test(`${email.subject ?? ""}\n${message}`);
     if (looksLikeRefund) {
       const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
       const refundResult = await processRefundSupportEmail({senderEmail,message,subject:String(email.subject ?? "Refund Request"),caseNumber:referenced});
