@@ -14,7 +14,11 @@ type RefundData = { id?: number; status?: string; amount?: number; currency?: st
 type PaymentContext = { transactionId: string; redomTransactionId?: string | null; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
 
 async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string, force = false): Promise<void> {
-  if ((!force && verified.status === "success") || !verified.id || verified.amount <= 0) return;
+  // Never attempt a refund merely because a verification returned a non-success
+  // state. Bank-transfer payments can legitimately be ongoing/pending while the
+  // customer's bank is still processing the transfer. Refunds are only safe here
+  // when Paystack has confirmed success and ReDom failed to fulfill the payment.
+  if (!force || verified.status !== "success" || !verified.id || verified.amount <= 0) return;
   try {
     const refund = await paystack<RefundData>("post", "/refund", {
       transaction: String(verified.id),
@@ -267,9 +271,9 @@ export async function verifyPayment(userId: string, referenceValue: string): Pro
   const verified = await verifyWithProvider(referenceValue);
   try {
     const payment = await applyVerifiedPayment(referenceValue, verified);
-    if (payment.status !== "paid") {
-      await requestAutomaticRefund(referenceValue, verified, payment.transactionId);
-    }
+    // Non-success provider states are not payment failures from ReDom's point of
+    // view. In particular, "ongoing", "pending", and "pending_bank_transfer"
+    // must remain pending until Paystack reports the final result.
     await sendPaymentEmailIfNeeded(payment.transactionId);
     return payment;
   } catch (error) {
@@ -284,7 +288,7 @@ export async function verifyPaymentFromCallback(referenceValue: string): Promise
   const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [referenceValue]);
   try {
     const payment = await applyVerifiedPayment(referenceValue, verified);
-    if ((payment.status !== "paid" || payment.purpose === "payment_method_setup") && tx.rows[0]?.id) await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), payment.purpose === "payment_method_setup");
+    if (payment.purpose === "payment_method_setup" && tx.rows[0]?.id) await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), true);
     if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id));
     return payment;
   } catch (error) {
