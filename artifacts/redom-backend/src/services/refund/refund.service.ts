@@ -355,7 +355,7 @@ async function getSupportCaseForRefundCase(caseNumber:string,email:string):Promi
 
 export async function applyStarsRefundWebhook(event:string,data:any):Promise<void> {
  const reference=String(data?.transaction_reference??data?.transaction?.reference??""); if(!reference) return;
- const refundStatus=event.replace(/^refund\\./,"");
+ const refundStatus=event.replace(/^refund\./,"");
  const client=await pool.connect();
  try {
   await client.query("BEGIN");
