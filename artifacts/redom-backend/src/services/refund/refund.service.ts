@@ -333,13 +333,46 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    await permanentlyCloseSupportCase(caseRecord.id);
    return {handled:true,caseNumber:caseRecord.caseNumber};
  }
- const current=await pool.query("SELECT rr.transaction_number,rr.status FROM refund_requests rr WHERE rr.case_id=$1 ORDER BY rr.created_at DESC LIMIT 1",[caseRecord.id]);
+ const current=await pool.query("SELECT rr.transaction_number,rr.status,pt.reference,pt.redom_transaction_id FROM refund_requests rr LEFT JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number WHERE rr.case_id=$1 ORDER BY rr.created_at DESC LIMIT 1",[caseRecord.id]);
  if(current.rows[0]) {
+   const currentStatus=String(current.rows[0].status);
+   const currentTransaction=String(current.rows[0].transaction_number);
    const codeMatch=input.message.match(/\b(\d{6}|\d{8})\b/);
-   if(codeMatch && ["verification_code_sent","awaiting_verification"].includes(String(current.rows[0].status))) {
-     const result=await completeStarsRefund({userId:String(user.id),transactionNumber:String(current.rows[0].transaction_number),code:codeMatch[1]});
+   if(codeMatch && ["verification_code_sent","awaiting_verification"].includes(currentStatus)) {
+     await completeStarsRefund({userId:String(user.id),transactionNumber:currentTransaction,code:codeMatch[1]});
      return {handled:true,caseNumber:caseRecord.caseNumber};
    }
+
+   // A follow-up containing the transaction/reference must never be silently dropped.
+   // If the refund request already exists, acknowledge the message and tell the user
+   // exactly what the next step is instead of returning without sending an email.
+   const suppliedToken=input.message.match(/\b(R-?\d{13}|\d{13}|T\d{6,})\b/i);
+   if(suppliedToken) {
+     const supplied=normalizeRefundTransactionNumber(suppliedToken[1]);
+     const matchesCurrent= supplied.toUpperCase()===currentTransaction.toUpperCase()
+       || supplied.toUpperCase()===String(current.rows[0].redom_transaction_id??"").toUpperCase()
+       || supplied.toUpperCase()===String(current.rows[0].reference??"").toUpperCase();
+
+     if(matchesCurrent) {
+       const name=[user.first_name,user.last_name].filter(Boolean).join(" ")||"there";
+       let nextStep="Your refund request is already associated with this transaction.";
+       if(currentStatus==="verification_code_sent" || currentStatus==="awaiting_verification") {
+         nextStep="A security verification code has already been issued for this refund request. Enter the latest code you received in your reply. If you did not receive it, use the ReDom refund verification flow to request a new code.";
+       } else if(currentStatus==="account_under_review" || currentStatus==="refund_review_pending" || currentStatus==="refund_reviewing") {
+         nextStep="Your transaction has already passed the transaction step and the refund request is currently under review. No new transaction number is required.";
+       } else if(["refunded","closed","denied","non_refundable","refund_verification_failed"].includes(currentStatus)) {
+         nextStep="This refund request has already reached a terminal state and cannot be restarted with the same transaction.";
+       }
+       const reply="Hello "+name+",\\n\\nWe received your transaction/reference number and matched it to your existing ReDom refund request.\\n\\n"+nextStep+"\\n\\nTransaction: "+currentTransaction+"\\nCase Number: "+caseRecord.caseNumber+"\\n\\n"+REFUND_SECURITY_WARNING;
+       await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+       await sendSupportEmail(email,"ReDom Refund Request — Transaction Received",reply);
+       return {handled:true,caseNumber:caseRecord.caseNumber};
+     }
+   }
+
+   const reply="We received your message for this refund case, but the refund request is already in progress.\\n\\nPlease reply with the latest verification code if ReDom has requested one, or continue using the refund verification flow.\\n\\nCase Number: "+caseRecord.caseNumber+"\\n\\n"+REFUND_SECURITY_WARNING;
+   await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+   await sendSupportEmail(email,"ReDom Refund Request — Next Step",reply);
    return {handled:true,caseNumber:caseRecord.caseNumber};
  }
  const token=input.message.match(/\b(R-?\d{13}|\d{13}|T\d{6,})\b/i);
@@ -496,3 +529,4 @@ export async function getOwnedRefundCase(input:{userId:string;caseNumber:string}
     messages:messages.rows.map((message:any)=>({id:String(message.id),senderType:String(message.sender_type),senderEmail:message.sender_email?String(message.sender_email):null,body:String(message.body),createdAt:new Date(String(message.created_at)).toISOString()})),
   };
 }
+
