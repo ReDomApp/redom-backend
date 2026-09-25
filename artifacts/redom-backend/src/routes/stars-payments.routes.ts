@@ -23,6 +23,7 @@ const countries: Country[] = [
 ];
 
 const packages = [
+  { key: "stars_2", stars: 2, usdPrice: 0.50, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
   { key: "stars_10", stars: 10, usdPrice: 2.21, firstPurchaseUsdPrice: 1.99, firstPurchaseDiscountPercent: 10, popular: false },
   { key: "stars_20", stars: 20, usdPrice: 2.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
   { key: "stars_50", stars: 50, usdPrice: 4.87, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
@@ -170,6 +171,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
     packageKey: z.string().min(1).max(50),
     countryCode: z.string().length(2),
     email: z.string().email().max(255),
+    preferredChannel: z.enum(["card", "bank_transfer"]).optional(),
     pin: z.string().regex(/^\d{4,8}$/).optional(),
     paymentMethodId: z.string().uuid().optional(),
     address: z.object({
@@ -200,7 +202,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       await client.query("BEGIN");
       const redomId = await uniqueRedomTransactionId(client);
       const reference = makeReference();
-      const metadata = { purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null };
+      const metadata = { purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null, preferredChannel: parsed.data.preferredChannel ?? "card_or_bank_transfer" };
       const inserted = await client.query(
         `INSERT INTO payment_transactions
           (user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email)
@@ -231,11 +233,11 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       }
 
       const initialized = await paystack<{ authorization_url: string; access_code: string; reference: string }>("post", "/transaction/initialize", {
-        email: parsed.data.email, amount: String(priced.amountMinor), currency: priced.currency, channels: ["card", "bank_transfer"],
+        email: parsed.data.email, amount: String(priced.amountMinor), currency: priced.currency, channels: parsed.data.preferredChannel ? [parsed.data.preferredChannel] : ["card", "bank_transfer"],
         callback_url: paymentCallbackUrl(), metadata: JSON.stringify(metadata),
       });
       await pool.query("UPDATE payment_transactions SET checkout_url=$1, access_code=$2, reference=$3, updated_at=now() WHERE id=$4", [initialized.authorization_url, initialized.access_code, initialized.reference, inserted.rows[0].id]);
-      return res.json({ success: true, mode: "hosted_checkout", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId });
+      return res.json({ success: true, mode: "redom_gateway", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId, channel: parsed.data.preferredChannel ?? "card_or_bank_transfer" });
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
