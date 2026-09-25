@@ -36,6 +36,7 @@ export const ordersPaymentsService = {
   setupPaymentMethod() { return api.post<{success:boolean;checkoutUrl:string;accessCode:string;reference:string;currency:string;amountMinor:number}>("/orders-payments/payment-methods/setup",{}); },
   removePaymentMethod(id:string,password:string) { return api.delete<{success:boolean}>("/orders-payments/payment-methods/"+encodeURIComponent(id),{password}); },
   paymentAddresses() { return api.get<{success:boolean;addresses:PaymentAddress[]}>("/orders-payments/payment-addresses"); },
+  createPaymentAddress(input:{countryCode:string;countryName:string;fullName:string;addressLine1:string;addressLine2?:string|null;city:string;state?:string|null;postalCode?:string|null;mapboxPlaceId?:string|null;latitude?:number|null;longitude?:number|null;isDefault?:boolean}) { return api.post<{success:boolean;address:PaymentAddress}>("/orders-payments/payment-addresses",input); },
   savePaymentAddress(input:Omit<PaymentAddress,"id"|"created_at"|"updated_at">) { return api.post<{success:boolean;address:PaymentAddress}>("/orders-payments/payment-addresses",input); },
   addressSearch(q:string) { return api.get<{success:boolean;suggestions:Array<{id:string;placeName:string;longitude:number|null;latitude:number|null;context:any[]}>}>("/orders-payments/address/search?q="+encodeURIComponent(q)); },
   setPaymentPin(pin:string,currentPin?:string) { return api.post<{success:boolean;pinEnabled:boolean}>("/orders-payments/payment-security/pin",{pin,currentPin}); },
