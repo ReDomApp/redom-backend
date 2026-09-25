@@ -8,7 +8,7 @@ import { generatePolicyAwareSupportReply } from "../services/support/policy-awar
 const router = Router();
 
 const transactionSchema = z.object({
-  transactionNumber: z.string().trim().regex(/^(?:R-?\d{13}|\d{13})$/i),
+  transactionNumber: z.string().trim().min(3).max(100).regex(/^[A-Za-z0-9_.=-]+$/),
 });
 
 const verificationSchema = z.object({
