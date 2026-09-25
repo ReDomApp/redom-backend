@@ -35,6 +35,7 @@ export const ordersPaymentsService = {
   paymentMethods() { return api.get<{success:boolean;methods:SavedPaymentMethod[]}>("/orders-payments/payment-methods"); },
   removePaymentMethod(id:string,password:string) { return api.delete<{success:boolean}>("/orders-payments/payment-methods/"+encodeURIComponent(id),{password}); },
   paymentAddresses() { return api.get<{success:boolean;addresses:PaymentAddress[]}>("/orders-payments/payment-addresses"); },
+  savePaymentAddress(input:Omit<PaymentAddress,"id"|"created_at"|"updated_at">) { return api.post<{success:boolean;address:PaymentAddress}>("/orders-payments/payment-addresses",input); },
   addressSearch(q:string) { return api.get<{success:boolean;suggestions:Array<{id:string;placeName:string;longitude:number|null;latitude:number|null;context:any[]}>}>("/orders-payments/address/search?q="+encodeURIComponent(q)); },
   setPaymentPin(pin:string,currentPin?:string) { return api.post<{success:boolean;pinEnabled:boolean}>("/orders-payments/payment-security/pin",{pin,currentPin}); },
   disablePaymentPin(password:string) { return api.delete<{success:boolean;pinEnabled:boolean}>("/orders-payments/payment-security/pin",{password}); },
