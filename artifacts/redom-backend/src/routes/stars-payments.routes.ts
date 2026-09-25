@@ -256,20 +256,23 @@ router.post("/payment-methods/setup", authMiddleware, async (req,res)=>{
   try{
     const settings=await pool.query("SELECT currency FROM payment_settings WHERE user_id=$1 LIMIT 1",[userId]);
     const currency=String(settings.rows[0]?.currency||"NGN").toUpperCase();
-    const setupAmountMinor:Record<string,number>={NGN:5000,GHS:10,KES:300,ZAR:100,USD:20,XOF:100};
-    if(!setupAmountMinor[currency])return res.status(400).json({success:false,message:"Your current payment currency is not supported for secure card setup."});
+    const countryForCurrency = countries.find((item) => item.currency === currency);
+    if (!countryForCurrency) return res.status(400).json({success:false,message:"Your current payment currency is not supported for secure card setup."});
+    // Temporary card validation charge: exactly the configured local-currency
+    // equivalent of USD $1.00, refunded immediately after provider success.
+    const setupAmountMinor = Math.max(1, Math.round(fxRate(countryForCurrency) * 100));
     const reference=makeSetupReference();
-    const metadata={purpose:"payment_method_setup",customerEmail:String(user.email),currency,setupAmountMinor:setupAmountMinor[currency]};
+    const metadata={purpose:"payment_method_setup",customerEmail:String(user.email),currency,setupAmountMinor,verificationUsdAmount:1};
     const inserted=await pool.query(`INSERT INTO payment_transactions
       (user_id,reference,amount_minor,currency,purpose,status,metadata,customer_email)
       VALUES($1,$2,$3,$4,'payment_method_setup','initialized',$5::jsonb,$6) RETURNING id`,
-      [userId,reference,setupAmountMinor[currency],currency,JSON.stringify(metadata),String(user.email)]);
+      [userId,reference,setupAmountMinor,currency,JSON.stringify(metadata),String(user.email)]);
     const initialized=await paystack<{authorization_url:string;access_code:string;reference:string}>("post","/transaction/initialize",{
-      email:String(user.email),amount:String(setupAmountMinor[currency]),currency,channels:["card"],
+      email:String(user.email),amount:String(setupAmountMinor),currency,channels:["card"],
       callback_url:paymentCallbackUrl(),metadata:JSON.stringify(metadata),reference
     });
     await pool.query("UPDATE payment_transactions SET checkout_url=$1,access_code=$2,reference=$3,updated_at=now() WHERE id=$4",[initialized.authorization_url,initialized.access_code,initialized.reference,inserted.rows[0].id]);
-    return res.json({success:true,checkoutUrl:initialized.authorization_url,accessCode:initialized.access_code,reference:initialized.reference,currency,amountMinor:setupAmountMinor[currency]});
+    return res.json({success:true,checkoutUrl:initialized.authorization_url,accessCode:initialized.access_code,reference:initialized.reference,currency,amountMinor:setupAmountMinor});
   }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to start secure card setup."});}
 });
 
