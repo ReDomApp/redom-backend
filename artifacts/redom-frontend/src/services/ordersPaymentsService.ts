@@ -24,7 +24,9 @@ export interface RefundCaseDetails {
   transactionNumber:string; providerReference:string|null; amountMinor:string; currency:string; paymentStatus:string;
   paidAt:string|null; refundStatus:string|null; refundId:string|null; refundRequestStatus:string;
   decision:string|null; decisionReason:string|null; refundExpectedBy:string|null; refundCompletedAt:string|null;
-  reviewAvailableAt:string|null; verificationSentAt:string|null; verifiedAt:string|null; refundTarget:string|null;
+  reviewAvailableAt:string|null; verificationSentAt:string|null; verifiedAt:string|null;
+  verificationChannel:string|null; verificationTarget:string|null; verificationExpiresAt:string|null; verificationAttempts:number;
+  refundTarget:string|null;
   securityWarning:string; messages:RefundCaseMessage[];
 }
 export interface PaymentAddress { id:string; country_code:string; country_name:string; full_name:string; address_line1:string; address_line2:string|null; city:string; state:string|null; postal_code:string|null; mapbox_place_id:string|null; latitude:number|null; longitude:number|null; is_default:boolean; created_at:string; updated_at:string; }
