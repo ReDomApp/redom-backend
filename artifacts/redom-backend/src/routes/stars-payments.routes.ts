@@ -85,7 +85,8 @@ async function paystack<T>(method: "get" | "post", path: string, data?: unknown)
   if (!response.data?.status) throw new Error(response.data?.message || "Payment provider request failed.");
   return response.data.data;
 }
-function makeReference(): string { return "rdstars_" + Date.now().toString(36) + "_" + crypto.randomBytes(5).toString("hex"); }
+function makeReference(): string { return "rdstars-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
+function makeSetupReference(): string { return "rdcard-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
 function makeRedomTransactionId(): string {
   const max = 10_000_000_000_000n;
   const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max;
@@ -242,6 +243,31 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
     const message = error instanceof Error ? error.message : "Unable to start Stars payment.";
     return res.status(400).json({ success: false, message });
   }
+});
+
+router.post("/payment-methods/setup", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId;
+  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  const user=await getUser(userId);
+  if(!user?.email)return res.status(400).json({success:false,message:"A verified email address is required."});
+  try{
+    const settings=await pool.query("SELECT currency FROM payment_settings WHERE user_id=$1 LIMIT 1",[userId]);
+    const currency=String(settings.rows[0]?.currency||"NGN").toUpperCase();
+    const setupAmountMinor:Record<string,number>={NGN:5000,GHS:10,KES:300,ZAR:100,USD:20,XOF:100};
+    if(!setupAmountMinor[currency])return res.status(400).json({success:false,message:"Your current payment currency is not supported for secure card setup."});
+    const reference=makeSetupReference();
+    const metadata={purpose:"payment_method_setup",customerEmail:String(user.email),currency,setupAmountMinor:setupAmountMinor[currency]};
+    const inserted=await pool.query(`INSERT INTO payment_transactions
+      (user_id,reference,amount_minor,currency,purpose,status,metadata,customer_email)
+      VALUES($1,$2,$3,$4,'payment_method_setup','initialized',$5::jsonb,$6) RETURNING id`,
+      [userId,reference,setupAmountMinor[currency],currency,JSON.stringify(metadata),String(user.email)]);
+    const initialized=await paystack<{authorization_url:string;access_code:string;reference:string}>("post","/transaction/initialize",{
+      email:String(user.email),amount:String(setupAmountMinor[currency]),currency,channels:["card"],
+      callback_url:paymentCallbackUrl(),metadata:JSON.stringify(metadata),reference
+    });
+    await pool.query("UPDATE payment_transactions SET checkout_url=$1,access_code=$2,reference=$3,updated_at=now() WHERE id=$4",[initialized.authorization_url,initialized.access_code,initialized.reference,inserted.rows[0].id]);
+    return res.json({success:true,checkoutUrl:initialized.authorization_url,accessCode:initialized.access_code,reference:initialized.reference,currency,amountMinor:setupAmountMinor[currency]});
+  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to start secure card setup."});}
 });
 
 router.get("/payment-methods", authMiddleware, async (req, res) => {
