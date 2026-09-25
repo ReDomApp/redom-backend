@@ -32,7 +32,7 @@ export function OrdersPaymentsScreen(){
    <Row label="Stars activity" Icon={StarsIcon} onPress={()=>n.navigate("StarsActivity")} colors={colors}/>
    <Text style={[s.section,{color:colors.text}]}>Payment information</Text>
    <Row label="Payment methods" onPress={()=>n.navigate("PaymentMethods")} colors={colors}/>
-   <Row label="Add payment method" onPress={()=>n.navigate("PaymentMethods",{autoAdd:true})} colors={colors}/>
+   <Row label="Add payment method" onPress={()=>n.navigate("AddPaymentMethod")} colors={colors}/>
    <Row label="Subscriptions" Icon={SubscriptionsIcon} onPress={()=>n.navigate("Subscriptions")} colors={colors}/>
    <Text style={[s.section,{color:colors.text}]}>Manage</Text>
    <Row label="Shipping and billing addresses" onPress={()=>n.navigate("PaymentAddresses")} colors={colors}/>
