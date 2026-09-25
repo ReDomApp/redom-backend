@@ -4,6 +4,7 @@ import { Resend } from "resend";
 import { createSupportCase, addSupportMessage, permanentlyCloseSupportCase, sendSupportEmail } from "../support/support.service";
 import { pool } from "../../database/db";
 import { env } from "../../config/env";
+import { twilioSmsProvider } from "../../lib/providers/sms/twilio-sms-provider";
 
 export const REFUND_MINIMUM_REVIEW_MINUTES = 10;
 export const REFUND_FEATURE_ENABLED = true;
@@ -125,9 +126,35 @@ async function closeAndInvalidateRefund(input:{refundRequestId:string;caseId:str
   await permanentlyCloseSupportCase(input.caseId);
 }
 
-async function sendRefundVerificationEmail(email:string,code:string,transactionNumber:string):Promise<void> { const r=await resend.emails.send({from:env.refunds.from,to:[email],subject:"ReDom Refund Verification — "+transactionNumber,text:"Your ReDom Stars refund verification code is "+code+". It expires in 10 minutes. If you did not request this refund, ignore this email."}); if(r.error) throw new Error(r.error.message); }
+async function sendRefundVerificationEmail(email:string,code:string,transactionNumber:string):Promise<void> { const r=await resend.emails.send({from:env.refunds.from,to:[email],subject:"ReDom Refund Verification — "+transactionNumber,text:"Your ReDom Stars refund verification fallback code is "+code+". It expires in 10 minutes. If you did not request this refund, ignore this email."}); if(r.error) throw new Error(r.error.message); }
 
-export async function startStarsRefund(input:{userId:string;transactionNumber:string}):Promise<StarsRefundResult> {
+async function issueRefundSecurityChallenge(refundRequestId:string,userId:string,email:string,phone:string|null,transactionNumber:string):Promise<{channel:string;target:string}> {
+  await pool.query("UPDATE refund_verification_challenges SET consumed_at=COALESCE(consumed_at,now()) WHERE refund_request_id=$1 AND consumed_at IS NULL",[refundRequestId]);
+  const expiresAt=new Date(Date.now()+10*60_000);
+  if(phone) {
+    const code=randomInt(10_000_000,100_000_000).toString();
+    try {
+      await twilioSmsProvider.sendOtp({channel:"sms",to:phone,code,expiresAt});
+      await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'sms',$3,$4,$5,0,3)",[refundRequestId,userId,maskRefundTarget(phone),hashRefundCode(code),expiresAt]);
+      return {channel:"sms",target:maskRefundTarget(phone)??"phone"};
+    } catch {}
+  }
+  const fallback=randomInt(100_000,1_000_000).toString();
+  await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'email',$3,$4,$5,0,3)",[refundRequestId,userId,email,hashRefundCode(fallback),expiresAt]);
+  await sendRefundVerificationEmail(email,fallback,transactionNumber);
+  return {channel:"email",target:email};
+}
+
+export async function issueStarsRefundSecurityChallenge(input:{userId:string;transactionNumber:string}):Promise<StarsRefundResult> {
+  const q=await pool.query("SELECT rr.id,rr.case_id,rr.status,u.email,u.phone_number,sc.case_number FROM refund_requests rr JOIN users u ON u.id=rr.user_id JOIN support_cases sc ON sc.id=rr.case_id WHERE rr.transaction_number=$1 AND rr.user_id=$2 ORDER BY rr.created_at DESC LIMIT 1",[input.transactionNumber.trim().toUpperCase(),input.userId]);
+  if(!q.rows[0]) return {success:false,status:"transaction_required",code:"REFUND_REQUEST_NOT_FOUND",reason:"Refund request not found.",transactionNumber:input.transactionNumber};
+  const row=q.rows[0];
+  const challenge=await issueRefundSecurityChallenge(String(row.id),input.userId,String(row.email),row.phone_number?String(row.phone_number):null,input.transactionNumber.trim().toUpperCase());
+  await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE id=$1",[row.id]);
+  return {success:true,status:"verification_code_sent",transactionNumber:input.transactionNumber.trim().toUpperCase(),caseNumber:String(row.case_number),target:challenge.target};
+}
+
+export async function startStarsRefund(input:{userId:string;transactionNumber:string;caseId?:string;caseNumber?:string}):Promise<StarsRefundResult> {
  const transactionNumber=input.transactionNumber.trim().toUpperCase();
  const tx=await pool.query("SELECT pt.*,u.email,up.id AS profile_id FROM payment_transactions pt JOIN users u ON u.id=pt.user_id LEFT JOIN user_profiles up ON up.user_id=pt.user_id WHERE pt.redom_transaction_id=$1 AND pt.user_id=$2 LIMIT 1",[transactionNumber,input.userId]);
  if(!tx.rows[0]) return {success:false,status:"transaction_not_found",code:"TRANSACTION_NOT_FOUND",reason:"The ReDom Transaction ID could not be found for this account.",transactionNumber};
@@ -140,7 +167,12 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
  const lock=await pool.query("INSERT INTO refund_transaction_locks(transaction_number,user_id,outcome_status) VALUES($1,$2,'requested') ON CONFLICT(transaction_number) DO NOTHING RETURNING transaction_number",[transactionNumber,input.userId]);
  if(!lock.rows[0]) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"A refund request has already been recorded for this ReDom Transaction ID. The transaction cannot be submitted for refund a second time.",transactionNumber};
  let caseRecord:any;
- try { caseRecord=await createSupportCase({userId:input.userId,subject:"ReDom Stars refund "+transactionNumber,category:"refund_payment"}); await pool.query("UPDATE refund_transaction_locks SET case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3",[caseRecord.id,caseRecord.caseNumber,transactionNumber]); } catch(error) { await pool.query("DELETE FROM refund_transaction_locks WHERE transaction_number=$1 AND user_id=$2",[transactionNumber,input.userId]); throw error; }
+ if(input.caseId && input.caseNumber) {
+   caseRecord={id:input.caseId,caseNumber:input.caseNumber};
+   await pool.query("UPDATE refund_transaction_locks SET case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3",[caseRecord.id,caseRecord.caseNumber,transactionNumber]);
+ } else {
+   try { caseRecord=await createSupportCase({userId:input.userId,subject:"ReDom Stars refund "+transactionNumber,category:"refund_payment"}); await pool.query("UPDATE refund_transaction_locks SET case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3",[caseRecord.id,caseRecord.caseNumber,transactionNumber]); } catch(error) { await pool.query("DELETE FROM refund_transaction_locks WHERE transaction_number=$1 AND user_id=$2",[transactionNumber,input.userId]); throw error; }
+ }
  const cutoff=starsRefundCutoff(paidAt); const eligible=Date.now()<cutoff.getTime(); const target=refundTargetFromMetadata(row.metadata);
  await pool.query("INSERT INTO refund_requests(case_id,user_id,product_key,transaction_number,account_profile_id,country_code,currency,amount,status,review_available_at,decision,decision_reason,refund_target_type,refund_target_masked) VALUES($1,$2,'stars_purchase',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",[caseRecord.id,input.userId,transactionNumber,row.profile_id??null,row.country_code??null,row.currency,Number(row.amount_minor??0)/100,eligible?"account_profile_required":"non_refundable",cutoff,eligible?null:"denied",eligible?null:"Stars are rigidly non-refundable after 10 minutes.",target.type,target.masked]);
  if(!eligible) {
@@ -150,28 +182,17 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
   await closeAndInvalidateRefund({refundRequestId:String(request.rows[0].id),caseId:caseRecord.id,transactionNumber,userId:input.userId,caseNumber:caseRecord.caseNumber,outcomeStatus:"non_refundable",reason});
   return nonRefundablePayload(transactionNumber,caseRecord.caseNumber,cutoff);
  }
- const nextStep="Provide your Account Profile ID in the refund verification step. Do not send card numbers, CVV, passwords, PINs, or full bank credentials by email.";
- await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:"Refund request received. Your transaction is eligible for the 10-minute Stars refund review window.\n\nNext step: "+nextStep+"\n\nSupport Case: "+caseRecord.caseNumber});
- await sendRefundSupportStatus({email:String(row.email??""),caseNumber:caseRecord.caseNumber,transactionNumber,status:"Action required — Account Profile verification",reason:"Your refund request has been received and the transaction passed the initial eligibility checks.",target:target.masked,nextStep}).catch(()=>undefined);
- return {success:true,status:"account_profile_required",transactionNumber,caseNumber:caseRecord.caseNumber,target:target.masked};
+ const challenge=await issueRefundSecurityChallenge(String((await pool.query("SELECT id FROM refund_requests WHERE transaction_number=$1 ORDER BY created_at DESC LIMIT 1",[transactionNumber])).rows[0].id),input.userId,String(row.email),row.phone_number?String(row.phone_number):null,transactionNumber);
+ await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE transaction_number=$1",[transactionNumber]);
+ const nextStep=challenge.channel==="sms" ? "Enter the 8-digit security code sent to your verified ReDom phone ("+challenge.target+")." : "Enter the 6-digit fallback security code sent to your ReDom email.";
+ await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:"Refund request received and the transaction has been authenticated to your ReDom account.\n\nNext step: "+nextStep+"\n\nSupport Case: "+caseRecord.caseNumber});
+ await sendRefundSupportStatus({email:String(row.email??""),caseNumber:caseRecord.caseNumber,transactionNumber,status:"Refund request under review — security verification required",reason:"The transaction was matched to your ReDom account.",target:target.masked,nextStep}).catch(()=>undefined);
+ return {success:true,status:"verification_code_sent",transactionNumber,caseNumber:caseRecord.caseNumber,target:challenge.target};
 }
 
 export async function verifyStarsRefundAccountProfile(input:{userId:string;transactionNumber:string;accountProfileId:string}):Promise<StarsRefundResult> {
- const transactionNumber=input.transactionNumber.trim().toUpperCase();
- const q=await pool.query("SELECT rr.*,pt.paid_at,pt.status AS payment_status,u.email FROM refund_requests rr JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number JOIN users u ON u.id=pt.user_id WHERE rr.transaction_number=$1 AND rr.user_id=$2 ORDER BY rr.created_at DESC LIMIT 1",[transactionNumber,input.userId]);
- if(!q.rows[0]) return {success:false,status:"transaction_required",code:"REFUND_REQUEST_NOT_FOUND",reason:"Start the refund request with the ReDom Transaction ID first.",transactionNumber};
- const row=q.rows[0];
- const lock=await pool.query("SELECT outcome_status FROM refund_transaction_locks WHERE transaction_number=$1 AND user_id=$2 LIMIT 1",[transactionNumber,input.userId]);
- if(lock.rows[0]?.outcome_status && ["refunded","refund_rejected","non_refundable","refund_failed"].includes(String(lock.rows[0].outcome_status))) return {success:false,status:"refund_already_requested",code:"REFUND_TRANSACTION_LOCKED",reason:"This ReDom Transaction ID already has a final refund record and cannot be submitted again.",transactionNumber};
- if(String(row.account_profile_id??"")!==input.accountProfileId) return {success:false,status:"account_profile_required",code:"ACCOUNT_PROFILE_MISMATCH",reason:"The Account Profile ID does not match this ReDom account.",transactionNumber};
- const cutoff=starsRefundCutoff(new Date(String(row.paid_at))); if(Date.now()>=cutoff.getTime()) return nonRefundablePayload(transactionNumber,String(row.case_id),cutoff);
- const code=generateRefundCode(); await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at) VALUES($1,$2,'email',$3,$4,now()+interval '10 minutes')",[row.id,row.user_id,String(row.email),hashRefundCode(code)]);
- await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE id=$1",[row.id]);
- await sendRefundVerificationEmail(String(row.email),code,transactionNumber);
- const verifyNextStep="Enter the 6-digit verification code sent to your email within 10 minutes. If you did not request this refund, do not enter the code.";
- await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"Account Profile verified. A refund verification code has been sent to your email.\n\nNext step: "+verifyNextStep});
- await sendRefundSupportStatus({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Verification code sent",reason:"Your Account Profile was verified successfully.",nextStep:verifyNextStep}).catch(()=>undefined);
- return {success:true,status:"verification_code_sent",transactionNumber,target:String(row.email)};
+  // Account Profile is no longer required. Preserve the endpoint for older clients but use the authenticated account security flow.
+  return issueStarsRefundSecurityChallenge({userId:input.userId,transactionNumber:input.transactionNumber});
 }
 
 export async function completeStarsRefund(input:{userId:string;transactionNumber:string;code:string}):Promise<StarsRefundResult> {
@@ -196,23 +217,16 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
  await client.query("UPDATE refund_verification_challenges SET consumed_at=now() WHERE id=$1",[ch.rows[0].id]);
  if(String(row.payment_status)!=="paid") throw new Error("The Stars payment is not currently refundable.");
  const existing=await client.query("SELECT refund_status FROM payment_transactions WHERE id=$1 FOR UPDATE",[row.payment_id]); if(["pending","processing","needs-attention","processed","initiating"].includes(String(existing.rows[0]?.refund_status??""))) throw new Error("A refund has already been initiated for this transaction.");
- const metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{}; const target=refundTargetFromMetadata(metadata); const refundAmountMinor=String(metadata?.paymentDetails?.providerAmountMinor ?? row.amount_minor);
- await client.query("UPDATE refund_requests SET status='refund_processing',decision='approved',decision_reason='Stars refund requested within the 10-minute policy window.',verified_at=now(),review_started_at=now(),reviewed_at=now(),refund_target_type=$1,refund_target_masked=$2,updated_at=now() WHERE id=$3",[target.type,target.masked,row.id]);
- await client.query("UPDATE payment_transactions SET refund_status='initiating',refund_requested_at=now(),refund_error=NULL,updated_at=now() WHERE id=$1",[row.payment_id]); await client.query("COMMIT");
- let refund:any; try { const response=await axios.post("https://api.paystack.co/refund",{transaction:String(row.reference),amount:refundAmountMinor,currency:String(row.currency),customer_note:"ReDom Stars refund "+transactionNumber,merchant_note:"ReDom Stars refund "+transactionNumber},{headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000}); if(!response.data?.status) throw new Error(response.data?.message||"Paystack refund request failed."); refund=response.data.data; } catch(error) { const message=error instanceof Error?error.message:"Paystack refund request failed."; await pool.query("UPDATE payment_transactions SET refund_status='failed',refund_error=$1,updated_at=now() WHERE id=$2",[message.slice(0,500),row.payment_id]); await pool.query("UPDATE refund_requests SET status='refund_failed',decision_reason=$1,updated_at=now() WHERE id=$2",[message.slice(0,1000),row.id]); const failureReason=message;
- await pool.query("UPDATE refund_transaction_locks SET outcome_status='refund_failed',outcome_reason=$1,updated_at=now() WHERE transaction_number=$2 AND user_id=$3",[failureReason,transactionNumber,input.userId]);
- await addSupportMessage({caseId:String(row.case_id),senderType:"system",body:"Refund request failed. Reason: "+failureReason});
- await sendRefundSupportStatus({email:String(row.email??""),caseNumber:String(row.case_number??""),transactionNumber,status:"Refund request failed",reason:failureReason,target:refundTargetDisplay(metadata,target.masked)}).catch(()=>undefined);
- await sendRefundTerminalEmail({email:String(row.email??""),caseNumber:String(row.case_number??""),transactionNumber,status:"Rejected",reason:failureReason,target:refundTargetDisplay(metadata,target.masked),amount:String(refundAmountMinor),currency:String(row.currency)}).catch(()=>undefined);
- await closeAndInvalidateRefund({refundRequestId:String(row.id),caseId:String(row.case_id),transactionNumber,userId:input.userId,caseNumber:String(row.case_number??""),outcomeStatus:"refund_failed",reason:failureReason});
- return {success:false,status:"refund_failed",code:"REFUND_PROVIDER_ERROR",reason:failureReason,transactionNumber,target:target.masked}; }
- await pool.query("UPDATE payment_transactions SET refund_status=$1,refund_id=$2,refund_amount_minor=$3,refund_expected_at=$4,updated_at=now() WHERE id=$5",[String(refund.status||"pending"),refund.id?String(refund.id):null,String(refund.amount??refundAmountMinor),refund.expected_at?new Date(refund.expected_at):null,row.payment_id]);
- await pool.query("UPDATE refund_requests SET status='refund_processing',refund_expected_by=$1,updated_at=now() WHERE id=$2",[refund.expected_at?new Date(refund.expected_at):null,row.id]);
- await pool.query("UPDATE support_cases SET status='awaiting_support',updated_at=now() WHERE id=$1 AND status <> 'closed'",[row.case_id]);
- const processingNextStep="No further action is required right now. ReDom is waiting for the payment provider/bank to process the refund. We will email you when the status changes.";
- await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"Refund request accepted by the payment provider and is now under review/processing.\n\nNext step: "+processingNextStep});
- await sendRefundSupportStatus({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Refund under review",reason:"The payment provider accepted the refund request and is processing it.",target:target.masked,nextStep:processingNextStep}).catch(()=>undefined);
- return {success:true,status:"refund_processing",transactionNumber,refundId:refund.id?String(refund.id):null,refundStatus:String(refund.status||"pending"),target:target.masked};
+ const metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{}; const target=refundTargetFromMetadata(metadata);
+ const reviewAt=new Date(Date.now()+12*60*60*1000);
+ await client.query("UPDATE refund_requests SET status='account_under_review',decision=NULL,decision_reason='Security verification completed. Automated product eligibility review scheduled.',verified_at=now(),review_started_at=now(),review_available_at=$1,updated_at=now() WHERE id=$2",[reviewAt,row.id]);
+ await client.query("INSERT INTO refund_reviews(refund_request_id,eligibility_result,transaction_result,policy_version,started_at) VALUES($1,'pending','verified','stars-refund-v2',now())",[row.id]);
+ await client.query("UPDATE refund_transaction_locks SET outcome_status='account_under_review',outcome_reason='Security verification completed; awaiting automated product review.',updated_at=now() WHERE transaction_number=$1",[transactionNumber]);
+ await client.query("COMMIT");
+ const reviewNext="Your security verification was successful. ReDom will review the specific product, transaction state, refund rules, and whether the product has already been used. This review can take up to 12 hours.";
+ await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"Security verification successful. Your refund request is now under review.\n\nNext step: "+reviewNext+"\n\nCase Number: "+String(row.case_number)});
+ await sendRefundSupportStatus({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Refund request under review",reason:"Security verification was successful and the refund review has started.",target:target.masked,nextStep:reviewNext}).catch(()=>undefined);
+ return {success:true,status:"account_under_review",transactionNumber,caseNumber:String(row.case_number),target:target.masked};
  } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
 }
 
