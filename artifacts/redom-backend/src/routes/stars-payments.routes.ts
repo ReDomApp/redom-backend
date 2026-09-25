@@ -23,7 +23,7 @@ const countries: Country[] = [
 ];
 
 const packages = [
-  { key: "stars_2", stars: 2, usdPrice: 0.50, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
+  { key: "stars_2", stars: 2, usdPrice: 0.20, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
   { key: "stars_10", stars: 10, usdPrice: 2.21, firstPurchaseUsdPrice: 1.99, firstPurchaseDiscountPercent: 10, popular: false },
   { key: "stars_20", stars: 20, usdPrice: 2.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
   { key: "stars_50", stars: 50, usdPrice: 4.87, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
