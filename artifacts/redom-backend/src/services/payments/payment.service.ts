@@ -9,12 +9,14 @@ const STANDARD_NGN = 4500;
 
 type PaystackResponse<T> = { status: boolean; message: string; data: T };
 type InitializeData = { authorization_url: string; access_code: string; reference: string };
-type VerifyData = { id: number; status: string; reference: string; amount: number; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; message?: string | null; gateway_response?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };
+type VerifyData = { id: number; status: string; reference: string; amount: number; requested_amount?: number | null; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; message?: string | null; gateway_response?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };
 type RefundData = { id?: number; status?: string; amount?: number; currency?: string; expected_at?: string | null; refunded_at?: string | null; transaction?: { id?: number; reference?: string }; message?: string };
 type PaymentContext = { transactionId: string; redomTransactionId?: string | null; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
 
 async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string, force = false): Promise<void> {
-  if ((!force && verified.status === "success") || !verified.id || verified.amount <= 0) return;
+  // Automatic refunds are reserved for explicitly requested setup flows.
+  // Never refund a normal Stars purchase merely because local fulfillment fails.
+  if (!force || verified.status !== "success" || !verified.id || verified.amount <= 0) return;
   try {
     const refund = await paystack<RefundData>("post", "/refund", {
       transaction: String(verified.id),
@@ -171,7 +173,12 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
     const tx = await client.query("SELECT * FROM payment_transactions WHERE reference = $1 FOR UPDATE", [referenceValue]);
     if (!tx.rows[0]) throw new Error("Payment transaction not found.");
     const row = tx.rows[0];
-    if (String(row.amount_minor) !== String(verified.amount) || String(row.currency) !== String(verified.currency)) {
+    // Paystack bank-transfer payments can include a customer-paid transfer
+    // fee in data.amount. Paystack exposes the merchant/product amount as
+    // requested_amount. Validate against that amount, while preserving the
+    // gross provider amount for audit.
+    const providerRequestedAmount = verified.requested_amount ?? verified.amount;
+    if (String(row.amount_minor) !== String(providerRequestedAmount) || String(row.currency) !== String(verified.currency)) {
       throw new Error("Payment amount or currency did not match the authorized transaction.");
     }
     if (verified.status !== "success") {
@@ -187,6 +194,8 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
       providerReference: String(verified.reference),
       channel: verified.channel ?? verified.authorization?.channel ?? null,
       type: verified.authorization?.card_type || verified.authorization?.brand || null,
+      providerAmountMinor: verified.amount,
+      requestedAmountMinor: providerRequestedAmount,
       bank: verified.authorization?.bank || verified.authorization?.sender_bank || null,
       account: verified.authorization?.sender_bank_account_number || (verified.authorization?.last4 ? "••••" + String(verified.authorization.last4) : null),
       countryCode: verified.authorization?.country_code ?? null,
@@ -267,13 +276,11 @@ export async function verifyPayment(userId: string, referenceValue: string): Pro
   const verified = await verifyWithProvider(referenceValue);
   try {
     const payment = await applyVerifiedPayment(referenceValue, verified);
-    if (payment.status !== "paid") {
-      await requestAutomaticRefund(referenceValue, verified, payment.transactionId);
-    }
     await sendPaymentEmailIfNeeded(payment.transactionId);
     return payment;
   } catch (error) {
-    await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), true);
+    // A successful provider charge remains available for reconciliation.
+    // Never auto-refund it because local verification/fulfillment failed.
     await recordPaymentFailureAndEmail(referenceValue, error instanceof Error ? error.message : "Payment verification failed.");
     throw error;
   }
@@ -288,7 +295,7 @@ export async function verifyPaymentFromCallback(referenceValue: string): Promise
     if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id));
     return payment;
   } catch (error) {
-    if (tx.rows[0]?.id) await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), true);
+    // Keep successful Stars charges reconcilable; do not auto-refund them.
     await recordPaymentFailureAndEmail(referenceValue, error instanceof Error ? error.message : "Payment verification failed.");
     throw error;
   }
@@ -309,7 +316,18 @@ export async function handlePaymentWebhook(rawBody: Buffer, signature: string | 
   try {
     if (event === "charge.success" && data.reference) {
       const verified = await verifyWithProvider(String(data.reference));
-      const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [String(data.reference)]); try { const payment = await applyVerifiedPayment(String(data.reference), verified); if ((payment.status !== "paid" || payment.purpose === "payment_method_setup") && tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), payment.purpose === "payment_method_setup"); if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id)); } catch (error) { if (tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), true); throw error; }
+      const tx = await pool.query("SELECT id, purpose FROM payment_transactions WHERE reference=$1 LIMIT 1", [String(data.reference)]);
+      try {
+        const payment = await applyVerifiedPayment(String(data.reference), verified);
+        if (payment.purpose === "payment_method_setup" && tx.rows[0]?.id) {
+          await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), true);
+        }
+        if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id));
+      } catch (error) {
+        // Paystack will retry charge.success after a non-2xx response.
+        // Do not refund successful Stars payments during local failures.
+        throw error;
+      }
     }
     if (event === "subscription.create" && data.subscription_code) {
       const email = data.customer?.email ? String(data.customer.email).toLowerCase() : null;
