@@ -71,8 +71,8 @@ const moreRows = [
 
 const settingsRows = [
   { label: "Settings", Icon: SettingsIcon, route: "Settings" as const },
-  { label: "Privacy Center · Under Development", Icon: PrivacyIcon },
-  { label: "Time management · Under Development", Icon: TimeIcon },
+  { label: "Privacy Center", Icon: PrivacyIcon, route: "PrivacySettings" as const },
+  { label: "Time management", Icon: TimeIcon, route: "Settings" as const },
   { label: "Device requests", Icon: DeviceRequestsIcon, route: "LinkedDevices" as const },
   { label: "Recent ad activity", Icon: AdsIcon, route: "Settings" as const },
   { label: "Orders and payments", Icon: OrdersIcon, route: "OrdersPayments" as const },
@@ -223,7 +223,19 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 <Text style={styles.sectionTitle}>Settings and privacy</Text>
                 <Text style={styles.sectionChevron}>{settingsOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
-              {settingsOpen ? settingsRows.map((item) => row(item.label, item.Icon, () => go(item.route))) : null}
+              {settingsOpen ? settingsRows.map((item) => row(item.label, item.Icon, () => {
+                if (item.label === "Privacy Center") {
+                  close();
+                  setTimeout(() => Alert.alert("Privacy Center", "Under Development"), 190);
+                  return;
+                }
+                if (item.label === "Time management") {
+                  close();
+                  setTimeout(() => Alert.alert("Time management", "Under Development"), 190);
+                  return;
+                }
+                if (item.route) go(item.route);
+              })) : null}
 
               <View style={styles.divider} />
               <Pressable style={styles.sectionHeader} onPress={() => setUpgradesOpen((v) => !v)}>
