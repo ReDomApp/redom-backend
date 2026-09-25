@@ -344,11 +344,11 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
 
   const supportText=terminal?bankStatus+" — "+customerStatus+". "+reason+" Destination: "+target+". The refund case is now closed and the transaction is permanently locked against another refund request.":bankStatus+" — "+customerStatus+". "+reason+" Destination: "+target+".";
   await addSupportMessage({caseId:String(rr.case_id),senderType:"system",body:supportText});
-  if(!terminal) await pool.query("UPDATE support_cases SET status='awaiting_support',updated_at=now() WHERE id=$1 AND status <> 'closed'",[rr.case_id]);
-  if(String(rr.email)) await sendRefundSupportStatus({
+  if(String(rr.email)) await sendRefundProviderEmail({
     email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),
     status:bankStatus+" — "+customerStatus,reason,target,
-    nextStep:terminal ? "No further action is required. This refund case is closed." : "No reply is required while the refund is being processed. ReDom will email you automatically when the bank/provider reports another status change."
+    refundId:data?.refund_reference?String(data.refund_reference):null,
+    amount:String(row.amount_minor),currency:String(rr.currency)
   }).catch(()=>undefined);
 
   if(terminal) {
