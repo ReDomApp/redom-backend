@@ -105,7 +105,7 @@ export const REDOM_SUPPORT_POLICY_DOCUMENTS: ReDomPolicyDocument[] = [
   ] },
   { slug: "refunds", title: "ReDom Refund Policy", summary: "Product and country-specific rules for supported refund requests.", sections: [
     { heading: "Availability", body: "Refunds are available only when the applicable product and regional refund policy permits them." },
-    { heading: "Verification", body: "A supported request may require transaction details, Account Profile ID and linked-contact verification." },
+    { heading: "Verification", body: "A refund request must originate from an email address connected to an existing ReDom account, must identify a transaction belonging to that account, and must complete linked-contact security verification. ReDom may send an 8-digit security code to the verified phone, with a 6-digit email fallback when phone delivery is unavailable." },
     { heading: "Review", body: "Refund decisions are made by the authorized refund workflow, not ReDom AI or the frontend." },
     { heading: "Status", body: "The application must show only backend-confirmed refund states." },
   ] },
