@@ -259,10 +259,10 @@ router.post("/payment-methods/setup", authMiddleware, async (req,res)=>{
     const countryForCurrency = countries.find((item) => item.currency === currency);
     if (!countryForCurrency) return res.status(400).json({success:false,message:"Your current payment currency is not supported for secure card setup."});
     // Temporary card validation charge: exactly the configured local-currency
-    // equivalent of USD $1.00, refunded immediately after provider success.
-    const setupAmountMinor = Math.max(1, Math.round(fxRate(countryForCurrency) * 100));
+    // equivalent of USD $0.25, refunded immediately after provider success.
+    const setupAmountMinor = Math.max(1, Math.round(fxRate(countryForCurrency) * 25));
     const reference=makeSetupReference();
-    const metadata={purpose:"payment_method_setup",customerEmail:String(user.email),currency,setupAmountMinor,verificationUsdAmount:1};
+    const metadata={purpose:"payment_method_setup",customerEmail:String(user.email),currency,setupAmountMinor,verificationUsdAmount:0.25};
     const inserted=await pool.query(`INSERT INTO payment_transactions
       (user_id,reference,amount_minor,currency,purpose,status,metadata,customer_email)
       VALUES($1,$2,$3,$4,'payment_method_setup','initialized',$5::jsonb,$6) RETURNING id`,
