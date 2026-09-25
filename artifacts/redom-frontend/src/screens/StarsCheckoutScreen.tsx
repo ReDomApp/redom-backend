@@ -82,7 +82,7 @@ export function StarsCheckoutScreen(){
      <Text style={s.failIcon}>!</Text><Text style={[s.resultTitle,{color:colors.text}]}>Payment failed</Text>
      <Text style={[s.resultText,{color:colors.textSecondary}]}>{errorMessage||"We couldn't complete this payment."}</Text>
      <Text style={[s.muted,{color:colors.textSecondary}]}>A payment result has been sent to {email.trim()}.</Text>
-     <Pressable onPress={()=>void initialize("card")} style={[s.button,{backgroundColor:colors.primary}]}><Text style={s.buttonText}>Try another payment method</Text></Pressable>
+     <Pressable onPress={()=>void initialize()} style={[s.button,{backgroundColor:colors.primary}]}><Text style={s.buttonText}>Try another payment method</Text></Pressable>
      <Pressable onPress={()=>void initialize("bank_transfer")} style={[s.secondaryButton,{borderColor:colors.border}]}><Text style={[s.secondaryText,{color:colors.text}]}>Try Bank Transfer</Text></Pressable>
     </View>
    </View>
