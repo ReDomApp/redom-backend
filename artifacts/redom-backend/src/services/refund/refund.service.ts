@@ -227,6 +227,7 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
   let finalStatus:string;
   let customerStatus:string;
   let terminal=false;
+  let bankStatus:string;
   if(refundStatus==="processed") {
     let metadata:any={}; try { metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{}; } catch {}
     const stars=Number(metadata?.stars??0);
@@ -241,15 +242,15 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
         await client.query("INSERT INTO redom_stars_transactions(user_id,payment_transaction_id,type,stars,balance_after,package_key,currency,amount_minor,reference) VALUES($1,$2,'refund',$3,$4,$5,$6,$7,$8)",[row.user_id,row.id,-stars,next.toString(),metadata?.packageKey??null,metadata?.currency??null,row.amount_minor,"refund:"+reference]);
       }
     }
-    finalStatus="refunded"; customerStatus="Refund Successful"; terminal=true;
+    finalStatus="refunded"; bankStatus="Bank processed"; customerStatus="Refund Successful"; terminal=true;
   } else if(refundStatus==="failed") {
-    finalStatus="refund_rejected"; customerStatus="Refund Rejected"; terminal=true;
+    finalStatus="refund_rejected"; bankStatus="Bank rejected"; customerStatus="Refund Rejected"; terminal=true;
   } else if(refundStatus==="needs-attention") {
-    finalStatus="refund_needs_attention"; customerStatus="Bank details required"; terminal=false;
+    finalStatus="refund_needs_attention"; bankStatus="Bank details required"; customerStatus="Refund requires bank details"; terminal=false;
   } else if(refundStatus==="processing") {
-    finalStatus="refund_processing"; customerStatus="Refund under review"; terminal=false;
+    finalStatus="refund_processing"; bankStatus="Bank processing"; customerStatus="Refund under review"; terminal=false;
   } else {
-    finalStatus="refund_processing"; customerStatus="Refund under review"; terminal=false;
+    finalStatus="refund_processing"; bankStatus="Bank review pending"; customerStatus="Refund under review"; terminal=false;
   }
   if(previousStatus===finalStatus) { await client.query("COMMIT"); return; }
 
@@ -257,12 +258,12 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
   await client.query("UPDATE refund_transaction_locks SET outcome_status=$1,outcome_reason=$2,refund_id=COALESCE($3,refund_id),updated_at=now() WHERE transaction_number=$4",[finalStatus,reason,data?.refund_reference?String(data.refund_reference):null,row.redom_transaction_id]);
   await client.query("COMMIT");
 
-  const supportText=terminal?customerStatus+". "+reason+" Destination: "+target+". The refund case is now closed and the transaction is permanently locked against another refund request.":customerStatus+". "+reason+" Destination: "+target+".";
+  const supportText=terminal?bankStatus+" — "+customerStatus+". "+reason+" Destination: "+target+". The refund case is now closed and the transaction is permanently locked against another refund request.":bankStatus+" — "+customerStatus+". "+reason+" Destination: "+target+".";
   await addSupportMessage({caseId:String(rr.case_id),senderType:"system",body:supportText});
-  if(String(rr.email)) await sendRefundSupportStatus({email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),status:customerStatus,reason,target}).catch(()=>undefined);
+  if(String(rr.email)) await sendRefundSupportStatus({email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),status:bankStatus+" — "+customerStatus,reason,target}).catch(()=>undefined);
 
   if(terminal) {
-    if(String(rr.email)) await sendRefundTerminalEmail({email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),status:customerStatus,reason,target,amount:String(row.amount_minor),currency:String(rr.currency),refundId:data?.refund_reference?String(data.refund_reference):null}).catch(()=>undefined);
+    if(String(rr.email)) await sendRefundTerminalEmail({email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),status:bankStatus+" — "+customerStatus,reason,target,amount:String(row.amount_minor),currency:String(rr.currency),refundId:data?.refund_reference?String(data.refund_reference):null}).catch(()=>undefined);
     await pool.query("UPDATE refund_requests SET case_invalidated_at=COALESCE(case_invalidated_at,now()),updated_at=now() WHERE id=$1",[rr.id]);
     await pool.query("UPDATE refund_transaction_locks SET invalidated_at=COALESCE(invalidated_at,now()),updated_at=now() WHERE transaction_number=$1",[row.redom_transaction_id]);
     await permanentlyCloseSupportCase(String(rr.case_id));
