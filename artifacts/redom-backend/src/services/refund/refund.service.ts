@@ -296,7 +296,7 @@ export async function sendRefundProviderEmail(input:{email:string;caseNumber:str
  const targetLine=input.target ? "\nRefund destination: "+input.target : "";
  const amountLine=input.amount && input.currency ? "\nAmount: "+input.amount+" "+input.currency : "";
  const refundLine=input.refundId ? "\nRefund ID: "+input.refundId : "";
- const {error}=await resend.emails.send({from:env.refunds.from,to:[input.email],subject:"ReDom Refunds — "+input.status+" — "+input.transactionNumber,text:"ReDom Refund Services\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+amountLine+targetLine+refundLine+"\n\nCase Number: "+input.caseNumber+"\n\n"+REFUND_SECURITY_WARNING+"\n\n"+REFUND_SECURITY_WARNING});
+ const {error}=await resend.emails.send({from:env.refunds.from,to:[input.email],subject:"ReDom Refunds — "+input.status+" — "+input.transactionNumber,text:"ReDom Refund Services\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+amountLine+targetLine+refundLine+"\n\nCase Number: "+input.caseNumber+"\n\n"+REFUND_SECURITY_WARNING});
  if(error) throw new Error(error.message);
 }
 
