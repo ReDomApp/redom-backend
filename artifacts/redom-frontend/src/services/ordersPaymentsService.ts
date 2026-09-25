@@ -1,6 +1,7 @@
 import { api } from "../api/client";
 
-export interface PaymentTransactionSummary { id:string; reference:string; redomTransactionId:string|null; amountMinor:string; currency:string; purpose:string; status:string; createdAt:string; paidAt:string|null; metadata:any; }\nexport interface OrderSummary {
+export interface PaymentTransactionSummary { id:string; reference:string; redomTransactionId:string|null; amountMinor:string; currency:string; purpose:string; status:string; createdAt:string; paidAt:string|null; metadata:any; }
+export interface OrderSummary {
   transactionId: string; title: string; quantity: number; totalPrice: string; currency: string;
   paymentStatus: string; orderStatus: string; trackingNumber: string | null; courierName: string | null;
   estimatedDeliveryDate: string | null; createdAt: string; updatedAt: string;
