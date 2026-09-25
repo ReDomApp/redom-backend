@@ -225,6 +225,7 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
  await client.query("COMMIT");
  const reviewNext="Your security verification was successful. ReDom will review the specific product, transaction state, refund rules, and whether the product has already been used. This review can take up to 12 hours.";
  await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"Security verification successful. Your refund request is now under review.\n\nNext step: "+reviewNext+"\n\nCase Number: "+String(row.case_number)});
+ await pool.query("UPDATE support_cases SET status='awaiting_support',updated_at=now() WHERE id=$1 AND status <> 'closed'",[row.case_id]);
  await sendRefundSupportStatus({email:String(row.email),caseNumber:String(row.case_number),transactionNumber,status:"Refund request under review",reason:"Security verification was successful and the refund review has started.",target:target.masked,nextStep:reviewNext}).catch(()=>undefined);
  return {success:true,status:"account_under_review",transactionNumber,caseNumber:String(row.case_number),target:target.masked};
  } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
