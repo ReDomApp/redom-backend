@@ -10,7 +10,7 @@ import { sendRefundDecisionEmail, REFUND_EMAIL_SECURITY_WARNING } from "./refund
 
 export const REFUND_MINIMUM_REVIEW_MINUTES = 10;
 export const REFUND_FEATURE_ENABLED = true;
-export const STARS_REFUND_WINDOW_MINUTES = 10;
+export const STARS_REFUND_WINDOW_MINUTES = 60;
 const resend = new Resend(env.email.resend.apiKey);
 const REFUND_SECURITY_WARNING = REFUND_EMAIL_SECURITY_WARNING;
 
@@ -115,7 +115,7 @@ function refundIdentifierMatches(candidate:string,row:any):boolean {
  return c===tx || c===ref || c===normalizeRefundTransactionNumber(tx).toUpperCase() || c===normalizeRefundTransactionNumber(ref).toUpperCase();
 }
 function starsRefundCutoff(paidAt:Date):Date { return new Date(paidAt.getTime()+STARS_REFUND_WINDOW_MINUTES*60_000); }
-function nonRefundablePayload(transactionNumber:string,caseNumber:string,cutoff:Date):StarsRefundResult { return {success:false,status:"non_refundable",code:"STARS_NON_REFUNDABLE",reason:"ReDom Stars are non-refundable 10 minutes after the purchase is completed.",transactionNumber,caseNumber}; }
+function nonRefundablePayload(transactionNumber:string,caseNumber:string,cutoff:Date):StarsRefundResult { return {success:false,status:"non_refundable",code:"STARS_NON_REFUNDABLE",reason:"ReDom Stars are non-refundable 1 hour after the purchase is completed.",transactionNumber,caseNumber}; }
 function refundTargetFromMetadata(metadata:any):{type:string;masked:string|null} { const d=metadata?.paymentDetails??{}; const channel=String(d.channel??"").toLowerCase(); if(channel.includes("card")) return {type:"card",masked:d.last4?"•••• "+String(d.last4).slice(-4):"original card"}; return {type:channel.includes("bank")||channel.includes("transfer")?"bank_account":"original_payment_rail",masked:d.account?String(d.account):"original payment account"}; }
 
 function refundTargetDisplay(metadata:any, fallbackMasked:string|null):string {
@@ -203,9 +203,9 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
    try { caseRecord=await createSupportCase({userId:input.userId,subject:"ReDom Stars refund "+transactionNumber,category:"refund_payment"}); await pool.query("UPDATE refund_transaction_locks SET case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3",[caseRecord.id,caseRecord.caseNumber,transactionNumber]); } catch(error) { await pool.query("DELETE FROM refund_transaction_locks WHERE transaction_number=$1 AND user_id=$2",[transactionNumber,input.userId]); throw error; }
  }
  const cutoff=starsRefundCutoff(paidAt); const eligible=Date.now()<cutoff.getTime(); const target=refundTargetFromMetadata(row.metadata);
- await pool.query("INSERT INTO refund_requests(case_id,user_id,product_key,transaction_number,account_profile_id,country_code,currency,amount,status,review_available_at,decision,decision_reason,refund_target_type,refund_target_masked) VALUES($1,$2,'stars_purchase',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",[caseRecord.id,input.userId,transactionNumber,row.profile_id??null,row.country_code??null,row.currency,Number(row.amount_minor??0)/100,eligible?"account_profile_required":"non_refundable",cutoff,eligible?null:"denied",eligible?null:"Stars are rigidly non-refundable after 10 minutes.",target.type,target.masked]);
+ await pool.query("INSERT INTO refund_requests(case_id,user_id,product_key,transaction_number,account_profile_id,country_code,currency,amount,status,review_available_at,decision,decision_reason,refund_target_type,refund_target_masked) VALUES($1,$2,'stars_purchase',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",[caseRecord.id,input.userId,transactionNumber,row.profile_id??null,row.country_code??null,row.currency,Number(row.amount_minor??0)/100,eligible?"account_profile_required":"non_refundable",cutoff,eligible?null:"denied",eligible?null:"Stars are rigidly non-refundable after 1 hour.",target.type,target.masked]);
  if(!eligible) {
-  const reason="ReDom Stars are rigidly non-refundable after 10 minutes.";
+  const reason="ReDom Stars are rigidly non-refundable after 1 hour.";
   await addSupportMessage({caseId:caseRecord.id,senderType:"system",body:"Refund denied: "+reason+" Status: non_refundable. Cutoff: "+cutoff.toISOString()+"."});
   const request=await pool.query("SELECT id FROM refund_requests WHERE transaction_number=$1 ORDER BY created_at DESC LIMIT 1",[transactionNumber]);
   await closeAndInvalidateRefund({refundRequestId:String(request.rows[0].id),caseId:caseRecord.id,transactionNumber,userId:input.userId,caseNumber:caseRecord.caseNumber,outcomeStatus:"non_refundable",reason});
