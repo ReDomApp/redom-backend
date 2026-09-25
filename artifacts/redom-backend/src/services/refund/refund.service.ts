@@ -6,6 +6,7 @@ import { sendRefundCaseEmail } from "../support/supportEmail.service";
 import { pool } from "../../database/db";
 import { env } from "../../config/env";
 import { twilioSmsProvider } from "../../lib/providers/sms/twilio-sms-provider";
+import { sendRefundDecisionEmail, REFUND_EMAIL_SECURITY_WARNING } from "./refundDecisionEmail.service";
 
 export const REFUND_MINIMUM_REVIEW_MINUTES = 10;
 export const REFUND_FEATURE_ENABLED = true;
@@ -121,22 +122,6 @@ async function sendRefundSupportStatus(input:{email:string;caseNumber:string;tra
     target: input.target ?? null,
     nextStep: input.nextStep ?? null,
     securityWarning: REFUND_SECURITY_WARNING,
-  });
-}
-
-async function sendRefundTerminalEmail(input:{email:string;caseNumber:string;transactionNumber:string;status:string;reason:string;target:string;amount:string;currency:string;refundId?:string|null}):Promise<void> {
-  await sendRefundCaseEmail({
-    to: input.email,
-    caseNumber: input.caseNumber,
-    transactionNumber: input.transactionNumber,
-    status: input.status,
-    reason: input.reason,
-    amount: input.amount,
-    currency: input.currency,
-    target: input.target,
-    refundId: input.refundId ?? null,
-    securityWarning: REFUND_SECURITY_WARNING,
-    terminal: true,
   });
 }
 
@@ -307,11 +292,30 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
 }
 
 export async function sendRefundProviderEmail(input:{email:string;caseNumber:string;transactionNumber:string;status:string;reason:string;target?:string|null;refundId?:string|null;amount?:string;currency?:string}):Promise<void> {
- const targetLine=input.target ? "\nRefund destination: "+input.target : "";
- const amountLine=input.amount && input.currency ? "\nAmount: "+input.amount+" "+input.currency : "";
- const refundLine=input.refundId ? "\nRefund ID: "+input.refundId : "";
- const {error}=await resend.emails.send({from:env.refunds.from,to:[input.email],subject:"ReDom Refunds — "+input.status+" — "+input.transactionNumber,text:"ReDom Refund Services\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+amountLine+targetLine+refundLine+"\n\nCase Number: "+input.caseNumber+"\n\n"+REFUND_SECURITY_WARNING});
- if(error) throw new Error(error.message);
+ const normalizedStatus=input.status.toLowerCase();
+ const decision: "approved"|"rejected"|"provider_failure"|"non_refundable"|"processing" =
+   /provider.?failed|provider.?error|provider could not|provider rejected|refund failed/i.test(input.status+" "+input.reason)
+     ? "provider_failure"
+     : /non.?refundable|window expired|request closed/i.test(input.status+" "+input.reason)
+       ? "non_refundable"
+       : /rejected|denied/i.test(input.status+" "+input.reason)
+         ? "rejected"
+         : /approved|successful|processed|initiated|completed/i.test(normalizedStatus)
+           ? "approved"
+           : "processing";
+
+ await sendRefundDecisionEmail({
+   customerEmail: input.email,
+   transactionNumber: input.transactionNumber,
+   caseNumber: input.caseNumber,
+   status: input.status,
+   decision,
+   reason: input.reason,
+   amount: input.amount ?? "0",
+   currency: input.currency ?? "",
+   target: input.target ?? "original payment rail",
+   refundId: input.refundId ?? null,
+ });
 }
 
 export async function processRefundSupportEmail(input:{senderEmail:string;message:string;subject?:string|null;caseNumber?:string|null}):Promise<{handled:boolean;caseNumber?:string|null}> {
@@ -458,9 +462,7 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
     refundId:data?.refund_reference?String(data.refund_reference):null,
     amount:String(row.amount_minor),currency:String(rr.currency)
   }).catch(()=>undefined);
-
   if(terminal) {
-    if(String(rr.email)) await sendRefundTerminalEmail({email:String(rr.email),caseNumber:String(rr.case_number),transactionNumber:String(row.redom_transaction_id),status:bankStatus+" — "+customerStatus,reason,target,amount:String(row.amount_minor),currency:String(rr.currency),refundId:data?.refund_reference?String(data.refund_reference):null}).catch(()=>undefined);
     await pool.query("UPDATE refund_requests SET case_invalidated_at=COALESCE(case_invalidated_at,now()),updated_at=now() WHERE id=$1",[rr.id]);
     await pool.query("UPDATE refund_transaction_locks SET invalidated_at=COALESCE(invalidated_at,now()),updated_at=now() WHERE transaction_number=$1",[row.redom_transaction_id]);
     await permanentlyCloseSupportCase(String(rr.case_id));
