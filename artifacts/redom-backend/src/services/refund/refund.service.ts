@@ -1,9 +1,14 @@
 import { createHash, randomInt, randomUUID } from "node:crypto";
+import axios from "axios";
+import { Resend } from "resend";
+import { createSupportCase, addSupportMessage } from "../support/support.service";
 import { pool } from "../../database/db";
 import { env } from "../../config/env";
 
 export const REFUND_MINIMUM_REVIEW_MINUTES = 10;
-export const REFUND_FEATURE_ENABLED = env.refunds.enabled;
+export const REFUND_FEATURE_ENABLED = true;
+export const STARS_REFUND_WINDOW_MINUTES = 10;
+const resend = new Resend(env.email.resend.apiKey);
 
 export type RefundStatus =
   | "transaction_required"
@@ -76,4 +81,73 @@ export function buildRefundCompletionEmail(input: {
 
 export function buildRefundSupportClosureReply(input: { transactionNumber: string; caseNumber: string }): string {
   return `Your refund for transaction ${input.transactionNumber} has been completed.\n\nThis refund support case is now closed. For security, case number ${input.caseNumber} has been invalidated and cannot be reused.`;
+}
+
+
+export type StarsRefundResult = { success:boolean; status:string; code?:string; reason?:string; transactionNumber?:string; caseNumber?:string; refundId?:string|null; refundStatus?:string|null; target?:string|null };
+function starsRefundCutoff(paidAt:Date):Date { return new Date(paidAt.getTime()+STARS_REFUND_WINDOW_MINUTES*60_000); }
+function nonRefundablePayload(transactionNumber:string,caseNumber:string,cutoff:Date):StarsRefundResult { return {success:false,status:"non_refundable",code:"STARS_NON_REFUNDABLE",reason:"ReDom Stars are non-refundable 10 minutes after the purchase is completed.",transactionNumber,caseNumber}; }
+function refundTargetFromMetadata(metadata:any):{type:string;masked:string|null} { const d=metadata?.paymentDetails??{}; const channel=String(d.channel??"").toLowerCase(); if(channel.includes("card")) return {type:"card",masked:d.last4?"•••• "+String(d.last4).slice(-4):"original card"}; return {type:channel.includes("bank")||channel.includes("transfer")?"bank_account":"original_payment_rail",masked:d.account?String(d.account):"original payment account"}; }
+async function sendRefundVerificationEmail(email:string,code:string,transactionNumber:string):Promise<void> { const r=await resend.emails.send({from:env.refunds.from,to:[email],subject:"ReDom Refund Verification — "+transactionNumber,text:"Your ReDom Stars refund verification code is "+code+". It expires in 10 minutes. If you did not request this refund, ignore this email."}); if(r.error) throw new Error(r.error.message); }
+
+export async function startStarsRefund(input:{userId:string;transactionNumber:string}):Promise<StarsRefundResult> {
+ const transactionNumber=input.transactionNumber.trim().toUpperCase();
+ const caseRecord=await createSupportCase({userId:input.userId,subject:"ReDom Stars refund "+transactionNumber,category:"refund_payment"});
+ const tx=await pool.query("SELECT pt.*,u.email,up.id AS profile_id FROM payment_transactions pt JOIN users u ON u.id=pt.user_id LEFT JOIN user_profiles up ON up.user_id=pt.user_id WHERE pt.redom_transaction_id=$1 AND pt.user_id=$2 LIMIT 1",[transactionNumber,input.userId]);
+ if(!tx.rows[0]) { await addSupportMessage({caseId:caseRecord.id,senderType:"system",body:"Refund request could not be matched to an owned ReDom transaction."}); return {success:false,status:"transaction_not_found",code:"TRANSACTION_NOT_FOUND",reason:"The ReDom Transaction ID could not be found for this account.",transactionNumber,caseNumber:caseRecord.caseNumber}; }
+ const row=tx.rows[0];
+ if(String(row.purpose)!=="stars_purchase") return {success:false,status:"not_refundable_product",code:"NOT_STARS_PURCHASE",reason:"Only ReDom Stars purchases use this refund policy.",transactionNumber,caseNumber:caseRecord.caseNumber};
+ if(String(row.status)!=="paid") return {success:false,status:"not_refundable_status",code:"TRANSACTION_NOT_PAID",reason:"This transaction is not a completed Stars purchase.",transactionNumber,caseNumber:caseRecord.caseNumber};
+ const paidAt=row.paid_at?new Date(String(row.paid_at)):null; if(!paidAt) return {success:false,status:"not_refundable_status",code:"PAID_AT_MISSING",reason:"The completed payment has no refund timestamp.",transactionNumber,caseNumber:caseRecord.caseNumber};
+ const cutoff=starsRefundCutoff(paidAt); const eligible=Date.now()<cutoff.getTime(); const target=refundTargetFromMetadata(row.metadata);
+ await pool.query("INSERT INTO refund_requests(case_id,user_id,product_key,transaction_number,account_profile_id,country_code,currency,amount,status,review_available_at,decision,decision_reason,refund_target_type,refund_target_masked) VALUES($1,$2,'stars_purchase',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",[caseRecord.id,input.userId,transactionNumber,row.profile_id??null,row.country_code??null,row.currency,Number(row.amount_minor??0)/100,eligible?"account_profile_required":"non_refundable",cutoff,eligible?null:"denied",eligible?null:"Stars are rigidly non-refundable after 10 minutes.",target.type,target.masked]);
+ if(!eligible) { await addSupportMessage({caseId:caseRecord.id,senderType:"system",body:"Refund denied: ReDom Stars are non-refundable after 10 minutes. Status: non_refundable. Cutoff: "+cutoff.toISOString()+"."}); return nonRefundablePayload(transactionNumber,caseRecord.caseNumber,cutoff); }
+ await addSupportMessage({caseId:caseRecord.id,senderType:"system",body:"Stars refund transaction matched. Account Profile verification is required before the refund can be initiated."});
+ return {success:true,status:"account_profile_required",transactionNumber,caseNumber:caseRecord.caseNumber,target:target.masked};
+}
+
+export async function verifyStarsRefundAccountProfile(input:{userId:string;transactionNumber:string;accountProfileId:string}):Promise<StarsRefundResult> {
+ const transactionNumber=input.transactionNumber.trim().toUpperCase();
+ const q=await pool.query("SELECT rr.*,pt.paid_at,pt.status AS payment_status,u.email FROM refund_requests rr JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number JOIN users u ON u.id=pt.user_id WHERE rr.transaction_number=$1 AND rr.user_id=$2 ORDER BY rr.created_at DESC LIMIT 1",[transactionNumber,input.userId]);
+ if(!q.rows[0]) return {success:false,status:"transaction_required",code:"REFUND_REQUEST_NOT_FOUND",reason:"Start the refund request with the ReDom Transaction ID first.",transactionNumber};
+ const row=q.rows[0]; if(String(row.account_profile_id??"")!==input.accountProfileId) return {success:false,status:"account_profile_required",code:"ACCOUNT_PROFILE_MISMATCH",reason:"The Account Profile ID does not match this ReDom account.",transactionNumber};
+ const cutoff=starsRefundCutoff(new Date(String(row.paid_at))); if(Date.now()>=cutoff.getTime()) return nonRefundablePayload(transactionNumber,String(row.case_id),cutoff);
+ const code=generateRefundCode(); await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at) VALUES($1,$2,'email',$3,$4,now()+interval '10 minutes')",[row.id,row.user_id,String(row.email),hashRefundCode(code)]);
+ await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE id=$1",[row.id]); await sendRefundVerificationEmail(String(row.email),code,transactionNumber);
+ return {success:true,status:"verification_code_sent",transactionNumber,target:String(row.email)};
+}
+
+export async function completeStarsRefund(input:{userId:string;transactionNumber:string;code:string}):Promise<StarsRefundResult> {
+ const transactionNumber=input.transactionNumber.trim().toUpperCase(); const client=await pool.connect();
+ try { await client.query("BEGIN");
+ const q=await client.query("SELECT rr.*,pt.id AS payment_id,pt.reference,pt.paid_at,pt.status AS payment_status,pt.amount_minor,pt.currency,pt.metadata FROM refund_requests rr JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number WHERE rr.transaction_number=$1 AND rr.user_id=$2 ORDER BY rr.created_at DESC LIMIT 1 FOR UPDATE",[transactionNumber,input.userId]);
+ if(!q.rows[0]) throw new Error("Refund request not found."); const row=q.rows[0]; const cutoff=starsRefundCutoff(new Date(String(row.paid_at)));
+ if(Date.now()>=cutoff.getTime()) { await client.query("UPDATE refund_requests SET status='non_refundable',decision='denied',decision_reason='Stars are rigidly non-refundable after 10 minutes.',updated_at=now() WHERE id=$1",[row.id]); await client.query("COMMIT"); return nonRefundablePayload(transactionNumber,String(row.case_id),cutoff); }
+ const ch=await client.query("SELECT id,code_hash,expires_at,consumed_at,attempt_count,max_attempts FROM refund_verification_challenges WHERE refund_request_id=$1 ORDER BY created_at DESC LIMIT 1",[row.id]);
+ if(!ch.rows[0]||ch.rows[0].consumed_at||new Date(String(ch.rows[0].expires_at)).getTime()<Date.now()) throw new Error("Refund verification code expired. Request a new code.");
+ if(Number(ch.rows[0].attempt_count)>=Number(ch.rows[0].max_attempts)) throw new Error("Refund verification attempts exhausted.");
+ if(hashRefundCode(input.code)!==String(ch.rows[0].code_hash)) { await client.query("UPDATE refund_verification_challenges SET attempt_count=attempt_count+1,failed_at=CASE WHEN attempt_count+1>=max_attempts THEN now() ELSE failed_at END WHERE id=$1",[ch.rows[0].id]); throw new Error("Incorrect refund verification code."); }
+ await client.query("UPDATE refund_verification_challenges SET consumed_at=now() WHERE id=$1",[ch.rows[0].id]);
+ if(String(row.payment_status)!=="paid") throw new Error("The Stars payment is not currently refundable.");
+ const existing=await client.query("SELECT refund_status FROM payment_transactions WHERE id=$1 FOR UPDATE",[row.payment_id]); if(["pending","processing","needs-attention","processed","initiating"].includes(String(existing.rows[0]?.refund_status??""))) throw new Error("A refund has already been initiated for this transaction.");
+ const metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{}; const target=refundTargetFromMetadata(metadata);
+ await client.query("UPDATE refund_requests SET status='refund_processing',decision='approved',decision_reason='Stars refund requested within the 10-minute policy window.',verified_at=now(),review_started_at=now(),reviewed_at=now(),refund_target_type=$1,refund_target_masked=$2,updated_at=now() WHERE id=$3",[target.type,target.masked,row.id]);
+ await client.query("UPDATE payment_transactions SET refund_status='initiating',refund_requested_at=now(),refund_error=NULL,updated_at=now() WHERE id=$1",[row.payment_id]); await client.query("COMMIT");
+ let refund:any; try { const response=await axios.post("https://api.paystack.co/refund",{transaction:String(row.reference),amount:String(row.amount_minor),currency:String(row.currency),customer_note:"ReDom Stars refund "+transactionNumber,merchant_note:"ReDom Stars refund "+transactionNumber},{headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000}); if(!response.data?.status) throw new Error(response.data?.message||"Paystack refund request failed."); refund=response.data.data; } catch(error) { const message=error instanceof Error?error.message:"Paystack refund request failed."; await pool.query("UPDATE payment_transactions SET refund_status='failed',refund_error=$1,updated_at=now() WHERE id=$2",[message.slice(0,500),row.payment_id]); await pool.query("UPDATE refund_requests SET status='refund_failed',decision_reason=$1,updated_at=now() WHERE id=$2",[message.slice(0,1000),row.id]); return {success:false,status:"refund_failed",code:"REFUND_PROVIDER_ERROR",reason:message,transactionNumber,target:target.masked}; }
+ await pool.query("UPDATE payment_transactions SET refund_status=$1,refund_id=$2,refund_amount_minor=$3,refund_expected_at=$4,updated_at=now() WHERE id=$5",[String(refund.status||"pending"),refund.id?String(refund.id):null,String(refund.amount??row.amount_minor),refund.expected_at?new Date(refund.expected_at):null,row.payment_id]);
+ await pool.query("UPDATE refund_requests SET status='refund_processing',refund_expected_by=$1,updated_at=now() WHERE id=$2",[refund.expected_at?new Date(refund.expected_at):null,row.id]);
+ return {success:true,status:"refund_processing",transactionNumber,refundId:refund.id?String(refund.id):null,refundStatus:String(refund.status||"pending"),target:target.masked};
+ } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
+}
+
+export async function applyStarsRefundWebhook(event:string,data:any):Promise<void> {
+ const reference=String(data?.transaction_reference??data?.transaction?.reference??""); if(!reference) return; const refundStatus=event.replace(/^refund\./,""); const client=await pool.connect();
+ try { await client.query("BEGIN"); const tx=await client.query("SELECT id,user_id,amount_minor,metadata,redom_transaction_id FROM payment_transactions WHERE reference=$1 FOR UPDATE"); if(!tx.rows[0]) { await client.query("COMMIT"); return; } const row=tx.rows[0];
+ await client.query("UPDATE payment_transactions SET refund_status=$1,refund_id=COALESCE($2,refund_id),refund_processed_at=CASE WHEN $1='processed' THEN now() ELSE refund_processed_at END,refund_error=CASE WHEN $1='failed' THEN COALESCE($3,refund_error) ELSE NULL END,updated_at=now() WHERE id=$4",[refundStatus,data?.refund_reference?String(data.refund_reference):null,data?.reason?String(data.reason):null,row.id]);
+ const request=await client.query("SELECT id FROM refund_requests WHERE transaction_number=$1 ORDER BY created_at DESC LIMIT 1",[row.redom_transaction_id]);
+ if(refundStatus==="processed") { let metadata:any={}; try { metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{}; } catch {} const stars=Number(metadata?.stars??0); if(Number.isInteger(stars)&&stars>0) { const account=await client.query("SELECT balance FROM redom_stars_accounts WHERE user_id=$1 FOR UPDATE",[row.user_id]); const balance=BigInt(String(account.rows[0]?.balance??"0")); const duplicate=await client.query("SELECT 1 FROM redom_stars_transactions WHERE payment_transaction_id=$1 AND type='refund' LIMIT 1",[row.id]); if(!duplicate.rows[0]) { if(balance<BigInt(stars)) throw new Error("Refund processed but Stars balance is insufficient for reversal."); const next=balance-BigInt(stars); await client.query("UPDATE redom_stars_accounts SET balance=$1,updated_at=now() WHERE user_id=$2",[next.toString(),row.user_id]); await client.query("INSERT INTO redom_stars_transactions(user_id,payment_transaction_id,type,stars,balance_after,package_key,currency,amount_minor,reference) VALUES($1,$2,'refund',$3,$4,$5,$6,$7,$8)",[row.user_id,row.id,-stars,next.toString(),metadata?.packageKey??null,metadata?.currency??null,row.amount_minor,"refund:"+reference]); } } if(request.rows[0]) await client.query("UPDATE refund_requests SET status='refunded',refund_completed_at=now(),updated_at=now() WHERE id=$1",[request.rows[0].id]); }
+ else if(refundStatus==="failed") { if(request.rows[0]) await client.query("UPDATE refund_requests SET status='refund_failed',decision_reason=COALESCE($1,decision_reason),updated_at=now() WHERE id=$2",[data?.reason?String(data.reason):"Paystack could not process the refund.",request.rows[0].id]); }
+ else if(refundStatus==="needs-attention") { if(request.rows[0]) await client.query("UPDATE refund_requests SET status='refund_needs_attention',updated_at=now() WHERE id=$1",[request.rows[0].id]); }
+ else { if(request.rows[0]) await client.query("UPDATE refund_requests SET status='refund_processing',updated_at=now() WHERE id=$1",[request.rows[0].id]); }
+ await client.query("COMMIT"); } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
 }
