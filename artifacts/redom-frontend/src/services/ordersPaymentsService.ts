@@ -25,7 +25,7 @@ export const ordersPaymentsService = {
     return api.patch<{ success: boolean; settings: PaymentSettings }>("/orders-payments/settings", input);
   },
   starsActivity() { return api.get<{ success:boolean; balance:number; activity:StarTransaction[] }>("/orders-payments/stars/activity"); },
-  starsCatalog(countryCode?: string) { return api.get<{ success:boolean; countries:StarCountry[]; packages:StarPackage[] }>(countryCode ? "/orders-payments/stars/catalog?country="+encodeURIComponent(countryCode) : "/orders-payments/stars/catalog"); },
+  starsCatalog(countryCode?: string) { return api.get<{ success:boolean; countries:StarCountry[]; selectedCountry:StarCountry|null; packages:StarPackage[] }>(countryCode ? "/orders-payments/stars/catalog?country="+encodeURIComponent(countryCode) : "/orders-payments/stars/catalog"); },
   verifyPayment(reference:string) { return api.get<{success:boolean;payment:{status:string;transactionId:string;redomTransactionId?:string|null;amountMinor:string;currency:string;purpose:string}}>("/payments/verify/"+encodeURIComponent(reference)); },
   sendStars(recipientUserId:string,stars:number) { return api.post<{success:boolean;starsSent:number;creatorEligible:boolean;rewardValueUsd:number;creatorShareUsd:number;redomGrossUsd:number;senderBalance:number;recipientBalance:number;reference:string}>("/orders-payments/stars/send",{recipientUserId,stars}); },
   creatorEarnings() { return api.get<{success:boolean;sharePercent:number;starRewardValueUsd:number;months:Array<{earningMonth:string;stars:number;rewardValueUsd:number;creatorShareUsd:number;status:string}>}>("/orders-payments/stars/creator/earnings"); },
