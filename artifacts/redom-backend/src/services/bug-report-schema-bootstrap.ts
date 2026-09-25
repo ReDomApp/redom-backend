@@ -21,7 +21,7 @@ export async function ensureBugReportSchema(): Promise<void> {
     CONSTRAINT bug_reports_report_id_format CHECK (report_id ~ '^[0-9]{10}$'),
     CONSTRAINT bug_reports_status_check CHECK (status IN ('submitted','processing','emailed','email_failed')),
     CONSTRAINT bug_reports_email_status_check CHECK (email_status IN ('pending','sent','failed'))
-  `  `);
+  )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS bug_report_attachments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     report_id uuid NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
@@ -31,7 +31,7 @@ export async function ensureBugReportSchema(): Promise<void> {
     byte_size integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT bug_report_attachments_size_check CHECK (byte_size > 0 AND byte_size <= 10485760)
-  `);
+  )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS bug_reports_user_idx ON bug_reports(user_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS bug_reports_status_idx ON bug_reports(status, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS bug_report_attachments_report_idx ON bug_report_attachments(report_id, created_at ASC)`);
