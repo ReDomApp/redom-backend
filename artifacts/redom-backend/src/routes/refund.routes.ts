@@ -9,14 +9,9 @@ const transactionSchema = z.object({
   transactionNumber: z.string().trim().regex(/^R-\d{13}$/i),
 });
 
-const accountProfileSchema = z.object({
-  transactionNumber: z.string().trim().regex(/^R-\d{13}$/i),
-  accountProfileId: z.string().uuid(),
-});
-
 const verificationSchema = z.object({
   transactionNumber: z.string().trim().regex(/^R-\d{13}$/i),
-  code: z.string().regex(/^\d{6}$/),
+  code: z.string().regex(/^\d{6}$|^\d{8}$/),
 });
 
 function unavailable(res: Response) {
