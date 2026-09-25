@@ -21,9 +21,9 @@ export function StarsCheckoutScreen(){
 
  const submit=async()=>{if(!pkg)return;
   if(!email.trim())return Alert.alert("Transaction email","Enter the email address on your ReDom account.");
-  if(!/^\\S+@\\S+\\.\\S+$/.test(email.trim()))return Alert.alert("Transaction email","Enter a valid email address.");
+  if(!/^\S+@\S+\.\S+$/.test(email.trim()))return Alert.alert("Transaction email","Enter a valid email address.");
   if(!fullName.trim()||!(address.trim()||query.trim())||!city.trim())return Alert.alert("Billing address","Enter your full name, address and city before continuing.");
-  if(pinEnabled&&!/^\\d{4,8}$/.test(pin))return Alert.alert("Payment PIN","Enter your 4 to 8 digit payment PIN.");
+  if(pinEnabled&&!/^\d{4,8}$/.test(pin))return Alert.alert("Payment PIN","Enter your 4 to 8 digit payment PIN.");
   setPaying(true);try{const addressProvided=Boolean(fullName.trim()&&city.trim()&&(address.trim()||query.trim())); const result=await ordersPaymentsService.initializeStars({packageKey:packageKey,countryCode:countryCode,email:email.trim(),pin:pinEnabled?pin:undefined,paymentMethodId:selectedMethod||undefined,address:addressProvided?{countryCode:countryCode,countryName,fullName:fullName.trim(),addressLine1:address.trim()||query.trim(),city:city.trim(),state:state.trim()||null,postalCode:zip.trim()||null}:undefined});setReference(result.reference);if(result.checkoutUrl){await Linking.openURL(result.checkoutUrl)}else if(result.status==="success"){setStatus("paid");const verified=await ordersPaymentsService.verifyPayment(result.reference);if(verified.payment.status==="paid")n.navigate("StarsActivity");else setStatus(verified.payment.status)}else{setStatus(result.status||"pending");Alert.alert("Payment",result.status==="ongoing"?"Your payment needs further authentication.":"Payment started.")}}catch(e){Alert.alert("Payment failed",e instanceof Error?e.message:"Unable to start payment.")}finally{setPaying(false)}};
 
  const title=useMemo(()=>pkg?String(pkg.stars)+" ReDom Stars":"ReDom Stars",[pkg]);
