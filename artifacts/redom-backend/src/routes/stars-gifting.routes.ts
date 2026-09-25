@@ -15,6 +15,8 @@ router.post("/stars/send", authMiddleware, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid Stars transfer." });
   if (senderUserId === parsed.data.recipientUserId) return res.status(400).json({ success: false, message: "You cannot send Stars to yourself." });
   const client = await pool.connect();
+  const pendingRefund = await pool.query("SELECT 1 FROM payment_transactions WHERE user_id=$1 AND purpose='stars_purchase' AND refund_status IN ('initiating','pending','processing','needs-attention') LIMIT 1",[senderUserId]);
+  if (pendingRefund.rows[0]) return res.status(409).json({ success:false, code:"STARS_REFUND_PENDING", message:"Stars transfers are temporarily locked while your refund is being processed." });
   try {
     await client.query("BEGIN");
     const recipient = await client.query("SELECT u.id, COALESCE(up.professional_mode,false) AS professional_mode FROM users u LEFT JOIN user_profiles up ON up.user_id=u.id WHERE u.id=$1 LIMIT 1 FOR UPDATE OF u", [parsed.data.recipientUserId]);
