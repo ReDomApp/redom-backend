@@ -284,7 +284,7 @@ export async function verifyPaymentFromCallback(referenceValue: string): Promise
   const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [referenceValue]);
   try {
     const payment = await applyVerifiedPayment(referenceValue, verified);
-    if (payment.status !== "paid" && tx.rows[0]?.id) await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id));
+    if ((payment.status !== "paid" || payment.purpose === "payment_method_setup") && tx.rows[0]?.id) await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), payment.purpose === "payment_method_setup");
     if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id));
     return payment;
   } catch (error) {
@@ -309,7 +309,7 @@ export async function handlePaymentWebhook(rawBody: Buffer, signature: string | 
   try {
     if (event === "charge.success" && data.reference) {
       const verified = await verifyWithProvider(String(data.reference));
-      const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [String(data.reference)]); try { const payment = await applyVerifiedPayment(String(data.reference), verified); if (payment.status !== "paid" && tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id)); if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id)); } catch (error) { if (tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), true); throw error; }
+      const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [String(data.reference)]); try { const payment = await applyVerifiedPayment(String(data.reference), verified); if ((payment.status !== "paid" || payment.purpose === "payment_method_setup") && tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), payment.purpose === "payment_method_setup"); if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id)); } catch (error) { if (tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), true); throw error; }
     }
     if (event === "subscription.create" && data.subscription_code) {
       const email = data.customer?.email ? String(data.customer.email).toLowerCase() : null;
