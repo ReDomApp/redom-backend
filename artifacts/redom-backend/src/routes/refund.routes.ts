@@ -6,7 +6,7 @@ import { REFUND_FEATURE_ENABLED, startStarsRefund, verifyStarsRefundAccountProfi
 const router = Router();
 
 const transactionSchema = z.object({
-  transactionNumber: z.string().trim().regex(/^R-\d{13}$/i),
+  transactionNumber: z.string().trim().regex(/^(?:R-?\d{13}|\d{13})$/i),
 });
 
 const verificationSchema = z.object({
@@ -61,7 +61,7 @@ router.post("/account-profile", authMiddleware, async (req,res) => {
 
 router.post("/verify-code", authMiddleware, async (req,res) => {
   const parsed=verificationSchema.safeParse(req.body);
-  if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_VERIFICATION_CODE",message:"Enter the 6-digit refund verification code."});
+  if(!parsed.success) return res.status(400).json({success:false,code:"INVALID_VERIFICATION_CODE",message:"Enter the current 8-digit phone code or 6-digit email fallback code."});
   try {
     const result=await completeStarsRefund({userId:req.user!.userId,transactionNumber:parsed.data.transactionNumber,code:parsed.data.code});
     if(result.status==="non_refundable") return res.status(409).json(result);
