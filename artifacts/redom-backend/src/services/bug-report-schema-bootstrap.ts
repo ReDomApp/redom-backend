@@ -21,7 +21,7 @@ export async function ensureBugReportSchema(): Promise<void> {
     CONSTRAINT bug_reports_report_id_format CHECK (report_id ~ '^[0-9]{10}$'),
     CONSTRAINT bug_reports_status_check CHECK (status IN ('submitted','processing','emailed','email_failed')),
     CONSTRAINT bug_reports_email_status_check CHECK (email_status IN ('pending','sent','failed'))
-  `);
+  `  `);
   await pool.query(`CREATE TABLE IF NOT EXISTS bug_report_attachments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     report_id uuid NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
