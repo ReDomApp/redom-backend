@@ -6,7 +6,7 @@ export async function ensureStarsSchema(): Promise<void> {
     balance bigint NOT NULL DEFAULT 0 CHECK (balance >= 0),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
-  `  `);
+  )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS redom_stars_transactions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -20,7 +20,7 @@ export async function ensureStarsSchema(): Promise<void> {
     amount_minor bigint,
     reference varchar(100),
     created_at timestamptz NOT NULL DEFAULT now()
-  `);
+  )`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS reward_value_minor bigint`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS creator_share_minor bigint`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS redom_gross_minor bigint`);
@@ -36,7 +36,7 @@ export async function ensureStarsSchema(): Promise<void> {
     redom_gross_minor bigint NOT NULL CHECK (redom_gross_minor >= 0),
     creator_eligible boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now()
-  `);
+  )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS redom_stars_gifts_sender_idx ON redom_stars_gifts(sender_user_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS redom_stars_gifts_recipient_idx ON redom_stars_gifts(recipient_user_id, created_at DESC)`);
 
@@ -51,7 +51,7 @@ export async function ensureStarsSchema(): Promise<void> {
     earning_month date NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
-  `  `);
+  )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS redom_creator_earnings_creator_idx ON redom_creator_earnings(creator_user_id, earning_month DESC, created_at DESC)`);
 
   await pool.query(`CREATE TABLE IF NOT EXISTS redom_creator_payouts (
@@ -69,7 +69,7 @@ export async function ensureStarsSchema(): Promise<void> {
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (creator_user_id, earning_month)
-  `);
+  )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS redom_creator_payouts_status_idx ON redom_creator_payouts(status, earning_month DESC)`);
 
   await pool.query(`CREATE TABLE IF NOT EXISTS redom_creator_payout_settings (
@@ -81,5 +81,5 @@ export async function ensureStarsSchema(): Promise<void> {
     payout_enabled boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
-  `  `);
+  )`);
 }
