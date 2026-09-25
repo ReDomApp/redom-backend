@@ -274,6 +274,33 @@ router.delete("/payment-methods/:id", authMiddleware, async (req, res) => {
   return res.json({success:true});
 });
 
+router.post("/payment-addresses", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId;
+  const parsed=z.object({
+    countryCode:z.string().length(2), countryName:z.string().min(1).max(120), fullName:z.string().min(1).max(180),
+    addressLine1:z.string().min(1).max(255), addressLine2:z.string().max(255).optional().nullable(),
+    city:z.string().min(1).max(120), state:z.string().max(120).optional().nullable(), postalCode:z.string().max(40).optional().nullable(),
+    mapboxPlaceId:z.string().max(255).optional().nullable(), latitude:z.number().optional().nullable(), longitude:z.number().optional().nullable(),
+    isDefault:z.boolean().optional()
+  }).safeParse(req.body);
+  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  if(!parsed.success)return res.status(400).json({success:false,message:"Invalid payment address."});
+  const a=parsed.data;
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const makeDefault=a.isDefault !== false;
+    if(makeDefault)await client.query("UPDATE redom_payment_addresses SET is_default=false,updated_at=now() WHERE user_id=$1",[userId]);
+    const inserted=await client.query(`INSERT INTO redom_payment_addresses
+      (user_id,country_code,country_name,full_name,address_line1,address_line2,city,state,postal_code,mapbox_place_id,latitude,longitude,is_default)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id,country_code,country_name,full_name,address_line1,address_line2,city,state,postal_code,mapbox_place_id,latitude,longitude,is_default,created_at,updated_at`,
+      [userId,a.countryCode.toUpperCase(),a.countryName,a.fullName,a.addressLine1,a.addressLine2??null,a.city,a.state??null,a.postalCode??null,a.mapboxPlaceId??null,a.latitude??null,a.longitude??null,makeDefault]);
+    await client.query("COMMIT");
+    return res.status(201).json({success:true,address:inserted.rows[0]});
+  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to save payment address."});}
+  finally{client.release();}
+});
+
 router.get("/payment-addresses", authMiddleware, async (req,res)=>{
   const userId=req.user?.userId;
   if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
