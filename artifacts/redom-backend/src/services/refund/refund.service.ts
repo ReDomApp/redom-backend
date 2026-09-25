@@ -156,7 +156,7 @@ export async function issueStarsRefundSecurityChallenge(input:{userId:string;tra
 
 export async function startStarsRefund(input:{userId:string;transactionNumber:string;caseId?:string;caseNumber?:string}):Promise<StarsRefundResult> {
  const transactionNumber=input.transactionNumber.trim().toUpperCase();
- const tx=await pool.query("SELECT pt.*,u.email,up.id AS profile_id FROM payment_transactions pt JOIN users u ON u.id=pt.user_id LEFT JOIN user_profiles up ON up.user_id=pt.user_id WHERE pt.redom_transaction_id=$1 AND pt.user_id=$2 LIMIT 1",[transactionNumber,input.userId]);
+ const tx=await pool.query("SELECT pt.*,u.email,u.phone_number,up.id AS profile_id FROM payment_transactions pt JOIN users u ON u.id=pt.user_id LEFT JOIN user_profiles up ON up.user_id=pt.user_id WHERE pt.redom_transaction_id=$1 AND pt.user_id=$2 LIMIT 1",[transactionNumber,input.userId]);
  if(!tx.rows[0]) return {success:false,status:"transaction_not_found",code:"TRANSACTION_NOT_FOUND",reason:"The ReDom Transaction ID could not be found for this account.",transactionNumber};
  const row=tx.rows[0];
  if(String(row.purpose)!=="stars_purchase") return {success:false,status:"not_refundable_product",code:"NOT_STARS_PURCHASE",reason:"Only ReDom Stars purchases use this refund policy.",transactionNumber};
@@ -230,6 +230,59 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
  } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
 }
 
+
+export async function processRefundSupportEmail(input:{senderEmail:string;message:string;subject?:string|null;caseNumber?:string|null}):Promise<{handled:boolean;caseNumber?:string|null}> {
+ const email=input.senderEmail.trim().toLowerCase();
+ const account=await pool.query("SELECT id,email,first_name,last_name,phone_number FROM users WHERE lower(email)=lower($1) LIMIT 1",[email]);
+ if(!account.rows[0]) {
+   await sendSupportEmail(email,"ReDom Refund Request — Email Not Connected","Your refund request could not be initiated because this email address is not connected to an existing ReDom account. Please send the request from the email address connected to your ReDom account.");
+   return {handled:true,caseNumber:null};
+ }
+ const user=account.rows[0];
+ let caseRecord:any=null;
+ if(input.caseNumber) caseRecord=await getSupportCaseForRefundCase(input.caseNumber,email);
+ if(!caseRecord) caseRecord=await createSupportCase({userId:String(user.id),requesterEmail:email,subject:"ReDom Refund Request",category:"refund_payment"});
+ const records=await pool.query("SELECT pt.id,pt.redom_transaction_id,pt.reference,pt.purpose,pt.status,pt.amount_minor,pt.currency,pt.created_at,pt.metadata FROM payment_transactions pt WHERE pt.user_id=$1 ORDER BY pt.created_at DESC LIMIT 100",[user.id]);
+ if(!records.rows.length) {
+   const reply="No transaction records were found for "+email+". Please try again later.";
+   await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+   await sendSupportEmail(email,"ReDom Refund Request — No Transaction Records",reply+"\n\nCase Number: "+caseRecord.caseNumber);
+   await permanentlyCloseSupportCase(caseRecord.id);
+   return {handled:true,caseNumber:caseRecord.caseNumber};
+ }
+ const current=await pool.query("SELECT rr.transaction_number,rr.status FROM refund_requests rr WHERE rr.case_id=$1 ORDER BY rr.created_at DESC LIMIT 1",[caseRecord.id]);
+ if(current.rows[0]) {
+   const codeMatch=input.message.match(/\b(\d{6}|\d{8})\b/);
+   if(codeMatch && ["verification_code_sent","awaiting_verification"].includes(String(current.rows[0].status))) {
+     const result=await completeStarsRefund({userId:String(user.id),transactionNumber:String(current.rows[0].transaction_number),code:codeMatch[1]});
+     return {handled:true,caseNumber:caseRecord.caseNumber};
+   }
+   return {handled:true,caseNumber:caseRecord.caseNumber};
+ }
+ const token=input.message.match(/\b(R-?\d{13}|T\d{10,}|[A-Za-z0-9_-]{12,})\b/);
+ if(!token) {
+   const name=[user.first_name,user.last_name].filter(Boolean).join(" ")||"there";
+   const reply="Hello "+name+",\n\nYour refund request is under review for account authentication. We found transaction records for "+email+". Please enter the ReDom Transaction ID or Provider Reference Number for the transaction you want to refund.\n\nCase Number: "+caseRecord.caseNumber;
+   await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+   await sendSupportEmail(email,"ReDom Refund Request — Transaction ID Required",reply);
+   return {handled:true,caseNumber:caseRecord.caseNumber};
+ }
+ const supplied=token[1];
+ const tx=await pool.query("SELECT redom_transaction_id,reference,purpose,status FROM payment_transactions WHERE user_id=$1 AND (upper(redom_transaction_id)=upper($2) OR upper(reference)=upper($2)) ORDER BY created_at DESC LIMIT 1",[user.id,supplied]);
+ if(!tx.rows[0]) {
+   const reply="The Transaction ID or Provider Reference Number you entered could not be verified against "+email+". Please reply with the exact ReDom Transaction ID or Provider Reference Number from your account.\n\nCase Number: "+caseRecord.caseNumber;
+   await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+   await sendSupportEmail(email,"ReDom Refund Request — Transaction Not Verified",reply);
+   return {handled:true,caseNumber:caseRecord.caseNumber};
+ }
+ const result=await startStarsRefund({userId:String(user.id),transactionNumber:String(tx.rows[0].redom_transaction_id),caseId:String(caseRecord.id),caseNumber:String(caseRecord.caseNumber)});
+ return {handled:true,caseNumber:result.caseNumber??caseRecord.caseNumber};
+}
+
+async function getSupportCaseForRefundCase(caseNumber:string,email:string):Promise<any|null> {
+ const r=await pool.query("SELECT * FROM support_cases WHERE case_number=$1 AND lower(requester_email)=lower($2) AND category='refund_payment' AND closed_at IS NULL LIMIT 1",[caseNumber.toUpperCase(),email]);
+ return r.rows[0]??null;
+}
 
 export async function applyStarsRefundWebhook(event:string,data:any):Promise<void> {
  const reference=String(data?.transaction_reference??data?.transaction?.reference??""); if(!reference) return;
