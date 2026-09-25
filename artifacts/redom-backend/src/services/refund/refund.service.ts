@@ -226,7 +226,7 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
   const attempts=Number(attemptsResult.rows[0]?.failed_attempts??0);
   if(hashRefundCode(input.code)!==String(ch.rows[0].code_hash)) {
    const failedAttempt=attempts+1;
-   await client.query("UPDATE refund_verification_challenges SET attempt_count=$1,failed_at=now(),consumed_at=now() WHERE id=$2",[failedAttempt,ch.rows[0].id]);
+   await client.query("UPDATE refund_verification_challenges SET attempt_count=1,failed_at=now(),consumed_at=now() WHERE id=$1",[ch.rows[0].id]);
 
    if(failedAttempt>=3) {
     const reason="Refund security verification failed after 3 incorrect codes. The refund case has been permanently closed for security.";
