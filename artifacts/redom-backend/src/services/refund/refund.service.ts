@@ -1,7 +1,8 @@
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import axios from "axios";
 import { Resend } from "resend";
-import { createSupportCase, addSupportMessage, permanentlyCloseSupportCase, sendSupportEmail } from "../support/support.service";
+import { createSupportCase, addSupportMessage, permanentlyCloseSupportCase } from "../support/support.service";
+import { sendRefundCaseEmail } from "./refund-email.service";
 import { pool } from "../../database/db";
 import { env } from "../../config/env";
 import { twilioSmsProvider } from "../../lib/providers/sms/twilio-sms-provider";
@@ -111,20 +112,32 @@ function refundTargetDisplay(metadata:any, fallbackMasked:string|null):string {
 }
 
 async function sendRefundSupportStatus(input:{email:string;caseNumber:string;transactionNumber:string;status:string;reason:string;target?:string|null;nextStep?:string}):Promise<void> {
-  const targetLine=input.target ? "\nRefund destination: "+input.target : "";
-  const nextLine=input.nextStep ? "\n\nNext step:\n"+input.nextStep : "";
-  const body="Refund Support Update\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+targetLine+nextLine+"\n\nSupport Case: "+input.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
-  await sendSupportEmail(input.email, "Re: Refund Support Case "+input.caseNumber+" — "+input.status, body);
+  await sendRefundCaseEmail({
+    to: input.email,
+    caseNumber: input.caseNumber,
+    transactionNumber: input.transactionNumber,
+    status: input.status,
+    reason: input.reason,
+    target: input.target ?? null,
+    nextStep: input.nextStep ?? null,
+    securityWarning: REFUND_SECURITY_WARNING,
+  });
 }
 
 async function sendRefundTerminalEmail(input:{email:string;caseNumber:string;transactionNumber:string;status:string;reason:string;target:string;amount:string;currency:string;refundId?:string|null}):Promise<void> {
-  const { error } = await resend.emails.send({
-    from: env.refunds.from,
-    to: [input.email],
-    subject: "Refund "+input.status+" — "+input.transactionNumber,
-    text: "ReDom Refund Services\n\nTransaction: "+input.transactionNumber+"\nStatus: "+input.status+"\nReason: "+input.reason+"\nAmount: "+input.amount+" "+input.currency+"\nRefund destination: "+input.target+"\n"+(input.refundId ? "Refund ID: "+input.refundId+"\n" : "")+"\nSupport Case: "+input.caseNumber+"\n\nThis refund transaction has been permanently recorded. The ReDom Transaction ID cannot be used to submit another refund request.\n\n"+REFUND_SECURITY_WARNING,
+  await sendRefundCaseEmail({
+    to: input.email,
+    caseNumber: input.caseNumber,
+    transactionNumber: input.transactionNumber,
+    status: input.status,
+    reason: input.reason,
+    amount: input.amount,
+    currency: input.currency,
+    target: input.target,
+    refundId: input.refundId ?? null,
+    securityWarning: REFUND_SECURITY_WARNING,
+    terminal: true,
   });
-  if (error) throw new Error("Refund status email could not be sent: "+error.message);
 }
 
 async function closeAndInvalidateRefund(input:{refundRequestId:string;caseId:string;transactionNumber:string;userId:string;caseNumber:string;outcomeStatus:string;reason:string;refundId?:string|null}):Promise<void> {
