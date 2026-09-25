@@ -8,8 +8,6 @@ import StarsIcon from"../assets/home-feed/stars.svg";
 import SecurityIcon from"../assets/home-feed/security-controls.svg";
 import TermsIcon from"../assets/home-feed/terms-policies.svg";
 import HelpIcon from"../assets/home-feed/help-support.svg";
-import CardIcon from"../assets/home-feed/payment-methods.svg";
-import AddressIcon from"../assets/home-feed/shipping-address.svg";
 import{ordersPaymentsService,type OrderSummary,type PaymentTransactionSummary}from"../services/ordersPaymentsService";
 
 type Tab="all"|"money_transfer"|"orders"|"donations";
@@ -39,9 +37,9 @@ export function ReDomPayScreen(){
    </View>
    <Pressable onPress={()=>n.navigate("StarsActivity")} style={[s.linkRow,{borderBottomColor:colors.border}]}><Text style={[s.linkText,{color:colors.text}]}>Stars activity</Text><ChevronIcon width={20} height={20}/></Pressable>
    <Text style={[s.section,{color:colors.text}]}>Manage</Text>
-   <Row Icon={CardIcon} label="Payment methods" subtitle="Saved cards and supported payment methods" onPress={()=>n.navigate("PaymentMethods")} colors={colors}/>
-   <Row Icon={CardIcon} label="Add payment method" subtitle="Add a method through secure provider checkout" onPress={()=>n.navigate("PaymentMethods")} colors={colors}/>
-   <Row Icon={AddressIcon} label="Shipping and billing addresses" subtitle="Manage saved addresses and address suggestions" onPress={()=>n.navigate("PaymentAddresses")} colors={colors}/>
+   <Row label="Payment methods" subtitle="Saved cards and supported payment methods" onPress={()=>n.navigate("PaymentMethods")} colors={colors}/>
+   <Row label="Add payment method" subtitle="Add a method through secure provider checkout" onPress={()=>n.navigate("PaymentMethods")} colors={colors}/>
+   <Row label="Shipping and billing addresses" subtitle="Manage saved addresses and address suggestions" onPress={()=>n.navigate("PaymentAddresses")} colors={colors}/>
    <Row label="Email" subtitle="Payment receipts and transaction notices" onPress={()=>n.navigate("EditProfile")} colors={colors}/>
    <Row label="Phone" subtitle="Payment and account contact information" onPress={()=>n.navigate("EditProfile")} colors={colors}/>
    <Row Icon={SecurityIcon} label="Security and payment PIN" subtitle="PIN, biometrics and payment security" onPress={()=>n.navigate("PaymentSecurity")} colors={colors}/>
