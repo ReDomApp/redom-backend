@@ -71,8 +71,8 @@ const moreRows = [
 
 const settingsRows = [
   { label: "Settings", Icon: SettingsIcon, route: "Settings" as const },
-  { label: "Privacy Center", Icon: PrivacyIcon, route: "PrivacySettings" as const },
-  { label: "Time management", Icon: TimeIcon, route: "Settings" as const },
+  { label: "Privacy Center · Under Development", Icon: PrivacyIcon },
+  { label: "Time management · Under Development", Icon: TimeIcon },
   { label: "Device requests", Icon: DeviceRequestsIcon, route: "LinkedDevices" as const },
   { label: "Recent ad activity", Icon: AdsIcon, route: "Settings" as const },
   { label: "Orders and payments", Icon: OrdersIcon, route: "OrdersPayments" as const },
