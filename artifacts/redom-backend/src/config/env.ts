@@ -12,6 +12,7 @@ export const env = {
   email: {
     resend: { apiKey: required("RESEND_API_KEY"), webhookSecret: optional("RESEND_WEBHOOK_SECRET") },
     supportFrom: optional("SUPPORT_EMAIL_FROM") ?? "support@wnncompany.com",
+    securityFrom: optional("SECURITY_EMAIL_FROM") ?? "security@wnncompany.com",
     reportsFrom: optional("REPORTS_EMAIL_FROM") ?? "reports@wnncompany.com",
     moderationFrom: optional("MODERATION_EMAIL_FROM") ?? "moderation@wnncompany.com",
     moderationReplyTo: optional("MODERATION_EMAIL_REPLY_TO") ?? "no-reply@wnncompany.com",
