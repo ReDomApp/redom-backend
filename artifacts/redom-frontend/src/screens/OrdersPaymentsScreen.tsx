@@ -120,16 +120,6 @@ export function OrdersPaymentsScreen() {
         <Row label="Help" Icon={HelpIcon} colors={colors} onPress={() => navigation.navigate("MetaPaySupport")} />
         <Row label="Terms and privacy" Icon={TermsIcon} colors={colors} onPress={() => navigation.navigate("Policy", { slug: "payments" })} />
 
-        <Text style={[styles.section, { color: colors.text }]}>Orders</Text>
-        {loading ? <ActivityIndicator color={colors.primary} /> : orders.length === 0 ? (
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>No marketplace orders yet.</Text>
-        ) : orders.map((o) => (
-          <View key={o.transactionId} style={[styles.transaction, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.transactionTitle, { color: colors.text }]}>{o.title}</Text>
-            <Text style={{ color: colors.textSecondary }}>{o.currency} {o.totalPrice}</Text>
-            <Text style={{ color: colors.textSecondary }}>{o.orderStatus} · {o.transactionId}</Text>
-          </View>
-        ))}
       </ScrollView>
     </SafeAreaView>
   );
