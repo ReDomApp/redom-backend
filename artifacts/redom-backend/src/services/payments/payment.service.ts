@@ -12,12 +12,29 @@ type PaystackResponse<T> = { status: boolean; message: string; data: T };
 type InitializeData = { authorization_url: string; access_code: string; reference: string };
 type VerifyData = { id: number; status: string; reference: string; amount: number; requested_amount?: number | null; currency: string; paid_at?: string | null; metadata?: unknown; channel?: string | null; message?: string | null; gateway_response?: string | null; authorization?: any; customer?: { email?: string }; plan?: any };
 type RefundData = { id?: number; status?: string; amount?: number; currency?: string; expected_at?: string | null; refunded_at?: string | null; transaction?: { id?: number; reference?: string }; message?: string };
-type PaymentContext = { transactionId: string; redomTransactionId?: string | null; reference: string; status: string; amountMinor: string; currency: string; purpose: string };
+type PaymentContext = { transactionId: string; redomTransactionId?: string | null; reference: string; status: string; amountMinor: string; currency: string; purpose: string; paymentMethodSaved?: boolean; refundStatus?: string | null };
 
-async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string, force = false): Promise<void> {
+async function saveReusableAuthorization(transactionId: string, verified: VerifyData, userId: string, currency: string, customerEmail: string | null): Promise<boolean> {
+  if (!verified.authorization?.reusable || !verified.authorization?.authorization_code || !verified.authorization?.signature || !customerEmail) return false;
+  try {
+    const authorizationCode = String(verified.authorization.authorization_code);
+    const signature = String(verified.authorization.signature);
+    await pool.query(
+      `INSERT INTO redom_payment_methods(user_id,provider,authorization_code_encrypted,authorization_signature,customer_email,brand,card_type,last4,exp_month,exp_year,bank,country_code,currency,reusable)
+       VALUES($1,'paystack',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)
+       ON CONFLICT DO UPDATE SET active=true,reusable=true,updated_at=now()`,
+      [userId, encryptAuthorizationCode(authorizationCode), signature, customerEmail, verified.authorization.brand ?? null, verified.authorization.card_type ?? null, verified.authorization.last4 ?? null, verified.authorization.exp_month ? Number(verified.authorization.exp_month) : null, verified.authorization.exp_year ? Number(verified.authorization.exp_year) : null, verified.authorization.bank ?? null, verified.authorization.country_code ?? null, currency],
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function requestAutomaticRefund(reference: string, verified: VerifyData, transactionId: string, force = false): Promise<boolean> {
   // Automatic refunds are reserved for explicitly requested setup flows.
   // Never refund a normal Stars purchase merely because local fulfillment fails.
-  if (!force || verified.status !== "success" || !verified.id || verified.amount <= 0) return;
+  if (!force || verified.status !== "success" || !verified.id || verified.amount <= 0) return false;
   try {
     const refund = await paystack<RefundData>("post", "/refund", {
       transaction: String(verified.id),
@@ -30,9 +47,13 @@ async function requestAutomaticRefund(reference: string, verified: VerifyData, t
       "UPDATE payment_transactions SET refund_status=$1, refund_id=$2, refund_amount_minor=$3, refund_requested_at=now(), refund_expected_at=$4, refund_processed_at=$5, refund_error=NULL, updated_at=now() WHERE id=$6",
       [refund.status || "pending", refund.id ? String(refund.id) : null, refund.amount != null ? String(refund.amount) : String(verified.amount), refund.expected_at ? new Date(refund.expected_at) : null, refund.refunded_at ? new Date(refund.refunded_at) : null, transactionId],
     );
+    const tx = await pool.query("SELECT user_id, currency, customer_email FROM payment_transactions WHERE id=$1 LIMIT 1", [transactionId]);
+    const saved = tx.rows[0] ? await saveReusableAuthorization(transactionId, verified, String(tx.rows[0].user_id), String(tx.rows[0].currency || verified.currency), tx.rows[0].customer_email ? String(tx.rows[0].customer_email) : (verified.customer?.email ? String(verified.customer.email) : null)) : false;
+    return saved;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await pool.query("UPDATE payment_transactions SET refund_status='failed', refund_requested_at=now(), refund_error=$1, updated_at=now() WHERE id=$2", [message.slice(0, 500), transactionId]);
+    return false;
   }
 }
 
@@ -209,18 +230,8 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
     const redomTransactionId = row.redom_transaction_id ? String(row.redom_transaction_id) : await createUniqueRedomTransactionId(client);
     metadata.redomTransactionId = redomTransactionId;
     await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, gateway_status=$2, paid_at=$3, metadata=$4::jsonb, redom_transaction_id=$5, updated_at=now() WHERE id=$6", [String(verified.id), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), JSON.stringify(metadata), redomTransactionId, row.id]);
-    if (verified.authorization?.reusable && verified.authorization?.authorization_code && verified.authorization?.signature) {
-      const authorizationCode = String(verified.authorization.authorization_code);
-      const signature = String(verified.authorization.signature);
-      const customerEmail = verified.customer?.email ? String(verified.customer.email) : (row.customer_email ? String(row.customer_email) : null);
-      if (customerEmail) {
-        await client.query(
-          `INSERT INTO redom_payment_methods(user_id,provider,authorization_code_encrypted,authorization_signature,customer_email,brand,card_type,last4,exp_month,exp_year,bank,country_code,currency,reusable)
-           VALUES($1,'paystack',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)
-           ON CONFLICT DO UPDATE SET active=true,reusable=true,updated_at=now()`,
-          [row.user_id, encryptAuthorizationCode(authorizationCode), signature, customerEmail, verified.authorization.brand ?? null, verified.authorization.card_type ?? null, verified.authorization.last4 ?? null, verified.authorization.exp_month ? Number(verified.authorization.exp_month) : null, verified.authorization.exp_year ? Number(verified.authorization.exp_year) : null, verified.authorization.bank ?? null, verified.authorization.country_code ?? null, row.currency],
-        );
-      }
+    if (String(row.purpose) !== "payment_method_setup") {
+      await saveReusableAuthorization(String(row.id), verified, String(row.user_id), String(row.currency), row.customer_email ? String(row.customer_email) : (verified.customer?.email ? String(verified.customer.email) : null));
     }
     if (String(row.purpose) === "stars_purchase") {
       const stars = Number(metadata?.stars ?? 0);
@@ -286,6 +297,12 @@ export async function verifyPayment(userId: string, referenceValue: string): Pro
   const verified = await verifyWithProvider(referenceValue);
   try {
     const payment = await applyVerifiedPayment(referenceValue, verified);
+    if (payment.purpose === "payment_method_setup" && payment.status === "paid") {
+      const saved = await requestAutomaticRefund(referenceValue, verified, payment.transactionId, true);
+      const refund = await pool.query("SELECT refund_status FROM payment_transactions WHERE id=$1 LIMIT 1", [payment.transactionId]);
+      payment.paymentMethodSaved = saved;
+      payment.refundStatus = refund.rows[0]?.refund_status ? String(refund.rows[0].refund_status) : null;
+    }
     await sendPaymentEmailIfNeeded(payment.transactionId);
     return payment;
   } catch (error) {
@@ -308,7 +325,14 @@ export async function verifyPaymentFromCallback(referenceValue: string): Promise
   const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [referenceValue]);
   try {
     const payment = await applyVerifiedPayment(referenceValue, verified);
-    if ((payment.status !== "paid" || payment.purpose === "payment_method_setup") && tx.rows[0]?.id) await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), payment.purpose === "payment_method_setup");
+    if ((payment.status !== "paid" || payment.purpose === "payment_method_setup") && tx.rows[0]?.id) {
+      const saved = await requestAutomaticRefund(referenceValue, verified, String(tx.rows[0].id), payment.purpose === "payment_method_setup");
+      if (payment.purpose === "payment_method_setup") {
+        payment.paymentMethodSaved = saved;
+        const refund = await pool.query("SELECT refund_status FROM payment_transactions WHERE id=$1 LIMIT 1", [String(tx.rows[0].id)]);
+        payment.refundStatus = refund.rows[0]?.refund_status ? String(refund.rows[0].refund_status) : null;
+      }
+    }
     if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id));
     return payment;
   } catch (error) {
