@@ -40,6 +40,8 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
   try {
     const result = await client.query("SELECT pt.id, pt.redom_transaction_id, pt.reference, pt.amount_minor, pt.currency, pt.status, pt.paid_at, pt.metadata, pt.customer_email, pt.customer_email_status, pt.refund_status, pt.refund_id, pt.refund_expected_at, pt.refund_processed_at, pt.refund_error, u.email, u.first_name, u.last_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
     const row = result.rows[0];
+    const terminalStatuses = new Set(["paid", "failed", "abandoned", "reversed"]);
+    if (!terminalStatuses.has(String(row?.status))) return;
     if (!(row?.customer_email || row?.email) || row.customer_email_status === "sent" || row.customer_email_status === "sending") return;
     const claimed = await client.query("UPDATE payment_transactions SET customer_email_status='sending', customer_email_error=NULL, updated_at=now() WHERE id=$1 AND customer_email_status IN ('pending','failed') RETURNING id", [transactionId]);
     if (!claimed.rows[0]) return;
@@ -264,10 +266,17 @@ export async function sendPaymentEmailForReference(referenceValue: string): Prom
 
 export async function recordPaymentFailureAndEmail(referenceValue: string, message: string): Promise<void> {
   const result = await pool.query(
-    "UPDATE payment_transactions SET status='failed', failure_message=$1, updated_at=now() WHERE reference=$2 RETURNING id",
+    "UPDATE payment_transactions SET status='failed', gateway_status=COALESCE(gateway_status,'failed'), failure_message=$1, updated_at=now() WHERE reference=$2 RETURNING id",
     [message.slice(0, 500), referenceValue],
   );
   if (result.rows[0]?.id) await sendPaymentEmailIfNeeded(String(result.rows[0].id));
+}
+
+async function recordProviderSuccessReconciliationRequired(referenceValue: string, message: string): Promise<void> {
+  await pool.query(
+    "UPDATE payment_transactions SET status='pending', gateway_status='success', failure_message=$1, updated_at=now() WHERE reference=$2 AND status <> 'paid'",
+    [message.slice(0, 500), referenceValue],
+  );
 }
 
 export async function verifyPayment(userId: string, referenceValue: string): Promise<PaymentContext> {
@@ -281,7 +290,14 @@ export async function verifyPayment(userId: string, referenceValue: string): Pro
   } catch (error) {
     // A successful provider charge remains available for reconciliation.
     // Never auto-refund it because local verification/fulfillment failed.
-    await recordPaymentFailureAndEmail(referenceValue, error instanceof Error ? error.message : "Payment verification failed.");
+    if (verified.status === "success") {
+      await recordProviderSuccessReconciliationRequired(
+        referenceValue,
+        error instanceof Error ? error.message : "Paystack marked this payment successful; ReDom is retrying fulfillment.",
+      );
+    } else {
+      await recordPaymentFailureAndEmail(referenceValue, error instanceof Error ? error.message : "Payment verification failed.");
+    }
     throw error;
   }
 }
@@ -295,8 +311,14 @@ export async function verifyPaymentFromCallback(referenceValue: string): Promise
     if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id));
     return payment;
   } catch (error) {
-    // Keep successful Stars charges reconcilable; do not auto-refund them.
-    await recordPaymentFailureAndEmail(referenceValue, error instanceof Error ? error.message : "Payment verification failed.");
+    if (verified.status === "success") {
+      await recordProviderSuccessReconciliationRequired(
+        referenceValue,
+        error instanceof Error ? error.message : "Paystack marked this payment successful; ReDom is retrying fulfillment.",
+      );
+    } else {
+      await recordPaymentFailureAndEmail(referenceValue, error instanceof Error ? error.message : "Payment verification failed.");
+    }
     throw error;
   }
 }
