@@ -17,7 +17,28 @@ export function StarsCheckoutScreen(){
 
  useEffect(()=>{const timer=setTimeout(()=>{if(query.trim().length>=3)void ordersPaymentsService.addressSearch(query).then(r=>setSuggestions(r.suggestions)).catch(()=>setSuggestions([]));else setSuggestions([])},350);return()=>clearTimeout(timer)},[query]);
 
- useEffect(()=>{const sub=Linking.addEventListener("url",({url})=>{if(url.indexOf("redom://payment/callback")!==0)return;const match=url.match(/[?&]reference=([^&]+)/);const ref=match?decodeURIComponent(match[1]):reference;if(ref){setReference(ref);void ordersPaymentsService.verifyPayment(ref).then(result=>{setStatus(result.payment.status);if(result.payment.status==="paid"){Alert.alert("Payment successful",String(pkg?.stars??"")+" ReDom Stars were added to your balance.",[{text:"OK",onPress:()=>n.navigate("StarsActivity")}])}}).catch(e=>setStatus(e instanceof Error?e.message:"Payment could not be verified."));}});return()=>sub.remove()},[n,reference,pkg]);
+ useEffect(()=>{let cancelled=false;let timer:ReturnType<typeof setTimeout>|null=null;
+  const check=async(ref:string,attempt=0):Promise<void>=>{
+   if(cancelled)return;
+   try{
+    const result=await ordersPaymentsService.verifyPayment(ref);
+    const next=String(result.payment.status||"pending");
+    if(cancelled)return;
+    setStatus(next);setReference(ref);
+    if(next==="paid"){Alert.alert("Payment successful",String(pkg?.stars??"")+" ReDom Stars were added to your balance.",[{text:"OK",onPress:()=>n.navigate("StarsActivity")}]);return;}
+    const waiting=["ongoing","pending","pending_bank_transfer","processing"].includes(next);
+    if(waiting&&attempt<24){timer=setTimeout(()=>void check(ref,attempt+1),5000);return;}
+   }catch(e){
+    if(!cancelled)setStatus("verification_error");
+   }
+  };
+  const sub=Linking.addEventListener("url",({url})=>{
+   if(url.indexOf("redom://payment/callback")!==0)return;
+   const match=url.match(/[?&]reference=([^&]+)/);const ref=match?decodeURIComponent(match[1]):reference;
+   if(ref)void check(ref);
+  });
+  return()=>{cancelled=true;if(timer)clearTimeout(timer);sub.remove()};
+ },[n,pkg,reference]);
 
  const submit=async()=>{if(!pkg)return;
   if(!email.trim())return Alert.alert("Transaction email","Enter the email address on your ReDom account.");
