@@ -360,7 +360,7 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
    await permanentlyCloseSupportCase(caseRecord.id);
    return {handled:true,caseNumber:caseRecord.caseNumber};
  }
- const current=await pool.query("SELECT rr.transaction_number,rr.status,pt.reference,pt.redom_transaction_id FROM refund_requests rr LEFT JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number WHERE rr.case_id=$1 ORDER BY rr.created_at ASC LIMIT 1",[caseRecord.id]);
+ const current=await pool.query("SELECT rr.id,rr.transaction_number,rr.status,rr.verified_at,rr.case_invalidated_at,rr.decision,rr.decision_reason,pt.reference,pt.redom_transaction_id,u.email FROM refund_requests rr LEFT JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number LEFT JOIN users u ON u.id=rr.user_id WHERE rr.case_id=$1 ORDER BY rr.created_at ASC LIMIT 1",[caseRecord.id]);
  if(current.rows[0]) {
    const currentStatus=String(current.rows[0].status);
    const currentTransaction=String(current.rows[0].transaction_number);
@@ -391,13 +391,50 @@ export async function processRefundSupportEmail(input:{senderEmail:string;messag
 
      if(matchesCurrent) {
        const name=[user.first_name,user.last_name].filter(Boolean).join(" ")||"there";
+       const verifiedAt=current.rows[0].verified_at;
+       const verificationCompleted=Boolean(verifiedAt);
+       
+       // A refund request can exist before security verification is completed.
+       // In that state, never describe the request as terminal or imply that the
+       // customer already verified it. Re-issue an email security challenge and
+       // move the request back to the verification step.
+       if(!verificationCompleted) {
+         const expiresAt=new Date(Date.now()+10*60_000);
+         const code=generateRefundCode();
+         await pool.query("UPDATE refund_verification_challenges SET consumed_at=COALESCE(consumed_at,now()) WHERE refund_request_id=$1 AND consumed_at IS NULL",[String(current.rows[0].id)]);
+         await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'email',$3,$4,$5,0,3)",[String(current.rows[0].id),String(user.id),email,hashRefundCode(code),expiresAt]);
+         try {
+           await sendRefundVerificationEmail(email,code,currentTransaction);
+         } catch(error) {
+           await pool.query("UPDATE refund_verification_challenges SET consumed_at=COALESCE(consumed_at,now()),failed_at=COALESCE(failed_at,now()) WHERE refund_request_id=$1 AND consumed_at IS NULL",[String(current.rows[0].id)]);
+           throw error;
+         }
+         await pool.query("UPDATE refund_requests SET status='verification_code_sent',decision=NULL,decision_reason='Security verification is required before refund review.',case_invalidated_at=NULL,verification_sent_at=now(),updated_at=now() WHERE id=$1",[String(current.rows[0].id)]);
+         await pool.query("UPDATE refund_transaction_locks SET outcome_status='verification_code_sent',outcome_reason='Security verification required; a new email code was issued.',invalidated_at=NULL,case_id=$1,case_number=$2,updated_at=now() WHERE transaction_number=$3 AND user_id=$4",[String(caseRecord.id),String(caseRecord.caseNumber),currentTransaction,String(user.id)]);
+         await pool.query("UPDATE support_cases SET status='awaiting_support',updated_at=now() WHERE id=$1",[String(caseRecord.id)]);
+         const reply="Hello "+name+"\n\nWe received your transaction/reference number and matched it to your existing ReDom refund request. Security verification has not yet been completed for this request.\n\nA new security verification code has been sent to this email address. Enter the latest code in your reply to complete verification. The previous code, if any, is no longer valid.\n\nTransaction: "+currentTransaction+"\nCase Number: "+String(caseRecord.caseNumber)+"\n\n"+REFUND_SECURITY_WARNING;
+         await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
+         await sendRefundCaseEmail({
+           to:email,
+           caseNumber:String(caseRecord.caseNumber),
+           transactionNumber:currentTransaction,
+           status:"Security Verification Required",
+           reason:"Security verification has not yet been completed. A new verification code was sent to this email address.",
+           securityWarning:REFUND_SECURITY_WARNING,
+           nextStep:"Enter the latest security verification code in your reply to complete verification.",
+           terminal:false,
+           from:env.email.supportFrom,
+         });
+         return {handled:true,caseNumber:caseRecord.caseNumber};
+       }
+
        let nextStep="Your refund request is already associated with this transaction.";
        if(currentStatus==="verification_code_sent" || currentStatus==="awaiting_verification") {
-         nextStep="A security verification code has already been issued for this refund request. Enter the latest code you received in your reply. If you did not receive it, use the ReDom refund verification flow to request a new code.";
+         nextStep="A security verification code has already been issued for this refund request. Enter the latest code you received in your reply.";
        } else if(currentStatus==="account_under_review" || currentStatus==="refund_review_pending" || currentStatus==="refund_reviewing") {
-         nextStep="Your transaction has already passed the transaction step and the refund request is currently under review. No new transaction number is required.";
+         nextStep="Your transaction has already passed security verification and the refund request is currently under review. No new transaction number is required.";
        } else if(["refunded","closed","denied","non_refundable","refund_verification_failed"].includes(currentStatus)) {
-         nextStep="This refund request has already reached a terminal state and cannot be restarted with the same transaction.";
+         nextStep="This refund request has already reached its recorded final state and cannot be restarted with the same transaction.";
        }
        const reply="Hello "+name+"\n\nWe received your transaction/reference number and matched it to your existing ReDom refund request.\n\n"+nextStep+"\n\nTransaction: "+currentTransaction+"\nCase Number: "+caseRecord.caseNumber+"\n\n"+REFUND_SECURITY_WARNING;
        await addSupportMessage({caseId:caseRecord.id,senderType:"ai",senderEmail:env.email.supportFrom,body:reply});
