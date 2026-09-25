@@ -38,12 +38,75 @@ async function processOne(row:any):Promise<void>{
  let refund:any;
  try{
    const providerReference=String(row.provider_reference ?? row.reference ?? "").trim();
-  if(!providerReference) throw new Error("Provider reference could not be resolved from the ReDom Transaction ID.");
-  const response=await axios.post("https://api.paystack.co/refund",{transaction:providerReference,amount:amountMinor,currency:String(row.currency),customer_note:"ReDom Stars refund "+String(row.redom_transaction_id),merchant_note:"Approved ReDom Stars refund "+String(row.redom_transaction_id)},{headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000});
-   if(!response.data?.status) throw new Error(response.data?.message||"Refund provider rejected the request.");
+   if(!providerReference) throw new Error("Provider reference could not be resolved from the ReDom Transaction ID.");
+
+   // Resolve and verify the real Paystack transaction before creating a refund.
+   // The ReDom transaction ID is only our internal identifier; Paystack must receive
+   // the provider reference. For bank-transfer payments, Paystack's gross amount can
+   // include customer-paid charges, while requested_amount is the merchant/product
+   // amount. The refund is always limited to the original ReDom product amount.
+   const auth={headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000};
+   const verified=await axios.get("https://api.paystack.co/transaction/verify/"+encodeURIComponent(providerReference),auth);
+   if(!verified.data?.status || !verified.data?.data) {
+     throw new Error(verified.data?.message||"Paystack could not verify the provider transaction.");
+   }
+   const providerTransaction=verified.data.data;
+   if(String(providerTransaction.status).toLowerCase()!=="success") {
+     throw new Error("Paystack transaction is not in a successful state and cannot be refunded.");
+   }
+
+   const providerCurrency=String(providerTransaction.currency??"").toUpperCase();
+   const refundCurrency=String(row.currency??"").toUpperCase();
+   if(providerCurrency && refundCurrency && providerCurrency!==refundCurrency) {
+     throw new Error("Paystack transaction currency does not match the ReDom payment currency.");
+   }
+
+   const merchantAmountMinor=String(providerTransaction.requested_amount ?? providerTransaction.amount ?? "");
+   if(!/^\\d+$/.test(merchantAmountMinor)) {
+     throw new Error("Paystack returned an invalid original transaction amount.");
+   }
+   if(BigInt(amountMinor)>BigInt(merchantAmountMinor)) {
+     throw new Error("The ReDom refund amount exceeds the provider's original merchant transaction amount.");
+   }
+
+   const response=await axios.post("https://api.paystack.co/refund",{
+     transaction:providerReference,
+     amount:amountMinor,
+     currency:refundCurrency || undefined,
+     customer_note:"ReDom Stars refund "+String(row.redom_transaction_id),
+     merchant_note:"Approved ReDom Stars refund "+String(row.redom_transaction_id)
+   },auth);
+   if(!response.data?.status) throw new Error(response.data?.message||"Paystack rejected the refund request.");
    refund=response.data.data;
  }catch(error){
-   const reason=error instanceof Error?error.message:"Refund provider rejected the request.";
+   let reason="Refund provider rejected the request.";
+   if(axios.isAxiosError(error)){
+     const status=error.response?.status;
+     const data:any=error.response?.data;
+     const providerMessage=String(data?.message??data?.error??"").trim();
+     const providerCode=String(data?.code??"").trim();
+     reason=providerMessage
+       ? "Paystack refund request failed"+(status?" ("+status+")":"")+": "+providerMessage+(providerCode?" ["+providerCode+"]":"")
+       : "Paystack refund request failed"+(status?" ("+status+")":"")+": "+String(error.message);
+     console.error("Paystack refund request failed",{
+       transactionReference:String(row.provider_reference ?? row.reference ?? ""),
+       redomTransactionId:String(row.redom_transaction_id),
+       refundAmountMinor:amountMinor,
+       currency:String(row.currency),
+       httpStatus:status??null,
+       providerCode:providerCode||null,
+       providerMessage:providerMessage||null
+     });
+   } else {
+     reason=error instanceof Error?error.message:"Refund provider rejected the request.";
+     console.error("Refund review provider failure",{
+       transactionReference:String(row.provider_reference ?? row.reference ?? ""),
+       redomTransactionId:String(row.redom_transaction_id),
+       refundAmountMinor:amountMinor,
+       currency:String(row.currency),
+       error:reason
+     });
+   }
    await pool.query("UPDATE payment_transactions SET refund_status='failed',refund_error=$1,updated_at=now() WHERE id=$2",[reason.slice(0,500),row.payment_id]);
    await pool.query("UPDATE refund_reviews SET eligibility_result='eligible',transaction_result='provider_error',decision='approved',decision_reason=$1,completed_at=now(),internal_notes=$1 WHERE refund_request_id=$2 AND completed_at IS NULL",[reason,row.refund_request_id]);
    await pool.query("UPDATE refund_requests SET status='refund_failed',decision='approved',decision_reason=$1,reviewed_at=now(),updated_at=now(),case_invalidated_at=COALESCE(case_invalidated_at,now()) WHERE id=$2",[reason,row.refund_request_id]);
