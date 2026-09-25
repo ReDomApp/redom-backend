@@ -1,4 +1,4 @@
-import React,{useCallback,useEffect,useState}from"react";
+import React,{useCallback,useState}from"react";
 import{SafeAreaView,View,Text,Pressable,StyleSheet,ScrollView,ActivityIndicator,Alert,Modal,TextInput}from"react-native";
 import{useNavigation,useRoute,useFocusEffect}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
