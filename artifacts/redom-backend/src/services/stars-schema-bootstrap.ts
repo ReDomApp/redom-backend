@@ -1,4 +1,4 @@
-import { pool } from "../../database/db";
+import { pool } from "../database/db";
 
 export async function ensureStarsSchema(): Promise<void> {
   await pool.query(`CREATE TABLE IF NOT EXISTS redom_stars_accounts (
