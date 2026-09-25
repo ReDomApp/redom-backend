@@ -1,4 +1,4 @@
-import { pool } from "../../database/db";
+import { pool } from "../database/db";
 
 export async function ensureBugReportSchema(): Promise<void> {
   await pool.query(`CREATE TABLE IF NOT EXISTS bug_reports (
