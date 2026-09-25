@@ -56,7 +56,7 @@ export function StarsCheckoutScreen(){
    const url=String(request?.url||"");
    if(url.startsWith(PAYSTACK_CALLBACK_PREFIX)||url.startsWith("redom://payment/callback")){
      const match=url.match(/[?&]reference=([^&]+)/);const ref=match?decodeURIComponent(match[1]):reference;
-     if(ref){setCheckoutUrl(null);void verifyAndResolve(ref)}
+     if(ref){void verifyAndResolve(ref)}
      return false;
    }
    if(url.startsWith("https://standard.paystack.co/close"))return false;
