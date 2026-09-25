@@ -250,8 +250,8 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
 
    if(channel==="sms") {
     try {
-     await twilioSmsProvider.sendOtp({channel:"sms",to:String(row.phone_number??""),code:nextCode,expiresAt:nextExpiresAt});
      await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'sms',$3,$4,$5,0,3)",[row.id,row.user_id,nextTarget,hashRefundCode(nextCode),nextExpiresAt]);
+     await twilioSmsProvider.sendOtp({channel:"sms",to:String(row.phone_number??""),code:nextCode,expiresAt:nextExpiresAt});
      await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE id=$1",[row.id]);
      await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"The previous verification code is no longer valid. A new 8-digit security code has been sent to your verified ReDom phone ("+nextTarget+"). This is failed attempt "+failedAttempt+" of 3. Enter the new code.\n\n"+REFUND_SECURITY_WARNING});
      return {success:false,status:"verification_code_sent",code:"NEW_CODE_REQUIRED",reason:"The previous code was incorrect and has been invalidated. A new 8-digit code was sent.",transactionNumber,caseNumber:String(row.case_number),target:nextTarget};
