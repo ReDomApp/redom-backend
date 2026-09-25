@@ -321,6 +321,58 @@ export async function handlePaymentWebhook(rawBody: Buffer, signature: string | 
       const verified = await verifyWithProvider(String(data.reference));
       const tx = await pool.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1", [String(data.reference)]); try { const payment = await applyVerifiedPayment(String(data.reference), verified); if ((payment.status !== "paid" || payment.purpose === "payment_method_setup") && tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), payment.purpose === "payment_method_setup"); if (tx.rows[0]?.id) await sendPaymentEmailIfNeeded(String(tx.rows[0].id)); } catch (error) { if (tx.rows[0]?.id) await requestAutomaticRefund(String(data.reference), verified, String(tx.rows[0].id), true); throw error; }
     }
+    if (event.startsWith("refund.") && data.transaction_reference) {
+      const refundStatus = event === "refund.processed" ? "processed"
+        : event === "refund.processing" ? "processing"
+        : event === "refund.pending" ? "pending"
+        : event === "refund.needs-attention" ? "needs-attention"
+        : event === "refund.failed" ? "failed"
+        : null;
+      if (refundStatus) {
+        const processedAt = refundStatus === "processed" ? new Date() : null;
+        await pool.query(
+          `UPDATE payment_transactions
+             SET refund_status=$1,
+                 refund_id=COALESCE($2, refund_id),
+                 refund_amount_minor=COALESCE($3, refund_amount_minor),
+                 refund_processed_at=COALESCE($4, refund_processed_at),
+                 refund_error=CASE WHEN $1='failed' THEN COALESCE($5, refund_error) ELSE NULL END,
+                 updated_at=now()
+           WHERE reference=$6 OR external_transaction_id=CASE WHEN $6 ~ '^[0-9]+
+      const email = data.customer?.email ? String(data.customer.email).toLowerCase() : null;
+      const planCode = data.plan?.plan_code ? String(data.plan.plan_code) : data.plan?.code ? String(data.plan.code) : null;
+      if (email) {
+        await pool.query(
+          "INSERT INTO payment_subscriptions (user_id, verification_subscription_id, plan_id, external_subscription_code, external_customer_code, external_email_token, status) SELECT u.id, tx.subscription_id, pp.id, $1, $2, $3, 'active' FROM users u LEFT JOIN LATERAL (SELECT subscription_id, plan_id FROM payment_transactions WHERE user_id=u.id AND status='paid' ORDER BY created_at DESC LIMIT 1) tx ON true LEFT JOIN payment_plans pp ON pp.external_plan_code=$4 WHERE lower(u.email)=lower($5) ON CONFLICT (external_subscription_code) DO UPDATE SET status='active', updated_at=now()",
+          [String(data.subscription_code), data.customer?.customer_code ? String(data.customer.customer_code) : null, data.email_token ? String(data.email_token) : null, planCode, email],
+        );
+      }
+    }
+    if (event === "subscription.disable" && data.subscription_code) {
+      await pool.query("UPDATE payment_subscriptions SET status='disabled', disabled_at=now(), updated_at=now() WHERE external_subscription_code=$1", [String(data.subscription_code)]);
+      await pool.query("UPDATE verification_subscriptions vs SET subscription_status='expired', auto_renew=false, updated_at=now() FROM payment_subscriptions ps WHERE ps.verification_subscription_id=vs.id AND ps.external_subscription_code=$1", [String(data.subscription_code)]);
+    }
+    await pool.query("UPDATE payment_webhook_events SET processed=true, processed_at=now() WHERE event_key=$1", [eventKey]);
+  } catch (error) {
+    await pool.query("UPDATE payment_webhook_events SET processing_error=$1 WHERE event_key=$2", [error instanceof Error ? error.message : String(error), eventKey]);
+    throw error;
+  }
+}
+
+export function getPublicPaymentKey(): string { return env.payments.paystack.publicKey; }
+ THEN $6::bigint ELSE NULL END`,
+          [
+            refundStatus,
+            data.refund_reference ? String(data.refund_reference) : null,
+            data.amount != null ? String(data.amount) : null,
+            processedAt,
+            data.reason ? String(data.reason).slice(0, 500) : null,
+            String(data.transaction_reference),
+          ],
+        );
+      }
+    }
+
     if (event === "subscription.create" && data.subscription_code) {
       const email = data.customer?.email ? String(data.customer.email).toLowerCase() : null;
       const planCode = data.plan?.plan_code ? String(data.plan.plan_code) : data.plan?.code ? String(data.plan.code) : null;
