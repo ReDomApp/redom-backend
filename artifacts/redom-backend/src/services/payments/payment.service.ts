@@ -1,6 +1,7 @@
 import axios from "axios";
 import crypto from "node:crypto";
 import { env } from "../../config/env";
+import { applyStarsRefundWebhook } from "../refund/refund.service";
 import { pool } from "../../database/db";
 import { sendPaymentConfirmationEmail } from "./paymentEmail.service";
 
@@ -336,7 +337,7 @@ export async function handlePaymentWebhook(rawBody: Buffer, signature: string | 
   );
   if (!inserted.rows[0]) return;
   try {
-    if (event === "charge.success" && data.reference) {
+    if (event.startsWith("refund.") && data.transaction_reference) { await applyStarsRefundWebhook(event, data); }\n    if (event === "charge.success" && data.reference) {
       const verified = await verifyWithProvider(String(data.reference));
       const tx = await pool.query("SELECT id, purpose FROM payment_transactions WHERE reference=$1 LIMIT 1", [String(data.reference)]);
       try {
