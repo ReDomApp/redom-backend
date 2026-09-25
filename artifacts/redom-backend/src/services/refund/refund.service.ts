@@ -208,7 +208,7 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
   const tx=await client.query("SELECT id,user_id,amount_minor,metadata,redom_transaction_id,refund_status FROM payment_transactions WHERE reference=$1 FOR UPDATE",[reference]);
   if(!tx.rows[0]) { await client.query("COMMIT"); return; }
   const row=tx.rows[0];
-  const request=await client.query("SELECT rr.id,rr.case_id,rr.case_number,rr.user_id,rr.status,rr.refund_target_masked,rr.currency,rr.amount,u.email FROM refund_requests rr JOIN users u ON u.id=rr.user_id WHERE rr.transaction_number=$1 ORDER BY rr.created_at DESC LIMIT 1 FOR UPDATE",[row.redom_transaction_id]);
+  const request=await client.query("SELECT rr.id,rr.case_id,sc.case_number,rr.user_id,rr.status,rr.refund_target_masked,rr.currency,rr.amount,u.email FROM refund_requests rr JOIN support_cases sc ON sc.id=rr.case_id JOIN users u ON u.id=rr.user_id WHERE rr.transaction_number=$1 ORDER BY rr.created_at DESC LIMIT 1 FOR UPDATE",[row.redom_transaction_id]);
   if(!request.rows[0]) { await client.query("COMMIT"); return; }
   const rr=request.rows[0];
   const previousStatus=String(rr.status);
