@@ -2,7 +2,7 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import axios from "axios";
 import { Resend } from "resend";
 import { createSupportCase, addSupportMessage, permanentlyCloseSupportCase } from "../support/support.service";
-import { sendRefundCaseEmail } from "./refund-email.service";
+import { sendRefundCaseEmail } from "../support/supportEmail.service";
 import { pool } from "../../database/db";
 import { env } from "../../config/env";
 import { twilioSmsProvider } from "../../lib/providers/sms/twilio-sms-provider";
