@@ -101,3 +101,73 @@ export async function sendGeneratedSupportEmail(input: {
   });
   if (error) throw new Error(`Support email could not be sent: ${error.message}`);
 }
+
+
+export async function sendRefundCaseEmail(input: {
+  to: string;
+  caseNumber: string;
+  transactionNumber: string;
+  status: string;
+  reason: string;
+  target?: string | null;
+  nextStep?: string | null;
+  amount?: string;
+  currency?: string;
+  refundId?: string | null;
+  securityWarning: string;
+  terminal?: boolean;
+}): Promise<void> {
+  const safe = (value: string) => escapeHtml(value);
+  const tone = /completed|successful|processed/i.test(input.status)
+    ? { color: "#31A24C", bg: "#EAF7ED" }
+    : /failed|rejected|expired|closed/i.test(input.status)
+      ? { color: "#E41E3F", bg: "#FDECEF" }
+      : /verification|required|attention/i.test(input.status)
+        ? { color: "#8A5A00", bg: "#FFF4D6" }
+        : { color: REDOM_EMAIL_BRAND.primary, bg: "#EAF2FF" };
+
+  const line = (label: string, value?: string | null, strong = false) =>
+    value ? '<tr><td style="padding:11px 0;border-bottom:1px solid ' + REDOM_EMAIL_BRAND.border + ';font:12px/18px Arial;color:' + REDOM_EMAIL_BRAND.secondary + ';">' +
+      safe(label) + '</td><td align="right" style="padding:11px 0;border-bottom:1px solid ' + REDOM_EMAIL_BRAND.border + ';font: ' +
+      (strong ? "700" : "500") + ' 14px/20px Arial;color:' + REDOM_EMAIL_BRAND.text + ';word-break:break-word;">' + safe(value) + '</td></tr>' : "";
+
+  const step = (label: string, active: boolean, last = false) =>
+    '<tr><td width="22" style="width:22px;vertical-align:top;"><div style="width:10px;height:10px;margin-top:4px;border-radius:50%;background:' +
+    (active ? REDOM_EMAIL_BRAND.primary : REDOM_EMAIL_BRAND.border) + ';"></div>' +
+    (!last ? '<div style="width:2px;height:24px;margin-left:4px;background:' + REDOM_EMAIL_BRAND.border + ';"></div>' : "") +
+    '</td><td style="padding:0 0 ' + (last ? "0" : "11") + 'px 0;font: ' + (active ? "700" : "500") +
+    ' 13px/18px Arial;color:' + (active ? REDOM_EMAIL_BRAND.text : REDOM_EMAIL_BRAND.secondary) + ';">' + safe(label) + "</td></tr>";
+
+  const verification = /verification/i.test(input.status) || /verification/i.test(input.nextStep || "");
+  const processing = /processing|review|initiated|under review/i.test(input.status);
+  const completed = /completed|successful|processed/i.test(input.status);
+  const closed = Boolean(input.terminal) || /closed|rejected|failed|expired/i.test(input.status);
+
+  const timeline =
+    step("Refund case created", true) +
+    step("Security verification", verification || processing || completed || closed) +
+    step("Refund review", processing || completed) +
+    step("Refund processing", processing || completed) +
+    step("Completed / closed", completed || closed, true);
+
+  const reasonHtml = renderSupportText(input.reason);
+  const nextHtml = input.nextStep ? renderSupportText(input.nextStep) : "";
+
+  const html = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#F0F2F5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F0F2F5;"><tr><td align="center" style="padding:28px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:620px;background:#FFF;border:1px solid ${REDOM_EMAIL_BRAND.border};border-radius:16px;overflow:hidden;">
+<tr><td style="padding:22px 24px;border-bottom:1px solid ${REDOM_EMAIL_BRAND.border};"><span style="font:800 24px/28px Arial;color:${REDOM_EMAIL_BRAND.primary};">ReDom</span><span style="float:right;font:700 11px/18px Arial;color:${REDOM_EMAIL_BRAND.secondary};letter-spacing:.7px;">REFUNDS</span></td></tr>
+<tr><td style="padding:28px 24px 12px;"><div style="font:700 12px/18px Arial;color:${REDOM_EMAIL_BRAND.secondary};letter-spacing:.6px;">REFUND CASE</div><div style="font:800 25px/31px Arial;color:${REDOM_EMAIL_BRAND.text};margin-top:4px;">${safe(input.caseNumber)}</div><span style="display:inline-block;margin-top:12px;padding:7px 11px;border-radius:999px;background:${tone.bg};color:${tone.color};font:800 12px/16px Arial;">${safe(input.status)}</span></td></tr>
+<tr><td style="padding:12px 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FFF8E1;border:1px solid #F1D48A;border-radius:12px;"><tr><td style="padding:14px;"><strong style="font:800 13px/18px Arial;color:${REDOM_EMAIL_BRAND.text};">Security warning</strong><div style="font:12px/18px Arial;color:${REDOM_EMAIL_BRAND.secondary};margin-top:4px;">${renderInlineFormatting(input.securityWarning)}</div></td></tr></table></td></tr>
+<tr><td style="padding:18px 24px;"><div style="font:800 18px/24px Arial;color:${REDOM_EMAIL_BRAND.text};margin-bottom:12px;">Refund status</div><table role="presentation" cellpadding="0" cellspacing="0" border="0">${timeline}</table></td></tr>
+<tr><td style="padding:0 24px 20px;"><div style="font:800 18px/24px Arial;color:${REDOM_EMAIL_BRAND.text};margin-bottom:8px;">Transaction</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${line("ReDom Transaction ID",input.transactionNumber,true)}${line("Amount",input.amount && input.currency ? input.amount+" "+input.currency : null,true)}${line("Refund destination",input.target)}${line("Refund ID",input.refundId)}</table></td></tr>
+<tr><td style="padding:0 24px 20px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F8FA;border:1px solid ${REDOM_EMAIL_BRAND.border};border-radius:12px;"><tr><td style="padding:15px;"><div style="font:800 15px/20px Arial;color:${REDOM_EMAIL_BRAND.text};">What happens next?</div><div style="font:13px/20px Arial;color:${REDOM_EMAIL_BRAND.secondary};margin-top:6px;">${reasonHtml}</div>${input.nextStep ? '<div style="margin-top:12px;padding-top:12px;border-top:1px solid '+REDOM_EMAIL_BRAND.border+';font:13px/20px Arial;color:'+REDOM_EMAIL_BRAND.text+';"><strong>Next step:</strong><br>'+nextHtml+'</div>' : ""}</td></tr></table></td></tr>
+<tr><td style="padding:0 24px 24px;font:12px/19px Arial;color:${REDOM_EMAIL_BRAND.secondary};">${closed ? "<strong>This refund case has reached a terminal state.</strong>" : "<strong>Reply to this email</strong> to continue your existing ReDom refund support case."}</td></tr>
+<tr><td style="padding:18px 24px;background:#F7F8FA;border-top:1px solid ${REDOM_EMAIL_BRAND.border};font:11px/17px Arial;color:${REDOM_EMAIL_BRAND.secondary};"><strong style="color:${REDOM_EMAIL_BRAND.text};">ReDom Refund Services</strong><br>Case ${safe(input.caseNumber)} · Transaction ${safe(input.transactionNumber)}<br><br>${renderInlineFormatting(input.securityWarning)}<br><br>© ReDom</td></tr>
+</table></td></tr></table></body></html>`;
+
+  const text = "ReDom Refund Case\n\nCase: " + input.caseNumber + "\nTransaction: " + input.transactionNumber + "\nStatus: " + input.status + "\nReason: " + input.reason + (input.nextStep ? "\nNext step: " + input.nextStep : "") + "\n\n" + input.securityWarning;
+  const { error } = await resend.emails.send({ from: env.email.supportFrom, to: [input.to], subject: "ReDom Refunds — " + input.status + " — " + input.transactionNumber, text, html });
+  if (error) throw new Error("Refund case email could not be sent: " + error.message);
+}
