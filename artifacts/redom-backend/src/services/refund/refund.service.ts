@@ -223,13 +223,11 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
   const ch=await client.query("SELECT id,channel_type,target_masked,code_hash,expires_at,consumed_at,attempt_count,max_attempts FROM refund_verification_challenges WHERE refund_request_id=$1 ORDER BY created_at DESC LIMIT 1",[row.id]);
   if(!ch.rows[0]||ch.rows[0].consumed_at||new Date(String(ch.rows[0].expires_at)).getTime()<Date.now()) throw new Error("Refund verification code expired. Request a new code.");
   const attempts=Number(ch.rows[0].attempt_count??0);
-  const maxAttempts=3;
-
   if(hashRefundCode(input.code)!==String(ch.rows[0].code_hash)) {
    const failedAttempt=attempts+1;
    await client.query("UPDATE refund_verification_challenges SET attempt_count=$1,failed_at=now(),consumed_at=now() WHERE id=$2",[failedAttempt,ch.rows[0].id]);
 
-   if(failedAttempt>=maxAttempts) {
+   if(failedAttempt>=3) {
     const reason="Refund security verification failed after 3 incorrect codes. The refund case has been permanently closed for security.";
     await client.query("UPDATE refund_requests SET status='refund_verification_failed',decision='denied',decision_reason=$1,case_invalidated_at=COALESCE(case_invalidated_at,now()),updated_at=now() WHERE id=$2",[reason,row.id]);
     await client.query("UPDATE refund_transaction_locks SET outcome_status='refund_verification_failed',outcome_reason=$1,invalidated_at=COALESCE(invalidated_at,now()),updated_at=now() WHERE transaction_number=$2",[reason,transactionNumber]);
@@ -242,12 +240,11 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
     return {success:false,status:"refund_verification_failed",code:"REFUND_VERIFICATION_LOCKED",reason,transactionNumber,caseNumber:String(row.case_number)};
    }
 
-   // Every incorrect code invalidates the previous code and immediately issues a fresh code.
+   // The incorrect code is consumed immediately. A fresh code is generated for every remaining attempt.
    const nextExpiresAt=new Date(Date.now()+10*60_000);
    const channel=String(ch.rows[0].channel_type);
    const nextCode=channel==="sms" ? randomInt(10_000_000,100_000_000).toString() : randomInt(100_000,1_000_000).toString();
    const nextTarget=channel==="sms" ? maskRefundTarget(String(row.phone_number??"")) : String(row.email);
-
    await client.query("COMMIT");
 
    if(channel==="sms") {
