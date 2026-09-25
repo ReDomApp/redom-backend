@@ -42,6 +42,12 @@ async function sendPaymentEmailIfNeeded(transactionId: string): Promise<void> {
   try {
     const result = await client.query("SELECT pt.id, pt.redom_transaction_id, pt.reference, pt.amount_minor, pt.currency, pt.status, pt.paid_at, pt.metadata, pt.customer_email, pt.customer_email_status, pt.refund_status, pt.refund_id, pt.refund_expected_at, pt.refund_processed_at, pt.refund_error, u.email, u.first_name, u.last_name, pp.name AS plan_name, pp.interval, vs.expires_at FROM payment_transactions pt JOIN users u ON u.id = pt.user_id LEFT JOIN payment_plans pp ON pp.id = pt.plan_id LEFT JOIN verification_subscriptions vs ON vs.id = pt.subscription_id WHERE pt.id = $1 LIMIT 1", [transactionId]);
     const row = result.rows[0];
+    // Do not send a "failed" receipt for an asynchronous bank transfer that is
+    // still being processed. A final receipt is sent when Paystack reports
+    // success or a terminal failure.
+    const paymentStatus = String(row?.status ?? "").toLowerCase();
+    const terminal = paymentStatus === "paid" || paymentStatus === "failed" || paymentStatus === "abandoned" || paymentStatus === "reversed";
+    if (!terminal) return;
     if (!(row?.customer_email || row?.email) || row.customer_email_status === "sent" || row.customer_email_status === "sending") return;
     const claimed = await client.query("UPDATE payment_transactions SET customer_email_status='sending', customer_email_error=NULL, updated_at=now() WHERE id=$1 AND customer_email_status IN ('pending','failed') RETURNING id", [transactionId]);
     if (!claimed.rows[0]) return;
