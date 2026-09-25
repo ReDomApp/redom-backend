@@ -224,8 +224,6 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
   const target=String(rr.refund_target_masked??"original payment rail");
   const reason=String(data?.reason??data?.message??(refundStatus==="processed"?"Refund successfully processed by the bank or payment processor.":refundStatus==="failed"?"The bank or payment processor rejected the refund.":"Refund is being processed by the bank or payment processor."));
   await client.query("UPDATE payment_transactions SET refund_status=$1,refund_id=COALESCE($2,refund_id),refund_processed_at=CASE WHEN $1='processed' THEN now() ELSE refund_processed_at END,refund_error=CASE WHEN $1='failed' THEN COALESCE($3,refund_error) ELSE NULL END,updated_at=now() WHERE id=$4",[refundStatus,data?.refund_reference?String(data.refund_reference):null,data?.reason?String(data.reason):null,row.id]);
-  if(previousStatus===refundStatus && ["refunded","refund_rejected","refund_needs_attention"].includes(previousStatus)) { await client.query("COMMIT"); return; }
-
   let finalStatus:string;
   let customerStatus:string;
   let terminal=false;
@@ -253,6 +251,7 @@ export async function applyStarsRefundWebhook(event:string,data:any):Promise<voi
   } else {
     finalStatus="refund_processing"; customerStatus="Refund under review"; terminal=false;
   }
+  if(previousStatus===finalStatus) { await client.query("COMMIT"); return; }
 
   await client.query("UPDATE refund_requests SET status=$1,decision=CASE WHEN $2 THEN 'approved' ELSE decision END,decision_reason=$3,refund_completed_at=CASE WHEN $2 THEN now() ELSE refund_completed_at END,updated_at=now() WHERE id=$4",[finalStatus,terminal,reason,rr.id]);
   await client.query("UPDATE refund_transaction_locks SET outcome_status=$1,outcome_reason=$2,refund_id=COALESCE($3,refund_id),updated_at=now() WHERE transaction_number=$4",[finalStatus,reason,data?.refund_reference?String(data.refund_reference):null,row.redom_transaction_id]);
