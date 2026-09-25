@@ -1,137 +1,49 @@
-import { useEffect, useState } from "react";
-import type { ComponentType } from "react";
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useNavigation } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useTheme } from "../theme/ThemeProvider";
-import type { RootStackParamList } from "../routing/types";
-import { ordersPaymentsService, type OrderSummary } from "../services/ordersPaymentsService";
-import BackIcon from "../assets/navigation/back.svg";
-import CartIcon from "../assets/home-feed/cart.svg";
-import StarsIcon from "../assets/home-feed/stars.svg";
-import SubscriptionsIcon from "../assets/home-feed/subscriptions.svg";
-import SecurityIcon from "../assets/home-feed/security-controls.svg";
-import HelpIcon from "../assets/home-feed/help-support.svg";
-import TermsIcon from "../assets/home-feed/terms-policies.svg";
-import ChevronIcon from "../assets/home-feed/chevron-right.svg";
+import React,{useEffect,useMemo,useState}from"react";
+import{ActivityIndicator,Pressable,SafeAreaView,ScrollView,StyleSheet,Text,View}from"react-native";
+import{useNavigation}from"@react-navigation/native";
+import{useTheme}from"../theme/ThemeProvider";
+import{ordersPaymentsService,type OrderSummary,type PaymentTransactionSummary}from"../services/ordersPaymentsService";
+import BackIcon from"../assets/navigation/back.svg";
+import CartIcon from"../assets/home-feed/cart.svg";
+import StarsIcon from"../assets/home-feed/stars.svg";
+import SubscriptionsIcon from"../assets/home-feed/subscriptions.svg";
+import SecurityIcon from"../assets/home-feed/security-controls.svg";
+import HelpIcon from"../assets/home-feed/help-support.svg";
+import TermsIcon from"../assets/home-feed/terms-policies.svg";
+import ChevronIcon from"../assets/home-feed/chevron-right.svg";
 
-export function OrdersPaymentsScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { colors } = useTheme();
-  const [orders, setOrders] = useState<OrderSummary[]>([]);
-  const [stars, setStars] = useState(0);
-  const [loading, setLoading] = useState(true);
+type Tab="all"|"money_transfer"|"orders"|"donations";
 
-  useEffect(() => {
-    let active = true;
-    Promise.all([ordersPaymentsService.overview(), ordersPaymentsService.starsActivity()])
-      .then(([overview, starsResult]) => {
-        if (!active) return;
-        setOrders(overview.orders);
-        setStars(starsResult.balance);
-      })
-      .catch(() => {})
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
-
-  return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Back">
-          <BackIcon width={24} height={24} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Orders and payments</Text>
-        <Pressable onPress={() => navigation.navigate("Cart")} accessibilityRole="button" accessibilityLabel="Cart">
-          <CartIcon width={24} height={24} color={colors.text} />
-        </Pressable>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        <Pressable onPress={() => navigation.navigate("ReDomPay")} style={[styles.payCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.payTitle, { color: colors.text }]}>ReDom Pay</Text>
-          <Text style={[styles.payDescription, { color: colors.textSecondary }]}>
-            Transactions, payment methods, addresses, security, currency, support and payment terms.
-          </Text>
-          <View style={styles.cardLink}>
-            <Text style={[styles.cardLinkText, { color: colors.primary }]}>Open ReDom Pay</Text>
-            <ChevronIcon width={20} height={20} />
-          </View>
-        </Pressable>
-
-        <Text style={[styles.section, { color: colors.text }]}>Balances</Text>
-        <View style={[styles.balanceCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <StarsIcon width={34} height={34} color={colors.text} />
-          <View style={styles.balanceInfo}>
-            <Text style={[styles.balanceTitle, { color: colors.text }]}>ReDom Stars</Text>
-            <Text style={[styles.balanceSub, { color: colors.textSecondary }]}>{stars.toLocaleString()} Stars available</Text>
-          </View>
-          <Pressable onPress={() => navigation.navigate("BuyStars")} style={[styles.buyButton, { backgroundColor: colors.primary }]}>
-            <Text style={styles.buyText}>Buy Stars</Text>
-          </Pressable>
-        </View>
-        <Row label="Stars activity" Icon={StarsIcon} colors={colors} onPress={() => navigation.navigate("StarsActivity")} />
-        
-        <Text style={[styles.section, { color: colors.text }]}>Payment information</Text>
-        <Row label="Payment methods" colors={colors} onPress={() => navigation.navigate("PaymentMethods")} />
-        <Row label="Add payment method" colors={colors} onPress={() => navigation.navigate("PaymentMethods")} />
-        <Row label="Subscriptions" Icon={SubscriptionsIcon} colors={colors} onPress={() => navigation.navigate("Subscriptions")} />
-
-        <Text style={[styles.section, { color: colors.text }]}>Manage</Text>
-        <Row label="Shipping and billing addresses" colors={colors} onPress={() => navigation.navigate("PaymentAddresses")} />
-        <Row label="Email" colors={colors} onPress={() => navigation.navigate("EditProfile")} />
-        <Row label="Phone" colors={colors} onPress={() => navigation.navigate("EditProfile")} />
-        <Row label="Security and payment PIN" Icon={SecurityIcon} colors={colors} onPress={() => navigation.navigate("PaymentSecurity")} />
-        <Row label="Currency" colors={colors} onPress={() => navigation.navigate("SelectCurrency")} />
-        <Row label="Help" Icon={HelpIcon} colors={colors} onPress={() => navigation.navigate("MetaPaySupport")} />
-        <Row label="Terms and privacy" Icon={TermsIcon} colors={colors} onPress={() => navigation.navigate("Policy", { slug: "payments" })} />
-
-        <Text style={[styles.section, { color: colors.text }]}>Orders</Text>
-        {loading ? <ActivityIndicator color={colors.primary} /> : orders.length === 0 ? (
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>No marketplace orders yet.</Text>
-        ) : orders.map((o) => (
-          <View key={o.transactionId} style={[styles.order, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.orderTitle, { color: colors.text }]}>{o.title}</Text>
-            <Text style={{ color: colors.textSecondary }}>{o.currency} {o.totalPrice}</Text>
-            <Text style={{ color: colors.textSecondary }}>{o.orderStatus} · {o.transactionId}</Text>
-          </View>
-        ))}
-      </ScrollView>
-    </SafeAreaView>
-  );
+export function OrdersPaymentsScreen(){
+ const n=useNavigation<any>();const{colors}=useTheme();
+ const[tab,setTab]=useState<Tab>("all");const[orders,setOrders]=useState<OrderSummary[]>([]);const[payments,setPayments]=useState<PaymentTransactionSummary[]>([]);const[stars,setStars]=useState(0);const[loading,setLoading]=useState(true);
+ const load=async()=>{setLoading(true);try{const[o,s]=await Promise.all([ordersPaymentsService.overview(),ordersPaymentsService.starsActivity()]);setOrders(o.orders);setPayments(o.payments);setStars(s.balance)}catch{}finally{setLoading(false)}};
+ useEffect(()=>{void load()},[]);
+ const visiblePayments=useMemo(()=>payments.filter(p=>{const x=p.purpose.toLowerCase();if(tab==="all")return true;if(tab==="money_transfer")return["money_transfer","transfer","p2p_transfer"].includes(x);if(tab==="donations")return["donation","donations"].includes(x);return["order","marketplace_order","stars_purchase","subscription","subscription_renewal"].includes(x)}),[payments,tab]);
+ const visibleOrders=tab==="all"||tab==="orders"?orders:[];
+ return <SafeAreaView style={[s.root,{backgroundColor:colors.background}]}>
+  <View style={[s.header,{backgroundColor:colors.surface,borderBottomColor:colors.border}]}><Pressable onPress={()=>n.goBack()}><BackIcon width={24} height={24}/></Pressable><Text style={[s.title,{color:colors.text}]}>Orders and payments</Text><Pressable onPress={()=>n.navigate("Cart")}><CartIcon width={24} height={24}/></Pressable></View>
+  <ScrollView contentContainerStyle={s.content}>
+   <Text style={[s.heading,{color:colors.text}]}>Transactions</Text>
+   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabs}>{([["all","All"],["money_transfer","Money transfer"],["orders","Orders"],["donations","Donations"]] as const).map(([k,l])=><Pressable key={k} onPress={()=>setTab(k)} style={[s.tab,{backgroundColor:tab===k?colors.primary:colors.surface,borderColor:tab===k?colors.primary:colors.border}]}><Text style={{color:tab===k?"#fff":colors.text,fontWeight:"800"}}>{l}</Text></Pressable>)}</ScrollView>
+   {loading?<ActivityIndicator color={colors.primary} style={s.loader}/>:visibleOrders.length===0&&visiblePayments.length===0?<Text style={[s.empty,{color:colors.textSecondary}]}>No transactions in this section yet.</Text>:<>{visibleOrders.map(o=><View key={"o"+o.transactionId} style={[s.tx,{backgroundColor:colors.surface,borderColor:colors.border}]}><Text style={[s.txTitle,{color:colors.text}]}>{o.title}</Text><Text style={{color:colors.textSecondary}}>Order · {o.currency} {o.totalPrice}</Text><Text style={{color:colors.textSecondary}}>{o.orderStatus} · {o.transactionId}</Text></View>)}{visiblePayments.map(p=><View key={"p"+p.id} style={[s.tx,{backgroundColor:colors.surface,borderColor:colors.border}]}><Text style={[s.txTitle,{color:colors.text}}>{p.purpose==="stars_purchase"?"ReDom Stars purchase":p.purpose==="subscription_renewal"?"Subscription renewal":p.purpose==="donation"?"Donation":p.purpose==="money_transfer"?"Money transfer":"Payment"}</Text><Text style={{color:colors.textSecondary}}>{p.currency} {(Number(p.amountMinor)/100).toFixed(2)} · {p.status}</Text><Text style={{color:colors.textSecondary}}>{p.redomTransactionId||p.reference}</Text></View>)}</>}
+   <Text style={[s.section,{color:colors.text}]}>Balances</Text>
+   <View style={[s.balance,{backgroundColor:colors.surface,borderColor:colors.border}]}><StarsIcon width={30} height={30} color={colors.text}/><View style={{flex:1}}><Text style={[s.balanceTitle,{color:colors.text}]}>ReDom Stars</Text><Text style={{color:colors.textSecondary}}>{stars.toLocaleString()} Stars available</Text></View><Pressable onPress={()=>n.navigate("BuyStars")} style={[s.buy,{backgroundColor:colors.primary}]}><Text style={s.buyText}>Buy Stars</Text></Pressable></View>
+   <Row label="Stars activity" Icon={StarsIcon} onPress={()=>n.navigate("StarsActivity")} colors={colors}/>
+   <Text style={[s.section,{color:colors.text}]}>Payment information</Text>
+   <Row label="Payment methods" onPress={()=>n.navigate("PaymentMethods")} colors={colors}/>
+   <Row label="Add payment method" onPress={()=>n.navigate("PaymentMethods",{autoAdd:true})} colors={colors}/>
+   <Row label="Subscriptions" Icon={SubscriptionsIcon} onPress={()=>n.navigate("Subscriptions")} colors={colors}/>
+   <Text style={[s.section,{color:colors.text}]}>Manage</Text>
+   <Row label="Shipping and billing addresses" onPress={()=>n.navigate("PaymentAddresses")} colors={colors}/>
+   <Row label="Email" subtitle="Payment receipts and transaction notices" onPress={()=>n.navigate("EditProfile")} colors={colors}/>
+   <Row label="Phone" subtitle="Payment and account contact information" onPress={()=>n.navigate("EditProfile")} colors={colors}/>
+   <Row label="Security and payment PIN" Icon={SecurityIcon} subtitle="PIN, biometrics and payment security" onPress={()=>n.navigate("PaymentSecurity")} colors={colors}/>
+   <Row label="Currency" subtitle="Choose the currency used for payment presentation" onPress={()=>n.navigate("SelectCurrency")} colors={colors}/>
+   <Row label="Help" Icon={HelpIcon} subtitle="ReDom Pay support and payment questions" onPress={()=>n.navigate("MetaPaySupport")} colors={colors}/>
+   <Row label="Terms and privacy" Icon={TermsIcon} subtitle="Read the ReDom Payments Terms" onPress={()=>n.navigate("Policy",{slug:"payments"})} colors={colors}/>
+  </ScrollView>
+ </SafeAreaView>
 }
-
-function Row({ label, Icon, colors, onPress }: { label: string; Icon?: ComponentType<{ width?: number; height?: number; color?: string }>; colors: any; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.row, { borderBottomColor: colors.border }]} accessibilityRole="button">
-      {Icon ? <Icon width={27} height={27} color={colors.text} /> : <View style={styles.iconPlaceholder} />}
-      <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-      <ChevronIcon width={20} height={20} />
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: { height: 58, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14 },
-  headerTitle: { fontSize: 19, fontWeight: "800" },
-  content: { padding: 16, paddingBottom: 50 },
-  payCard: { borderWidth: 1, borderRadius: 17, padding: 18 },
-  payTitle: { fontSize: 24, fontWeight: "900" },
-  payDescription: { fontSize: 15, lineHeight: 21, marginTop: 7 },
-  cardLink: { flexDirection: "row", alignItems: "center", marginTop: 15 },
-  cardLinkText: { fontSize: 16, fontWeight: "800", flex: 1 },
-  section: { fontSize: 21, fontWeight: "900", marginTop: 28, marginBottom: 8 },
-  balanceCard: { borderWidth: 1, borderRadius: 16, padding: 15, flexDirection: "row", alignItems: "center", gap: 12 },
-  balanceInfo: { flex: 1 },
-  balanceTitle: { fontSize: 17, fontWeight: "800" },
-  balanceSub: { fontSize: 13, marginTop: 3 },
-  buyButton: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20 },
-  buyText: { color: "#fff", fontWeight: "800" },
-  row: { minHeight: 62, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", gap: 14 },
-  iconPlaceholder: { width: 27, height: 27 },
-  label: { fontSize: 17, fontWeight: "600", flex: 1 },
-  order: { padding: 14, borderWidth: 1, borderRadius: 12, marginTop: 8 },
-  orderTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
-  empty: { fontSize: 16, paddingVertical: 15 },
-});
+function Row({label,subtitle,Icon,onPress,colors}:{label:string;subtitle?:string;Icon?:any;onPress:()=>void;colors:any}){return <Pressable onPress={onPress} style={[s.row,{borderBottomColor:colors.border}]}>{Icon?<Icon width={27} height={27} color={colors.text}/>:<View style={s.placeholder}/>}<View style={{flex:1,marginLeft:14}}><Text style={[s.rowTitle,{color:colors.text}]}>{label}</Text>{subtitle?<Text style={[s.rowSub,{color:colors.textSecondary}]}>{subtitle}</Text>:null}</View><ChevronIcon width={20} height={20}/></Pressable>}
+const s=StyleSheet.create({root:{flex:1},header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:14},title:{fontSize:19,fontWeight:"800"},content:{padding:18,paddingBottom:50},heading:{fontSize:24,fontWeight:"900",marginBottom:10},tabs:{gap:8,paddingBottom:5},tab:{paddingHorizontal:16,paddingVertical:11,borderRadius:22,borderWidth:1},loader:{marginTop:25},empty:{fontSize:16,textAlign:"center",paddingVertical:25},tx:{borderWidth:1,borderRadius:14,padding:15,marginTop:9},txTitle:{fontSize:17,fontWeight:"800",marginBottom:4},section:{fontSize:21,fontWeight:"900",marginTop:30,marginBottom:8},balance:{borderWidth:1,borderRadius:16,padding:15,flexDirection:"row",alignItems:"center",gap:12},balanceTitle:{fontSize:17,fontWeight:"800"},buy:{paddingHorizontal:14,paddingVertical:10,borderRadius:20},buyText:{color:"#fff",fontWeight:"800"},row:{minHeight:66,borderBottomWidth:1,flexDirection:"row",alignItems:"center"},placeholder:{width:27,height:27},rowTitle:{fontSize:17,fontWeight:"700"},rowSub:{fontSize:13,lineHeight:18,marginTop:2}});
