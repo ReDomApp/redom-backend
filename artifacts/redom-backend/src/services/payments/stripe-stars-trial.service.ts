@@ -101,6 +101,7 @@ export async function finalizeStarsTrialSetup(referenceValue:string){
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",["redom-stars-trial:"+String(row.user_id)]);
   const current=await client.query("SELECT * FROM redom_stars_trials WHERE user_id=$1 FOR UPDATE",[row.user_id]);
   if(current.rows[0]){await client.query("UPDATE redom_stars_trial_setups SET status='completed',stripe_setup_intent_id=$1,updated_at=now() WHERE id=$2",[setupIntentId,row.id]);await client.query("COMMIT");return {status:"active",trialId:String(current.rows[0].id)};}
   const start=new Date(); const end=new Date(start.getTime()+7*24*60*60*1000);
