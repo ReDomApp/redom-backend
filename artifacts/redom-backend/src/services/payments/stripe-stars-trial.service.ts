@@ -79,7 +79,7 @@ export async function createStarsTrialSetupCheckout(input:{userId:string;email:s
  }));
  if(!session.id||!session.url)throw new Error("Stripe did not return the trial authorization checkout URL.");
  await pool.query(`INSERT INTO redom_stars_trial_setups(reference,user_id,stripe_session_id,stripe_customer_id,terms_version,consent_timestamp,consent_disclosure,country_code,currency,conversion_amount_minor,status,metadata)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10::jsonb)`,
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'open',$11::jsonb)`,
  [ref,input.userId,session.id,customerId,termsVersion,consentTimestamp,disclosure,String(input.countryCode).toUpperCase(),quote.currency,quote.amountMinor,JSON.stringify(metadata)]);
  return {reference,checkoutUrl:session.url,sessionId:session.id};
 }
