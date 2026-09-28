@@ -82,7 +82,7 @@ export async function createStripeStarsCheckout(input: {
     "line_items[0][quantity]": 1,
     customer_email: input.email,
     success_url: BACKEND_CALLBACK + "?session_id={CHECKOUT_SESSION_ID}&reference=" + encodeURIComponent(input.reference),
-    cancel_url: APP_CALLBACK + "?reference=" + encodeURIComponent(input.reference) + "&status=cancelled",
+    cancel_url: BACKEND_CALLBACK + "?reference=" + encodeURIComponent(input.reference) + "&status=cancelled",
     "payment_intent_data[metadata][provider]": metadata.provider,
     "payment_intent_data[metadata][purpose]": metadata.purpose,
     "payment_intent_data[metadata][reference]": metadata.reference,
