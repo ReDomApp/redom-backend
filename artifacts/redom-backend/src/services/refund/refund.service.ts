@@ -105,7 +105,7 @@ function extractRefundIdentifiers(message:string):string[] {
  const add=(value:string|undefined)=>{ if(!value) return; const cleaned=value.trim().replace(/^[.,;:]+|[.,;:]+$/g,""); if(cleaned) candidates.push(normalizeRefundTransactionNumber(cleaned)); };
  for(const match of text.matchAll(/\b(?:re?dom\s+)?transaction(?:\s+(?:id|number))?\s*[:#=\-]?\s*(RP\s*-?\s*\d{7,13}|RS\s*-?\s*\d{13,16}|R\s*-?\s*\d{13}|\d{13})\b/ig)) add(match[1]);
  for(const match of text.matchAll(/\b(?:provider\s+)?reference(?:\s+(?:number|id))?\s*[:#=\-]?\s*([A-Z0-9][A-Z0-9._\/-]{3,63})\b/ig)) add(match[1]);
- for(const match of text.matchAll(/\b(R\s*-?\s*\d{13}|\d{13}|T\d{6,})\b/ig)) add(match[1]);
+ for(const match of text.matchAll(/\b(RP\s*-?\s*\d{7,13}|RS\s*-?\s*\d{13,16}|R\s*-?\s*\d{13}|\d{13}|T\d{6,})\b/ig)) add(match[1]);
  const firstLine=text.split(/\n/)[0].trim().replace(/^>+\s*/,"");
  if(/^[A-Z0-9][A-Z0-9._\/-]{3,63}$/i.test(firstLine)) add(firstLine);
  return [...new Set(candidates.filter(Boolean))];
