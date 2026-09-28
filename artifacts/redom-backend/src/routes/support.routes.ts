@@ -59,15 +59,66 @@ router.post("/chat", authMiddleware, async (req, res) => {
 });
 router.post("/payment-problem", authMiddleware, async (req, res) => {
   const parsed = z.object({
-    transactionKey: z.string().trim().min(3).max(100),
-    transactionNumber: z.string().trim().min(1).max(100),
-    email: z.string().trim().email().max(320),
+    transactionKey: z.string().trim().min(3).max(100).optional(),
+    transactionNumber: z.string().trim().min(1).max(100).optional(),
+    paymentMethodId: z.string().uuid().optional(),
+    email: z.string().trim().email().max(320).optional(),
     description: z.string().trim().min(1).max(4000),
-  }).safeParse(req.body);
+  }).refine((value) => Boolean(value.paymentMethodId || (value.transactionKey && value.transactionNumber)), "A payment method or transaction reference is required.").safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Enter a valid problem description, email address, and transaction number." });
 
   try {
-    const key = parsed.data.transactionKey;
+    if (parsed.data.paymentMethodId) {
+      const method = await pool.query(
+        "SELECT id,provider,brand,last4,country_code,status,reusable,stripe_payment_method_id FROM redom_payment_methods WHERE id=$1 AND user_id=$2 AND active=true LIMIT 1",
+        [parsed.data.paymentMethodId, req.user!.userId],
+      );
+      if (!method.rows[0]) return res.status(404).json({ success: false, message: "Payment method not found." });
+      const account = await getAccountContextById(req.user!.userId);
+      const connectedEmail = account?.email || parsed.data.email;
+      if (!connectedEmail) return res.status(400).json({ success: false, message: "A connected ReDom email address is required." });
+      const caseRecord = await createSupportCase({
+        userId: req.user!.userId,
+        requesterEmail: connectedEmail,
+        subject: "ReDom Pay payment method problem",
+        category: "payment_method_problem",
+      });
+      const row = method.rows[0];
+      const supportBody = [
+        "ReDom Pay payment method problem report",
+        "",
+        "User ID: " + req.user!.userId,
+        "Connected email: " + connectedEmail,
+        "Payment method ID: " + String(row.id),
+        "Provider: " + String(row.provider || "stripe"),
+        "Card brand: " + String(row.brand || "not recorded"),
+        "Last four: " + String(row.last4 || "not recorded"),
+        "Country: " + String(row.country_code || "not recorded"),
+        "Status: " + String(row.status || "unknown"),
+        "Reusable: " + String(Boolean(row.reusable)),
+        "Stripe payment-method identifier: " + String(row.stripe_payment_method_id || "not recorded"),
+        "",
+        "Problem description:",
+        parsed.data.description,
+        "",
+        "Support case: " + caseRecord.caseNumber,
+        "Security note: No raw PAN or CVC/CVV is included in this report.",
+      ].join("\n");
+      await addSupportMessage({ caseId: caseRecord.id, senderType: "user", senderEmail: connectedEmail, body: parsed.data.description });
+      const safe = (value: string) => value.replace(/[&<>"]/g, (ch) => ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : "&quot;");
+      const html = "<!doctype html><html><body style=\"font-family:Arial,sans-serif;color:#1c1e21\"><h2>ReDom Pay payment method problem</h2><p><strong>Case:</strong> "+safe(caseRecord.caseNumber)+"</p><p><strong>Payment method:</strong> "+safe(String(row.provider||"stripe"))+" / "+safe(String(row.brand||"card"))+"-****"+safe(String(row.last4||""))+"</p><p><strong>Country:</strong> "+safe(String(row.country_code||"not recorded"))+"</p><p><strong>Status:</strong> "+safe(String(row.status||"unknown"))+"</p><p><strong>Problem:</strong> "+safe(parsed.data.description).replace(/\\n/g,"<br>")+"</p><p><strong>Security:</strong> No raw PAN or CVC/CVV included.</p></body></html>";
+      const { error } = await resend.emails.send({
+        from: env.email.supportFrom,
+        to: [env.email.supportFrom],
+        replyTo: connectedEmail,
+        subject: "ReDom Pay Payment Method Problem — Case " + caseRecord.caseNumber,
+        text: supportBody,
+        html,
+      });
+      if (error) throw new Error(error.message);
+      return res.status(201).json({ success: true, caseNumber: caseRecord.caseNumber });
+    }
+    const key = parsed.data.transactionKey!;
     const split = key.indexOf(":");
     if (split <= 0) return res.status(400).json({ success: false, message: "Invalid transaction reference." });
     const kind = key.slice(0, split);
