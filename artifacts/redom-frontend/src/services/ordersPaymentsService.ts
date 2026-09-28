@@ -40,7 +40,7 @@ export interface OrderSummary {
   estimatedDeliveryDate: string | null; createdAt: string; updatedAt: string;
 }
 export interface PaymentSettings { currency: string; pin_enabled: boolean; biometric_enabled: boolean; }
-export interface StarCountry { name: string; isoCode: string; currency: string; }
+export interface StarCountry { name:string; isoCode:string; currency:string; cardSupported?:boolean; successRate?:number|null; observedPayments?:number; }
 export interface StarPackage { key: string; stars: number; usdPrice: number; regularUsdPrice: number; firstPurchaseUsdPrice: number|null; firstPurchaseDiscountPercent: number; popular: boolean; localAmount: number; amountMinor: number; localAmountFormatted: string; currency: string; payable?: boolean; availabilityReason?: string | null; }
 export interface StarTransaction { id:string; type:string; stars:number; balanceAfter:number; packageKey:string|null; countryCode:string|null; currency:string|null; amountMinor:number|null; reference:string|null; createdAt:string; }
 export interface SavedPaymentMethod { id:string; provider:string; email:string; brand:string|null; cardType:string|null; last4:string|null; expMonth:number|null; expYear:number|null; bank:string|null; countryCode:string|null; currency:string|null; reusable:boolean; createdAt:string; }
@@ -91,7 +91,7 @@ export const ordersPaymentsService = {
   resendStarsRefundCode(transactionNumber:string) { return api.post<{success:boolean;status:string;code?:string;reason?:string;transactionNumber?:string;caseNumber?:string;target?:string|null}>("/refunds/account-profile",{transactionNumber,accountProfileId:""}); },
   refundCase(caseNumber:string) { return api.get<{success:boolean;refundCase:RefundCaseDetails}>("/refunds/cases/"+encodeURIComponent(caseNumber)); },
   sendRefundCaseMessage(caseNumber:string,message:string,useGemini=true) { return api.post<{success:boolean;refundCase:RefundCaseDetails}>("/refunds/cases/"+encodeURIComponent(caseNumber)+"/messages",{message,useGemini}); },
-  starsTrialEligibility() { return api.get<{success:boolean;eligible:boolean;trial:any|null}>("/orders-payments/stars/trial"); },
+  starsTrialEligibility() { return api.get<{success:boolean;eligible:boolean;trial:any|null;pendingSetup?:any;setup?:any}>("/orders-payments/stars/trial"); },
   initializeStarsTrial(input:{countryCode:string;email:string;termsVersion:string;consentTimestamp:string}) {
     return api.post<{success:boolean;mode:string;checkoutUrl:string;reference:string;termsVersion:string}>("/orders-payments/stars/trial/initialize",input);
   },
