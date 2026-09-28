@@ -1,0 +1,2 @@
+ALTER TABLE redom_stars_trial_setups ADD COLUMN IF NOT EXISTS time_zone varchar(100) NOT NULL DEFAULT 'UTC';
+ALTER TABLE redom_stars_trials ADD COLUMN IF NOT EXISTS time_zone varchar(100) NOT NULL DEFAULT 'UTC';
