@@ -1,6 +1,34 @@
 import { api } from "../api/client";
 
 export interface PaymentTransactionSummary { id:string; reference:string; redomTransactionId:string|null; amountMinor:string; currency:string; purpose:string; status:string; createdAt:string; paidAt:string|null; metadata:any; }
+export interface ReDomPayTransaction {
+  transactionKey: string;
+  kind: "payment" | "order";
+  category: "money_transfer" | "orders" | "donations" | "cards" | "other";
+  transferMethod: string | null;
+  id: string;
+  redomTransactionId: string | null;
+  reference: string;
+  productName: string;
+  status: string;
+  refundStatus: string | null;
+  amountMinor: string;
+  currency: string;
+  createdAt: string;
+  effectiveAt: string;
+  metadata: any;
+}
+
+export interface ReDomPayTransactionDetails extends ReDomPayTransaction {
+  subtotalMinor: string;
+  discountMinor: string;
+  discountPercent: number;
+  totalMinor: string;
+  providerReference: string | null;
+  paymentMethod: string | null;
+  failureMessage: string | null;
+}
+
 export interface PaymentTransactionDetails {
   id:string; reference:string; redomTransactionId:string|null; amountMinor:string; totalAmountMinor:string; currency:string;
   purpose:string; productName:string; status:string; refundStatus:string|null; createdAt:string; paidAt:string|null;
@@ -44,6 +72,12 @@ export const ordersPaymentsService = {
   },
   starsActivity() { return api.get<{ success:boolean; balance:number; activity:StarTransaction[] }>("/orders-payments/stars/activity"); },
   starsCatalog(countryCode?: string) { return api.get<{ success:boolean; countries:StarCountry[]; selectedCountry:StarCountry|null; packages:StarPackage[] }>(countryCode ? "/orders-payments/stars/catalog?country="+encodeURIComponent(countryCode) : "/orders-payments/stars/catalog"); },
+  redomPayTransactions() {
+    return api.get<{success:boolean;transactions:ReDomPayTransaction[]}>("/orders-payments/redom-pay/transactions");
+  },
+  redomPayTransactionDetails(transactionKey:string) {
+    return api.get<{success:boolean;transaction:ReDomPayTransactionDetails}>("/orders-payments/redom-pay/transactions/"+encodeURIComponent(transactionKey));
+  },
   transactionDetails(transactionId:string) {
     return api.get<{success:boolean;transaction:PaymentTransactionDetails}>("/orders-payments/transactions/"+encodeURIComponent(transactionId));
   },
@@ -62,6 +96,9 @@ export const ordersPaymentsService = {
   },
   paymentMethods() { return api.get<{success:boolean;methods:SavedPaymentMethod[]}>("/orders-payments/payment-methods"); },
   setupPaymentMethod() { return api.post<{success:boolean;checkoutUrl:string;accessCode:string;reference:string;currency:string;amountMinor:number;verificationUsdAmount:number}>("/orders-payments/payment-methods/setup",{}); },
+  reportPaymentProblem(input:{transactionKey:string;transactionNumber:string;email:string;description:string}) {
+    return api.post<{success:boolean;caseNumber:string}>("/support/payment-problem", input);
+  },
   removePaymentMethod(id:string,password:string) { return api.delete<{success:boolean}>("/orders-payments/payment-methods/"+encodeURIComponent(id),{password}); },
   paymentAddresses() { return api.get<{success:boolean;addresses:PaymentAddress[]}>("/orders-payments/payment-addresses"); },
   createPaymentAddress(input:{countryCode:string;countryName:string;fullName:string;addressLine1:string;addressLine2?:string|null;city:string;state?:string|null;postalCode?:string|null;mapboxPlaceId?:string|null;latitude?:number|null;longitude?:number|null;isDefault?:boolean}) { return api.post<{success:boolean;address:PaymentAddress}>("/orders-payments/payment-addresses",input); },
