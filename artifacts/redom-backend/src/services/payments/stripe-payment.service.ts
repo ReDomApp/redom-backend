@@ -188,7 +188,7 @@ async function markStripeFailed(reference: string, message: string, gatewayStatu
 
 export async function handleStripeWebhook(rawBody: Buffer, signature: string | undefined): Promise<void> {
   const supplied = String(signature ?? "");
-  const match = supplied.match(/(?:^|,)\\s*t=(\\d+)(?:,|$).*?(?:^|,)\\s*v1=([a-f0-9]+)(?:,|$)/i);
+  const match = supplied.match(/(?:^|,)\s*t=(\d+)(?:,|$).*?(?:^|,)\s*v1=([a-f0-9]+)(?:,|$)/i);
   if (!match) throw new Error("Invalid Stripe webhook signature.");
   const timestamp = Number(match[1]);
   if (!Number.isFinite(timestamp) || Math.abs(Date.now()/1000 - timestamp) > 300) throw new Error("Expired Stripe webhook signature.");
