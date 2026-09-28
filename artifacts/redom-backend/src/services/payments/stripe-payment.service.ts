@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import { sendPaymentEmailForReference } from "./payment.service";
+import { finalizeStarsTrialSetup } from "./stripe-stars-trial.service";
 
 const API = "https://api.stripe.com/v1";
 const APP_CALLBACK = "redom://payment/callback";
@@ -557,11 +558,16 @@ export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefi
   const object=payload?.data?.object??{};
   try{
     if(["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(type)){
+      if(String(object?.metadata?.purpose??"")==="stars_trial_setup"){
+        const reference=String(object?.metadata?.reference??"");
+        if(reference) await finalizeStarsTrialSetup(reference);
+      } else {
       await fulfillStripeStarsAttempt(object as StripeSession).catch(async(error)=>{
         const attempt=await pool.query("SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[String(object?.metadata?.reference??"")]);
         if(attempt.rows[0])throw error;
         await markLegacyStripePaid(object as StripeSession);
       });
+      }
     }else if(type==="checkout.session.async_payment_failed"){
       const reference=String(object?.metadata?.reference??"");
       if(reference)await markStripeFailed(reference,"Stripe reported that the payment could not be completed.","failed",paymentIntentId(object as StripeSession),object as StripeSession);
@@ -596,7 +602,9 @@ export async function stripeCallbackRedirect(reference:string,sessionId:string|u
     if(sessionId){
       const session=await stripeRequest<StripeSession>("get","/checkout/sessions/"+encodeURIComponent(sessionId));
       if(String(session.metadata?.reference??"")===reference){
-        if(String(session.payment_status)==="paid"){
+        if(String(session.metadata?.purpose??"")==="stars_trial_setup"){
+          await finalizeStarsTrialSetup(reference);
+        }else if(String(session.payment_status)==="paid"){
           const attempt=await pool.query("SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[reference]);
           if(attempt.rows[0])await fulfillStripeStarsAttempt(session);
           else await markLegacyStripePaid(session);
