@@ -107,11 +107,13 @@ function encryptAuthorizationCode(value: string): string {
 function makeReference(): string { return "rd_" + Date.now() + "_" + crypto.randomBytes(6).toString("hex"); }
 
 function makePaystackTransactionId(): string {
-  const max = 10_000_000_000_000n;
-  const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max;
-  return "RP-" + value.toString().padStart(13, "0");
+  // Paystack ReDom IDs: RP- + 7–12 digits, with first digit 7–9.
+  const length = 7 + crypto.randomInt(0, 6);
+  const first = String(crypto.randomInt(7, 10));
+  let digits = first;
+  while (digits.length < length) digits += String(crypto.randomInt(0, 10));
+  return "RP-" + digits;
 }
-
 async function createUniqueRedomTransactionId(client: import("pg").PoolClient): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const id = makePaystackTransactionId();
