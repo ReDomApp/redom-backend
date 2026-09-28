@@ -112,6 +112,8 @@ export const ordersPaymentsService = {
   paymentMethodCountries() { return api.get<{success:boolean;countries:PaymentMethodCountry[]}>("/orders-payments/payment-methods/countries"); },
   stripePublishableKey() { return api.get<{success:boolean;publishableKey:string}>("/orders-payments/payment-methods/stripe/publishable-key"); },
   setupStripePaymentMethod(input:{paymentMethodId:string;name:string}) { return api.post<{success:boolean;setupIntentId:string;clientSecret:string|null;status:string;method?:SavedPaymentMethod}>("/orders-payments/payment-methods/setup",input); },
+  setupStripePaymentMethodCheckout(input:{name:string;returnUrl:string;cancelUrl?:string}) { return api.post<{success:boolean;checkoutSessionId:string;checkoutUrl:string}>("/orders-payments/payment-methods/setup/checkout",input); },
+  finalizeStripePaymentMethodCheckout(sessionId:string) { return api.post<{success:boolean;status:string;method?:SavedPaymentMethod}>("/orders-payments/payment-methods/setup/checkout/finalize",{sessionId}); },
   finalizeStripePaymentMethod(setupIntentId:string) { return api.post<{success:boolean;status:string;method?:SavedPaymentMethod}>("/orders-payments/payment-methods/setup/finalize",{setupIntentId}); },
   requestPaymentMethodRemoval(id:string) { return api.post<{success:boolean;channel:string;target:string;expiresAt:string}>("/orders-payments/payment-methods/"+encodeURIComponent(id)+"/removal-challenge",{}); },
   verifyPaymentMethodRemoval(id:string,code:string) { return api.post<{success:boolean;locked?:boolean;lockedUntil?:string;codeInvalid?:boolean;attemptsRemaining?:number;channel?:string;target?:string;expiresAt?:string;message?:string}>("/orders-payments/payment-methods/"+encodeURIComponent(id)+"/removal-challenge/verify",{code}); },
