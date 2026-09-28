@@ -188,7 +188,7 @@ async function markStripeFailed(reference: string, message: string, gatewayStatu
 
 export async function handleStripeWebhook(rawBody: Buffer, signature: string | undefined): Promise<void> {
   const supplied = String(signature ?? "");
-  const match = supplied.match(/(?:^|,)\s*t=(\d+)(?:,|$).*?(?:^|,)\s*v1=([a-f0-9]+)(?:,|$)/i);
+  const match = supplied.match(/(?:^|,)[eventKey]*t=([eventKey]+)(?:,|$).*?(?:^|,)[eventKey]*v1=([a-f0-9]+)(?:,|$)/i);
   if (!match) throw new Error("Invalid Stripe webhook signature.");
   const timestamp = Number(match[1]);
   if (!Number.isFinite(timestamp) || Math.abs(Date.now()/1000 - timestamp) > 300) throw new Error("Expired Stripe webhook signature.");
@@ -199,11 +199,15 @@ export async function handleStripeWebhook(rawBody: Buffer, signature: string | u
   const payload:any = JSON.parse(rawBody.toString("utf8"));
   const eventId = String(payload?.id ?? "");
   if (!eventId) throw new Error("Stripe webhook event ID is missing.");
+  const eventKey = "stripe:"+eventId;
   const inserted = await pool.query(
     "INSERT INTO payment_webhook_events(event_key,event_type,reference,payload) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(event_key) DO NOTHING RETURNING id",
-    ["stripe:"+eventId,String(payload?.type ?? ""),payload?.data?.object?.metadata?.reference ? String(payload.data.object.metadata.reference):null,JSON.stringify(payload)],
+    [eventKey,String(payload?.type ?? ""),payload?.data?.object?.metadata?.reference ? String(payload.data.object.metadata.reference):null,JSON.stringify(payload)],
   );
-  if (!inserted.rows[0]) return;
+  if (!inserted.rows[0]) {
+    const existing = await pool.query("SELECT processed FROM payment_webhook_events WHERE event_key=$1 LIMIT 1",[eventKey]);
+    if (existing.rows[0]?.processed) return;
+  }
 
   const type = String(payload?.type ?? "");
   const object = payload?.data?.object ?? {};
