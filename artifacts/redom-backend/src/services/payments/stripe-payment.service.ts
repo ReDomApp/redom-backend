@@ -213,6 +213,10 @@ async function insertStripePaymentTransaction(
 
   const redomTransactionId = await uniqueStripeTransactionId(client);
   const pi = providerTransactionId ?? paymentIntentId(session);
+  const totalPaymentAttempts = Math.max(
+    Number(attempt.attempt_number ?? 1),
+    Number(attempt.failure_count ?? 0) + (finalStatus === "failed" ? 1 : 0),
+  );
   const metadata = {
     provider: "stripe",
     purpose: "stars_purchase",
@@ -222,8 +226,8 @@ async function insertStripePaymentTransaction(
     countryCode: String(attempt.country_code),
     currency: String(attempt.currency).toUpperCase(),
     customerEmail: String(attempt.customer_email),
-    attemptNumber: Number(attempt.attempt_number),
-    finalAttempt: Number(attempt.attempt_number) === 2,
+    attemptNumber: totalPaymentAttempts,
+    finalAttempt: finalStatus === "failed" && totalPaymentAttempts >= 2,
     stripeCheckoutSessionId: String(attempt.stripe_session_id ?? session.id),
     stripePaymentIntentId: pi,
     paymentDetails: {
