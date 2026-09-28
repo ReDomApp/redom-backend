@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
+import { pool } from "../database/db";
 import { initializeSubscriptionRenewal, verifyPayment, handlePaymentWebhook, verifyPaymentFromCallback, sendPaymentEmailForReference } from "../services/payments/payment.service";
 import { verifyStripePayment, handleStripeWebhook, stripeCallbackRedirect } from "../services/payments/stripe-payment.service";
 
