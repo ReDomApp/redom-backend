@@ -216,92 +216,50 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
     const priced = quote(country, pkg, !priorPurchase.rows[0]);
     if (!priced.payable) return res.status(400).json({ success: false, message: priced.availabilityReason });
 
-    const isAfrican = AFRICAN_COUNTRIES.has(country.isoCode);
-    const provider: "paystack" | "stripe" = isAfrican ? "paystack" : "stripe";
-    if (parsed.data.paymentMethodId && provider !== "paystack") throw new Error("Saved Paystack payment methods are available only for African payments.");
+    // Buy Stars is Stripe-only. Country selection controls local currency and
+    // catalog pricing, but it never selects Paystack or any other provider.
+    const provider: "stripe" = "stripe";
 
-    // Stripe Stars are intentionally deferred: no payment_transactions row or ReDom
-    // transaction ID is created until Stripe confirms payment. A second failed
-    // attempt is the only failure state that creates a ReDom transaction.
-    if (provider === "stripe") {
-      const reference = makeStripeReference();
-      const stripe = await createDeferredStripeStarsCheckout({
-        userId,
-        reference,
-        retryReference: parsed.data.retryReference ?? null,
-        amountMinor: priced.amountMinor,
-        currency: priced.currency,
-        email: parsed.data.email,
-        stars: pkg.stars,
-        packageKey: pkg.key,
-        countryCode: country.isoCode,
-      });
-      if (parsed.data.address) {
-        const a = parsed.data.address;
-        await pool.query(
-          `INSERT INTO redom_payment_addresses
-           (user_id,country_code,country_name,full_name,address_line1,address_line2,city,state,postal_code,mapbox_place_id,latitude,longitude)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-          [userId,a.countryCode,a.countryName,a.fullName,a.addressLine1,a.addressLine2 ?? null,a.city,a.state ?? null,a.postalCode ?? null,a.mapboxPlaceId ?? null,a.latitude ?? null,a.longitude ?? null],
-        );
-      }
-      return res.json({
-        success: true,
-        mode: "stripe",
-        checkoutUrl: stripe.checkoutUrl,
-        accessCode: null,
-        reference,
-        redomTransactionId: null,
-        status: "checkout_created",
-        channel: "stripe_checkout",
-        attemptNumber: stripe.attemptNumber,
-        paymentMethodTypes: stripe.paymentMethodTypes,
-      });
+    // Stripe Stars are intentionally deferred: no payment_transactions row or
+    // ReDom transaction ID is created until Stripe confirms payment. A second
+    // failed attempt is the only failure state that creates a ReDom transaction.
+    const reference = makeStripeReference();
+    const stripe = await createDeferredStripeStarsCheckout({
+      userId,
+      reference,
+      retryReference: parsed.data.retryReference ?? null,
+      amountMinor: priced.amountMinor,
+      currency: priced.currency,
+      email: parsed.data.email,
+      stars: pkg.stars,
+      packageKey: pkg.key,
+      countryCode: country.isoCode,
+    });
+
+    if (parsed.data.address) {
+      const a = parsed.data.address;
+      await pool.query(
+        `INSERT INTO redom_payment_addresses
+         (user_id,country_code,country_name,full_name,address_line1,address_line2,city,state,postal_code,mapbox_place_id,latitude,longitude)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [userId,a.countryCode,a.countryName,a.fullName,a.addressLine1,a.addressLine2 ?? null,a.city,a.state ?? null,a.postalCode ?? null,a.mapboxPlaceId ?? null,a.latitude ?? null,a.longitude ?? null],
+      );
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const redomId = await uniqueRedomTransactionId(client, provider);
-      const paymentChannel = parsed.data.paymentMethodId ? "saved_card" : (parsed.data.preferredChannel ?? "card");
-      const reference = makeReference();
-      const metadata = { provider, purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null, preferredChannel: paymentChannel };
-      const inserted = await client.query(
-        `INSERT INTO payment_transactions
-          (user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email,payment_provider)
-         VALUES($1,$2,$3,$4,$5,'stars_purchase','initialized',$6::jsonb,$7,$8,$9) RETURNING id`,
-        [userId, reference, redomId, priced.amountMinor, priced.currency, JSON.stringify(metadata), country.isoCode, parsed.data.email, provider],
-      );
-      if (parsed.data.address) {
-        const a = parsed.data.address;
-        await client.query(
-          `INSERT INTO redom_payment_addresses
-           (user_id,country_code,country_name,full_name,address_line1,address_line2,city,state,postal_code,mapbox_place_id,latitude,longitude)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-          [userId,a.countryCode,a.countryName,a.fullName,a.addressLine1,a.addressLine2 ?? null,a.city,a.state ?? null,a.postalCode ?? null,a.mapboxPlaceId ?? null,a.latitude ?? null,a.longitude ?? null],
-        );
-      }
-      await client.query("COMMIT");
-
-      if (parsed.data.paymentMethodId) {
-        const method = await pool.query("SELECT * FROM redom_payment_methods WHERE id=$1 AND user_id=$2 AND active=true AND reusable=true LIMIT 1", [parsed.data.paymentMethodId, userId]);
-        if (!method.rows[0]) throw new Error("Saved payment method not found.");
-        const authorizationCode = decryptAuthorization(String(method.rows[0].authorization_code_encrypted));
-        const charged = await paystack<any>("post", "/transaction/charge_authorization", {
-          email: String(method.rows[0].customer_email), amount: String(priced.amountMinor), currency: priced.currency, authorization_code: authorizationCode, reference,
-          metadata: JSON.stringify(metadata),
-        });
-        await pool.query("UPDATE payment_transactions SET gateway_status=$1, updated_at=now() WHERE id=$2", [charged?.status ?? "ongoing", inserted.rows[0].id]);
-        return res.json({ success: true, mode: "saved_card", checkoutUrl: charged?.url ?? null, accessCode: charged?.access_code ?? null, reference, redomTransactionId: redomId, status: charged?.status ?? "ongoing" });
-      }
-
-      const initialized = await paystack<{ authorization_url: string; access_code: string; reference: string }>("post", "/transaction/initialize", {
-        email: parsed.data.email, amount: String(priced.amountMinor), currency: priced.currency, channels: [parsed.data.preferredChannel ?? "card"],
-        callback_url: paymentCallbackUrl(), metadata: JSON.stringify(metadata),
-      });
-      await pool.query("UPDATE payment_transactions SET checkout_url=$1, access_code=$2, reference=$3, updated_at=now() WHERE id=$4", [initialized.authorization_url, initialized.access_code, initialized.reference, inserted.rows[0].id]);
-      return res.json({ success: true, mode: "paystack", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId, channel: parsed.data.preferredChannel ?? "card" });
-    } catch (error) {
+    return res.json({
+      success: true,
+      mode: "stripe",
+      provider,
+      checkoutUrl: stripe.checkoutUrl,
+      accessCode: null,
+      reference,
+      redomTransactionId: null,
+      status: "checkout_created",
+      channel: "stripe_checkout",
+      attemptNumber: stripe.attemptNumber,
+      paymentMethodTypes: stripe.paymentMethodTypes,
+    });
+  } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
     } finally { client.release(); }
