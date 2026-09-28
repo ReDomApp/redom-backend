@@ -57,6 +57,110 @@ router.post("/chat", authMiddleware, async (req, res) => {
     return res.status(200).json({ success: true, is_safe: true, support_reply: result.reply, caseNumber: result.supportCase.caseNumber, status: result.supportCase.status });
   } catch (error) { req.log?.error?.({ err: error }, "In-app support processing failed"); return res.status(502).json({ success: false, message: "ReDom Support is temporarily unavailable. Please try again shortly." }); }
 });
+router.post("/payment-problem", authMiddleware, async (req, res) => {
+  const parsed = z.object({
+    transactionKey: z.string().trim().min(3).max(100),
+    transactionNumber: z.string().trim().min(1).max(100),
+    email: z.string().trim().email().max(320),
+    description: z.string().trim().min(1).max(4000),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, message: "Enter a valid problem description, email address, and transaction number." });
+
+  try {
+    const key = parsed.data.transactionKey;
+    const split = key.indexOf(":");
+    if (split <= 0) return res.status(400).json({ success: false, message: "Invalid transaction reference." });
+    const kind = key.slice(0, split);
+    const id = key.slice(split + 1);
+
+    let transaction: any = null;
+    if (kind === "payment") {
+      const result = await pool.query(
+        `SELECT pt.id, pt.reference, pt.redom_transaction_id, pt.amount_minor, pt.currency, pt.purpose,
+                pt.status, pt.refund_status, pt.created_at, pt.paid_at, pt.metadata, pp.name AS plan_name
+           FROM payment_transactions pt
+           LEFT JOIN payment_plans pp ON pp.id = pt.plan_id
+          WHERE pt.id = $1 AND pt.user_id = $2
+          LIMIT 1`,
+        [id, req.user!.userId],
+      );
+      transaction = result.rows[0] ?? null;
+    } else if (kind === "order") {
+      const result = await pool.query(
+        `SELECT mt.id, mt.transaction_id, ml.title, mt.total_price, mt.currency, mt.payment_method,
+                mt.payment_provider, mt.payment_status, mt.order_status, mt.created_at, mt.paid_at, mt.transaction_reference
+           FROM marketplace_transactions mt
+           JOIN marketplace_listings ml ON ml.id = mt.listing_id
+           JOIN user_profiles up ON up.id = mt.buyer_user_id
+          WHERE mt.id = $1 AND up.user_id = $2
+          LIMIT 1`,
+        [id, req.user!.userId],
+      );
+      transaction = result.rows[0] ?? null;
+    }
+    if (!transaction) return res.status(404).json({ success: false, message: "Transaction not found." });
+
+    const caseRecord = await createSupportCase({
+      userId: req.user!.userId,
+      requesterEmail: parsed.data.email,
+      subject: `ReDom Pay transaction problem — ${parsed.data.transactionNumber}`,
+      category: "payment_transaction_problem",
+    });
+
+    const account = await getAccountContextById(req.user!.userId);
+    const accountName = [account?.firstName, account?.lastName].filter(Boolean).join(" ").trim() || "ReDom user";
+    const rawMetadata = transaction.metadata;
+    let metadata: any = {};
+    try { metadata = rawMetadata ? (typeof rawMetadata === "string" ? JSON.parse(rawMetadata) : rawMetadata) : {}; } catch { metadata = {}; }
+
+    const amount = kind === "payment" ? String(transaction.amount_minor) : String(Math.round(Number(transaction.total_price) * 100));
+    const currency = String(transaction.currency);
+    const product = kind === "payment"
+      ? (transaction.plan_name ? String(transaction.plan_name) : transaction.purpose === "stars_purchase" ? "ReDom Stars" : String(transaction.purpose || "ReDom payment").replaceAll("_", " "))
+      : String(transaction.title);
+
+    const supportBody = [
+      "ReDom Pay transaction problem report",
+      "",
+      `Account: ${accountName}`,
+      `User ID: ${req.user!.userId}`,
+      `Submitted email: ${parsed.data.email}`,
+      `Transaction number: ${parsed.data.transactionNumber}`,
+      `ReDom transaction ID: ${kind === "payment" ? String(transaction.redom_transaction_id ?? "") : "Marketplace order " + String(transaction.transaction_id)}`,
+      `Product: ${product}`,
+      `Status: ${kind === "payment" ? String(transaction.refund_status || transaction.status) : String(transaction.payment_status || transaction.order_status)}`,
+      `Amount minor: ${amount}`,
+      `Currency: ${currency}`,
+      `Payment method: ${kind === "payment" ? String(metadata?.paymentDetails?.channel ?? metadata?.preferredChannel ?? "not recorded") : String(transaction.payment_method ?? "not recorded")}`,
+      `Provider: ${kind === "payment" ? String(metadata?.paymentDetails?.provider ?? metadata?.provider ?? "not recorded") : String(transaction.payment_provider ?? "not recorded")}`,
+      "",
+      "Problem description:",
+      parsed.data.description,
+      "",
+      `Support case: ${caseRecord.caseNumber}`,
+    ].join("\n");
+
+    await addSupportMessage({ caseId: caseRecord.id, senderType: "user", senderEmail: parsed.data.email, body: parsed.data.description });
+
+    const safe = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", """: "&quot;" }[ch] || ch));
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1c1e21"><h2>ReDom Pay transaction problem</h2><p><strong>Case:</strong> ${safe(caseRecord.caseNumber)}</p><p><strong>Submitted email:</strong> ${safe(parsed.data.email)}</p><p><strong>Transaction:</strong> ${safe(parsed.data.transactionNumber)}</p><p><strong>ReDom transaction ID:</strong> ${safe(kind === "payment" ? String(transaction.redom_transaction_id ?? "") : String(transaction.transaction_id))}</p><p><strong>Product:</strong> ${safe(product)}</p><p><strong>Status:</strong> ${safe(kind === "payment" ? String(transaction.refund_status || transaction.status) : String(transaction.payment_status || transaction.order_status))}</p><p><strong>Amount:</strong> ${safe(amount)} minor units ${safe(currency)}</p><p><strong>Payment method:</strong> ${safe(kind === "payment" ? String(metadata?.paymentDetails?.channel ?? metadata?.preferredChannel ?? "not recorded") : String(transaction.payment_method ?? "not recorded"))}</p><hr><p><strong>Problem description</strong></p><p>${safe(parsed.data.description).replace(/\n/g, "<br>")}</p></body></html>`;
+    const { error } = await resend.emails.send({
+      from: env.email.supportFrom,
+      to: [env.email.supportFrom],
+      replyTo: parsed.data.email,
+      subject: `ReDom Pay Transaction Problem — ${parsed.data.transactionNumber} — Case ${caseRecord.caseNumber}`,
+      text: supportBody,
+      html,
+    });
+    if (error) throw new Error(error.message);
+
+    return res.status(201).json({ success: true, caseNumber: caseRecord.caseNumber });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "ReDom Pay transaction problem report failed");
+    return res.status(500).json({ success: false, message: "Unable to submit the transaction problem report. Please try again." });
+  }
+});
+
 router.post("/feedback", authMiddleware, async (req, res) => {
   const parsed = z.object({ topic: z.string().trim().min(1).max(300), helpful: z.boolean() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid feedback." });
