@@ -262,7 +262,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
   }
 });
 
-router.get("/payment-methods/stripe/publishable-key", authMiddleware, async (_req,res)=>{
+router.get("/payment-methods/stripe/publishable-key", async (_req,res)=>{
   return res.json({success:true,publishableKey:env.stripe.publishableKey});
 });
 router.get("/payment-methods/countries", authMiddleware, async (_req,res)=>{
