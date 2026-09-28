@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { CardForm, useStripe } from "@stripe/stripe-react-native";
+import { CardFormCompat, useStripeCompat } from "../services/stripeNative";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import { ordersPaymentsService, type PaymentMethodCountry } from "../services/ordersPaymentsService";
@@ -16,7 +16,7 @@ function stateLabel(code:string){const c=code.toUpperCase();if(c==="US"||c==="AU
 function contextValue(ctx:any[]|undefined,ids:string[]){return (ctx||[]).find((x:any)=>ids.some(id=>String(x.id||"").startsWith(id)))?.text||"";}
 
 export function AddCardScreen(){
- const navigation=useNavigation<Nav>();const {createPaymentMethod,confirmSetupIntent}=useStripe();
+ const navigation=useNavigation<Nav>();const {createPaymentMethod,confirmSetupIntent}=useStripeCompat();
  const [country,setCountry]=useState("US"),[countries,setCountries]=useState<PaymentMethodCountry[]>([]),[countryOpen,setCountryOpen]=useState(false);
  const [name,setName]=useState(""),[address,setAddress]=useState(""),[line2,setLine2]=useState(""),[city,setCity]=useState(""),[state,setState]=useState(""),[postal,setPostal]=useState("");
  const [suggestions,setSuggestions]=useState<any[]>([]),[card,setCard]=useState<any>(null),[attempted,setAttempted]=useState(false),[processing,setProcessing]=useState(false),[statusIndex,setStatusIndex]=useState(0),[result,setResult]=useState<"success"|"failure"|null>(null),[failure,setFailure]=useState("");
@@ -44,7 +44,7 @@ export function AddCardScreen(){
   <View style={s.header}><Pressable onPress={()=>navigation.goBack()} style={s.close}><CloseIcon width={28} height={28}/></Pressable></View>
   <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
    <Text style={s.title}>Add card</Text><Text style={s.subtitle}>Your card number is encrypted and securely saved according to ReDom Pay-Card Policies On Saved Cards.</Text>
-   <View style={s.cardBox}><CardForm countryCode={country} postalCodeEnabled={false} style={s.cardForm} cardStyle={{backgroundColor:"#fff",textColor:"#111",placeholderColor:"#65676B",textErrorColor:"#B42318",fontSize:17,borderColor:"#DADDE1",borderWidth:1,borderRadius:18}} placeholders={{number:"Card number",expiration:"MM/YY",cvc:"CVV"}} onFormComplete={(d:any)=>setCard(d)}/>{attempted&&!card?.complete&&<Text style={s.error}>{card?.validNumber==="Invalid"?"Please enter a valid credit or debit card number.":card?.validExpiryDate==="Invalid"?"Please enter a valid expiration date.":card?.validCVC==="Invalid"?"Please enter a valid CVC.":"Please complete your card information."}</Text>}</View>
+   <View style={s.cardBox}><CardFormCompat countryCode={country} postalCodeEnabled={false} style={s.cardForm} cardStyle={{backgroundColor:"#fff",textColor:"#111",placeholderColor:"#65676B",textErrorColor:"#B42318",fontSize:17,borderColor:"#DADDE1",borderWidth:1,borderRadius:18}} placeholders={{number:"Card number",expiration:"MM/YY",cvc:"CVV"}} onFormComplete={(d:any)=>setCard(d)}/>{attempted&&!card?.complete&&<Text style={s.error}>{card?.validNumber==="Invalid"?"Please enter a valid credit or debit card number.":card?.validExpiryDate==="Invalid"?"Please enter a valid expiration date.":card?.validCVC==="Invalid"?"Please enter a valid CVC.":"Please complete your card information."}</Text>}</View>
    <View style={s.box}><Pressable onPress={()=>setCountryOpen(true)} style={s.country}><Text style={s.countryText}>{countryTitle}</Text><Text style={s.chevron}>⌄</Text></Pressable>
     <Field label="Full name" value={name} onChangeText={setName} error={attempted&&!name.trim()?"Required":undefined}/>
     <View><Field label="Address" value={address} onChangeText={searchAddress}/>{suggestions.length>0&&<View style={s.suggestions}>{suggestions.slice(0,4).map((x:any)=><Pressable key={x.id} onPress={()=>chooseAddress(x)} style={s.suggestion}><Text style={s.suggestionText}>{x.placeName}</Text></Pressable>)}</View>}</View>
