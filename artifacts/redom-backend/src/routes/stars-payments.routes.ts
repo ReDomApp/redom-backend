@@ -163,6 +163,7 @@ router.post("/stars/trial/initialize", authMiddleware, async (req,res)=>{
     email:z.string().email().max(255),
     termsVersion:z.string().min(1).max(100).default(TERMS_VERSION),
     consentTimestamp:z.string().datetime().optional(),
+    timeZone:z.string().min(1).max(100).default("UTC"),
   }).safeParse(req.body);
   const userId=req.user?.userId;
   if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
@@ -170,7 +171,7 @@ router.post("/stars/trial/initialize", authMiddleware, async (req,res)=>{
   const user=await getUser(userId);
   if(!user?.email||String(user.email).toLowerCase()!==String(parsed.data.email).toLowerCase())return res.status(400).json({success:false,message:"Use the email address on your ReDom account."});
   try{
-    const result=await createStarsTrialSetupCheckout({userId,email:String(user.email),countryCode:parsed.data.countryCode,termsVersion:parsed.data.termsVersion,consentTimestamp:parsed.data.consentTimestamp});
+    const result=await createStarsTrialSetupCheckout({userId,email:String(user.email),countryCode:parsed.data.countryCode,termsVersion:parsed.data.termsVersion,consentTimestamp:parsed.data.consentTimestamp,timeZone:parsed.data.timeZone});
     return res.json({success:true,mode:"stripe_trial_setup",checkoutUrl:result.checkoutUrl,reference:result.reference,termsVersion:parsed.data.termsVersion});
   }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to start the Stars trial."});}
 });
