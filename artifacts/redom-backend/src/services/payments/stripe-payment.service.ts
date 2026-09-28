@@ -603,11 +603,12 @@ export async function stripeCallbackRedirect(reference:string,sessionId:string|u
       const session=await stripeRequest<StripeSession>("get","/checkout/sessions/"+encodeURIComponent(sessionId));
       if(String(session.metadata?.reference??"")===reference){
         if(String(session.metadata?.purpose??"")==="stars_trial_setup"){
-          await finalizeStarsTrialSetup(reference);
+          // Do not finalize here. The app must return immediately and enter
+          // Processing payment while the authenticated verification endpoint
+          // completes the authoritative trial setup.
         }else if(String(session.payment_status)==="paid"){
           const attempt=await pool.query("SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[reference]);
-          if(attempt.rows[0])await fulfillStripeStarsAttempt(session);
-          else await markLegacyStripePaid(session);
+          if(!attempt.rows[0])await markLegacyStripePaid(session);
         }else if(status==="cancelled"||String(session.status)==="expired"){
           await markStripeAbandoned(reference);
         }
