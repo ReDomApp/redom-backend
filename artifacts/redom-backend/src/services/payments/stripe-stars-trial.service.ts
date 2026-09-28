@@ -45,8 +45,9 @@ function localQuote(countryCode:string):{currency:string;amountMinor:number}{
 export async function getStarsTrialEligibility(userId:string){
  const existing=await pool.query("SELECT id,status,trial_started_at,trial_ends_at FROM redom_stars_trials WHERE user_id=$1 LIMIT 1",[userId]);
  if(existing.rows[0]) return {eligible:false,trial:existing.rows[0]};
- const pendingSetup=await pool.query("SELECT id,reference,status FROM redom_stars_trial_setups WHERE user_id=$1 AND status='open' ORDER BY created_at DESC LIMIT 1",[userId]);
- if(pendingSetup.rows[0]) return {eligible:false,trial:null,pendingSetup:pendingSetup.rows[0]};
+ const setupHistory=await pool.query("SELECT id,reference,status FROM redom_stars_trial_setups WHERE user_id=$1 AND status IN ('open','completed') ORDER BY created_at DESC LIMIT 1",[userId]);
+ if(setupHistory.rows[0]?.status==="completed") return {eligible:false,trial:null,setup:setupHistory.rows[0]};
+ if(setupHistory.rows[0]?.status==="open") return {eligible:false,trial:null,pendingSetup:setupHistory.rows[0]};
  const purchase=await pool.query("SELECT 1 FROM redom_stars_transactions WHERE user_id=$1 AND type='purchase' LIMIT 1",[userId]);
  return {eligible:!purchase.rows[0],trial:null};
 }
