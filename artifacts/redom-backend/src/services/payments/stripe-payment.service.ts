@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import { sendPaymentEmailForReference } from "./payment.service";
-import { finalizeStarsTrialSetup } from "./stripe-stars-trial.service";
+import { finalizeStarsTrialSetup, markStarsTrialSetupAbandoned } from "./stripe-stars-trial.service";
 
 const API = "https://api.stripe.com/v1";
 const APP_CALLBACK = "redom://payment/callback";
@@ -573,7 +573,10 @@ export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefi
       if(reference)await markStripeFailed(reference,"Stripe reported that the payment could not be completed.","failed",paymentIntentId(object as StripeSession),object as StripeSession);
     }else if(type==="checkout.session.expired"){
       const reference=String(object?.metadata?.reference??"");
-      if(reference)await markStripeAbandoned(reference);
+      if(reference){
+        if(String(object?.metadata?.purpose??"")==="stars_trial_setup") await markStarsTrialSetupAbandoned(reference);
+        else await markStripeAbandoned(reference);
+      }
     }else if(type==="payment_intent.payment_failed"){
       const reference=String(object?.metadata?.reference??"");
       const message=String(object?.last_payment_error?.message??"Stripe payment failed.");
@@ -610,7 +613,8 @@ export async function stripeCallbackRedirect(reference:string,sessionId:string|u
           const attempt=await pool.query("SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[reference]);
           if(!attempt.rows[0])await markLegacyStripePaid(session);
         }else if(status==="cancelled"||String(session.status)==="expired"){
-          await markStripeAbandoned(reference);
+          if(String(session.metadata?.purpose??"")==="stars_trial_setup") await markStarsTrialSetupAbandoned(reference);
+          else await markStripeAbandoned(reference);
         }
       }
     }else if(status==="cancelled"){
