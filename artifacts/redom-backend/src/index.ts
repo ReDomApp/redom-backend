@@ -13,6 +13,7 @@ import { ensureBugReportSchema } from "./services/bug-report-schema-bootstrap";
 import { ensureStarsSchema } from "./services/stars-schema-bootstrap";
 import { ensureRefundSchema } from "./services/refund-schema-bootstrap";
 import { startRefundReviewCleanup, stopRefundReviewCleanup } from "./services/refund/refund-review.service";
+import { startStarsTrialWorker, stopStarsTrialWorker } from "./services/payments/stripe-stars-trial.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -31,6 +32,7 @@ async function start(): Promise<void> {
     startProfilePhotoExpiryCleanup();
     startSupportCaseCleanup();
     startRefundReviewCleanup();
+    startStarsTrialWorker();
     logger.info({ host, port }, "Server listening");
   });
 
@@ -46,6 +48,7 @@ async function start(): Promise<void> {
     stopProfilePhotoExpiryCleanup();
     stopSupportCaseCleanup();
     stopRefundReviewCleanup();
+    stopStarsTrialWorker();
     server.close(async (error) => {
       if (error) { logger.error({ error: serializeError(error) }, "Error closing HTTP server"); process.exitCode = 1; }
       try { await pool.end(); } catch (poolError) { logger.error({ error: serializeError(poolError) }, "Error closing database pool"); process.exitCode = 1; }
