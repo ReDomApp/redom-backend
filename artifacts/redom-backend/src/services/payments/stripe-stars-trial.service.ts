@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import { sendPaymentEmailForReference } from "./payment.service";
+import { getStripeStarsCountry } from "./stripe-country.service";
 
 const API = "https://api.stripe.com/v1";
 const BACKEND_CALLBACK = "https://redom-backend.onrender.com/redom-backend/payments/stripe/callback";
@@ -32,14 +33,14 @@ function id(session:StripeSetupSession){return typeof session.setup_intent==="st
 function customerId(v:any){return typeof v==="string"?v:v?.id?String(v.id):null;}
 function paymentMethodId(v:any){return typeof v==="string"?v:v?.id?String(v.id):null;}
 function reference(){return "trial_"+Date.now()+"_"+crypto.randomBytes(8).toString("hex");}
-function localQuote(countryCode:string):{currency:string;amountMinor:number}{
- const rates:Record<string,{currency:string;rate:number}>={
-  NG:{currency:"NGN",rate:1500},GH:{currency:"GHS",rate:12.5},KE:{currency:"KES",rate:130},
-  ZA:{currency:"ZAR",rate:17.5},CI:{currency:"XOF",rate:600},US:{currency:"USD",rate:1},
- };
- const c=rates[String(countryCode).toUpperCase()];
- if(!c) throw new Error("The selected country is not currently available for ReDom Stars pricing.");
- return {currency:c.currency,amountMinor:Math.max(1,Math.round(2.21*c.rate*100))};
+async function localQuote(countryCode:string):Promise<{currency:string;amountMinor:number;countryName:string;successRate:number|null}>{
+ const country=await getStripeStarsCountry(countryCode);
+ if(!country||!country.cardSupported)throw new Error("The selected country is not supported for Stripe card payments.");
+ if(!country.rate||country.rate<=0)throw new Error("A current FX rate is not available for the selected currency.");
+ // Trial conversion is the existing 10-Star first-purchase price: $1.99 USD.
+ // Keeping the conversion in USD guarantees the future one-time charge is
+ // above Stripe's $0.50 USD minimum and fixes the exact amount at trial start.
+ return {currency:"USD",amountMinor:199,countryName:country.name,successRate:country.successRate};
 }
 
 export async function getStarsTrialEligibility(userId:string){
@@ -61,28 +62,29 @@ async function createStripeCustomer(email:string,userId:string){
 export async function createStarsTrialSetupCheckout(input:{userId:string;email:string;countryCode:string;termsVersion?:string;consentTimestamp?:string}){
  const eligibility=await getStarsTrialEligibility(input.userId);
  if(!eligibility.eligible) throw new Error("This Stars trial has already been used or is no longer available.");
- const quote=localQuote(input.countryCode);
+ const quote=await localQuote(input.countryCode);
  const ref=reference();
  const consentTimestamp=input.consentTimestamp?new Date(input.consentTimestamp):new Date();
  if(Number.isNaN(consentTimestamp.getTime())||consentTimestamp.getTime()>Date.now()+60000)throw new Error("Invalid trial authorization timestamp.");
  const termsVersion=String(input.termsVersion||TERMS_VERSION);
  const disclosure=CONSENT_DISCLOSURE;
  const customerId=await createStripeCustomer(input.email,input.userId);
- const metadata={provider:"stripe",purpose:"stars_trial_setup",reference:ref,userId:input.userId,countryCode:String(input.countryCode).toUpperCase(),currency:quote.currency,conversionStars:"10",conversionAmountMinor:String(quote.amountMinor),termsVersion};
+ const trialEndsAt=new Date(Date.now()+7*24*60*60*1000);
+ const metadata={provider:"stripe",purpose:"stars_trial_setup",reference:ref,userId:input.userId,countryCode:String(input.countryCode).toUpperCase(),countryName:quote.countryName,currency:quote.currency,conversionStars:"10",conversionAmountMinor:String(quote.amountMinor),termsVersion,trialEndsAt:trialEndsAt.toISOString(),successRate:quote.successRate};
  const session=await stripe<StripeSetupSession>("post","/checkout/sessions",form({
-   mode:"setup",customer:customerId,client_reference_id:ref,customer_email:input.email,
+   mode:"setup",customer:customerId,client_reference_id:ref,customer_email:input.email,"payment_method_types[0]":"card",
    success_url:BACKEND_CALLBACK+"?session_id={CHECKOUT_SESSION_ID}&reference="+encodeURIComponent(ref),
    cancel_url:BACKEND_CALLBACK+"?reference="+encodeURIComponent(ref)+"&status=cancelled",
    "metadata[provider]":"stripe","metadata[purpose]":"stars_trial_setup","metadata[reference]":ref,
    "metadata[userId]":input.userId,"metadata[countryCode]":String(input.countryCode).toUpperCase(),
-   "metadata[currency]":quote.currency,"metadata[conversionStars]":"10","metadata[conversionAmountMinor]":String(quote.amountMinor),
+   "metadata[currency]":quote.currency,"metadata[conversionStars]":"10","metadata[conversionAmountMinor]":String(quote.amountMinor),"metadata[trialEndsAt]":trialEndsAt.toISOString(),
    "metadata[termsVersion]":termsVersion,
  }));
  if(!session.id||!session.url)throw new Error("Stripe did not return the trial authorization checkout URL.");
  await pool.query(`INSERT INTO redom_stars_trial_setups(reference,user_id,stripe_session_id,stripe_customer_id,terms_version,consent_timestamp,consent_disclosure,country_code,currency,conversion_amount_minor,status,metadata)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'open',$11::jsonb)`,
  [ref,input.userId,session.id,customerId,termsVersion,consentTimestamp,disclosure,String(input.countryCode).toUpperCase(),quote.currency,quote.amountMinor,JSON.stringify(metadata)]);
- return {reference,checkoutUrl:session.url,sessionId:session.id};
+ return {reference,checkoutUrl:session.url,sessionId:session.id,trialEndsAt:trialEndsAt.toISOString(),conversionAmountMinor:String(quote.amountMinor),currency:quote.currency};
 }
 
 export async function finalizeStarsTrialSetup(referenceValue:string){
@@ -104,11 +106,11 @@ export async function finalizeStarsTrialSetup(referenceValue:string){
   await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",["redom-stars-trial:"+String(row.user_id)]);
   const current=await client.query("SELECT * FROM redom_stars_trials WHERE user_id=$1 FOR UPDATE",[row.user_id]);
   if(current.rows[0]){await client.query("UPDATE redom_stars_trial_setups SET status='completed',stripe_setup_intent_id=$1,updated_at=now() WHERE id=$2",[setupIntentId,row.id]);await client.query("COMMIT");return {status:"active",trialId:String(current.rows[0].id)};}
-  const start=new Date(); const end=new Date(start.getTime()+7*24*60*60*1000);
+  const start=new Date(); const end=new Date(String(row.metadata?.trialEndsAt??"")); const safeEnd=Number.isNaN(end.getTime())?new Date(start.getTime()+7*24*60*60*1000):end;
   const inserted=await client.query(`INSERT INTO redom_stars_trials
    (user_id,status,trial_started_at,trial_ends_at,stars_granted,conversion_stars,country_code,currency,conversion_amount_minor,stripe_customer_id,stripe_payment_method_id,consent_terms_version,consent_timestamp,consent_disclosure,created_at,updated_at)
    VALUES($1,'active',$2,$3,20,10,$4,$5,$6,$7,$8,$9,$10,$11,now(),now()) RETURNING id`,
-   [row.user_id,start,end,row.country_code,row.currency,row.conversion_amount_minor,customer,pm,row.terms_version,row.consent_timestamp,row.consent_disclosure]);
+   [row.user_id,start,safeEnd,row.country_code,row.currency,row.conversion_amount_minor,customer,pm,row.terms_version,row.consent_timestamp,row.consent_disclosure]);
   await client.query("INSERT INTO redom_stars_accounts(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[row.user_id]);
   const balance=await client.query("SELECT balance FROM redom_stars_accounts WHERE user_id=$1 FOR UPDATE",[row.user_id]);
   const next=BigInt(String(balance.rows[0]?.balance??"0"))+20n;
@@ -116,7 +118,7 @@ export async function finalizeStarsTrialSetup(referenceValue:string){
   await client.query("INSERT INTO redom_stars_transactions(user_id,type,stars,balance_after,package_key,country_code,currency,amount_minor,reference) VALUES($1,'trial',$2,$3,'stars_trial_20',$4,$5,0,$6)",[row.user_id,20,next.toString(),row.country_code,row.currency,referenceValue]);
   await client.query("UPDATE redom_stars_trial_setups SET status='completed',stripe_setup_intent_id=$1,stripe_customer_id=$2,stripe_payment_method_id=$3,updated_at=now() WHERE id=$4",[setupIntentId,customer,pm,row.id]);
   await client.query("COMMIT");
-  return {status:"active",trialId:String(inserted.rows[0].id),trialEndsAt:end.toISOString()};
+  return {status:"active",trialId:String(inserted.rows[0].id),trialEndsAt:safeEnd.toISOString()};
  }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
 }
 
