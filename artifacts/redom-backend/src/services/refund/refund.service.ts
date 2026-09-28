@@ -93,6 +93,8 @@ export function buildRefundSupportClosureReply(input: { transactionNumber: strin
 export type StarsRefundResult = { success:boolean; status:string; code?:string; reason?:string; transactionNumber?:string; caseNumber?:string; refundId?:string|null; refundStatus?:string|null; target?:string|null };
 function normalizeRefundTransactionNumber(value:string):string {
  const raw=value.trim().toUpperCase().replace(/[\s\u2010-\u2015]+/g,"");
+ if(/^RP-\d{7,13}$/.test(raw)) return raw;
+ if(/^RS-\d{13,16}$/.test(raw)) return raw;
  if(/^\d{13}$/.test(raw)) return "R-"+raw;
  if(/^R\d{13}$/.test(raw)) return "R-"+raw.slice(1);
  return raw;
@@ -101,7 +103,7 @@ function extractRefundIdentifiers(message:string):string[] {
  const text=String(message??"").replace(/\r/g,"\n");
  const candidates:string[]=[];
  const add=(value:string|undefined)=>{ if(!value) return; const cleaned=value.trim().replace(/^[.,;:]+|[.,;:]+$/g,""); if(cleaned) candidates.push(normalizeRefundTransactionNumber(cleaned)); };
- for(const match of text.matchAll(/\b(?:re?dom\s+)?transaction(?:\s+(?:id|number))?\s*[:#=\-]?\s*(R\s*-?\s*\d{13}|\d{13})\b/ig)) add(match[1]);
+ for(const match of text.matchAll(/\b(?:re?dom\s+)?transaction(?:\s+(?:id|number))?\s*[:#=\-]?\s*(RP\s*-?\s*\d{7,13}|RS\s*-?\s*\d{13,16}|R\s*-?\s*\d{13}|\d{13})\b/ig)) add(match[1]);
  for(const match of text.matchAll(/\b(?:provider\s+)?reference(?:\s+(?:number|id))?\s*[:#=\-]?\s*([A-Z0-9][A-Z0-9._\/-]{3,63})\b/ig)) add(match[1]);
  for(const match of text.matchAll(/\b(R\s*-?\s*\d{13}|\d{13}|T\d{6,})\b/ig)) add(match[1]);
  const firstLine=text.split(/\n/)[0].trim().replace(/^>+\s*/,"");
