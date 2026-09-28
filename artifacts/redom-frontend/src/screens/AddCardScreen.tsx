@@ -23,7 +23,7 @@ export function AddCardScreen(){
  const [suggestions,setSuggestions]=useState<any[]>([]),[card,setCard]=useState<any>(null),[attempted,setAttempted]=useState(false),[processing,setProcessing]=useState(false),[statusIndex,setStatusIndex]=useState(0),[result,setResult]=useState<"success"|"failure"|null>(null),[failure,setFailure]=useState("");
  const [fallbackLoading,setFallbackLoading]=useState(false);
  const expoGo=Constants.appOwnership==="expo";
- const returnUrl=expoGo&&Constants.expoConfig?.hostUri?"exp://"+Constants.expoConfig.hostUri+"/--/payment-method-setup":"redom://payment-method-setup";
+ const returnUrl=expoGo&&(Constants.expoConfig as any)?.hostUri?"exp://"+(Constants.expoConfig as any).hostUri+"/--/payment-method-setup":"redom://payment-method-setup";
  const statuses=["Loading.....","Connecting With ReDom Pay.....","Validating Card.....","Contacting Card Bank.....","Validating Policies.....","Please Wait....."];
  useEffect(()=>{ordersPaymentsService.paymentMethodCountries().then(r=>setCountries(r.countries)).catch(()=>setCountries([{isoCode:"US",name:"United States"}]));},[]);
  useEffect(()=>{if(!processing)return;const t=setInterval(()=>setStatusIndex(i=>Math.min(i+1,statuses.length-1)),1500);return()=>clearInterval(t);},[processing]);
