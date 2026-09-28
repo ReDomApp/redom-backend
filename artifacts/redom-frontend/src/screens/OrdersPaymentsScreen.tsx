@@ -63,7 +63,12 @@ export function OrdersPaymentsScreen() {
       </View>
 
       <View style={styles.content}>
-        <View style={styles.payCard}>
+        <Pressable
+          onPress={() => navigation.navigate("ReDomPayTransactions")}
+          accessibilityRole="button"
+          accessibilityLabel="ReDom Pay"
+          style={({ pressed }) => [styles.payCard, pressed && styles.payCardPressed]}
+        >
           <View style={styles.payBrandRow}>
             <Text style={styles.reDomMark}>R</Text>
             <Text style={styles.payTitle}>ReDom Pay</Text>
@@ -71,7 +76,7 @@ export function OrdersPaymentsScreen() {
           <Text style={styles.payDescription}>
             Transactions, credit cards, debit cards, shipping info, PayPal
           </Text>
-        </View>
+        </Pressable>
 
         <Text style={styles.sectionTitle}>Balances</Text>
 
