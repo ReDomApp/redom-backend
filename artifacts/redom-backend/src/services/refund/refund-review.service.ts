@@ -4,6 +4,7 @@ import { env } from "../../config/env";
 import { addSupportMessage, permanentlyCloseSupportCase } from "../support/support.service";
 import { sendRefundProviderEmail } from "./refund.service";
 
+function formStripe(fields: Record<string,string|number|undefined|null>): URLSearchParams { const body=new URLSearchParams(); for(const [key,value] of Object.entries(fields)) if(value!==undefined&&value!==null) body.append(key,String(value)); return body; }
 let running=false;
 let timer:NodeJS.Timeout|undefined;
 
@@ -37,87 +38,70 @@ async function processOne(row:any):Promise<void>{
  }
  let refund:any;
  try{
-   const providerReference=String(row.provider_reference ?? row.reference ?? "").trim();
-   if(!providerReference) throw new Error("Provider reference could not be resolved from the ReDom Transaction ID.");
-
-   // Resolve and verify the real Paystack transaction before creating a refund.
-   // The ReDom transaction ID is only our internal identifier; Paystack must receive
-   // the provider reference. For bank-transfer payments, Paystack's gross amount can
-   // include customer-paid charges, while requested_amount is the merchant/product
-   // amount. The refund is always limited to the original ReDom product amount.
-   const auth={headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000};
-   const verified=await axios.get("https://api.paystack.co/transaction/verify/"+encodeURIComponent(providerReference),auth);
-   if(!verified.data?.status || !verified.data?.data) {
-     throw new Error(verified.data?.message||"Paystack could not verify the provider transaction.");
+   const provider=String(row.payment_provider ?? (String(row.redom_transaction_id ?? "").startsWith("RS-") ? "stripe" : "paystack")).toLowerCase();
+   if(provider==="stripe"){
+     const providerTransactionId=String(row.provider_transaction_id ?? "").trim();
+     if(!providerTransactionId) throw new Error("Stripe provider transaction ID is missing.");
+     const auth={headers:{Authorization:"Bearer "+env.stripe.secretKey},timeout:20000};
+     const verified=await axios.get("https://api.stripe.com/v1/payment_intents/"+encodeURIComponent(providerTransactionId),auth);
+     const paymentIntent=verified.data;
+     if(String(paymentIntent.status).toLowerCase()!=="succeeded") throw new Error("Stripe payment is not in a successful state and cannot be refunded.");
+     const providerCurrency=String(paymentIntent.currency??"").toUpperCase();
+     const refundCurrency=String(row.currency??"").toUpperCase();
+     if(providerCurrency!==refundCurrency) throw new Error("Stripe payment currency does not match the ReDom payment currency.");
+     const providerOriginalMinor=BigInt(String(paymentIntent.amount_received ?? paymentIntent.amount ?? "0"));
+     const requestedRefundMinor=BigInt(amountMinor);
+     if(requestedRefundMinor<=0n) throw new Error("The ReDom refund amount must be greater than zero.");
+     if(requestedRefundMinor>providerOriginalMinor) throw new Error("The ReDom refund amount exceeds the Stripe payment amount.");
+     const refunds=await axios.get("https://api.stripe.com/v1/refunds",{...auth,params:{payment_intent:providerTransactionId,limit:100}});
+     let alreadyRefundedMinor=0n;
+     let activeRefund=false;
+     for(const existing of (Array.isArray(refunds.data?.data)?refunds.data.data:[])){
+       const status=String(existing?.status??"").toLowerCase();
+       const existingAmount=String(existing?.amount??"");
+       if(/^\\d+$/.test(existingAmount) && status!=="failed") alreadyRefundedMinor+=BigInt(existingAmount);
+       if(status==="pending") activeRefund=true;
+     }
+     if(activeRefund) throw new Error("A Stripe refund is already pending for this payment.");
+     if(requestedRefundMinor+alreadyRefundedMinor>providerOriginalMinor) throw new Error("The requested ReDom refund would exceed the payment's remaining refundable amount.");
+     const response=await axios.post("https://api.stripe.com/v1/refunds",formStripe({payment_intent:providerTransactionId,amount:amountMinor,reason:"requested_by_customer"}),{...auth,headers:{...auth.headers,"Content-Type":"application/x-www-form-urlencoded"},timeout:20000});
+     if(!response.data?.id) throw new Error("Stripe did not return a refund ID.");
+     refund={id:String(response.data.id),status:String(response.data.status??"pending"),amount:Number(response.data.amount??amountMinor),currency:String(response.data.currency??refundCurrency),expected_at:null};
+   } else {
+     const providerReference=String(row.provider_reference ?? row.reference ?? "").trim();
+     if(!providerReference) throw new Error("Provider reference could not be resolved from the ReDom Transaction ID.");
+     const auth={headers:{Authorization:"Bearer "+env.payments.paystack.secretKey,"Content-Type":"application/json"},timeout:20000};
+     const verified=await axios.get("https://api.paystack.co/transaction/verify/"+encodeURIComponent(providerReference),auth);
+     if(!verified.data?.status || !verified.data?.data) throw new Error(verified.data?.message||"Paystack could not verify the provider transaction.");
+     const providerTransaction=verified.data.data;
+     if(String(providerTransaction.status).toLowerCase()!=="success") throw new Error("Paystack transaction is not in a successful state and cannot be refunded.");
+     const providerCurrency=String(providerTransaction.currency??"").toUpperCase();
+     const refundCurrency=String(row.currency??"").toUpperCase();
+     if(providerCurrency && refundCurrency && providerCurrency!==refundCurrency) throw new Error("Paystack transaction currency does not match the ReDom payment currency.");
+     const merchantAmountMinor=String(providerTransaction.requested_amount ?? providerTransaction.amount ?? "");
+     if(!/^\\d+$/.test(merchantAmountMinor)) throw new Error("Paystack returned an invalid original transaction amount.");
+     const requestedRefundMinor=BigInt(amountMinor);
+     const providerOriginalMinor=BigInt(merchantAmountMinor);
+     if(requestedRefundMinor<=0n) throw new Error("The ReDom refund amount must be greater than zero.");
+     if(requestedRefundMinor>providerOriginalMinor) throw new Error("The ReDom refund amount exceeds the provider's original merchant transaction amount.");
+     const refundList=await axios.get("https://api.paystack.co/refund",{...auth,params:{reference:providerReference,perPage:100}});
+     const existingRefunds=Array.isArray(refundList.data?.data)?refundList.data.data:Array.isArray(refundList.data?.data?.data)?refundList.data.data.data:[];
+     let alreadyRefundedMinor=0n;
+     let activeRefund=false;
+     for(const existing of existingRefunds){
+       const existingStatus=String(existing?.status??"").toLowerCase();
+       const existingAmount=String(existing?.amount??"");
+       if(/^\\d+$/.test(existingAmount) && existingStatus!=="failed") alreadyRefundedMinor+=BigInt(existingAmount);
+       if(existingStatus==="pending" || existingStatus==="processing" || existingStatus==="needs-attention") activeRefund=true;
+     }
+     if(activeRefund) throw new Error("A Paystack refund is already pending or processing for this transaction.");
+     if(alreadyRefundedMinor>=providerOriginalMinor) throw new Error("The Paystack transaction has already been fully refunded.");
+     if(requestedRefundMinor+alreadyRefundedMinor>providerOriginalMinor) throw new Error("The requested ReDom refund would exceed the transaction's remaining refundable amount.");
+     if(String(refundCurrency).toUpperCase()==="USD" && requestedRefundMinor<100n) throw new Error("Paystack does not support refunds below USD 1.00 for this transaction.");
+     const response=await axios.post("https://api.paystack.co/refund",{transaction:providerReference,amount:amountMinor,currency:refundCurrency||undefined,customer_note:"ReDom Stars refund "+String(row.redom_transaction_id),merchant_note:"Approved ReDom Stars refund "+String(row.redom_transaction_id)},auth);
+     if(!response.data?.status) throw new Error(response.data?.message||"Paystack rejected the refund request.");
+     refund=response.data.data;
    }
-   const providerTransaction=verified.data.data;
-   if(String(providerTransaction.status).toLowerCase()!=="success") {
-     throw new Error("Paystack transaction is not in a successful state and cannot be refunded.");
-   }
-
-   const providerCurrency=String(providerTransaction.currency??"").toUpperCase();
-   const refundCurrency=String(row.currency??"").toUpperCase();
-   if(providerCurrency && refundCurrency && providerCurrency!==refundCurrency) {
-     throw new Error("Paystack transaction currency does not match the ReDom payment currency.");
-   }
-
-   const merchantAmountMinor=String(providerTransaction.requested_amount ?? providerTransaction.amount ?? "");
-   if(!/^\\d+$/.test(merchantAmountMinor)) {
-     throw new Error("Paystack returned an invalid original transaction amount.");
-   }
-   const requestedRefundMinor=BigInt(amountMinor);
-   const providerOriginalMinor=BigInt(merchantAmountMinor);
-   if(requestedRefundMinor<=0n) {
-     throw new Error("The ReDom refund amount must be greater than zero.");
-   }
-   if(requestedRefundMinor>providerOriginalMinor) {
-     throw new Error("The ReDom refund amount exceeds the provider's original merchant transaction amount.");
-   }
-
-   // Check existing Paystack refunds before creating another one. This prevents
-   // a duplicate/over-refund and avoids predictable "fully reversed" failures.
-   const refundList=await axios.get("https://api.paystack.co/refund",{
-     ...auth,
-     params:{reference:providerReference,perPage:100}
-   });
-   const existingRefunds=Array.isArray(refundList.data?.data)
-     ? refundList.data.data
-     : Array.isArray(refundList.data?.data?.data)
-       ? refundList.data.data.data
-       : [];
-   let alreadyRefundedMinor=0n;
-   let activeRefund=false;
-   for(const existing of existingRefunds){
-     const existingStatus=String(existing?.status??"").toLowerCase();
-     const existingAmount=String(existing?.amount??"");
-     if(/^\\d+$/.test(existingAmount) && existingStatus!=="failed") alreadyRefundedMinor+=BigInt(existingAmount);
-     if(existingStatus==="pending" || existingStatus==="processing" || existingStatus==="needs-attention") activeRefund=true;
-   }
-   if(activeRefund) {
-     throw new Error("A Paystack refund is already pending or processing for this transaction.");
-   }
-   if(alreadyRefundedMinor>=providerOriginalMinor) {
-     throw new Error("The Paystack transaction has already been fully refunded.");
-   }
-   if(requestedRefundMinor+alreadyRefundedMinor>providerOriginalMinor) {
-     throw new Error("The requested ReDom refund would exceed the transaction's remaining refundable amount.");
-   }
-
-   // Paystack documents a minimum USD refund of $1.00. Reject locally rather
-   // than sending a request that Paystack will predictably reject.
-   if(String(refundCurrency).toUpperCase()==="USD" && requestedRefundMinor<100n) {
-     throw new Error("Paystack does not support refunds below USD 1.00 for this transaction.");
-   }
-
-   const response=await axios.post("https://api.paystack.co/refund",{
-     transaction:providerReference,
-     amount:amountMinor,
-     currency:refundCurrency || undefined,
-     customer_note:"ReDom Stars refund "+String(row.redom_transaction_id),
-     merchant_note:"Approved ReDom Stars refund "+String(row.redom_transaction_id)
-   },auth);
-   if(!response.data?.status) throw new Error(response.data?.message||"Paystack rejected the refund request.");
-   refund=response.data.data;
  }catch(error){
    let reason="Refund provider rejected the request.";
    if(axios.isAxiosError(error)){
