@@ -257,11 +257,11 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       }
 
       const initialized = await paystack<{ authorization_url: string; access_code: string; reference: string }>("post", "/transaction/initialize", {
-        email: parsed.data.email, amount: String(priced.amountMinor), currency: priced.currency, channels: ["bank_transfer"],
+        email: parsed.data.email, amount: String(priced.amountMinor), currency: priced.currency, channels: [parsed.data.preferredChannel ?? "card"],
         callback_url: paymentCallbackUrl(), metadata: JSON.stringify(metadata),
       });
       await pool.query("UPDATE payment_transactions SET checkout_url=$1, access_code=$2, reference=$3, updated_at=now() WHERE id=$4", [initialized.authorization_url, initialized.access_code, initialized.reference, inserted.rows[0].id]);
-      return res.json({ success: true, mode: "paystack", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId, channel: "bank_transfer" });
+      return res.json({ success: true, mode: "paystack", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId, channel: parsed.data.preferredChannel ?? "card" });
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
