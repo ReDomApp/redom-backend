@@ -175,6 +175,22 @@ async function retryTrial(row:any):Promise<void>{
  }
 }
 
+export async function verifyStarsTrialSetup(userId:string,referenceValue:string){
+ const row=await pool.query("SELECT * FROM redom_stars_trial_setups WHERE reference=$1 AND user_id=$2 LIMIT 1",[referenceValue,userId]);
+ if(!row.rows[0])throw new Error("Stars trial authorization not found.");
+ const setup=row.rows[0];
+ if(String(setup.status)==="completed"){
+  const trial=await pool.query("SELECT id,status,trial_started_at,trial_ends_at,stars_granted,conversion_stars FROM redom_stars_trials WHERE user_id=$1 LIMIT 1",[userId]);
+  return {status:"active",trial:trial.rows[0]??null,reference:referenceValue};
+ }
+ const result=await finalizeStarsTrialSetup(referenceValue);
+ if(result.status==="active"){
+  const trial=await pool.query("SELECT id,status,trial_started_at,trial_ends_at,stars_granted,conversion_stars FROM redom_stars_trials WHERE user_id=$1 LIMIT 1",[userId]);
+  return {status:"active",trial:trial.rows[0]??null,reference:referenceValue};
+ }
+ return {status:result.status,trial:null,reference:referenceValue};
+}
+
 export async function processDueStarsTrials(){
  const due=await pool.query(`SELECT * FROM redom_stars_trials WHERE status='active' AND trial_ends_at<=now()
  UNION ALL
