@@ -215,7 +215,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       const inserted = await client.query(
         `INSERT INTO payment_transactions
           (user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email,payment_provider)
-         VALUES($1,$2,$3,$4,$5,'stars_purchase','initialized',$6::jsonb,$7,$8) RETURNING id`,
+         VALUES($1,$2,$3,$4,$5,'stars_purchase','initialized',$6::jsonb,$7,$8,$9) RETURNING id`,
         [userId, reference, redomId, priced.amountMinor, priced.currency, JSON.stringify(metadata), country.isoCode, parsed.data.email, provider],
       );
       if (parsed.data.address) {
