@@ -29,14 +29,6 @@ function getPackage(key: string) {
   if (!value) throw new Error("Invalid ReDom Stars package.");
   return value;
 }
-function fxRate(country: Country): number {
-  const configured = process.env.REDOM_STARS_FX_JSON;
-  if (!configured) return country.rate;
-  try {
-    const parsed = JSON.parse(configured) as Record<string, number>;
-    return Number.isFinite(parsed[country.currency]) && parsed[country.currency] > 0 ? parsed[country.currency] : country.rate;
-  } catch { return country.rate; }
-}
 function quote(country:Country,pkg:typeof packages[number],firstPurchaseEligible=false){
  const rate=fxRate(country);
  const effectiveUsdPrice=firstPurchaseEligible&&pkg.firstPurchaseUsdPrice!=null?pkg.firstPurchaseUsdPrice:pkg.usdPrice;
