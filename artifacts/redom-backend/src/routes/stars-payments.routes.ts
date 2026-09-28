@@ -8,6 +8,7 @@ import { env } from "../config/env";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { geocodePlace } from "../lib/mapbox";
 import { createStripeStarsCheckout } from "../services/payments/stripe-payment.service";
+import { createStarsTrialSetupCheckout, getStarsTrialEligibility, TERMS_VERSION } from "../services/payments/stripe-stars-trial.service";
 
 const router = Router();
 const API = "https://api.paystack.co";
@@ -181,6 +182,31 @@ router.get("/stars/activity", authMiddleware, async (req, res) => {
       reference: row.reference ? String(row.reference) : null, createdAt: new Date(row.created_at).toISOString(),
     })),
   });
+});
+
+router.get("/stars/trial", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId;
+  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  try{return res.json({success:true,...await getStarsTrialEligibility(userId)});}
+  catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to check trial eligibility."});}
+});
+
+router.post("/stars/trial/initialize", authMiddleware, async (req,res)=>{
+  const parsed=z.object({
+    countryCode:z.string().length(2),
+    email:z.string().email().max(255),
+    termsVersion:z.string().min(1).max(100).default(TERMS_VERSION),
+    consentTimestamp:z.string().datetime().optional(),
+  }).safeParse(req.body);
+  const userId=req.user?.userId;
+  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  if(!parsed.success)return res.status(400).json({success:false,message:"Invalid trial authorization details."});
+  const user=await getUser(userId);
+  if(!user?.email||String(user.email).toLowerCase()!==String(parsed.data.email).toLowerCase())return res.status(400).json({success:false,message:"Use the email address on your ReDom account."});
+  try{
+    const result=await createStarsTrialSetupCheckout({userId,email:String(user.email),countryCode:parsed.data.countryCode,termsVersion:parsed.data.termsVersion,consentTimestamp:parsed.data.consentTimestamp});
+    return res.json({success:true,mode:"stripe_trial_setup",checkoutUrl:result.checkoutUrl,reference:result.reference,termsVersion:parsed.data.termsVersion});
+  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to start the Stars trial."});}
 });
 
 router.post("/stars/initialize", authMiddleware, async (req, res) => {
