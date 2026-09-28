@@ -33,7 +33,7 @@ function id(session:StripeSetupSession){return typeof session.setup_intent==="st
 function customerId(v:any){return typeof v==="string"?v:v?.id?String(v.id):null;}
 function paymentMethodId(v:any){return typeof v==="string"?v:v?.id?String(v.id):null;}
 function reference(){return "trial_"+Date.now()+"_"+crypto.randomBytes(8).toString("hex");}
-async async function localQuote(countryCode:string):Promise<{currency:string;amountMinor:number;countryName:string;successRate:number|null}>{
+async function localQuote(countryCode:string):Promise<{currency:string;amountMinor:number;countryName:string;successRate:number|null}>{
  const country=await getStripeStarsCountry(countryCode);
  if(!country||!country.cardSupported)throw new Error("The selected country is not supported for Stripe card payments.");
  const currency=String(country.currency).toUpperCase(); const rate=Number(country.rate);
