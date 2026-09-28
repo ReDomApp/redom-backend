@@ -106,15 +106,15 @@ function encryptAuthorizationCode(value: string): string {
 
 function makeReference(): string { return "rd_" + Date.now() + "_" + crypto.randomBytes(6).toString("hex"); }
 
-function makeRedomTransactionId(): string {
+function makePaystackTransactionId(): string {
   const max = 10_000_000_000_000n;
   const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max;
-  return "R-" + value.toString().padStart(13, "0");
+  return "RP-" + value.toString().padStart(13, "0");
 }
 
 async function createUniqueRedomTransactionId(client: import("pg").PoolClient): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const id = makeRedomTransactionId();
+    const id = makePaystackTransactionId();
     const existing = await client.query("SELECT 1 FROM payment_transactions WHERE redom_transaction_id = $1 LIMIT 1", [id]);
     if (!existing.rows[0]) return id;
   }
@@ -229,7 +229,7 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
     metadata.paymentDetails = paymentDetails;
     const redomTransactionId = row.redom_transaction_id ? String(row.redom_transaction_id) : await createUniqueRedomTransactionId(client);
     metadata.redomTransactionId = redomTransactionId;
-    await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, gateway_status=$2, paid_at=$3, metadata=$4::jsonb, redom_transaction_id=$5, updated_at=now() WHERE id=$6", [String(verified.id), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), JSON.stringify(metadata), redomTransactionId, row.id]);
+    await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, provider_transaction_id=$2, payment_provider='paystack', gateway_status=$3, paid_at=$4, metadata=$5::jsonb, redom_transaction_id=$6, updated_at=now() WHERE id=$7", [String(verified.id), String(verified.reference), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), JSON.stringify(metadata), redomTransactionId, row.id]);
     if (String(row.purpose) !== "payment_method_setup") {
       await saveReusableAuthorization(String(row.id), verified, String(row.user_id), String(row.currency), row.customer_email ? String(row.customer_email) : (verified.customer?.email ? String(verified.customer.email) : null));
     }
