@@ -92,7 +92,7 @@ export const ordersPaymentsService = {
   refundCase(caseNumber:string) { return api.get<{success:boolean;refundCase:RefundCaseDetails}>("/refunds/cases/"+encodeURIComponent(caseNumber)); },
   sendRefundCaseMessage(caseNumber:string,message:string,useGemini=true) { return api.post<{success:boolean;refundCase:RefundCaseDetails}>("/refunds/cases/"+encodeURIComponent(caseNumber)+"/messages",{message,useGemini}); },
   starsTrialEligibility() { return api.get<{success:boolean;eligible:boolean;trial:any|null;pendingSetup?:any;setup?:any}>("/orders-payments/stars/trial"); },
-  initializeStarsTrial(input:{countryCode:string;email:string;termsVersion:string;consentTimestamp:string}) {
+  initializeStarsTrial(input:{countryCode:string;email:string;termsVersion:string;consentTimestamp:string;timeZone:string}) {
     return api.post<{success:boolean;mode:string;checkoutUrl:string;reference:string;termsVersion:string}>("/orders-payments/stars/trial/initialize",input);
   },
   initializeStars(input:{packageKey:string;countryCode:string;email:string;pin?:string;paymentMethodId?:string;preferredChannel?:"card"|"bank_transfer";retryReference?:string|null;address?:{countryCode:string;countryName:string;fullName:string;addressLine1:string;addressLine2?:string|null;city:string;state?:string|null;postalCode?:string|null;mapboxPlaceId?:string|null;latitude?:number|null;longitude?:number|null}}) {
