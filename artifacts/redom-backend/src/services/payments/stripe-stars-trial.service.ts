@@ -8,7 +8,7 @@ import { getStripeStarsCountry } from "./stripe-country.service";
 const API = "https://api.stripe.com/v1";
 const BACKEND_CALLBACK = "https://redom-backend.onrender.com/redom-backend/payments/stripe/callback";
 const TERMS_VERSION = "stars-trial-v1";
-const CONSENT_DISCLOSURE = "I authorize ReDom to save my Stripe payment method and make one off-session payment for 10 ReDom Stars after the 7-day trial. No charge is made when the trial starts. If the first conversion payment fails, ReDom will retry once approximately 24 hours later. No third automatic attempt will be made.";
+const CONSENT_DISCLOSURE = "I authorize ReDom to save my Stripe card payment method and make one one-time off-session payment of $1.99 USD for 10 ReDom Stars exactly 7 days after the trial is activated. No charge is made when the trial starts. If the first conversion payment fails, ReDom will retry once approximately 24 hours later. No third automatic attempt will be made.";
 
 type StripeSetupSession = {
   id:string; url?:string|null; status?:string|null; setup_intent?:string|{id?:string}|null;
