@@ -19,7 +19,9 @@ export async function ensurePaymentSchema(): Promise<void> {
     subscription_id uuid REFERENCES verification_subscriptions(id) ON DELETE SET NULL,
     plan_id uuid REFERENCES payment_plans(id) ON DELETE SET NULL,
     reference varchar(100) NOT NULL UNIQUE,
-    redom_transaction_id varchar(19) UNIQUE,\n    payment_provider varchar(20),\n    provider_transaction_id varchar(255),
+    redom_transaction_id varchar(19) UNIQUE,
+    payment_provider varchar(20),
+    provider_transaction_id varchar(255),
     external_transaction_id bigint,
     amount_minor bigint NOT NULL,
     currency varchar(3) NOT NULL,
@@ -40,7 +42,10 @@ export async function ensurePaymentSchema(): Promise<void> {
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email varchar(255)`);
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS failure_message varchar(500)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_country_idx ON payment_transactions(country_code)`);
-  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS redom_transaction_id varchar(19)`);\n  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS payment_provider varchar(20)`);\n  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS provider_transaction_id varchar(255)`);\n  await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_provider_idx ON payment_transactions(payment_provider, created_at DESC)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS redom_transaction_id varchar(19)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS payment_provider varchar(20)`);
+  await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS provider_transaction_id varchar(255)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS payment_transactions_provider_idx ON payment_transactions(payment_provider, created_at DESC)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_redom_transaction_id_idx ON payment_transactions(redom_transaction_id) WHERE redom_transaction_id IS NOT NULL`);
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_status varchar(20) NOT NULL DEFAULT 'pending'`);
   await pool.query(`ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS customer_email_sent_at timestamp with time zone`);
