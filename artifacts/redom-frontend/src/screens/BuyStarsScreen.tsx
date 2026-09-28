@@ -2,6 +2,7 @@ import React,{useCallback,useEffect,useMemo,useState}from"react";
 import{ActivityIndicator,Linking,Pressable,ScrollView,StyleSheet,Text,View}from"react-native";
 import{useNavigation}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
+import{useAuthContext}from"../auth/context";
 import{ordersPaymentsService}from"../services/ordersPaymentsService";
 import type{StarCountry,StarPackage}from"../services/ordersPaymentsService";
 import BackIcon from"../assets/navigation/back.svg";
@@ -11,7 +12,7 @@ type Step="catalog"|"payment";
 type PaymentResult="processing"|"success"|"failed"|null;
 
 export function BuyStarsScreen(){
- const n=useNavigation<any>();const{colors}=useTheme();
+ const n=useNavigation<any>();const{colors}=useTheme();const{user}=useAuthContext();
  const[countries,setCountries]=useState<StarCountry[]>([]);const[packages,setPackages]=useState<StarPackage[]>([]);
  const[country,setCountry]=useState<StarCountry|null>(null);const[selected,setSelected]=useState<StarPackage|null>(null);
  const[loading,setLoading]=useState(true);const[countryOpen,setCountryOpen]=useState(false);const[step,setStep]=useState<Step>("catalog");
@@ -23,7 +24,7 @@ export function BuyStarsScreen(){
  const priceText=useCallback((pkg:StarPackage)=>pkg.currency==="USD"?"$"+pkg.usdPrice.toFixed(2)+" USD":"$"+pkg.usdPrice.toFixed(2)+" USD • "+pkg.localAmountFormatted,[]);
  const verifyAndResolve=useCallback(async(ref:string)=>{setReference(ref);setProcessing(true);for(let i=0;i<24;i+=1){try{const r=await ordersPaymentsService.verifyPayment(ref);const status=String(r.payment.status);if(status==="paid"){setResult("success");setProcessing(false);return}if(["failed","abandoned","reversed"].includes(status)){setResult("failed");setProcessing(false);return}}catch{}await new Promise(resolve=>setTimeout(resolve,5000))}setResult("failed");setProcessing(false)},[]);
  useEffect(()=>{const handle=({url}:{url:string})=>{if(!url.startsWith("redom://payment/callback"))return;const m=url.match(/[?&]reference=([^&]+)/);const ref=m?decodeURIComponent(m[1]):reference;if(ref)void verifyAndResolve(ref)};const sub=Linking.addEventListener("url",handle);void Linking.getInitialURL().then(url=>{if(url?.startsWith("redom://payment/callback")){const m=url.match(/[?&]reference=([^&]+)/);const ref=m?decodeURIComponent(m[1]):reference;if(ref)void verifyAndResolve(ref)}}).catch(()=>undefined);return()=>sub.remove()},[reference,verifyAndResolve]);
- const continueToCheckout=useCallback(async()=>{if(!country||!selected||!agreed)return;setProcessing(true);setResult(null);try{const r=await ordersPaymentsService.initializeStars({packageKey:selected.key,countryCode:country.isoCode,email:"",preferredChannel:"card"});setReference(r.reference);if(!r.checkoutUrl)throw new Error("ReDom Pay did not receive a secure checkout URL.");await Linking.openURL(r.checkoutUrl)}catch{setProcessing(false);setResult("failed")}},[country,selected,agreed]);
+ const continueToCheckout=useCallback(async()=>{if(!country||!selected||!agreed)return;setProcessing(true);setResult(null);try{const r=await ordersPaymentsService.initializeStars({packageKey:selected.key,countryCode:country.isoCode,email:String(user?.email||""),preferredChannel:"card"});setReference(r.reference);if(!r.checkoutUrl)throw new Error("ReDom Pay did not receive a secure checkout URL.");await Linking.openURL(r.checkoutUrl)}catch{setProcessing(false);setResult("failed")}},[country,selected,agreed,user?.email]);
  const discountAmount=useMemo(()=>selected&&selected.regularUsdPrice>selected.usdPrice?(selected.regularUsdPrice-selected.usdPrice).toFixed(2):null,[selected]);
 
  if(loading)return <View style={styles.overlay}><View style={[styles.sheet,{backgroundColor:colors.surface}]}><ActivityIndicator style={{marginTop:50}} color={colors.primary}/></View></View>;
@@ -49,7 +50,7 @@ export function BuyStarsScreen(){
    {packages.map(pkg=><Pressable key={pkg.key} onPress={()=>openPackage(pkg)} style={({pressed})=>[styles.packageCard,{backgroundColor:colors.surface,borderColor:pkg.popular?colors.primary:colors.border,opacity:pressed?.65:1}]}>
     <View style={{flex:1}}>{pkg.popular?<View style={[styles.badge,{backgroundColor:colors.primary}]}><Text style={styles.badgeText}>MOST POPULAR</Text></View>:null}
      <Text style={[styles.packageStars,{color:colors.text}]}>{pkg.stars.toLocaleString()} Stars</Text>
-     {pkg.firstPurchaseUsdPrice!=null&&pkg.usdPrice<pkg.regularUsdPrice?<View style={styles.discountRow}><Text style={[styles.oldPrice,{color:colors.textSecondary}]}>$"+pkg.regularUsdPrice.toFixed(2)</Text><Text style={[styles.discount,{color:colors.primary}]}>{pkg.firstPurchaseDiscountPercent}% OFF</Text></View>:null}
+     {pkg.firstPurchaseUsdPrice!=null&&pkg.usdPrice<pkg.regularUsdPrice?<View style={styles.discountRow}><Text style={[styles.oldPrice,{color:colors.textSecondary}]}>${pkg.regularUsdPrice.toFixed(2)}</Text><Text style={[styles.discount,{color:colors.primary}]}>{pkg.firstPurchaseDiscountPercent}% OFF</Text></View>:null}
      <Text style={[styles.packagePrice,{color:colors.text}]}>{priceText(pkg)}</Text>
      {pkg.currency!=="USD"?<Text style={[styles.localPrice,{color:colors.textSecondary}]}>{pkg.localAmountFormatted}</Text>:null}
     </View><Text style={[styles.arrow,{color:colors.textSecondary}]}>›</Text>
@@ -66,7 +67,7 @@ export function BuyStarsScreen(){
     <Text style={[styles.sectionTitleSmall,{color:colors.text}]}>ReDom Stars</Text><Text style={[styles.selectedStars,{color:colors.text}]}>{selected.stars.toLocaleString()} Stars</Text>
     <Text style={[styles.detail,{color:colors.textSecondary}]}>Selected country: {country?.name}</Text><Text style={[styles.detail,{color:colors.textSecondary}]}>Selected currency: {country?.currency}</Text>
     <Text style={[styles.detail,{color:colors.textSecondary}]}>Current price: {priceText(selected)}</Text>
-    {discountAmount?<><Text style={[styles.detail,{color:colors.textSecondary}]}>Original price: $"+selected.regularUsdPrice.toFixed(2)</Text><Text style={[styles.detail,{color:colors.primary}]}>Discount: {selected.firstPurchaseDiscountPercent}% OFF • $"+discountAmount</Text></>:null}
+    {discountAmount?<><Text style={[styles.detail,{color:colors.textSecondary}]}>Original price: ${selected.regularUsdPrice.toFixed(2)}</Text><Text style={[styles.detail,{color:colors.primary}]}>Discount: {selected.firstPurchaseDiscountPercent}% OFF • ${discountAmount}</Text></>:null}
     <Text style={[styles.total,{color:colors.text}]}>Final amount: {selected.currency==="USD"?"$"+selected.usdPrice.toFixed(2):selected.localAmountFormatted}</Text>
    </View>
    <Text style={[styles.sectionTitleSmall,{color:colors.text}]}>Available payment methods</Text>
