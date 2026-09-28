@@ -115,6 +115,7 @@ export const ordersPaymentsService = {
   finalizeStripePaymentMethod(setupIntentId:string) { return api.post<{success:boolean;status:string;method?:SavedPaymentMethod}>("/orders-payments/payment-methods/setup/finalize",{setupIntentId}); },
   requestPaymentMethodRemoval(id:string) { return api.post<{success:boolean;channel:string;target:string;expiresAt:string}>("/orders-payments/payment-methods/"+encodeURIComponent(id)+"/removal-challenge",{}); },
   verifyPaymentMethodRemoval(id:string,code:string) { return api.post<{success:boolean;locked?:boolean;lockedUntil?:string;codeInvalid?:boolean;attemptsRemaining?:number;channel?:string;target?:string;expiresAt?:string;message?:string}>("/orders-payments/payment-methods/"+encodeURIComponent(id)+"/removal-challenge/verify",{code}); },
+  resendPaymentMethodRemoval(id:string) { return api.post<{success:boolean;locked?:boolean;lockedUntil?:string;channel?:string;target?:string;expiresAt?:string;message?:string}>("/orders-payments/payment-methods/"+encodeURIComponent(id)+"/removal-challenge/resend",{}); },
   backupPaymentMethods() { return api.get<{success:boolean;enabled:boolean}>("/orders-payments/payment-settings/backup"); },
   setBackupPaymentMethods(enabled:boolean) { return api.patch<{success:boolean;enabled:boolean}>("/orders-payments/payment-settings/backup",{enabled}); },
   reportPaymentProblem(input:{transactionKey?:string;transactionNumber?:string;paymentMethodId?:string;email?:string;description:string}) {
