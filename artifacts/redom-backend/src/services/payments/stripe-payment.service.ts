@@ -12,7 +12,6 @@ type StripeSession = {
   id: string;
   url?: string | null;
   status?: string | null;
-  payment_status?: string | null;
   amount_total?: number | null;
   currency?: string | null;
   payment_intent?: string | { id?: string } | null;
