@@ -117,7 +117,6 @@ async function markStripePaid(session: StripeSession): Promise<void> {
   const tx = await pool.query("SELECT * FROM payment_transactions WHERE reference=$1 FOR UPDATE", [reference]);
   if (!tx.rows[0]) throw new Error("ReDom payment transaction not found for Stripe session.");
   const row = tx.rows[0];
-  if (String(row.status) === "paid") return;
   const expectedAmount = BigInt(String(row.amount_minor));
   const actualAmount = BigInt(String(session.amount_total ?? -1));
   if (actualAmount !== expectedAmount) throw new Error("Stripe amount did not match the ReDom payment amount.");
