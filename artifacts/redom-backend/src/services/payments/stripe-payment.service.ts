@@ -215,7 +215,7 @@ async function insertStripePaymentTransaction(
   const pi = providerTransactionId ?? paymentIntentId(session);
   const totalPaymentAttempts = Math.max(
     Number(attempt.attempt_number ?? 1),
-    Number(attempt.failure_count ?? 0),
+    Number(attempt.failure_count ?? 0) + (finalStatus === "paid" ? 1 : 0),
   );
   const metadata = {
     provider: "stripe",
