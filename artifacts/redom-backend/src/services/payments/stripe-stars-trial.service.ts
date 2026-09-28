@@ -126,12 +126,12 @@ export async function finalizeStarsTrialSetup(referenceValue:string){
   const y=Number(parts.find(p=>p.type==="year")?.value); const m=Number(parts.find(p=>p.type==="month")?.value); const d=Number(parts.find(p=>p.type==="day")?.value);
   const seventhLocal=new Date(Date.UTC(y,m-1,d+7,12,0,0));
   const tzName=new Intl.DateTimeFormat("en-US",{timeZone,timeZoneName:"longOffset"}).formatToParts(seventhLocal).find(p=>p.type==="timeZoneName")?.value||"GMT";
-  const om=tzName.match(/GMT([+-])(\\d{2}):(\\d{2})/);
+  const om=tzName.match(/GMT([+-])(\d{2}):(\d{2})/);
   const offsetMinutes=om?(Number(om[2])*60+Number(om[3]))*(om[1]==="-"?-1:1):0;
   const safeEnd=new Date(seventhLocal.getTime()-offsetMinutes*60000);
   const inserted=await client.query(`INSERT INTO redom_stars_trials
    (user_id,status,trial_started_at,trial_ends_at,stars_granted,conversion_stars,country_code,currency,conversion_amount_minor,time_zone,stripe_customer_id,stripe_payment_method_id,consent_terms_version,consent_timestamp,consent_disclosure,created_at,updated_at)
-   VALUES($1,'active',$2,$3,20,10,$4,$5,$6,$7,$8,$9,$10,$11,now(),now()) RETURNING id`,
+   VALUES($1,'active',$2,$3,20,10,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now()) RETURNING id`,
    [row.user_id,start,safeEnd,row.country_code,row.currency,row.conversion_amount_minor,timeZone,customer,pm,row.terms_version,row.consent_timestamp,row.consent_disclosure]);
   await client.query("INSERT INTO redom_stars_accounts(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[row.user_id]);
   const balance=await client.query("SELECT balance FROM redom_stars_accounts WHERE user_id=$1 FOR UPDATE",[row.user_id]);
