@@ -51,6 +51,12 @@ export async function getStarsTrialEligibility(userId:string){
  return {eligible:!purchase.rows[0],trial:null};
 }
 
+async function createStripeCustomer(email:string,userId:string){
+ const customer=await stripe<any>("post","/customers",form({email,description:"ReDom Stars 7-day trial", "metadata[userId]":userId, "metadata[purpose]":"stars_trial"}));
+ if(!customer?.id)throw new Error("Stripe did not create the customer required for the Stars trial.");
+ return String(customer.id);
+}
+
 export async function createStarsTrialSetupCheckout(input:{userId:string;email:string;countryCode:string;termsVersion?:string;consentTimestamp?:string}){
  const eligibility=await getStarsTrialEligibility(input.userId);
  if(!eligibility.eligible) throw new Error("This Stars trial has already been used or is no longer available.");
@@ -60,9 +66,10 @@ export async function createStarsTrialSetupCheckout(input:{userId:string;email:s
  if(Number.isNaN(consentTimestamp.getTime())||consentTimestamp.getTime()>Date.now()+60000)throw new Error("Invalid trial authorization timestamp.");
  const termsVersion=String(input.termsVersion||TERMS_VERSION);
  const disclosure=CONSENT_DISCLOSURE;
+ const customerId=await createStripeCustomer(input.email,input.userId);
  const metadata={provider:"stripe",purpose:"stars_trial_setup",reference:ref,userId:input.userId,countryCode:String(input.countryCode).toUpperCase(),currency:quote.currency,conversionStars:"10",conversionAmountMinor:String(quote.amountMinor),termsVersion};
  const session=await stripe<StripeSetupSession>("post","/checkout/sessions",form({
-   mode:"setup",customer_creation:"always",client_reference_id:ref,customer_email:input.email,
+   mode:"setup",customer:customerId,client_reference_id:ref,customer_email:input.email,
    success_url:BACKEND_CALLBACK+"?session_id={CHECKOUT_SESSION_ID}&reference="+encodeURIComponent(ref),
    cancel_url:BACKEND_CALLBACK+"?reference="+encodeURIComponent(ref)+"&status=cancelled",
    "metadata[provider]":"stripe","metadata[purpose]":"stars_trial_setup","metadata[reference]":ref,
@@ -71,9 +78,9 @@ export async function createStarsTrialSetupCheckout(input:{userId:string;email:s
    "metadata[termsVersion]":termsVersion,
  }));
  if(!session.id||!session.url)throw new Error("Stripe did not return the trial authorization checkout URL.");
- await pool.query(`INSERT INTO redom_stars_trial_setups(reference,user_id,stripe_session_id,terms_version,consent_timestamp,consent_disclosure,country_code,currency,conversion_amount_minor,status,metadata)
+ await pool.query(`INSERT INTO redom_stars_trial_setups(reference,user_id,stripe_session_id,stripe_customer_id,terms_version,consent_timestamp,consent_disclosure,country_code,currency,conversion_amount_minor,status,metadata)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10::jsonb)`,
- [ref,input.userId,session.id,termsVersion,consentTimestamp,disclosure,String(input.countryCode).toUpperCase(),quote.currency,quote.amountMinor,JSON.stringify(metadata)]);
+ [ref,input.userId,session.id,customerId,termsVersion,consentTimestamp,disclosure,String(input.countryCode).toUpperCase(),quote.currency,quote.amountMinor,JSON.stringify(metadata)]);
  return {reference,checkoutUrl:session.url,sessionId:session.id};
 }
 
