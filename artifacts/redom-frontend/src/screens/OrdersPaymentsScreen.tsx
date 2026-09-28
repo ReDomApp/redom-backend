@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ComponentType } from "react";
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, SafeAreaView, StyleSheet, Text, View, Image } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useTheme } from "../theme/ThemeProvider";
 import type { RootStackParamList } from "../routing/types";
-import { ordersPaymentsService, type OrderSummary, type PaymentTransactionSummary } from "../services/ordersPaymentsService";
+
 import BackIcon from "../assets/navigation/back.svg";
 import CartIcon from "../assets/home-feed/cart.svg";
+import MenuIcon from "../assets/home-feed/menu.svg";
 import StarsIcon from "../assets/home-feed/stars.svg";
 import SubscriptionsIcon from "../assets/home-feed/subscriptions.svg";
 import SecurityIcon from "../assets/home-feed/security-controls.svg";
@@ -15,160 +13,257 @@ import HelpIcon from "../assets/home-feed/help-support.svg";
 import TermsIcon from "../assets/home-feed/terms-policies.svg";
 import ChevronIcon from "../assets/home-feed/chevron-right.svg";
 
-type TransactionTab = "all" | "money_transfer" | "orders" | "donations";
+type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
 export function OrdersPaymentsScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { colors } = useTheme();
-  const [tab, setTab] = useState<TransactionTab>("all");
-  const [orders, setOrders] = useState<OrderSummary[]>([]);
-  const [payments, setPayments] = useState<PaymentTransactionSummary[]>([]);
-  const [stars, setStars] = useState(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([ordersPaymentsService.overview(), ordersPaymentsService.starsActivity()])
-      .then(([overview, starsResult]) => {
-        if (!active) return;
-        setOrders(overview.orders);
-        setPayments(overview.payments);
-        setStars(starsResult.balance);
-      })
-      .catch(() => {})
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
-
-  const visiblePayments = useMemo(() => payments.filter((p) => {
-    const purpose = p.purpose.toLowerCase();
-    if (tab === "all") return true;
-    if (tab === "money_transfer") return ["money_transfer", "transfer", "p2p_transfer"].includes(purpose);
-    if (tab === "donations") return ["donation", "donations"].includes(purpose);
-    return ["order", "marketplace_order", "stars_purchase", "subscription", "subscription_renewal", "payment_method_setup"].includes(purpose);
-  }), [payments, tab]);
-
-  const visibleOrders = tab === "all" || tab === "orders" ? orders : [];
+  const navigation = useNavigation<Navigation>();
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Back">
-          <BackIcon width={24} height={24} />
+    <SafeAreaView style={styles.root}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          hitSlop={10}
+          style={styles.headerButton}
+        >
+          <BackIcon width={27} height={27} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Orders and payments</Text>
-        <Pressable onPress={() => navigation.navigate("Cart")} accessibilityRole="button" accessibilityLabel="Cart">
-          <CartIcon width={24} height={24} color={colors.text} />
-        </Pressable>
+
+        <Text style={styles.headerTitle}>Orders and payments</Text>
+
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => navigation.navigate("Cart")}
+            accessibilityRole="button"
+            accessibilityLabel="Cart"
+            hitSlop={8}
+            style={styles.headerButton}
+          >
+            <CartIcon width={29} height={29} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Menu"
+            hitSlop={8}
+            style={styles.headerButton}
+            onPress={() => {}}
+          >
+            <MenuIcon width={29} height={29} />
+          </Pressable>
+          <View style={styles.avatarWrap}>
+            <Image
+              source={require("../assets/home-feed/profile-placeholder.svg")}
+              style={styles.avatar}
+              resizeMode="contain"
+            />
+          </View>
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.section, { color: colors.text, marginTop: 0 }]}>Transactions</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-          {([["all", "All"], ["money_transfer", "Money transfer"], ["orders", "Orders"], ["donations", "Donations"]] as const).map(([key, label]) => (
-            <Pressable key={key} onPress={() => setTab(key)} style={[styles.tab, { backgroundColor: tab === key ? colors.primary : colors.surface, borderColor: tab === key ? colors.primary : colors.border }]}>
-              <Text style={{ color: tab === key ? "#fff" : colors.text, fontWeight: "800" }}>{label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {loading ? <ActivityIndicator color={colors.primary} style={styles.loader} /> : visibleOrders.length === 0 && visiblePayments.length === 0 ? (
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>No transactions in this section yet.</Text>
-        ) : (
-          <>
-            {visiblePayments.map((p) => (
-              <Pressable key={"payment-" + p.id} onPress={() => navigation.navigate("PaymentTransactionDetails", { transactionId: p.id })} style={[styles.transaction, { backgroundColor: colors.surface, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={"View " + purposeLabel(p.purpose) + " transaction"}>
-                <Text style={[styles.transactionTitle, { color: colors.text }]}>{purposeLabel(p.purpose)}</Text>
-                <Text style={{ color: colors.textSecondary }}>{p.currency} {(Number(p.amountMinor) / 100).toFixed(2)} · {p.status}</Text>
-                <Text style={{ color: colors.textSecondary }}>{p.redomTransactionId || p.reference}</Text>
-              </Pressable>
-            ))}
-            {visibleOrders.map((o) => (
-              <View key={"order-" + o.transactionId} style={[styles.transaction, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.transactionTitle, { color: colors.text }]}>{o.title}</Text>
-                <Text style={{ color: colors.textSecondary }}>Order · {o.currency} {o.totalPrice}</Text>
-                <Text style={{ color: colors.textSecondary }}>{o.orderStatus} · {o.transactionId}</Text>
-              </View>
-            ))}
-          </>
-        )}
-
-        <Text style={[styles.section, { color: colors.text }]}>Balances</Text>
-        <View style={[styles.balanceCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <StarsIcon width={32} height={32} color={colors.text} />
-          <View style={styles.balanceInfo}>
-            <Text style={[styles.balanceTitle, { color: colors.text }]}>ReDom Stars</Text>
-            <Text style={[styles.balanceSub, { color: colors.textSecondary }]}>{stars.toLocaleString()} Stars available</Text>
+      <View style={styles.content}>
+        <View style={styles.payCard}>
+          <View style={styles.payBrandRow}>
+            <Text style={styles.reDomMark}>R</Text>
+            <Text style={styles.payTitle}>ReDom Pay</Text>
           </View>
-          <Pressable onPress={() => navigation.navigate("BuyStars")} style={[styles.buyButton, { backgroundColor: colors.primary }]}>
-            <Text style={styles.buyText}>Buy Stars</Text>
-          </Pressable>
+          <Text style={styles.payDescription}>
+            Transactions, credit cards, debit cards, shipping info, PayPal
+          </Text>
         </View>
-        <Row label="Stars activity" Icon={StarsIcon} colors={colors} onPress={() => navigation.navigate("StarsActivity")} />
 
-        <Text style={[styles.section, { color: colors.text }]}>Payment information</Text>
-        <Row label="Payment methods" colors={colors} onPress={() => navigation.navigate("PaymentMethods")} />
-        <Row label="Add payment method" colors={colors} onPress={() => navigation.navigate("AddPaymentMethod")} />
-        <Row label="Subscriptions" Icon={SubscriptionsIcon} colors={colors} onPress={() => navigation.navigate("Subscriptions")} />
+        <Text style={styles.sectionTitle}>Balances</Text>
 
-        <Text style={[styles.section, { color: colors.text }]}>Manage</Text>
-        <Row label="Shipping and billing addresses" colors={colors} onPress={() => navigation.navigate("PaymentAddresses")} />
-        <Row label="Email" colors={colors} onPress={() => navigation.navigate("EditProfile")} />
-        <Row label="Phone" colors={colors} onPress={() => navigation.navigate("EditProfile")} />
-        <Row label="Security and payment PIN" Icon={SecurityIcon} colors={colors} onPress={() => navigation.navigate("PaymentSecurity")} />
-        <Row label="Currency" colors={colors} onPress={() => navigation.navigate("SelectCurrency")} />
-        <Row label="Help" Icon={HelpIcon} colors={colors} onPress={() => navigation.navigate("MetaPaySupport")} />
-        <Row label="Terms and privacy" Icon={TermsIcon} colors={colors} onPress={() => navigation.navigate("Policy", { slug: "payments" })} />
+        <Pressable
+          onPress={() => navigation.navigate("BuyStars")}
+          accessibilityRole="button"
+          accessibilityLabel="ReDom Stars"
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        >
+          <View style={styles.iconWrap}>
+            <StarsIcon width={34} height={34} />
+          </View>
+          <Text style={styles.rowLabel}>ReDom Stars</Text>
+          <ChevronIcon width={22} height={22} />
+        </Pressable>
 
-      </ScrollView>
+        <Text style={[styles.sectionTitle, styles.paymentInfoTitle]}>Payment information</Text>
+
+        <Pressable
+          onPress={() => navigation.navigate("Subscriptions")}
+          accessibilityRole="button"
+          accessibilityLabel="Subscriptions"
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        >
+          <View style={styles.iconWrap}>
+            <SubscriptionsIcon width={34} height={34} />
+          </View>
+          <Text style={styles.rowLabel}>Subscriptions</Text>
+          <ChevronIcon width={22} height={22} />
+        </Pressable>
+
+        <Text style={[styles.sectionTitle, styles.settingsTitle]}>Settings</Text>
+
+        <Pressable
+          onPress={() => navigation.navigate("PaymentSecurity")}
+          accessibilityRole="button"
+          accessibilityLabel="Security and controls"
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        >
+          <View style={styles.iconWrap}>
+            <SecurityIcon width={34} height={34} />
+          </View>
+          <Text style={styles.rowLabel}>Security and controls</Text>
+          <ChevronIcon width={22} height={22} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => navigation.navigate("MetaPaySupport")}
+          accessibilityRole="button"
+          accessibilityLabel="Help"
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        >
+          <View style={styles.iconWrap}>
+            <HelpIcon width={34} height={34} />
+          </View>
+          <Text style={styles.rowLabel}>Help</Text>
+          <ChevronIcon width={22} height={22} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => navigation.navigate("Policy", { slug: "payments" })}
+          accessibilityRole="button"
+          accessibilityLabel="Terms and privacy"
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        >
+          <View style={styles.iconWrap}>
+            <TermsIcon width={34} height={34} />
+          </View>
+          <Text style={styles.rowLabel}>Terms and privacy</Text>
+          <ChevronIcon width={22} height={22} />
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
 
-function purposeLabel(purpose: string): string {
-  const labels: Record<string, string> = {
-    stars_purchase: "ReDom Stars purchase",
-    subscription: "Subscription",
-    subscription_renewal: "Subscription renewal",
-    donation: "Donation",
-    donations: "Donation",
-    money_transfer: "Money transfer",
-    transfer: "Money transfer",
-    p2p_transfer: "Money transfer",
-    payment_method_setup: "Payment method verification",
-  };
-  return labels[purpose] || "Payment";
-}
-
-function Row({ label, Icon, colors, onPress }: { label: string; Icon?: ComponentType<{ width?: number; height?: number; color?: string }>; colors: any; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.row, { borderBottomColor: colors.border }]} accessibilityRole="button">
-      {Icon ? <Icon width={27} height={27} color={colors.text} /> : <View style={styles.iconPlaceholder} />}
-      <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-      <ChevronIcon width={20} height={20} />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: { height: 58, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14 },
-  headerTitle: { fontSize: 19, fontWeight: "800" },
-  content: { padding: 16, paddingBottom: 50 },
-  section: { fontSize: 21, fontWeight: "900", marginTop: 28, marginBottom: 8 },
-  tabs: { gap: 8, paddingBottom: 8 },
-  tab: { paddingHorizontal: 15, paddingVertical: 10, borderRadius: 22, borderWidth: 1 },
-  loader: { marginTop: 20 },
-  empty: { fontSize: 16, paddingVertical: 18 },
-  transaction: { padding: 14, borderWidth: 1, borderRadius: 13, marginTop: 8 },
-  transactionTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
-  balanceCard: { borderWidth: 1, borderRadius: 16, padding: 15, flexDirection: "row", alignItems: "center", gap: 12 },
-  balanceInfo: { flex: 1 },
-  balanceTitle: { fontSize: 17, fontWeight: "800" },
-  balanceSub: { fontSize: 13, marginTop: 3 },
-  buyButton: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20 },
-  buyText: { color: "#fff", fontWeight: "800" },
-  row: { minHeight: 62, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", gap: 14 },
-  iconPlaceholder: { width: 27, height: 27 },
-  label: { fontSize: 17, fontWeight: "600", flex: 1 },
+  root: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  header: {
+    height: 62,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E4E6EB",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 17,
+  },
+  headerButton: {
+    width: 34,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    flex: 1,
+    color: "#050505",
+    fontSize: 21,
+    fontWeight: "800",
+    marginLeft: 12,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  avatarWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 2,
+  },
+  avatar: {
+    width: 34,
+    height: 34,
+  },
+  content: {
+    paddingHorizontal: 31,
+    paddingTop: 24,
+  },
+  payCard: {
+    minHeight: 153,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E1E3E6",
+    paddingHorizontal: 38,
+    paddingVertical: 31,
+    shadowColor: "#000000",
+    shadowOpacity: 0.12,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  payBrandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  reDomMark: {
+    color: "#1877F2",
+    fontSize: 31,
+    fontWeight: "900",
+    marginRight: 4,
+  },
+  payTitle: {
+    color: "#1C1E21",
+    fontSize: 25,
+    fontWeight: "500",
+  },
+  payDescription: {
+    color: "#1C1E21",
+    fontSize: 20,
+    lineHeight: 29,
+    marginTop: 18,
+  },
+  sectionTitle: {
+    color: "#050505",
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: "800",
+    marginTop: 31,
+    marginBottom: 13,
+  },
+  paymentInfoTitle: {
+    marginTop: 17,
+  },
+  settingsTitle: {
+    marginTop: 18,
+  },
+  row: {
+    minHeight: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  rowPressed: {
+    opacity: 0.6,
+  },
+  iconWrap: {
+    width: 49,
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+  rowLabel: {
+    flex: 1,
+    color: "#050505",
+    fontSize: 20,
+    fontWeight: "600",
+  },
 });
