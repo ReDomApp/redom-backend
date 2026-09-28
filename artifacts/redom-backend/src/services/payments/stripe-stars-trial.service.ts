@@ -124,6 +124,36 @@ async function recordPi(trialId:string,pi:StripePaymentIntent,attempt:number){
  await pool.query("UPDATE redom_stars_trials SET stripe_payment_intent_ids=COALESCE(stripe_payment_intent_ids,'[]'::jsonb)||$1::jsonb,conversion_attempt_number=$2,first_conversion_attempt_at=COALESCE(first_conversion_attempt_at,now()),updated_at=now() WHERE id=$3",[JSON.stringify([String(pi.id)]),attempt,trialId]);
 }
 
+async function finalizeTrialPaid(row:any,pi:StripePaymentIntent){
+ const reference="trial_conversion_"+String(row.id)+"_"+String(pi.id);
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",["redom-stars-trial-conversion:"+String(row.id)]);
+  let tx=(await client.query("SELECT * FROM payment_transactions WHERE reference=$1 FOR UPDATE",[reference])).rows[0];
+  if(!tx){
+   const redom=await uniqueStripeRedomId(client);
+   const metadata={provider:"stripe",purpose:"stars_trial_conversion",trialId:String(row.id),stars:10,stripePaymentIntentId:String(pi.id),paymentDetails:{provider:"stripe",providerReference:String(pi.id),channel:"stripe_off_session",currency:String(row.currency).toUpperCase(),requestedAmountMinor:row.conversion_amount_minor}};
+   const ins=await client.query(`INSERT INTO payment_transactions(user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email,payment_provider,provider_transaction_id,gateway_status,paid_at)
+    SELECT user_id,$1,$2,conversion_amount_minor,currency,'stars_purchase','paid',$3::jsonb,country_code,(SELECT email FROM users WHERE id=redom_stars_trials.user_id),'stripe',$4,'succeeded',now()
+    FROM redom_stars_trials WHERE id=$5 RETURNING id`,
+    [reference,redom,JSON.stringify(metadata),String(pi.id),row.id]);
+   tx=ins.rows[0];
+  }
+  await client.query("INSERT INTO redom_stars_accounts(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[row.user_id]);
+  const bal=await client.query("SELECT balance FROM redom_stars_accounts WHERE user_id=$1 FOR UPDATE",[row.user_id]);
+  const dup=await client.query("SELECT 1 FROM redom_stars_transactions WHERE payment_transaction_id=$1 AND type='purchase' LIMIT 1",[tx.id]);
+  if(!dup.rows[0]){
+   const next=BigInt(String(bal.rows[0]?.balance??"0"))+10n;
+   await client.query("UPDATE redom_stars_accounts SET balance=$1,updated_at=now() WHERE user_id=$2",[next.toString(),row.user_id]);
+   await client.query("INSERT INTO redom_stars_transactions(user_id,payment_transaction_id,type,stars,balance_after,package_key,country_code,currency,amount_minor,reference) VALUES($1,$2,'purchase',10,$3,'stars_trial_conversion',$4,$5,$6,$7)",[row.user_id,tx.id,next.toString(),row.country_code,row.currency,row.conversion_amount_minor,reference]);
+  }
+  await client.query("UPDATE redom_stars_trials SET status='conversion_paid',final_conversion_status='paid',failure_reason=NULL,retry_at=NULL,updated_at=now() WHERE id=$1",[row.id]);
+  await client.query("COMMIT");
+ }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
+ await sendPaymentEmailForReference(reference);
+}
+
 async function convertTrial(row:any):Promise<void>{
  const amount=Number(row.conversion_amount_minor);
  await pool.query("UPDATE redom_stars_trials SET status='conversion_pending',conversion_attempt_number=1,first_conversion_attempt_at=now(),updated_at=now() WHERE id=$1",[row.id]);
