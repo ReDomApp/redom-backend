@@ -124,7 +124,8 @@ async function markStripePaid(session: StripeSession): Promise<void> {
 
   let metadata: any = {};
   try { metadata = row.metadata ? (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata) : {}; } catch { metadata = {}; }
-  const pi = paymentIntentId(session);\n  const providerTransactionId = pi ?? session.id;
+  const pi = paymentIntentId(session);
+  const providerTransactionId = pi ?? session.id;
   metadata.paymentDetails = {
     ...(metadata.paymentDetails ?? {}),
     provider: "stripe",
