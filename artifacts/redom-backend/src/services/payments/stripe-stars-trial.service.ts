@@ -69,14 +69,14 @@ export async function createStarsTrialSetupCheckout(input:{userId:string;email:s
  const termsVersion=String(input.termsVersion||TERMS_VERSION);
  const disclosure=CONSENT_DISCLOSURE;
  const customerId=await createStripeCustomer(input.email,input.userId);
- const metadata={provider:"stripe",purpose:"stars_trial_setup",reference:ref,userId:input.userId,countryCode:String(input.countryCode).toUpperCase(),countryName:quote.countryName,currency:quote.currency,conversionStars:"10",conversionAmountMinor:String(quote.amountMinor),termsVersion,trialEndsAt:trialEndsAt.toISOString(),successRate:quote.successRate};
+ const metadata={provider:"stripe",purpose:"stars_trial_setup",reference:ref,userId:input.userId,countryCode:String(input.countryCode).toUpperCase(),countryName:quote.countryName,currency:quote.currency,conversionStars:"10",conversionAmountMinor:String(quote.amountMinor),termsVersion ,successRate:quote.successRate};
  const session=await stripe<StripeSetupSession>("post","/checkout/sessions",form({
    mode:"setup",customer:customerId,client_reference_id:ref,customer_email:input.email,"payment_method_types[0]":"card",
    success_url:BACKEND_CALLBACK+"?session_id={CHECKOUT_SESSION_ID}&reference="+encodeURIComponent(ref),
    cancel_url:BACKEND_CALLBACK+"?reference="+encodeURIComponent(ref)+"&status=cancelled",
    "metadata[provider]":"stripe","metadata[purpose]":"stars_trial_setup","metadata[reference]":ref,
    "metadata[userId]":input.userId,"metadata[countryCode]":String(input.countryCode).toUpperCase(),
-   "metadata[currency]":quote.currency,"metadata[conversionStars]":"10","metadata[conversionAmountMinor]":String(quote.amountMinor)
+   "metadata[currency]":quote.currency,"metadata[conversionStars]":"10","metadata[conversionAmountMinor]":String(quote.amountMinor),
    "metadata[termsVersion]":termsVersion,
  }));
  if(!session.id||!session.url)throw new Error("Stripe did not return the trial authorization checkout URL.");
