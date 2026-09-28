@@ -5,6 +5,12 @@ import StartupArtwork from "../assets/brand/startup.svg";
 import WarningBlack from "../assets/auth/warning-black.svg";
 import { fetchNetworkProvider, type NetworkProviderResponse } from "../auth/networkProvider";
 
+function formatSecurityScore(value: number | string | null | undefined) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "0.00%";
+  return `${numeric.toFixed(2)}%`;
+}
+
 function maskIp(ip: string | null) {
   if (!ip) return "Detecting…";
   if (ip.includes(":")) return `${ip.slice(0, 8)}••••••`;
@@ -25,7 +31,7 @@ function warningFor(profile: NetworkProviderResponse) {
   if (profile.security?.proxy) return "Proxy detected. This connection appears to use a proxy.";
   if (profile.security?.tor) return "Tor detected. Please use your normal Internet connection to continue.";
   if (profile.security?.bot) return "Automated traffic detected. This connection was identified as automated traffic.";
-  if (profile.security?.abuser || (profile.security?.fraudScore ?? 0) >= 75) return `High security risk detected. IPAPI assigned this connection a fraud-risk score of ${profile.security?.fraudScore ?? 0}%.`;
+  if (profile.security?.abuser || (profile.security?.fraudScore ?? 0) >= 75) return `High security risk detected. IPAPI assigned this connection a fraud-risk score of ${formatSecurityScore(profile.security?.fraudScore)}.`;
   return null;
 }
 
@@ -100,7 +106,7 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
               <View style={styles.row}><Text style={styles.label}>Connection</Text><Text style={styles.value}>{security.connection || "Unknown"}</Text></View>
               <View style={styles.row}><Text style={styles.label}>Provider</Text><Text style={styles.value}>{profile?.networkProvider ?? "Unknown"}</Text></View>
               <View style={styles.row}><Text style={styles.label}>Location</Text><Text style={styles.value}>{[security.city, security.region, security.country].filter(Boolean).join(", ") || "Unknown"}</Text></View>
-              <View style={styles.row}><Text style={styles.label}>Security score</Text><Text style={styles.value}>{security.fraudScore}%</Text></View>
+              <View style={styles.row}><Text style={styles.label}>Security score</Text><Text style={styles.value}>{formatSecurityScore(security.fraudScore)}</Text></View>
             </View> : null}
 
             {isVpnOrDatacenter ? <Text style={styles.embeddedNotice}>Your connection type was detected automatically. ReDom is showing this warning before Login because the current network is not a normal residential/mobile connection.</Text> : null}
