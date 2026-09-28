@@ -77,3 +77,32 @@ export async function detachStripeCardMethod(userId:string,id:string){
   await stripe("post","/payment_methods/"+encodeURIComponent(m.provider.stripePaymentMethodId)+"/detach",form({}));
   await pool.query("UPDATE redom_payment_methods SET active=false,reusable=false,status='removed',updated_at=now() WHERE id=$1 AND user_id=$2",[id,userId]);
 }
+
+type CheckoutSession={id:string;url?:string|null;status?:string|null;setup_intent?:string|null;customer?:string|null;metadata?:Record<string,string>};
+export async function createStripeCardSetupCheckout(input:{userId:string;email:string;name?:string|null;successUrl:string;cancelUrl:string}){
+  const count=await pool.query("SELECT COUNT(*)::int count FROM redom_payment_methods WHERE user_id=$1 AND active=true",[input.userId]);
+  if(Number(count.rows[0]?.count||0)>=3)throw new Error("You can save a maximum of 3 payment methods.");
+  const customer=await customerForUser(input.userId,input.email,input.name);
+  const session=await stripe<CheckoutSession>("post","/checkout/sessions",form({
+    mode:"setup",
+    customer,
+    "payment_method_types[0]":"card",
+    billing_address_collection:"required",
+    success_url:input.successUrl,
+    cancel_url:input.cancelUrl,
+    client_reference_id:input.userId,
+    "metadata[reDomUserId]":input.userId,
+    "metadata[purpose]":"redom_saved_card_expo_fallback",
+    "setup_intent_data[metadata][reDomUserId]":input.userId,
+    "setup_intent_data[metadata][purpose]":"redom_saved_card",
+  }));
+  if(!session.url)throw new Error("Stripe did not return a secure card-entry URL.");
+  return {checkoutSessionId:session.id,checkoutUrl:session.url};
+}
+export async function finalizeStripeCardSetupCheckout(userId:string,sessionId:string){
+  if(!/^cs_[A-Za-z0-9_]+$/.test(sessionId))throw new Error("Invalid Checkout Session.");
+  const session=await stripe<CheckoutSession>("get","/checkout/sessions/"+encodeURIComponent(sessionId));
+  if(String(session.metadata?.reDomUserId||"")!==userId)throw new Error("Checkout Session does not belong to this account.");
+  if(session.status!=="complete"||!session.setup_intent)throw new Error("Stripe card setup has not completed.");
+  return {status:"succeeded",method:await persist(userId,String(session.setup_intent))};
+}
