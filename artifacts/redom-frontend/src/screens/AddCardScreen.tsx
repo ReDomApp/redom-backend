@@ -40,7 +40,7 @@ export function AddCardScreen(){
   }catch(e){if(Date.now()-started<10000)await wait(10000-(Date.now()-started));setFailure(e instanceof Error?e.message:"The card could not be validated.");setResult("failure");}finally{setProcessing(false);}
  };
  if(result)return <SafeAreaView style={s.root}><View style={s.result}><View style={s.successIcon}>{result==="success"?<CheckIcon width={84} height={84}/>:<Text style={s.failMark}>!</Text>}</View><Text style={s.resultTitle}>{result==="success"?"ReDom Pay Card Validation Successful!":"ReDom Pay Card Validation Unsuccessful!"}</Text><Text style={s.resultText}>{result==="success"?"Your Card has been successfully Saved & Encrypted With ReDom Payment Security.":failure||"The card values or name don't correspond to the information provided. Please update your card information and try again."}</Text><Pressable onPress={()=>result==="success"?navigation.pop(2):setResult(null)} style={s.primary}><Text style={s.primaryText}>{result==="success"?"Ok, Continue":"Return to card entry"}</Text></Pressable></View></SafeAreaView>;
- return <SafeAreaView style={s.root}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":undefined}>
+ return <SafeAreaView style={s.root}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":"height"}>
   <View style={s.header}><Pressable onPress={()=>navigation.goBack()} style={s.close}><CloseIcon width={28} height={28}/></Pressable></View>
   <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
    <Text style={s.title}>Add card</Text><Text style={s.subtitle}>Your card number is encrypted and securely saved according to ReDom Pay-Card Policies On Saved Cards.</Text>
