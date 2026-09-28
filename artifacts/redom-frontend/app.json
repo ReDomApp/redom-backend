@@ -146,7 +146,8 @@
           "enableGooglePay": false,
           "disableSPM": true
         }
-      ]
+      ],
+      "expo-video"
     ],
     "extra": {
       "eas": {
