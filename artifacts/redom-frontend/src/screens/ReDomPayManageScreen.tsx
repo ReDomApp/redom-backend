@@ -1,209 +1,51 @@
-import { useEffect, useState } from "react";
-import { Alert, SafeAreaView, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useCallback, useState } from "react";
+import { Alert, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useAuthContext } from "../auth/context";
 import type { RootStackParamList } from "../routing/types";
-import { ordersPaymentsService, type PaymentAddress } from "../services/ordersPaymentsService";
+import { ordersPaymentsService, type SavedPaymentMethod } from "../services/ordersPaymentsService";
 import BackIcon from "../assets/navigation/back.svg";
-import ReDomLogo from "../assets/brand/redom-logo.svg";
-import AddPaymentIllustration from "../assets/home-feed/add-payment-method.svg";
-import StarsIcon from "../assets/home-feed/stars.svg";
-import GamingIcon from "../assets/home-feed/gaming.svg";
-import ShippingIcon from "../assets/home-feed/shipping-address.svg";
+import AddPaymentIcon from "../assets/home-feed/add-payment-method.svg";
 import SecurityIcon from "../assets/home-feed/security.svg";
-import CurrencyIcon from "../assets/home-feed/currency.svg";
-import HelpIcon from "../assets/home-feed/help-support.svg";
-import TermsIcon from "../assets/home-feed/terms-policies.svg";
 import ChevronIcon from "../assets/home-feed/chevron-right.svg";
+import SettingsIcon from "../assets/home-feed/settings.svg";
+import VisaIcon from "../assets/payment/card-brands/visa.svg";
+import MastercardIcon from "../assets/payment/card-brands/mastercard.svg";
+import AmexIcon from "../assets/payment/card-brands/american-express.svg";
+import DiscoverIcon from "../assets/payment/card-brands/discover.svg";
+import JcbIcon from "../assets/payment/card-brands/jcb.svg";
+import UnionPayIcon from "../assets/payment/card-brands/unionpay.svg";
+import VerveIcon from "../assets/payment/card-brands/verve.svg";
 
-type Navigation = NativeStackNavigationProp<RootStackParamList>;
+type Nav=NativeStackNavigationProp<RootStackParamList>;
+const blue="#1877F2";
+function countryName(code:string|null){if(!code)return "Unknown country";try{return new Intl.DisplayNames(["en"],{type:"region"}).of(code)||code;}catch{return code||"Unknown country";}}
+function BrandIcon({brand}:{brand:string|null}){const b=(brand||"").toLowerCase();const C=b==="visa"?VisaIcon:b==="mastercard"?MastercardIcon:b.includes("american")||b==="amex"?AmexIcon:b==="discover"?DiscoverIcon:b==="jcb"?JcbIcon:b==="unionpay"?UnionPayIcon:b==="verve"?VerveIcon:AddPaymentIcon;return <C width={52} height={32}/>;}
 
-export function ReDomPayManageScreen() {
-  const navigation = useNavigation<Navigation>();
-  const { user } = useAuthContext();
-  const [balance, setBalance] = useState<number | null>(null);
-  const [address, setAddress] = useState<PaymentAddress | null>(null);
-  const [currency, setCurrency] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      ordersPaymentsService.starsActivity(),
-      ordersPaymentsService.paymentAddresses(),
-      ordersPaymentsService.getSettings(),
-    ]).then(([stars, addresses, settings]) => {
-      if (!active) return;
-      setBalance(stars.balance);
-      setAddress(addresses.addresses.find((item) => item.is_default) ?? addresses.addresses[0] ?? null);
-      setCurrency(settings.settings.currency || "USD");
-    }).catch(() => {
-      if (!active) return;
-      setBalance(null);
-      setAddress(null);
-      setCurrency(null);
-    }).finally(() => {
-      if (active) setLoading(false);
-    });
-    return () => { active = false; };
-  }, []);
-
-  return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back">
-          <BackIcon width={28} height={28} />
-        </Pressable>
-        <View style={styles.brandTitle}>
-          <ReDomLogo width={34} height={28} />
-          <Text style={styles.headerTitle}>ReDom Pay</Text>
-        </View>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      <View style={styles.tabs}>
-        <Pressable onPress={() => navigation.replace("ReDomPayTransactions")} style={styles.topTab} accessibilityRole="tab" accessibilityState={{ selected: false }}>
-          <Text style={styles.topTabText}>Transactions</Text>
-        </Pressable>
-        <Pressable style={[styles.topTab, styles.topTabSelected]} accessibilityRole="tab" accessibilityState={{ selected: true }}>
-          <Text style={styles.topTabTextSelected}>Manage</Text>
-        </Pressable>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.intro}>
-          <Text style={styles.introText}>Manage your saved payment info and which accounts have access to it. <Text onPress={() => navigation.navigate("Policy", { slug: "payments" })} style={styles.learnMore}>Learn more</Text></Text>
-        </View>
-
-        <View style={styles.paymentCard}>
-          <AddPaymentIllustration width="100%" height={184} />
-          <View style={styles.paymentCardBody}>
-            <Text style={styles.cardTitle}>Add a payment method</Text>
-            <Text style={styles.cardDescription}>Save a card or link your PayPal to make your next purchase easier.</Text>
-            <Pressable onPress={() => navigation.navigate("AddPaymentMethod")} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Add payment method">
-              <Text style={styles.addButtonText}>Add payment method</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <Text style={styles.sectionTitle}>Balances</Text>
-        <View style={styles.groupCard}>
-          <Pressable onPress={() => navigation.navigate("StarsActivity")} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="ReDom Stars">
-            <View style={styles.iconWrap}><StarsIcon width={34} height={34} /></View>
-            <View style={styles.rowTextWrap}>
-              <Text style={styles.rowTitle}>ReDom Stars</Text>
-              <Text style={styles.rowValue}>{loading ? "Loading..." : balance == null ? "—" : `${balance.toLocaleString()} Stars`}</Text>
-            </View>
-            <ChevronIcon width={22} height={22} />
-          </Pressable>
-          <View style={styles.divider} />
-          <Pressable onPress={() => Alert.alert("Facebook Gaming", "Not available in any region right now. This feature is under development.")} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Facebook Gaming">
-            <View style={styles.iconWrap}><GamingIcon width={34} height={34} /></View>
-            <View style={styles.rowTextWrap}>
-              <Text style={styles.rowTitle}>Facebook Gaming</Text>
-              <Text style={styles.rowValue}>$0.00</Text>
-            </View>
-          </Pressable>
-        </View>
-
-        <Text style={styles.sectionTitle}>Shipping info</Text>
-        <View style={styles.groupCard}>
-          <View style={styles.row}>
-            <View style={styles.iconWrap}><ShippingIcon width={34} height={34} /></View>
-            <View style={styles.rowTextWrap}>
-              <Text style={styles.rowTitle}>Shipping address</Text>
-              {address ? <Text numberOfLines={2} style={styles.rowValue}>{formatAddress(address)}</Text> : null}
-            </View>
-          </View>
-          <View style={styles.divider} />
-          <Pressable onPress={() => Alert.alert("Email", "Please go to Accounts Center to edit your contact information.")} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Email">
-            <View style={styles.iconWrap} />
-            <View style={styles.rowTextWrap}>
-              <Text style={styles.rowTitle}>Email</Text>
-              {user?.email ? <Text numberOfLines={1} style={styles.rowValue}>{user.email}</Text> : null}
-            </View>
-            <ChevronIcon width={22} height={22} />
-          </Pressable>
-          <View style={styles.divider} />
-          <Pressable onPress={() => Alert.alert("Phone number", "For your security, please go to Accounts Center to change or update your phone number.")} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Phone number">
-            <View style={styles.iconWrap} />
-            <View style={styles.rowTextWrap}>
-              <Text style={styles.rowTitle}>Phone number</Text>
-              {user?.phoneNumber ? <Text numberOfLines={1} style={styles.rowValue}>{user.phoneNumber}</Text> : null}
-            </View>
-            <ChevronIcon width={22} height={22} />
-          </Pressable>
-        </View>
-
-        <Text style={styles.sectionTitle}>Settings</Text>
-        <View style={styles.groupCard}>
-          <Pressable onPress={() => navigation.navigate("PaymentSecurity")} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Security">
-            <View style={styles.iconWrap}><SecurityIcon width={34} height={34} /></View>
-            <Text style={styles.rowTitleOnly}>Security</Text>
-            <ChevronIcon width={22} height={22} />
-          </Pressable>
-          <View style={styles.divider} />
-          <Pressable onPress={() => navigation.navigate("PaymentCurrency", { selectedCurrency: currency ?? undefined })} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Currency">
-            <View style={styles.iconWrap}><CurrencyIcon width={34} height={34} /></View>
-            <View style={styles.rowTextWrap}>
-              <Text style={styles.rowTitle}>Currency</Text>
-              {currency ? <Text style={styles.rowValue}>{currency}</Text> : null}
-            </View>
-            <ChevronIcon width={22} height={22} />
-          </Pressable>
-          <View style={styles.divider} />
-          <Pressable onPress={() => navigation.navigate("MetaPaySupport")} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Help">
-            <View style={styles.iconWrap}><HelpIcon width={34} height={34} /></View>
-            <Text style={styles.rowTitleOnly}>Help</Text>
-            <ChevronIcon width={22} height={22} />
-          </Pressable>
-          <View style={styles.divider} />
-          <Pressable onPress={() => navigation.navigate("Policy", { slug: "payments" })} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Terms and privacy">
-            <View style={styles.iconWrap}><TermsIcon width={34} height={34} /></View>
-            <Text style={styles.rowTitleOnly}>Terms and privacy</Text>
-            <ChevronIcon width={22} height={22} />
-          </Pressable>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+export function ReDomPayManageScreen(){
+ const navigation=useNavigation<Nav>(); const [methods,setMethods]=useState<SavedPaymentMethod[]>([]); const [loading,setLoading]=useState(true); const [backup,setBackup]=useState(true); const [backupSheet,setBackupSheet]=useState(false); const [pendingBackup,setPendingBackup]=useState(true);
+ const load=useCallback(async()=>{setLoading(true);try{const [m,b]=await Promise.all([ordersPaymentsService.paymentMethods(),ordersPaymentsService.backupPaymentMethods()]);setMethods(m.methods);setBackup(b.enabled);setPendingBackup(b.enabled);}catch{setMethods([]);}finally{setLoading(false);}},[]);
+ useFocusEffect(useCallback(()=>{void load();},[load]));
+ const toggleBackup=async()=>{try{const r=await ordersPaymentsService.setBackupPaymentMethods(pendingBackup);setBackup(r.enabled);setBackupSheet(false);}catch{Alert.alert("Backup payment methods","We couldn't save this setting. Please try again.");}};
+ const status=(m:SavedPaymentMethod)=>m.status==="suspended"?"Suspended":m.status==="unavailable"?"Unavailable":m.reusable?"Active":"Unavailable";
+ return <SafeAreaView style={s.root}>
+  <View style={s.header}><Pressable onPress={()=>navigation.goBack()} style={s.back}><BackIcon width={28} height={28}/></Pressable><Text style={s.title}>Payment methods</Text><View style={s.spacer}/></View>
+  <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+   <Text style={s.description}>Manage the payment methods saved to your ReDom Pay account.</Text>
+   <View style={s.group}>
+    {loading?<Text style={s.loading}>Loading payment methods...</Text>:methods.length===0?<View style={s.empty}>
+      <AddPaymentIcon width={92} height={92}/><Text style={s.emptyTitle}>Add a payment method</Text><Text style={s.emptyText}>Save a card or other eligible payment method with ReDom Pay.</Text>
+      <Pressable onPress={()=>navigation.navigate("AddPaymentMethod")} style={s.primary}><Text style={s.primaryText}>Add a payment method</Text></Pressable>
+    </View>:methods.map((m,i)=><View key={m.id}>{i>0&&<View style={s.divider}/>}<Pressable onPress={()=>navigation.navigate("ReviewPaymentInfo",{paymentMethodId:m.id})} style={({pressed})=>[s.methodRow,pressed&&s.pressed]}>
+      <View style={s.brand}><BrandIcon brand={m.brand}/></View><View style={s.methodText}><Text style={s.methodName}>{m.brand||"Card"}-{m.last4||"••••"}</Text><Text style={[s.status,status(m)==="Active"?s.active:status(m)==="Unavailable"?s.unavailable:s.suspended]}>{status(m)}{m.countryCode?" • "+countryName(m.countryCode):""}</Text></View><ChevronIcon width={22} height={22}/>
+    </Pressable></View>)}
+   </View>
+   {!loading&&methods.length>0&&<><Text style={s.sectionTitle}>Backup payment methods</Text><View style={s.group}><Pressable onPress={()=>{setPendingBackup(backup);setBackupSheet(true)}} style={({pressed})=>[s.row,pressed&&s.pressed]}><View style={s.icon}><SecurityIcon width={32} height={32}/></View><View style={s.flex}><Text style={s.rowTitle}>Backup payment methods</Text><Text style={s.rowValue}>{backup?"On":"Off"}</Text><Text style={s.rowDescription}>Backup Payment Method is meant to keep your subscription or products active & running even if card A failed.</Text></View><ChevronIcon width={22} height={22}/></Pressable></View></>}
+   {!loading&&methods.length<3&&<><Text style={s.sectionTitle}>Add payment method to your ReDom Pay account</Text><View style={s.group}><Pressable onPress={()=>navigation.navigate("AddPaymentMethod")} style={({pressed})=>[s.row,pressed&&s.pressed]}><View style={s.icon}><AddPaymentIcon width={32} height={32}/></View><Text style={s.rowTitleOnly}>Add Credit or Debit Card</Text><ChevronIcon width={22} height={22}/></Pressable></View></>}
+   {!loading&&methods.length>=3&&<Text style={s.limit}>You can save up to 3 payment methods.</Text>}
+   <Text style={s.sectionTitle}>More payment settings</Text><View style={s.group}><Pressable onPress={()=>Alert.alert("More payment settings","Coming Soon!")} style={({pressed})=>[s.row,pressed&&s.pressed]}><View style={s.icon}><SettingsIcon width={32} height={32}/></View><Text style={s.rowTitleOnly}>More payment settings</Text><ChevronIcon width={22} height={22}/></Pressable></View>
+  </ScrollView>
+  <Modal transparent visible={backupSheet} animationType="slide" onRequestClose={()=>setBackupSheet(false)}><View style={s.modalBackdrop}><View style={s.sheet}><View style={s.sheetHandle}/><Text style={s.sheetTitle}>Backup payment methods</Text><Text style={s.sheetText}>Backup Payment Method is meant to keep your subscription or products active & running even if card A failed.</Text><Pressable onPress={()=>setPendingBackup(v=>!v)} style={s.toggleRow}><Text style={s.toggleLabel}>{pendingBackup?"On":"Off"}</Text><View style={[s.toggle,pendingBackup&&s.toggleOn]}><View style={[s.knob,pendingBackup&&s.knobOn]}/></View></Pressable><View style={s.sheetActions}><Pressable onPress={()=>setBackupSheet(false)} style={s.cancel}><Text style={s.cancelText}>Cancel</Text></Pressable><Pressable onPress={()=>void toggleBackup()} style={s.confirm}><Text style={s.confirmText}>Save</Text></Pressable></View></View></View></Modal>
+ </SafeAreaView>;
 }
-
-function formatAddress(address: PaymentAddress): string {
-  return [address.address_line1, address.address_line2, address.city, address.state, address.postal_code, address.country_name].filter(Boolean).join(", ");
-}
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#FFFFFF" },
-  header: { minHeight: 122, paddingTop: 30, paddingHorizontal: 31, flexDirection: "row", alignItems: "center" },
-  backButton: { width: 42, height: 42, alignItems: "flex-start", justifyContent: "center" },
-  brandTitle: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 7 },
-  headerTitle: { color: "#1C1E21", fontSize: 27, fontWeight: "500" },
-  headerSpacer: { width: 42 },
-  tabs: { marginHorizontal: 31, height: 65, flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#DADDE1" },
-  topTab: { flex: 1, alignItems: "center", justifyContent: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
-  topTabSelected: { borderBottomColor: "#1C1E21" },
-  topTabTextSelected: { color: "#1C1E21", fontSize: 22, fontWeight: "600" },
-  topTabText: { color: "#65676B", fontSize: 22, fontWeight: "500" },
-  content: { paddingHorizontal: 31, paddingTop: 31, paddingBottom: 55 },
-  intro: { marginBottom: 28 },
-  introText: { color: "#1C1E21", fontSize: 22, lineHeight: 31, fontWeight: "500" },
-  learnMore: { color: "#1877F2", fontWeight: "700" },
-  paymentCard: { borderWidth: 1, borderColor: "#DADDE1", borderRadius: 20, overflow: "hidden", backgroundColor: "#FFFFFF" },
-  paymentCardBody: { paddingHorizontal: 30, paddingTop: 23, paddingBottom: 27 },
-  cardTitle: { color: "#1C1E21", fontSize: 23, fontWeight: "800" },
-  cardDescription: { color: "#1C1E21", fontSize: 21, lineHeight: 30, marginTop: 7 },
-  addButton: { minHeight: 58, borderRadius: 30, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", marginTop: 22 },
-  addButtonText: { color: "#1C1E21", fontSize: 19, fontWeight: "600" },
-  sectionTitle: { color: "#050505", fontSize: 25, lineHeight: 31, fontWeight: "800", marginTop: 33, marginBottom: 13 },
-  groupCard: { borderWidth: 1, borderColor: "#DADDE1", borderRadius: 20, overflow: "hidden", backgroundColor: "#FFFFFF" },
-  row: { minHeight: 78, paddingHorizontal: 29, paddingVertical: 12, flexDirection: "row", alignItems: "center" },
-  pressed: { opacity: 0.6 },
-  divider: { height: 1, backgroundColor: "#DADDE1", marginLeft: 29 },
-  iconWrap: { width: 52, alignItems: "flex-start", justifyContent: "center" },
-  rowTextWrap: { flex: 1, minWidth: 0 },
-  rowTitle: { color: "#1C1E21", fontSize: 20, fontWeight: "600" },
-  rowTitleOnly: { color: "#1C1E21", fontSize: 20, fontWeight: "600", flex: 1 },
-  rowValue: { color: "#65676B", fontSize: 18, lineHeight: 25, marginTop: 3 },
-});
+const s=StyleSheet.create({root:{flex:1,backgroundColor:"#fff"},header:{height:82,paddingHorizontal:22,flexDirection:"row",alignItems:"center"},back:{width:42,height:42,justifyContent:"center"},spacer:{width:42},title:{flex:1,textAlign:"center",fontSize:24,fontWeight:"700",color:"#050505"},content:{paddingHorizontal:22,paddingBottom:45},description:{fontSize:16,lineHeight:23,color:"#65676B",marginBottom:18},group:{borderWidth:1,borderColor:"#DADDE1",borderRadius:18,overflow:"hidden",backgroundColor:"#fff"},loading:{padding:28,color:"#65676B",fontSize:16},empty:{alignItems:"center",padding:30},emptyTitle:{fontSize:21,fontWeight:"800",marginTop:12},emptyText:{fontSize:15,lineHeight:22,color:"#65676B",textAlign:"center",marginTop:7},primary:{marginTop:18,backgroundColor:blue,minHeight:50,borderRadius:26,paddingHorizontal:24,alignItems:"center",justifyContent:"center"},primaryText:{color:"#fff",fontSize:16,fontWeight:"700"},methodRow:{minHeight:84,paddingHorizontal:18,flexDirection:"row",alignItems:"center"},brand:{width:64,alignItems:"flex-start"},methodText:{flex:1},methodName:{fontSize:18,fontWeight:"700",color:"#1C1E21"},status:{fontSize:14,marginTop:4,fontWeight:"600"},active:{color:"#65676B"},unavailable:{color:"#B42318"},suspended:{color:"#B54708"},divider:{height:1,backgroundColor:"#DADDE1",marginLeft:18},sectionTitle:{fontSize:20,fontWeight:"800",marginTop:28,marginBottom:11,color:"#050505"},row:{minHeight:92,paddingHorizontal:18,paddingVertical:13,flexDirection:"row",alignItems:"center"},icon:{width:50},flex:{flex:1},rowTitle:{fontSize:17,fontWeight:"700",color:"#1C1E21"},rowTitleOnly:{flex:1,fontSize:17,fontWeight:"700",color:"#1C1E21"},rowValue:{fontSize:15,color:"#65676B",marginTop:3},rowDescription:{fontSize:14,lineHeight:20,color:"#65676B",marginTop:5},limit:{color:"#65676B",fontSize:14,marginTop:12},pressed:{opacity:.55},modalBackdrop:{flex:1,backgroundColor:"rgba(0,0,0,.5)",justifyContent:"flex-end"},sheet:{backgroundColor:"#fff",borderTopLeftRadius:28,borderTopRightRadius:28,padding:22,paddingBottom:34},sheetHandle:{width:40,height:4,borderRadius:3,backgroundColor:"#DADDE1",alignSelf:"center",marginBottom:20},sheetTitle:{fontSize:24,fontWeight:"800"},sheetText:{fontSize:16,lineHeight:23,color:"#65676B",marginTop:9},toggleRow:{marginTop:22,borderWidth:1,borderColor:"#DADDE1",borderRadius:14,padding:15,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},toggleLabel:{fontSize:17,fontWeight:"700"},toggle:{width:50,height:30,borderRadius:15,backgroundColor:"#DADDE1",padding:3},toggleOn:{backgroundColor:blue},knob:{width:24,height:24,borderRadius:12,backgroundColor:"#fff"},knobOn:{alignSelf:"flex-end"},sheetActions:{flexDirection:"row",gap:12,marginTop:20},cancel:{flex:1,height:50,borderRadius:25,alignItems:"center",justifyContent:"center",backgroundColor:"#F0F2F5"},cancelText:{fontSize:16,fontWeight:"700"},confirm:{flex:1,height:50,borderRadius:25,alignItems:"center",justifyContent:"center",backgroundColor:blue},confirmText:{fontSize:16,fontWeight:"700",color:"#fff"}});
