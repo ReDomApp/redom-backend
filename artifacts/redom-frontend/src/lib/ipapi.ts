@@ -52,7 +52,7 @@ const PUBLIC_IP_SOURCES = [
     url: "https://1.1.1.1/cdn-cgi/trace",
     parse: async (response: Response) => {
       const text = await response.text();
-      const match = text.match(/(?:^|\\n)ip=([^\\n\\r]+)/);
+      const match = text.match(/(?:^|\n)ip=([^\n\r]+)/);
       return match?.[1]?.trim() || null;
     },
   },
@@ -67,8 +67,8 @@ const PUBLIC_IP_SOURCES = [
 ] as const;
 
 function looksLikeIp(value: string): boolean {
-  const candidate = value.trim().replace(/^\\[|\\]$/g, "");
-  const ipv4 = /^(?:\\d{1,3}\\.){3}\\d{1,3}$/.test(candidate);
+  const candidate = value.trim().replace(/^\[|\]$/g, "");
+  const ipv4 = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(candidate);
   const ipv6 = candidate.includes(":") && /^[0-9a-f:.]+$/i.test(candidate);
   if (!ipv4 && !ipv6) return false;
   if (ipv4) return candidate.split(".").every((part) => Number(part) >= 0 && Number(part) <= 255);
