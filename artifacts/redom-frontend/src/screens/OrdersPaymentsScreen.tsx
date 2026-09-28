@@ -202,6 +202,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 31,
     paddingTop: 24,
   },
+  payCardPressed: { opacity: 0.65 },
   payCard: {
     minHeight: 153,
     borderRadius: 18,
