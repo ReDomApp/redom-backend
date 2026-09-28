@@ -503,7 +503,7 @@ export async function verifyStripeStarsCheckout(userId:string,reference:string){
     transactionId:null,
     redomTransactionId:null,
     reference:String(reference),
-    status:status==="completed"?"paid":status==="failed_final"?"failed":status==="failed"?"failed":"processing",
+    status:status==="completed"?"paid":status==="failed_final"?"failed":status==="failed"?"failed":status==="abandoned"?"abandoned":"processing",
     amountMinor:String(attempt.amount_minor),
     currency:String(attempt.currency),
     purpose:"stars_purchase",
