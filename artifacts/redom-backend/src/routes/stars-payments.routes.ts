@@ -178,6 +178,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
     preferredChannel: z.enum(["card", "bank_transfer"]).optional(),
     pin: z.string().regex(/^\d{4,8}$/).optional(),
     paymentMethodId: z.string().uuid().optional(),
+    provider: z.enum(["paystack", "stripe"]).optional(),
     address: z.object({
       countryCode: z.string().length(2), countryName: z.string().min(1).max(120), fullName: z.string().min(1).max(180),
       addressLine1: z.string().min(1).max(255), addressLine2: z.string().max(255).optional().nullable(),
@@ -208,6 +209,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       const provider: "paystack" | "stripe" = isAfrican ? "paystack" : "stripe";
       if (parsed.data.paymentMethodId && provider !== "paystack") throw new Error("Saved Paystack payment methods are available only for African payments.");
       const redomId = await uniqueRedomTransactionId(client, provider);
+      if (parsed.data.paymentMethodId && provider !== "paystack") throw new Error("Saved Paystack payment methods require the Paystack provider.");
       const paymentChannel = parsed.data.paymentMethodId ? "saved_card" : (provider === "stripe" ? "card" : (parsed.data.preferredChannel ?? "card"));
       const reference = provider === "stripe" ? makeStripeReference() : makeReference();
       const metadata = { provider, purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null, preferredChannel: paymentChannel };
