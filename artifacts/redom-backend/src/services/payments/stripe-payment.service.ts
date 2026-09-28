@@ -124,7 +124,7 @@ async function markStripePaid(session: StripeSession): Promise<void> {
 
   let metadata: any = {};
   try { metadata = row.metadata ? (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata) : {}; } catch { metadata = {}; }
-  const pi = paymentIntentId(session);
+  const pi = paymentIntentId(session);\n  const providerTransactionId = pi ?? session.id;
   metadata.paymentDetails = {
     ...(metadata.paymentDetails ?? {}),
     provider: "stripe",
@@ -136,8 +136,8 @@ async function markStripePaid(session: StripeSession): Promise<void> {
     currency: String(session.currency ?? row.currency).toUpperCase(),
   };
   await pool.query(
-    "UPDATE payment_transactions SET status='paid', gateway_status='succeeded', external_transaction_id=$1, paid_at=now(), metadata=$2::jsonb, updated_at=now() WHERE id=$3",
-    [pi ?? session.id, JSON.stringify(metadata), row.id],
+    "UPDATE payment_transactions SET status='paid', payment_provider='stripe', provider_transaction_id=$1, gateway_status='succeeded', paid_at=now(), metadata=$2::jsonb, updated_at=now() WHERE id=$3",
+    [providerTransactionId, JSON.stringify(metadata), row.id],
   );
 
   if (String(row.purpose) === "stars_purchase") {
