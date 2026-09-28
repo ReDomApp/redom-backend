@@ -10,6 +10,10 @@ import { geocodePlace } from "../lib/mapbox";
 import { createStripeStarsCheckout } from "../services/payments/stripe-payment.service";
 import { createStarsTrialSetupCheckout, getStarsTrialEligibility, TERMS_VERSION } from "../services/payments/stripe-stars-trial.service";
 import { getStripeStarsCountries, getStripeStarsCountry, stripeMinimumMinor } from "../services/payments/stripe-country.service";
+import { createStripeCardSetup, finalizeStripeCardSetup, listStripeCardMethods, getStripeCardMethodForUser, detachStripeCardMethod } from "../services/payments/stripe-saved-payment.service";
+import { createSupportCase, addSupportMessage } from "../services/support/support.service";
+import { Resend } from "resend";
+import { twilioSmsProvider } from "../lib/providers/sms/twilio-sms-provider";
 
 const router = Router();
 const API = "https://api.paystack.co";
@@ -258,64 +262,101 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
   }
 });
 
+router.get("/payment-methods/stripe/publishable-key", authMiddleware, async (_req,res)=>{
+  return res.json({success:true,publishableKey:env.stripe.publishableKey});
+});
+router.get("/payment-methods/countries", authMiddleware, async (_req,res)=>{
+  try {
+    const all:any[]=[]; let startingAfter:string|undefined;
+    for(let page=0;page<10;page++){
+      const response=await axios.get("https://api.stripe.com/v1/country_specs",{headers:{Authorization:"Bearer "+env.stripe.secretKey},params:{limit:100,...(startingAfter?{starting_after:startingAfter}:{})},timeout:20000});
+      const data=response.data?.data??[]; all.push(...data.filter((x:any)=>Array.isArray(x.supported_payment_methods)&&x.supported_payment_methods.includes("card")));
+      if(!response.data?.has_more||!data.length)break; startingAfter=data[data.length-1].id;
+    }
+    const names=new Intl.DisplayNames(["en"],{type:"region"});
+    const countries=all.map((x:any)=>({isoCode:String(x.id).toUpperCase(),name:String(names.of(String(x.id).toUpperCase())||x.id)})).sort((a:any,b:any)=>a.name.localeCompare(b.name));
+    return res.json({success:true,countries});
+  } catch { return res.status(502).json({success:false,message:"Unable to load supported payment countries."}); }
+});
 router.post("/payment-methods/setup", authMiddleware, async (req,res)=>{
-  const userId=req.user?.userId;
-  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
-  const user=await getUser(userId);
-  if(!user?.email)return res.status(400).json({success:false,message:"A verified email address is required."});
-  try{
-    const settings=await pool.query("SELECT currency FROM payment_settings WHERE user_id=$1 LIMIT 1",[userId]);
-    const currency=String(settings.rows[0]?.currency||"NGN").toUpperCase();
-    const countryForCurrency = (await refreshCountries()).find((item) => item.currency === currency);
-    if (!countryForCurrency) return res.status(400).json({success:false,message:"Your current payment currency is not supported for secure card setup."});
-    // Temporary card validation charge: exactly the configured local-currency
-    // equivalent of USD $0.25, refunded immediately after provider success.
-    const setupAmountMinor = Math.max(1, Math.round(fxRate(countryForCurrency) * 25));
-    const reference=makeSetupReference();
-    const metadata={purpose:"payment_method_setup",customerEmail:String(user.email),currency,setupAmountMinor,verificationUsdAmount:0.25};
-    const inserted=await pool.query(`INSERT INTO payment_transactions
-      (user_id,reference,amount_minor,currency,purpose,status,metadata,customer_email)
-      VALUES($1,$2,$3,$4,'payment_method_setup','initialized',$5::jsonb,$6) RETURNING id`,
-      [userId,reference,setupAmountMinor,currency,JSON.stringify(metadata),String(user.email)]);
-    const initialized=await paystack<{authorization_url:string;access_code:string;reference:string}>("post","/transaction/initialize",{
-      email:String(user.email),amount:String(setupAmountMinor),currency,channels:["card"],
-      callback_url:paymentCallbackUrl(),metadata:JSON.stringify(metadata),reference
-    });
-    await pool.query("UPDATE payment_transactions SET checkout_url=$1,access_code=$2,reference=$3,updated_at=now() WHERE id=$4",[initialized.authorization_url,initialized.access_code,initialized.reference,inserted.rows[0].id]);
-    return res.json({success:true,checkoutUrl:initialized.authorization_url,accessCode:initialized.access_code,reference:initialized.reference,currency,amountMinor:setupAmountMinor});
-  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to start secure card setup."});}
+  const userId=req.user?.userId; if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  const parsed=z.object({paymentMethodId:z.string().regex(/^pm_[A-Za-z0-9_]+$/),name:z.string().trim().min(1).max(180)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Valid card payment-method information is required."});
+  const user=await getUser(userId); if(!user?.email)return res.status(400).json({success:false,message:"A verified email address is required."});
+  try {
+    const result=await createStripeCardSetup({userId,email:String(user.email),name:parsed.data.name,paymentMethodId:parsed.data.paymentMethodId});
+    return res.json({success:true,...result});
+  } catch(error) { return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to validate and save the card."}); }
 });
-
-router.get("/payment-methods", authMiddleware, async (req, res) => {
-  const userId = req.user?.userId;
-  if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
-  const result = await pool.query(
-    `SELECT id, provider, customer_email, brand, card_type, last4, exp_month, exp_year, bank, country_code, currency, reusable, created_at
-       FROM redom_payment_methods WHERE user_id=$1 AND active=true ORDER BY created_at DESC`,
-    [userId],
-  );
-  return res.json({ success: true, methods: result.rows.map((row) => ({
-    id:String(row.id), provider:String(row.provider), email:String(row.customer_email), brand:row.brand ? String(row.brand):null,
-    cardType:row.card_type ? String(row.card_type):null, last4:row.last4 ? String(row.last4):null, expMonth:row.exp_month == null?null:Number(row.exp_month),
-    expYear:row.exp_year == null?null:Number(row.exp_year), bank:row.bank?String(row.bank):null, countryCode:row.country_code?String(row.country_code):null,
-    currency:row.currency?String(row.currency):null, reusable:Boolean(row.reusable), createdAt:new Date(row.created_at).toISOString()
-  }))});
+router.post("/payment-methods/setup/finalize", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId; if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  const parsed=z.object({setupIntentId:z.string().regex(/^seti_[A-Za-z0-9_]+$/)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Invalid setup intent."});
+  try { const result=await finalizeStripeCardSetup(userId,parsed.data.setupIntentId); return res.json({success:true,...result}); }
+  catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to finalize card setup."});}
 });
-
-router.delete("/payment-methods/:id", authMiddleware, async (req, res) => {
-  const userId = req.user?.userId;
-  const methodId = z.string().uuid().safeParse(req.params.id);
-  const parsed = z.object({ password: z.string().min(1).max(200) }).safeParse(req.body);
-  if (!userId || !methodId.success || !parsed.success) return res.status(400).json({ success:false,message:"Re-authentication is required." });
-  const user = await pool.query("SELECT password_hash FROM users WHERE id=$1 LIMIT 1",[userId]);
-  if (!user.rows[0] || !(await verifyPassword(parsed.data.password,String(user.rows[0].password_hash)))) return res.status(403).json({success:false,message:"Password verification failed."});
-  const method = await pool.query("SELECT authorization_code_encrypted FROM redom_payment_methods WHERE id=$1 AND user_id=$2 AND active=true",[methodId.data,userId]);
-  if (!method.rows[0]) return res.status(404).json({success:false,message:"Payment method not found."});
-  try { await paystack("post","/customer/deactivate_authorization",{authorization_code:decryptAuthorization(String(method.rows[0].authorization_code_encrypted))}); } catch {}
-  await pool.query("UPDATE redom_payment_methods SET active=false,reusable=false,updated_at=now() WHERE id=$1 AND user_id=$2",[methodId.data,userId]);
-  return res.json({success:true});
+router.get("/payment-methods", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId; if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  try { const methods=await listStripeCardMethods(userId); return res.json({success:true,methods}); }
+  catch { return res.status(502).json({success:false,message:"Unable to retrieve payment methods."}); }
 });
-
+router.get("/payment-methods/:id", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId; const id=z.string().uuid().safeParse(req.params.id);
+  if(!userId||!id.success)return res.status(400).json({success:false,message:"Invalid payment method."});
+  try {
+    const result=await getStripeCardMethodForUser(userId,id.data);
+    const row=result.row; const provider=result.provider;
+    const maskedName=provider.cardholderName?provider.cardholderName.split(/\s+/).map((part:string)=>part?part[0]+"•••":"").join(" "):null;
+    return res.json({success:true,method:{id:String(row.id),provider:"stripe",brand:provider.brand,last4:provider.last4,maskedLast4:provider.last4?"•••• "+provider.last4:null,cardType:provider.cardType,countryCode:provider.countryCode,status:String(row.status||"active"),reusable:Boolean(row.reusable),expMonth:provider.expMonth,expYear:provider.expYear,maskedCvc:"•••",cardholderName:maskedName,createdAt:new Date(row.created_at).toISOString(),stripePaymentMethodId:provider.stripePaymentMethodId}});
+  } catch(error){return res.status(404).json({success:false,message:error instanceof Error?error.message:"Payment method not found."});}
+});
+function hashRemovalCode(code:string){return crypto.createHash("sha256").update(code).digest("hex");}
+function maskTarget(value:string){if(value.includes("@")){const [a,b]=value.split("@");return (a.slice(0,2)+"•••@"+b);} return value.length>4?"••••"+value.slice(-4):"••••";}
+async function issueRemovalCode(userId:string,methodId:string){
+  const user=await getUser(userId); if(!user?.email)throw new Error("A verified ReDom email address is required.");
+  await pool.query("UPDATE payment_method_removal_challenges SET consumed_at=COALESCE(consumed_at,now()),updated_at=now() WHERE user_id=$1 AND payment_method_id=$2 AND consumed_at IS NULL",[userId,methodId]);
+  const code=String(crypto.randomInt(10000000,100000000)); const expiresAt=new Date(Date.now()+10*60*1000);
+  let channel="email"; let target=String(user.email);
+  if(user.phone_number){
+    try { await twilioSmsProvider.sendOtp({channel:"sms",to:String(user.phone_number),code,expiresAt}); channel="sms"; target=maskTarget(String(user.phone_number)); } catch {}
+  }
+  if(channel==="email"){ const resend=new Resend(env.email.resend.apiKey); const result=await resend.emails.send({from:env.email.securityFrom,to:[String(user.email)],subject:"ReDom Pay Security Verification",text:"Your ReDom Pay payment-method removal code is "+code+". It expires in 10 minutes. If you did not request this, do not use the code and contact ReDom Support.",html:"<p><strong>ReDom Pay Security Verification</strong></p><p>Your payment-method removal code is <strong>"+code+"</strong>.</p><p>This code expires in 10 minutes.</p><p><strong>Security warning:</strong> Never share this code with anyone.</p>"}); if(result.error)throw new Error(result.error.message); }
+  await pool.query("INSERT INTO payment_method_removal_challenges(user_id,payment_method_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,$3,$4,$5,$6,0,2)",[userId,methodId,channel,target,hashRemovalCode(code),expiresAt]);
+  return {channel,target,expiresAt:expiresAt.toISOString()};
+}
+router.post("/payment-methods/:id/removal-challenge", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId; const id=z.string().uuid().safeParse(req.params.id); if(!userId||!id.success)return res.status(400).json({success:false,message:"Invalid payment method."});
+  const locked=await pool.query("SELECT lock_until FROM payment_method_removal_challenges WHERE user_id=$1 AND payment_method_id=$2 AND lock_until>now() ORDER BY lock_until DESC LIMIT 1",[userId,id.data]);
+  if(locked.rows[0])return res.status(429).json({success:false,locked:true,lockedUntil:new Date(locked.rows[0].lock_until).toISOString(),message:"Payment-method removal is temporarily locked for security."});
+  const method=await pool.query("SELECT id FROM redom_payment_methods WHERE id=$1 AND user_id=$2 AND active=true LIMIT 1",[id.data,userId]); if(!method.rows[0])return res.status(404).json({success:false,message:"Payment method not found."});
+  try { const challenge=await issueRemovalCode(userId,id.data); return res.json({success:true,...challenge}); } catch(error){return res.status(502).json({success:false,message:"Unable to send the security code."});}
+});
+router.post("/payment-methods/:id/removal-challenge/verify", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId; const id=z.string().uuid().safeParse(req.params.id); const parsed=z.object({code:z.string().regex(/^\d{8}$/)}).safeParse(req.body);
+  if(!userId||!id.success||!parsed.success)return res.status(400).json({success:false,message:"Enter the 8-digit security code."});
+  const q=await pool.query("SELECT * FROM payment_method_removal_challenges WHERE user_id=$1 AND payment_method_id=$2 AND consumed_at IS NULL ORDER BY created_at DESC LIMIT 1",[userId,id.data]); const row=q.rows[0];
+  if(!row)return res.status(400).json({success:false,message:"This security code is no longer valid. Request a new code."});
+  if(new Date(row.expires_at).getTime()<Date.now()){await pool.query("UPDATE payment_method_removal_challenges SET consumed_at=now(),updated_at=now() WHERE id=$1",[row.id]);return res.status(400).json({success:false,message:"This security code has expired."});}
+  if(hashRemovalCode(parsed.data.code)!==String(row.code_hash)){
+    const nextAttempt=Number(row.attempt_count||0)+1;
+    if(nextAttempt>=2){const lockUntil=new Date(Date.now()+72*60*60*1000);await pool.query("UPDATE payment_method_removal_challenges SET attempt_count=$1,consumed_at=now(),lock_until=$2,updated_at=now() WHERE id=$3",[nextAttempt,lockUntil,row.id]);return res.status(429).json({success:false,locked:true,lockedUntil:lockUntil.toISOString(),message:"Payment-method removal is locked for 72 hours after two incorrect security-code attempts."});}
+    await pool.query("UPDATE payment_method_removal_challenges SET attempt_count=$1,consumed_at=now(),updated_at=now() WHERE id=$2",[nextAttempt,row.id]);
+    try {const next=await issueRemovalCode(userId,id.data);return res.status(401).json({success:false,codeInvalid:true,attemptsRemaining:1,...next,message:"Incorrect security code. A new 8-digit code has been sent and the previous code is invalid."});}catch{return res.status(502).json({success:false,message:"Incorrect security code. We could not send a new code."});}
+  }
+  await pool.query("UPDATE payment_method_removal_challenges SET consumed_at=now(),updated_at=now() WHERE id=$1",[row.id]);
+  try { await detachStripeCardMethod(userId,id.data); return res.json({success:true}); } catch(error){ return res.status(502).json({success:false,message:"The payment method could not be removed."}); }
+});
+router.get("/payment-settings/backup", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId;if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  const q=await pool.query("SELECT backup_payment_methods_enabled FROM payment_settings WHERE user_id=$1",[userId]);
+  return res.json({success:true,enabled:q.rows[0]?Boolean(q.rows[0].backup_payment_methods_enabled):true});
+});
+router.patch("/payment-settings/backup", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId;if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  const parsed=z.object({enabled:z.boolean()}).safeParse(req.body);if(!parsed.success)return res.status(400).json({success:false,message:"Invalid backup payment-method setting."});
+  await pool.query("INSERT INTO payment_settings(user_id,backup_payment_methods_enabled) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET backup_payment_methods_enabled=EXCLUDED.backup_payment_methods_enabled,updated_at=now()",[userId,parsed.data.enabled]);
+  return res.json({success:true,enabled:parsed.data.enabled});
+});
 router.post("/payment-addresses", authMiddleware, async (req,res)=>{
   const userId=req.user?.userId;
   const parsed=z.object({
