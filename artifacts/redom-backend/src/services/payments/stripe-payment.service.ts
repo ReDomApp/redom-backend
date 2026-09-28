@@ -332,10 +332,14 @@ async function finalizeFailedStripeAttempt(
     }
 
     const safeMessage = String(message || "Stripe payment failed.").slice(0,500);
-    if (Number(attempt.attempt_number) === 1) {
+    const previousFailures = Number(attempt.failure_count ?? 0);
+    const failureCount = previousFailures + 1;
+    const finalFailure = Number(attempt.attempt_number) >= 2 || failureCount >= 2;
+
+    if (!finalFailure) {
       await client.query(
-        "UPDATE stripe_stars_checkout_attempts SET status='failed',failure_message=$1,stripe_payment_intent_id=COALESCE($2,stripe_payment_intent_id),updated_at=now() WHERE id=$3",
-        [safeMessage,providerTransactionId ?? null,attempt.id],
+        "UPDATE stripe_stars_checkout_attempts SET status='failed',failure_count=$1,failure_message=$2,stripe_payment_intent_id=COALESCE($3,stripe_payment_intent_id),updated_at=now() WHERE id=$4",
+        [failureCount,safeMessage,providerTransactionId ?? null,attempt.id],
       );
       await client.query("COMMIT");
       return {finalFailure:false,transactionId:null,redomTransactionId:null};
@@ -352,8 +356,8 @@ async function finalizeFailedStripeAttempt(
     };
     const payment = await insertStripePaymentTransaction(client,attempt,stripeSession,"failed",safeMessage,providerId);
     await client.query(
-      "UPDATE stripe_stars_checkout_attempts SET status='failed_final',failure_message=$1,stripe_payment_intent_id=COALESCE($2,stripe_payment_intent_id),updated_at=now(),completed_at=now() WHERE id=$3",
-      [safeMessage,providerId || null,attempt.id],
+      "UPDATE stripe_stars_checkout_attempts SET status='failed_final',failure_count=$1,failure_message=$2,stripe_payment_intent_id=COALESCE($3,stripe_payment_intent_id),updated_at=now(),completed_at=now() WHERE id=$4",
+      [failureCount,safeMessage,providerId || null,attempt.id],
     );
     await client.query("COMMIT");
     await sendPaymentEmailForReference(String(attempt.reference));
