@@ -312,7 +312,7 @@ router.get("/payment-methods/:id", authMiddleware, async (req,res)=>{
 });
 function hashRemovalCode(code:string){return crypto.createHash("sha256").update(code).digest("hex");}
 function maskTarget(value:string){if(value.includes("@")){const [a,b]=value.split("@");return (a.slice(0,2)+"•••@"+b);} return value.length>4?"••••"+value.slice(-4):"••••";}
-async function issueRemovalCode(userId:string,methodId:string){
+async function issueRemovalCode(userId:string,methodId:string,attemptCount=0){
   const user=await getUser(userId); if(!user?.email)throw new Error("A verified ReDom email address is required.");
   await pool.query("UPDATE payment_method_removal_challenges SET consumed_at=COALESCE(consumed_at,now()),updated_at=now() WHERE user_id=$1 AND payment_method_id=$2 AND consumed_at IS NULL",[userId,methodId]);
   const code=String(crypto.randomInt(10000000,100000000)); const expiresAt=new Date(Date.now()+10*60*1000);
@@ -321,7 +321,7 @@ async function issueRemovalCode(userId:string,methodId:string){
     try { await twilioSmsProvider.sendOtp({channel:"sms",to:String(user.phone_number),code,expiresAt}); channel="sms"; target=maskTarget(String(user.phone_number)); } catch {}
   }
   if(channel==="email"){ const resend=new Resend(env.email.resend.apiKey); const result=await resend.emails.send({from:env.email.securityFrom,to:[String(user.email)],subject:"ReDom Pay Security Verification",text:"Your ReDom Pay payment-method removal code is "+code+". It expires in 10 minutes. If you did not request this, do not use the code and contact ReDom Support.",html:"<p><strong>ReDom Pay Security Verification</strong></p><p>Your payment-method removal code is <strong>"+code+"</strong>.</p><p>This code expires in 10 minutes.</p><p><strong>Security warning:</strong> Never share this code with anyone.</p>"}); if(result.error)throw new Error(result.error.message); }
-  await pool.query("INSERT INTO payment_method_removal_challenges(user_id,payment_method_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,$3,$4,$5,$6,0,2)",[userId,methodId,channel,target,hashRemovalCode(code),expiresAt]);
+  await pool.query("INSERT INTO payment_method_removal_challenges(user_id,payment_method_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,$3,$4,$5,$6,$7,2)",[userId,methodId,channel,target,hashRemovalCode(code),expiresAt,attemptCount]);
   return {channel,target,expiresAt:expiresAt.toISOString()};
 }
 router.post("/payment-methods/:id/removal-challenge", authMiddleware, async (req,res)=>{
@@ -341,7 +341,7 @@ router.post("/payment-methods/:id/removal-challenge/verify", authMiddleware, asy
     const nextAttempt=Number(row.attempt_count||0)+1;
     if(nextAttempt>=2){const lockUntil=new Date(Date.now()+72*60*60*1000);await pool.query("UPDATE payment_method_removal_challenges SET attempt_count=$1,consumed_at=now(),lock_until=$2,updated_at=now() WHERE id=$3",[nextAttempt,lockUntil,row.id]);return res.status(429).json({success:false,locked:true,lockedUntil:lockUntil.toISOString(),message:"Payment-method removal is locked for 72 hours after two incorrect security-code attempts."});}
     await pool.query("UPDATE payment_method_removal_challenges SET attempt_count=$1,consumed_at=now(),updated_at=now() WHERE id=$2",[nextAttempt,row.id]);
-    try {const next=await issueRemovalCode(userId,id.data);return res.status(401).json({success:false,codeInvalid:true,attemptsRemaining:1,...next,message:"Incorrect security code. A new 8-digit code has been sent and the previous code is invalid."});}catch{return res.status(502).json({success:false,message:"Incorrect security code. We could not send a new code."});}
+    try {const next=await issueRemovalCode(userId,id.data,nextAttempt);return res.status(401).json({success:false,codeInvalid:true,attemptsRemaining:1,...next,message:"Incorrect security code. A new 8-digit code has been sent and the previous code is invalid."});}catch{return res.status(502).json({success:false,message:"Incorrect security code. We could not send a new code."});}
   }
   await pool.query("UPDATE payment_method_removal_challenges SET consumed_at=now(),updated_at=now() WHERE id=$1",[row.id]);
   try { await detachStripeCardMethod(userId,id.data); return res.json({success:true}); } catch(error){ return res.status(502).json({success:false,message:"The payment method could not be removed."}); }
