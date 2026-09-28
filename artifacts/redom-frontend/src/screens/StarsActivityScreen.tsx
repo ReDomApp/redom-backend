@@ -1,14 +1,14 @@
 import React,{useEffect,useState}from"react";
 import{SafeAreaView,View,Text,Pressable,StyleSheet,ActivityIndicator,ScrollView}from"react-native";
-import{useNavigation}from"@react-navigation/native";
+import{useNavigation,useRoute}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
 import{ordersPaymentsService}from"../services/ordersPaymentsService";
 import BackIcon from"../assets/navigation/back.svg";
 import StarsIcon from"../assets/home-feed/stars.svg";
 
 export function StarsActivityScreen(){
- const navigation=useNavigation<any>();const{colors}=useTheme();const[loading,setLoading]=useState(true);const[balance,setBalance]=useState(0);const[activity,setActivity]=useState<any[]>([]);
- useEffect(()=>{void ordersPaymentsService.starsActivity().then(r=>{setBalance(r.balance);setActivity(r.activity)}).finally(()=>setLoading(false))},[]);
+ const navigation=useNavigation<any>();const route=useRoute<any>();const{colors}=useTheme();const[loading,setLoading]=useState(true);const[balance,setBalance]=useState(0);const[activity,setActivity]=useState<any[]>([]);
+ useEffect(()=>{setLoading(true);void ordersPaymentsService.starsActivity().then(r=>{setBalance(r.balance);setActivity(r.activity)}).finally(()=>setLoading(false))},[route.params?.refresh]);
  return <SafeAreaView style={[s.root,{backgroundColor:colors.background}]}>
   <View style={[s.header,{backgroundColor:colors.surface,borderBottomColor:colors.border}]}><Pressable onPress={()=>navigation.goBack()}><BackIcon width={24} height={24}/></Pressable><Text style={[s.title,{color:colors.text}]}>ReDom Stars</Text></View>
   {loading?<ActivityIndicator color={colors.primary} style={s.loader}/>:<ScrollView contentContainerStyle={s.content}>
