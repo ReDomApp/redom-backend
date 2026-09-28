@@ -40,14 +40,15 @@ function fxRate(country: Country): number {
 function quote(country:Country,pkg:typeof packages[number],firstPurchaseEligible=false){
  const rate=fxRate(country);
  const effectiveUsdPrice=firstPurchaseEligible&&pkg.firstPurchaseUsdPrice!=null?pkg.firstPurchaseUsdPrice:pkg.usdPrice;
- const amountMinor=Math.round(effectiveUsdPrice*rate*100);
- const localAmount=amountMinor/100;
+ const zeroDecimal=new Set(["BIF","CLP","DJF","GNF","JPY","KMF","KRW","MGA","PYG","RWF","UGX","VND","VUV","XAF","XOF","XPF"]);
+ const amountMinor=rate>0?Math.max(1,Math.round(effectiveUsdPrice*rate*(zeroDecimal.has(country.currency)?1:100))):0;
+ const localAmount=zeroDecimal.has(country.currency)?amountMinor:amountMinor/100;
  const minimumMinor=stripeMinimumMinor(country.currency);
- const payable=minimumMinor==null||amountMinor>=minimumMinor;
+ const payable=rate>0&&(minimumMinor==null||amountMinor>=minimumMinor);
  return {
   key:pkg.key,stars:pkg.stars,usdPrice:effectiveUsdPrice,regularUsdPrice:pkg.usdPrice,firstPurchaseUsdPrice:pkg.firstPurchaseUsdPrice,
   firstPurchaseDiscountPercent:pkg.firstPurchaseDiscountPercent,popular:pkg.popular,localAmount,amountMinor,currency:country.currency,
-  localAmountFormatted:new Intl.NumberFormat(undefined,{style:"currency",currency:country.currency,minimumFractionDigits:2}).format(localAmount),
+  localAmountFormatted:new Intl.NumberFormat(undefined,{style:"currency",currency:country.currency}).format(localAmount),
   payable,availabilityReason:payable?null:`The selected Stripe card currency minimum for ${country.currency} is ${minimumMinor!/100} ${country.currency}.`
  };
 }
