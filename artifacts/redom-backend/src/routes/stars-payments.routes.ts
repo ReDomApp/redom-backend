@@ -93,11 +93,6 @@ function makeStripeTransactionId(): string { const max = 100_000_000_000_00000n;
 function makePaystackTransactionId(): string { const max = 10_000_000_000_000n; const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max; return "RP-" + value.toString().padStart(13,"0"); }
 const AFRICAN_COUNTRIES = new Set(["DZ","AO","BJ","BW","BF","BI","CV","CM","CF","TD","KM","CG","CD","CI","DJ","EG","GQ","ER","SZ","ET","GA","GM","GH","GN","GW","KE","LS","LR","LY","MG","MW","ML","MR","MU","MA","MZ","NA","NE","NG","RW","ST","SN","SC","SL","SO","ZA","SS","SD","TZ","TG","TN","UG","ZM","ZW"]);
 function makeSetupReference(): string { return "rdcard-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
-function makeLegacyRedomTransactionId(): string {
-  const max = 10_000_000_000_000n;
-  const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max;
-  return "R-" + value.toString().padStart(13, "0");
-}
 async function uniqueRedomTransactionId(client: import("pg").PoolClient, provider: "paystack"|"stripe"): Promise<string> {
   for (let i = 0; i < 20; i += 1) {
     const value = provider === "stripe" ? makeStripeTransactionId() : makePaystackTransactionId();
