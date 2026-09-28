@@ -147,13 +147,17 @@ async function convertTrial(row:any):Promise<void>{
 }
 
 
+async function uniqueStripeRedomId(client:{query:Function}){
+ for(let i=0;i<20;i++){const candidate="RS-"+Array.from({length:16},()=>crypto.randomInt(0,10)).join("");const found=await client.query("SELECT 1 FROM payment_transactions WHERE redom_transaction_id=$1 LIMIT 1",[candidate]);if(!found.rows[0])return candidate;}
+ throw new Error("Unable to allocate a unique ReDom Stripe transaction ID.");
+}
 async function finalizeTrialFailed(row:any,message:string,piId:string|null){
  const reference="trial_conversion_failed_"+String(row.id)+"_"+Date.now();
- const redom="RS-"+Array.from({length:16},()=>crypto.randomInt(0,10)).join("");
  const metadata={provider:"stripe",purpose:"stars_trial_conversion",trialId:String(row.id),stars:10,stripePaymentIntentId:piId,paymentDetails:{provider:"stripe",providerReference:piId,channel:"stripe_off_session",currency:String(row.currency).toUpperCase(),requestedAmountMinor:row.conversion_amount_minor},failureReason:message};
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
+  const redom=await uniqueStripeRedomId(client);
   const exists=await client.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1",[reference]);
   if(!exists.rows[0]){
    await client.query(`INSERT INTO payment_transactions(user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email,payment_provider,provider_transaction_id,gateway_status,failure_message)
