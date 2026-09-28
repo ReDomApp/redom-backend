@@ -1,22 +1,30 @@
-import React,{useEffect,useState}from"react";
-import{SafeAreaView,View,Text,Pressable,StyleSheet,ActivityIndicator,Alert,Linking}from"react-native";
-import{useNavigation}from"@react-navigation/native";
-import{useTheme}from"../theme/ThemeProvider";
-import BackIcon from"../assets/navigation/back.svg";
-import{ordersPaymentsService}from"../services/ordersPaymentsService";
+import { Alert, Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../routing/types";
+import CloseIcon from "../assets/navigation/close.svg";
+import AddPaymentIcon from "../assets/home-feed/add-payment-method.svg";
+import PaymentIcon from "../assets/home-feed/orders-payments.svg";
+import BankIcon from "../assets/home-feed/currency.svg";
+import ChevronIcon from "../assets/home-feed/chevron-right.svg";
+
+type Nav=NativeStackNavigationProp<RootStackParamList>;
+const blue="#1877F2";
 
 export function AddPaymentMethodScreen(){
- const n=useNavigation<any>();const{colors}=useTheme();const[loading,setLoading]=useState(false);const[reference,setReference]=useState<string|null>(null);
- useEffect(()=>{const sub=Linking.addEventListener("url",({url})=>{if(!url.startsWith("redom://payment/callback"))return;const m=url.match(/[?&]reference=([^&]+)/);const ref=m?decodeURIComponent(m[1]):reference;if(!ref)return;setReference(ref);void ordersPaymentsService.verifyPayment(ref).then(result=>{if(result.payment.status==="paid" && result.payment.paymentMethodSaved){Alert.alert("Payment method added","Your card was verified successfully. The $1 equivalent verification charge was submitted for immediate refund.",[{text:"OK",onPress:()=>n.goBack()}]);}else if(result.payment.status==="paid"){Alert.alert("Card not saved","The card payment was successful, but ReDom could not complete the verification refund. The card was not saved. Please try again.",[{text:"OK"}]);}else Alert.alert("Payment method","Card verification did not complete. The card was not saved.",[{text:"OK"}]);}).catch(e=>Alert.alert("Payment method",e instanceof Error?e.message:"Unable to verify card setup."));});return()=>sub.remove()},[n,reference]);
- const add=async()=>{setLoading(true);try{const r=await ordersPaymentsService.setupPaymentMethod();setReference(r.reference);await Linking.openURL(r.checkoutUrl);}catch(e){Alert.alert("Payment method",e instanceof Error?e.message:"Unable to start secure card setup.");}finally{setLoading(false)}};
- return <SafeAreaView style={[s.root,{backgroundColor:colors.background}]}>
-  <View style={[s.header,{backgroundColor:colors.surface,borderBottomColor:colors.border}]}><Pressable onPress={()=>n.goBack()}><BackIcon width={24} height={24}/></Pressable><Text style={[s.title,{color:colors.text}]}>Add payment method</Text><View style={{width:24}}/></View>
-  <View style={s.content}>
-   <Text style={[s.heading,{color:colors.text}]}>Add a card securely</Text>
-   <Text style={[s.copy,{color:colors.textSecondary}]}>ReDom sends you to Paystack's secure checkout. Your card number and CVV are entered only in the provider checkout and are not stored by ReDom.</Text>
-   <Text style={[s.copy,{color:colors.textSecondary}]}>A temporary charge equal to USD $1.00 in your selected payment currency is required to authenticate the card. ReDom immediately submits that verification charge for refund after the provider confirms the payment. The card is saved only after the verification refund has been successfully submitted.</Text>
-   <Pressable disabled={loading} onPress={()=>void add()} style={[s.button,{backgroundColor:loading?colors.border:colors.primary}]}><Text style={s.buttonText}>{loading?"Opening secure checkout…":"Continue to secure checkout"}</Text></Pressable>
+ const navigation=useNavigation<Nav>();
+ return <SafeAreaView style={s.root}><View style={s.backdrop}><Pressable style={s.dismissArea} onPress={()=>navigation.goBack()}/><View style={s.sheet}>
+  <Pressable onPress={()=>navigation.goBack()} style={s.close}><CloseIcon width={28} height={28}/></Pressable>
+  <Text style={s.title}>Add a payment method</Text>
+  <Text style={s.subtitle}>Choose how you'd like to securely save a payment method with ReDom Pay.</Text>
+  <View style={s.group}>
+   <Pressable onPress={()=>navigation.navigate("AddCard")} style={({pressed})=>[s.option,pressed&&s.pressed]}><View style={s.icon}><AddPaymentIcon width={38} height={38}/></View><Text style={s.optionText}>Credit or debit card</Text><ChevronIcon width={22} height={22}/></Pressable>
+   <View style={s.divider}/>
+   <Pressable onPress={()=>Alert.alert("PayPal","Coming Soon!")} style={({pressed})=>[s.option,pressed&&s.pressed]}><View style={s.icon}><PaymentIcon width={38} height={38}/></View><Text style={s.optionText}>PayPal</Text><ChevronIcon width={22} height={22}/></Pressable>
+   <View style={s.divider}/>
+   <Pressable onPress={()=>Alert.alert("Bank Payment Method","Under Development!")} style={({pressed})=>[s.option,pressed&&s.pressed]}><View style={s.icon}><BankIcon width={38} height={38}/></View><Text style={s.optionText}>Bank Payment Method</Text><ChevronIcon width={22} height={22}/></Pressable>
   </View>
- </SafeAreaView>
+  <Text style={s.policy}>This information will be saved with ReDom Pay and synced in Accounts Center, where it can be managed. <Text style={s.learn} onPress={()=>navigation.navigate("Policy",{slug:"payments"})}>Learn more</Text></Text>
+ </View></View></SafeAreaView>;
 }
-const s=StyleSheet.create({root:{flex:1},header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",paddingHorizontal:14},title:{fontSize:19,fontWeight:"800",marginLeft:12},content:{padding:24},heading:{fontSize:26,fontWeight:"900"},copy:{fontSize:16,lineHeight:24,marginTop:15},button:{marginTop:28,height:56,borderRadius:28,alignItems:"center",justifyContent:"center"},buttonText:{color:"#fff",fontSize:16,fontWeight:"800"}});
+const s=StyleSheet.create({root:{flex:1,backgroundColor:"transparent"},backdrop:{flex:1,backgroundColor:"rgba(0,0,0,.52)",justifyContent:"flex-end"},dismissArea:{flex:1},sheet:{backgroundColor:"#fff",borderTopLeftRadius:28,borderTopRightRadius:28,paddingHorizontal:24,paddingTop:12,paddingBottom:28},close:{width:42,height:42,justifyContent:"center",alignItems:"flex-start"},title:{fontSize:29,fontWeight:"800",color:"#050505",marginTop:8},subtitle:{fontSize:16,lineHeight:23,color:"#65676B",marginTop:8,marginBottom:20},group:{borderWidth:1,borderColor:"#DADDE1",borderRadius:18,overflow:"hidden"},option:{minHeight:72,paddingHorizontal:17,flexDirection:"row",alignItems:"center"},icon:{width:54,alignItems:"flex-start"},optionText:{flex:1,fontSize:17,fontWeight:"700",color:"#1C1E21"},divider:{height:1,backgroundColor:"#DADDE1",marginLeft:17},pressed:{opacity:.55},policy:{fontSize:14,lineHeight:21,color:"#65676B",marginTop:19},learn:{color:blue,fontWeight:"700"}});
