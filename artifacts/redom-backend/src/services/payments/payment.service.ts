@@ -176,8 +176,8 @@ export async function initializeSubscriptionRenewal(userId: string, subscription
       metadata: JSON.stringify({ user_id: userId, subscription_id: subscriptionId, purpose: "subscription_renewal" }),
     });
     await client.query(
-      "INSERT INTO payment_transactions (user_id, subscription_id, plan_id, reference, amount_minor, currency, purpose, status, checkout_url, access_code, metadata) VALUES ($1,$2,$3,$4,$5,$6,'subscription_renewal','initialized',$7,$8,$9::jsonb)",
-      [userId, subscriptionId, plan.id, checkout.reference, amount, currency, checkout.authorization_url, checkout.access_code, JSON.stringify({ subscriptionId, purpose: "subscription_renewal" })],
+      "INSERT INTO payment_transactions (user_id, subscription_id, plan_id, reference, amount_minor, currency, purpose, status, checkout_url, access_code, metadata, payment_provider) VALUES ($1,$2,$3,$4,$5,$6,'subscription_renewal','initialized',$7,$8,$9::jsonb)",
+      [userId, subscriptionId, plan.id, checkout.reference, amount, currency, checkout.authorization_url, checkout.access_code, JSON.stringify({ subscriptionId, purpose: "subscription_renewal" }), "paystack"],
     );
     await client.query("UPDATE verification_subscriptions SET payment_reference = $1, updated_at = now() WHERE id = $2", [checkout.reference, subscriptionId]);
     await client.query("COMMIT");
