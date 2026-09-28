@@ -177,6 +177,10 @@ async function retryTrial(row:any):Promise<void>{
  }
 }
 
+export async function markStarsTrialSetupAbandoned(referenceValue:string){
+ await pool.query("UPDATE redom_stars_trial_setups SET status=CASE WHEN status='completed' THEN status ELSE 'abandoned' END,updated_at=now() WHERE reference=$1",[referenceValue]);
+}
+
 export async function verifyStarsTrialSetup(userId:string,referenceValue:string){
  const row=await pool.query("SELECT * FROM redom_stars_trial_setups WHERE reference=$1 AND user_id=$2 LIMIT 1",[referenceValue,userId]);
  if(!row.rows[0])throw new Error("Stars trial authorization not found.");
