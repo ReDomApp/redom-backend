@@ -9,50 +9,21 @@ import { hashPassword, verifyPassword } from "../utils/password";
 import { geocodePlace } from "../lib/mapbox";
 import { createStripeStarsCheckout } from "../services/payments/stripe-payment.service";
 import { createStarsTrialSetupCheckout, getStarsTrialEligibility, TERMS_VERSION } from "../services/payments/stripe-stars-trial.service";
+import { getStripeStarsCountries, getStripeStarsCountry, stripeMinimumMinor } from "../services/payments/stripe-country.service";
 
 const router = Router();
 const API = "https://api.paystack.co";
-type Currency = "NGN" | "USD" | "GHS" | "KES" | "ZAR" | "XOF";
-type Country = { name: string; isoCode: string; currency: Currency; rate: number };
+type Currency = string;
+type Country = { name:string; isoCode:string; currency:Currency; rate:number; cardSupported:boolean; successRate:number|null; observedPayments:number };
 
-const countries: Country[] = [
-  { name: "Nigeria", isoCode: "NG", currency: "NGN", rate: 1500 },
-  { name: "Ghana", isoCode: "GH", currency: "GHS", rate: 12.5 },
-  { name: "Kenya", isoCode: "KE", currency: "KES", rate: 130 },
-  { name: "South Africa", isoCode: "ZA", currency: "ZAR", rate: 17.5 },
-  { name: "United States", isoCode: "US", currency: "USD", rate: 1 },
-  { name: "Côte d'Ivoire", isoCode: "CI", currency: "XOF", rate: 600 },
-];
-
-const packages = [
-  { key: "stars_2", stars: 2, usdPrice: 0.20, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_10", stars: 10, usdPrice: 2.21, firstPurchaseUsdPrice: 1.99, firstPurchaseDiscountPercent: 10, popular: false },
-  { key: "stars_20", stars: 20, usdPrice: 2.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_50", stars: 50, usdPrice: 4.87, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_100", stars: 100, usdPrice: 10.76, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: true },
-  { key: "stars_150", stars: 150, usdPrice: 14.00, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_200", stars: 200, usdPrice: 19.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_500", stars: 500, usdPrice: 50.00, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_700", stars: 700, usdPrice: 70.00, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_1000", stars: 1000, usdPrice: 99.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_1500", stars: 1500, usdPrice: 149.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_2000", stars: 2000, usdPrice: 199.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_2500", stars: 2500, usdPrice: 249.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_5000", stars: 5000, usdPrice: 499.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_7500", stars: 7500, usdPrice: 749.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_10000", stars: 10000, usdPrice: 999.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_15000", stars: 15000, usdPrice: 1499.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_20000", stars: 20000, usdPrice: 1999.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_50000", stars: 50000, usdPrice: 4999.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_75000", stars: 75000, usdPrice: 7499.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-  { key: "stars_100000", stars: 100000, usdPrice: 9999.99, firstPurchaseUsdPrice: null, firstPurchaseDiscountPercent: 0, popular: false },
-] as const;
-
-function getCountry(code: string): Country {
-  const country = countries.find((item) => item.isoCode === code.toUpperCase());
-  if (!country) throw new Error("This country is not currently supported for ReDom Pay.");
-  return country;
+let countries:Country[]=[];
+async function refreshCountries(){countries=await getStripeStarsCountries();return countries;}
+async function getCountry(code:string):Promise<Country>{
+ const country=(await refreshCountries()).find(item=>item.isoCode===code.toUpperCase());
+ if(!country)throw new Error("This country is not supported for Stripe card payments.");
+ return country;
 }
+function fxRate(country:Country):number{return country.rate;}
 function getPackage(key: string) {
   const value = packages.find((item) => item.key === key);
   if (!value) throw new Error("Invalid ReDom Stars package.");
@@ -66,18 +37,19 @@ function fxRate(country: Country): number {
     return Number.isFinite(parsed[country.currency]) && parsed[country.currency] > 0 ? parsed[country.currency] : country.rate;
   } catch { return country.rate; }
 }
-function quote(country: Country, pkg: typeof packages[number], firstPurchaseEligible = false) {
-  const rate = fxRate(country);
-  const effectiveUsdPrice = firstPurchaseEligible && pkg.firstPurchaseUsdPrice != null ? pkg.firstPurchaseUsdPrice : pkg.usdPrice;
-  const amountMinor = Math.round(effectiveUsdPrice * rate * 100);
-  const localAmount = amountMinor / 100;
-  const minimumMinor: Record<Currency, number> = { NGN: 5000, USD: 200, GHS: 10, KES: 300, ZAR: 100, XOF: 100 };
-  const payable = amountMinor >= minimumMinor[country.currency];
-  return {
-    key: pkg.key, stars: pkg.stars, usdPrice: effectiveUsdPrice, regularUsdPrice: pkg.usdPrice, firstPurchaseUsdPrice: pkg.firstPurchaseUsdPrice, firstPurchaseDiscountPercent: pkg.firstPurchaseDiscountPercent, popular: pkg.popular, localAmount, amountMinor, currency: country.currency,
-    localAmountFormatted: new Intl.NumberFormat(undefined, { style: "currency", currency: country.currency, minimumFractionDigits: country.currency === "XOF" ? 0 : 2 }).format(localAmount),
-    payable, availabilityReason: payable ? null : `The selected payment provider minimum for ${country.currency} is ${minimumMinor[country.currency] / 100} ${country.currency}.`,
-  };
+function quote(country:Country,pkg:typeof packages[number],firstPurchaseEligible=false){
+ const rate=fxRate(country);
+ const effectiveUsdPrice=firstPurchaseEligible&&pkg.firstPurchaseUsdPrice!=null?pkg.firstPurchaseUsdPrice:pkg.usdPrice;
+ const amountMinor=Math.round(effectiveUsdPrice*rate*100);
+ const localAmount=amountMinor/100;
+ const minimumMinor=stripeMinimumMinor(country.currency);
+ const payable=minimumMinor==null||amountMinor>=minimumMinor;
+ return {
+  key:pkg.key,stars:pkg.stars,usdPrice:effectiveUsdPrice,regularUsdPrice:pkg.usdPrice,firstPurchaseUsdPrice:pkg.firstPurchaseUsdPrice,
+  firstPurchaseDiscountPercent:pkg.firstPurchaseDiscountPercent,popular:pkg.popular,localAmount,amountMinor,currency:country.currency,
+  localAmountFormatted:new Intl.NumberFormat(undefined,{style:"currency",currency:country.currency,minimumFractionDigits:2}).format(localAmount),
+  payable,availabilityReason:payable?null:`The selected Stripe card currency minimum for ${country.currency} is ${minimumMinor!/100} ${country.currency}.`
+ };
 }
 async function paystack<T>(method: "get" | "post", path: string, data?: unknown): Promise<T> {
   const response = await axios.request<{ status: boolean; message: string; data: T }>({
@@ -147,7 +119,8 @@ async function assertPinIfRequired(userId: string, pin: string | undefined) {
 
 router.get("/stars/catalog", authMiddleware, async (req, res) => {
   const selected = typeof req.query.country === "string" ? req.query.country.toUpperCase() : null;
-  const selectedCountry = selected ? getCountry(selected) : null;
+  const availableCountries=await refreshCountries();
+  const selectedCountry = selected ? availableCountries.find(x=>x.isoCode===selected) ?? null : null;
   const userId = req.user?.userId;
   let firstPurchaseEligible = false;
   if (userId) {
@@ -157,7 +130,7 @@ router.get("/stars/catalog", authMiddleware, async (req, res) => {
   return res.json({
     success: true,
     firstPurchaseEligible,
-    countries: countries.map((country) => ({ name: country.name, isoCode: country.isoCode, currency: country.currency })),
+    countries: availableCountries.map((country) => ({ name:country.name, isoCode:country.isoCode, currency:country.currency, cardSupported:country.cardSupported, successRate:country.successRate, observedPayments:country.observedPayments })),
     selectedCountry: selectedCountry ? { name: selectedCountry.name, isoCode: selectedCountry.isoCode, currency: selectedCountry.currency } : null,
     packages: selectedCountry ? packages.map((pkg) => quote(selectedCountry, pkg, firstPurchaseEligible)) : [],
   });
@@ -236,7 +209,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
 
   try {
     await assertPinIfRequired(userId, parsed.data.pin);
-    const country = getCountry(parsed.data.countryCode);
+    const country = await getCountry(parsed.data.countryCode);
     const pkg = getPackage(parsed.data.packageKey);
     const priorPurchase = await pool.query("SELECT 1 FROM redom_stars_transactions WHERE user_id=$1 AND type='purchase' LIMIT 1", [userId]);
     const priced = quote(country, pkg, !priorPurchase.rows[0]);
@@ -299,7 +272,7 @@ router.post("/payment-methods/setup", authMiddleware, async (req,res)=>{
   try{
     const settings=await pool.query("SELECT currency FROM payment_settings WHERE user_id=$1 LIMIT 1",[userId]);
     const currency=String(settings.rows[0]?.currency||"NGN").toUpperCase();
-    const countryForCurrency = countries.find((item) => item.currency === currency);
+    const countryForCurrency = (await refreshCountries()).find((item) => item.currency === currency);
     if (!countryForCurrency) return res.status(400).json({success:false,message:"Your current payment currency is not supported for secure card setup."});
     // Temporary card validation charge: exactly the configured local-currency
     // equivalent of USD $0.25, refunded immediately after provider success.
