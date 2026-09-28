@@ -45,6 +45,8 @@ function localQuote(countryCode:string):{currency:string;amountMinor:number}{
 export async function getStarsTrialEligibility(userId:string){
  const existing=await pool.query("SELECT id,status,trial_started_at,trial_ends_at FROM redom_stars_trials WHERE user_id=$1 LIMIT 1",[userId]);
  if(existing.rows[0]) return {eligible:false,trial:existing.rows[0]};
+ const pendingSetup=await pool.query("SELECT id,reference,status FROM redom_stars_trial_setups WHERE user_id=$1 AND status='open' ORDER BY created_at DESC LIMIT 1",[userId]);
+ if(pendingSetup.rows[0]) return {eligible:false,trial:null,pendingSetup:pendingSetup.rows[0]};
  const purchase=await pool.query("SELECT 1 FROM redom_stars_transactions WHERE user_id=$1 AND type='purchase' LIMIT 1",[userId]);
  return {eligible:!purchase.rows[0],trial:null};
 }
@@ -159,6 +161,25 @@ async function finalizeTrialPaid(row:any,pi:StripePaymentIntent){
  }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
 }
 
+async function finalizeTrialFailed(row:any,message:string,piId:string|null){
+ const reference="trial_conversion_failed_"+String(row.id)+"_"+Date.now();
+ const redom="RS-"+Array.from({length:16},()=>crypto.randomInt(0,10)).join("");
+ const metadata={provider:"stripe",purpose:"stars_trial_conversion",trialId:String(row.id),stars:10,stripePaymentIntentId:piId,paymentDetails:{provider:"stripe",providerReference:piId,channel:"stripe_off_session",currency:String(row.currency).toUpperCase(),requestedAmountMinor:row.conversion_amount_minor},failureReason:message};
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const exists=await client.query("SELECT id FROM payment_transactions WHERE reference=$1 LIMIT 1",[reference]);
+  if(!exists.rows[0]){
+   await client.query(`INSERT INTO payment_transactions(user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email,payment_provider,provider_transaction_id,gateway_status,failure_message)
+    SELECT user_id,$1,$2,conversion_amount_minor,currency,'stars_purchase','failed',$3::jsonb,country_code,(SELECT email FROM users WHERE id=redom_stars_trials.user_id),'stripe',$4,'failed',$5 FROM redom_stars_trials WHERE id=$6`,
+    [reference,redom,JSON.stringify(metadata),piId,message.slice(0,500),row.id]);
+  }
+  await client.query("UPDATE redom_stars_trials SET status='conversion_failed_final',final_conversion_status='failed',failure_reason=$1,retry_at=NULL,updated_at=now() WHERE id=$2",[message.slice(0,500),row.id]);
+  await client.query("COMMIT");
+ }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
+ await sendPaymentEmailForReference(reference);
+}
+
 async function retryTrial(row:any):Promise<void>{
  try{
   const pi=await stripe<StripePaymentIntent>("post","/payment_intents",form({
@@ -171,7 +192,7 @@ async function retryTrial(row:any):Promise<void>{
   await finalizeTrialPaid(row,pi);
  }catch(error){
   const msg=String(error instanceof Error?error.message:error).slice(0,500);
-  await pool.query("UPDATE redom_stars_trials SET status='conversion_failed_final',final_conversion_status='failed',failure_reason=$1,retry_at=NULL,updated_at=now() WHERE id=$2",[msg,row.id]);
+  await finalizeTrialFailed(row,msg,null);
  }
 }
 
