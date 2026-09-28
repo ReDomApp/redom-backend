@@ -3,7 +3,7 @@ import { env } from "../../config/env";
 import { pool } from "../../database/db";
 
 type CountrySpec={id:string;default_currency?:string|null;supported_payment_currencies?:string[];supported_payment_methods?:string[]};
-type StripeCountry={name:string;isoCode:string;currency:string;rate:number;cardSupported:boolean;successRate:number|null;observedPayments:number};
+type StripeCountry={name:string;isoCode:string;currency:string;supportedCurrencies:string[];rate:number;cardSupported:boolean;successRate:number|null;observedPayments:number};
 
 const STRIPE_API="https://api.stripe.com/v1";
 const FX_API="https://open.er-api.com/v6/latest/USD";
@@ -61,8 +61,12 @@ export async function getStripeStarsCountries():Promise<StripeCountry[]>{
   const iso=String(spec.id).toUpperCase();
   const methods=new Set((spec.supported_payment_methods??[]).map(x=>String(x).toLowerCase()));
   if(!methods.has("card"))continue;
-  const currency=String(spec.default_currency??"").toUpperCase();
-  if(!currency)continue;
+  // For ReDom Stars, the country selector is a pricing/presentment selector.
+  // Use Stripe's supported card-presentment currencies for that country instead
+  // of assuming the country's default settlement currency is the only choice.
+  const supportedCurrencies=(spec.supported_payment_currencies??[]).map(x=>String(x).toUpperCase()).filter(Boolean);
+  const currency=String(spec.default_currency??supportedCurrencies[0]??"").toUpperCase();
+  if(!currency || !supportedCurrencies.includes(currency))continue;
   const rate=Number(fxRates[currency]);
   const observed=success.get(iso);
   countries.push({
