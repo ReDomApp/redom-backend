@@ -68,7 +68,7 @@ export function ReDomPayTransactionsScreen() {
           style={styles.topTab}
           accessibilityRole="tab"
           accessibilityState={{ selected: false }}
-          onPress={() => {}}
+          onPress={() => navigation.navigate("ReDomPayManage")}
         >
           <Text style={styles.topTabText}>Manage</Text>
         </Pressable>
