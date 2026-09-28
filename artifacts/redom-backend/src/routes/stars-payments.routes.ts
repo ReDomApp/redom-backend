@@ -310,7 +310,7 @@ router.get("/payment-methods/:id", authMiddleware, async (req,res)=>{
     return res.json({success:true,method:{id:String(row.id),provider:"stripe",brand:provider.brand,last4:provider.last4,maskedLast4:provider.last4?"•••• "+provider.last4:null,cardType:provider.cardType,countryCode:provider.countryCode,status:String(row.status||"active"),reusable:Boolean(row.reusable),expMonth:provider.expMonth,expYear:provider.expYear,maskedCvc:"•••",cardholderName:maskedName,createdAt:new Date(row.created_at).toISOString(),stripePaymentMethodId:provider.stripePaymentMethodId}});
   } catch(error){return res.status(404).json({success:false,message:error instanceof Error?error.message:"Payment method not found."});}
 });
-function hashRemovalCode(code:string){return crypto.createHash("sha256").update(code).digest("hex");}
+function hashRemovalCode(code:string){return crypto.createHmac("sha256",env.authentication.sessionSecret).update(code).digest("hex");}
 function maskTarget(value:string){if(value.includes("@")){const [a,b]=value.split("@");return (a.slice(0,2)+"•••@"+b);} return value.length>4?"••••"+value.slice(-4):"••••";}
 async function issueRemovalCode(userId:string,methodId:string,attemptCount=0){
   const user=await getUser(userId); if(!user?.email)throw new Error("A verified ReDom email address is required.");
