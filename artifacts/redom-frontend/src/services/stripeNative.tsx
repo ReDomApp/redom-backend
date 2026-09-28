@@ -1,13 +1,13 @@
 import Constants from "expo-constants";
 import { View, Text, StyleSheet } from "react-native";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 const isExpoGo = Constants.appOwnership === "expo";
 
 type StripeModule = {
-  StripeProvider: React.ComponentType<any>;
+  StripeProvider: ComponentType<any>;
   useStripe: () => any;
-  CardForm: React.ComponentType<any>;
+  CardForm: ComponentType<any>;
 };
 
 let cachedModule: StripeModule | null | undefined;
