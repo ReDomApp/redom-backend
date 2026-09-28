@@ -152,7 +152,7 @@ async function processOne(row:any):Promise<void>{
 async function processDueRefundReviews():Promise<void>{
  if(running)return; running=true;
  try{
-  const q=await pool.query(`SELECT rr.id AS refund_request_id,rr.case_id,rr.transaction_number AS redom_transaction_id,rr.refund_target_masked,sc.case_number,pt.id AS payment_id,pt.reference,COALESCE(NULLIF(pt.metadata->'paymentDetails'->>'providerReference',''),pt.reference) AS provider_reference,pt.amount_minor,pt.currency,pt.metadata,pt.purpose,pt.status AS payment_status,u.id AS user_id,u.email
+  const q=await pool.query(`SELECT rr.id AS refund_request_id,rr.case_id,rr.transaction_number AS redom_transaction_id,rr.refund_target_masked,sc.case_number,pt.id AS payment_id,pt.reference,pt.payment_provider,pt.provider_transaction_id,COALESCE(NULLIF(pt.metadata->'paymentDetails'->>'providerReference',''),pt.reference) AS provider_reference,pt.amount_minor,pt.currency,pt.metadata,pt.purpose,pt.status AS payment_status,u.id AS user_id,u.email
   FROM refund_requests rr JOIN support_cases sc ON sc.id=rr.case_id JOIN payment_transactions pt ON pt.redom_transaction_id=rr.transaction_number JOIN users u ON u.id=rr.user_id
   WHERE rr.status='account_under_review' AND rr.review_available_at IS NOT NULL AND rr.review_available_at<=now() AND rr.case_invalidated_at IS NULL
   ORDER BY rr.review_available_at ASC LIMIT 25`);
