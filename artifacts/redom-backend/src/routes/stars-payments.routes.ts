@@ -331,6 +331,15 @@ router.post("/payment-methods/:id/removal-challenge", authMiddleware, async (req
   const method=await pool.query("SELECT id FROM redom_payment_methods WHERE id=$1 AND user_id=$2 AND active=true LIMIT 1",[id.data,userId]); if(!method.rows[0])return res.status(404).json({success:false,message:"Payment method not found."});
   try { const challenge=await issueRemovalCode(userId,id.data); return res.json({success:true,...challenge}); } catch(error){return res.status(502).json({success:false,message:"Unable to send the security code."});}
 });
+router.post("/payment-methods/:id/removal-challenge/resend", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId; const id=z.string().uuid().safeParse(req.params.id);
+  if(!userId||!id.success)return res.status(400).json({success:false,message:"Invalid payment method."});
+  const locked=await pool.query("SELECT lock_until FROM payment_method_removal_challenges WHERE user_id=$1 AND payment_method_id=$2 AND lock_until>now() ORDER BY lock_until DESC LIMIT 1",[userId,id.data]);
+  if(locked.rows[0])return res.status(429).json({success:false,locked:true,lockedUntil:new Date(locked.rows[0].lock_until).toISOString(),message:"Payment-method removal is temporarily locked for security."});
+  const latest=await pool.query("SELECT attempt_count FROM payment_method_removal_challenges WHERE user_id=$1 AND payment_method_id=$2 ORDER BY created_at DESC LIMIT 1",[userId,id.data]);
+  try { const challenge=await issueRemovalCode(userId,id.data,Math.min(1,Number(latest.rows[0]?.attempt_count||0))); return res.json({success:true,...challenge}); }
+  catch { return res.status(502).json({success:false,message:"Unable to resend the security code."}); }
+});
 router.post("/payment-methods/:id/removal-challenge/verify", authMiddleware, async (req,res)=>{
   const userId=req.user?.userId; const id=z.string().uuid().safeParse(req.params.id); const parsed=z.object({code:z.string().regex(/^\d{8}$/)}).safeParse(req.body);
   if(!userId||!id.success||!parsed.success)return res.status(400).json({success:false,message:"Enter the 8-digit security code."});
