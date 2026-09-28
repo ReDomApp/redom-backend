@@ -142,8 +142,7 @@ router.post("/payment-problem", authMiddleware, async (req, res) => {
 
     await addSupportMessage({ caseId: caseRecord.id, senderType: "user", senderEmail: parsed.data.email, body: parsed.data.description });
 
-    const safe = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", """: "&quot;" }[ch] || ch));
-    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1c1e21"><h2>ReDom Pay transaction problem</h2><p><strong>Case:</strong> ${safe(caseRecord.caseNumber)}</p><p><strong>Submitted email:</strong> ${safe(parsed.data.email)}</p><p><strong>Transaction:</strong> ${safe(parsed.data.transactionNumber)}</p><p><strong>ReDom transaction ID:</strong> ${safe(kind === "payment" ? String(transaction.redom_transaction_id ?? "") : String(transaction.transaction_id))}</p><p><strong>Product:</strong> ${safe(product)}</p><p><strong>Status:</strong> ${safe(kind === "payment" ? String(transaction.refund_status || transaction.status) : String(transaction.payment_status || transaction.order_status))}</p><p><strong>Amount:</strong> ${safe(amount)} minor units ${safe(currency)}</p><p><strong>Payment method:</strong> ${safe(kind === "payment" ? String(metadata?.paymentDetails?.channel ?? metadata?.preferredChannel ?? "not recorded") : String(transaction.payment_method ?? "not recorded"))}</p><hr><p><strong>Problem description</strong></p><p>${safe(parsed.data.description).replace(/\n/g, "<br>")}</p></body></html>`;
+    const safe = (value: string) => value.replace(/[&<>"]/g, (ch) => { if (ch === "&") return "&amp;"; if (ch === "<") return "&lt;"; if (ch === ">") return "&gt;"; return "&quot;"; });\n/g, "<br>")}</p></body></html>`;
     const { error } = await resend.emails.send({
       from: env.email.supportFrom,
       to: [env.email.supportFrom],
