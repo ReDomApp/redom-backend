@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { pool } from "../database/db";
 import { initializeSubscriptionRenewal, verifyPayment, handlePaymentWebhook, verifyPaymentFromCallback, sendPaymentEmailForReference } from "../services/payments/payment.service";
-import { verifyStripePayment, handleStripeWebhook, stripeCallbackRedirect } from "../services/payments/stripe-payment.service";
+import { verifyStripePayment, verifyStripeStarsCheckout, handleStripeWebhook, stripeCallbackRedirect } from "../services/payments/stripe-payment.service";
 
 const router = Router();
 
@@ -26,7 +26,20 @@ router.get("/verify/:reference", authMiddleware, async (req, res) => {
   try {
     const stripeTx = await pool.query("SELECT metadata FROM payment_transactions WHERE reference=$1 AND user_id=$2 LIMIT 1",[reference.data,req.user.userId]);
     let stripeMetadata:any={}; try { stripeMetadata = stripeTx.rows[0]?.metadata ? (typeof stripeTx.rows[0].metadata==="string" ? JSON.parse(stripeTx.rows[0].metadata) : stripeTx.rows[0].metadata) : {}; } catch {}
-    const payment = stripeMetadata?.provider === "stripe" ? await verifyStripePayment(req.user.userId, reference.data) : await verifyPayment(req.user.userId, reference.data);
+    if (stripeMetadata?.provider === "stripe") {
+      const payment = await verifyStripePayment(req.user.userId, reference.data);
+      if (payment.status === "paid") await sendPaymentEmailForReference(reference.data);
+      return res.json({ success: true, payment });
+    }
+    const deferredStripeAttempt = await pool.query(
+      "SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 AND user_id=$2 LIMIT 1",
+      [reference.data,req.user.userId],
+    );
+    if (deferredStripeAttempt.rows[0]) {
+      const payment = await verifyStripeStarsCheckout(req.user.userId, reference.data);
+      return res.json({ success: true, payment });
+    }
+    const payment = await verifyPayment(req.user.userId, reference.data);
     if (payment.status === "paid") await sendPaymentEmailForReference(reference.data);
     return res.json({ success: true, payment });
   } catch (error) {
