@@ -231,7 +231,7 @@ export async function verifyStarsTrialSetup(userId:string,referenceValue:string)
  if(!row.rows[0])throw new Error("Stars trial authorization not found.");
  const setup=row.rows[0];
  if(String(setup.status)==="completed"){
-  const trial=await pool.query("SELECT id,status,trial_started_at,trial_ends_at,stars_granted,conversion_stars FROM redom_stars_trials WHERE user_id=$1 LIMIT 1",[userId]);
+  const trial=await pool.query("SELECT id,status,trial_started_at,trial_ends_at,stars_granted,conversion_stars,currency,conversion_amount_minor FROM redom_stars_trials WHERE user_id=$1 LIMIT 1",[userId]);
   return {status:"active",trial:trial.rows[0]??null,reference:referenceValue};
  }
  const result=await finalizeStarsTrialSetup(referenceValue);
