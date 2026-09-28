@@ -40,6 +40,8 @@ export async function ensureStarsSchema(): Promise<void> {
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query(`ALTER TABLE redom_stars_trial_setups ADD COLUMN IF NOT EXISTS time_zone varchar(100) NOT NULL DEFAULT 'UTC'`);
+  await pool.query(`ALTER TABLE redom_stars_trials ADD COLUMN IF NOT EXISTS time_zone varchar(100) NOT NULL DEFAULT 'UTC'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS redom_stars_trial_setups_user_idx ON redom_stars_trial_setups(user_id,created_at DESC)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS redom_stars_trials (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
