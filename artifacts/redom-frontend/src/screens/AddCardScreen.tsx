@@ -34,6 +34,7 @@ export function AddCardScreen(){
  const chooseAddress=(item:any)=>{const ctx=item.context||[];setAddress(item.placeName||"");setCity(contextValue(ctx,["place","locality","district"]));setState(contextValue(ctx,["region"]));setPostal(contextValue(ctx,["postcode"]));setSuggestions([]);};
  const save=async()=>{
   setAttempted(true);if(!ready)return;setProcessing(true);setStatusIndex(0);setResult(null);const started=Date.now();
+  if(expoGo){try{const r=await ordersPaymentsService.setupStripePaymentMethodCheckout({name:name.trim(),returnUrl});await Linking.openURL(r.checkoutUrl);setProcessing(false);}catch(e){setProcessing(false);setFailure(e instanceof Error?e.message:"Unable to open secure Stripe card entry.");setResult("failure");}return;}
   try{
    const pm=await createPaymentMethod({paymentMethodType:"Card",paymentMethodData:{billingDetails:{name:name.trim(),address:{line1:address.trim(),line2:line2.trim()||undefined,city:city.trim(),state:state.trim()||undefined,postalCode:postal.trim(),country}}}});
    if(pm.error||!pm.paymentMethod)throw new Error(pm.error?.localizedMessage||pm.error?.message||"Stripe could not create the payment method.");
