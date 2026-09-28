@@ -28,7 +28,7 @@ router.get("/verify/:reference", authMiddleware, async (req, res) => {
     const trialSetup = await pool.query("SELECT 1 FROM redom_stars_trial_setups WHERE reference=$1 AND user_id=$2 LIMIT 1",[reference.data,req.user.userId]);
     if(trialSetup.rows[0]) {
       const trial = await verifyStarsTrialSetup(req.user.userId, reference.data);
-      return res.json({ success:true, payment:{ status:trial.status, transactionId:null, redomTransactionId:null, amountMinor:"0", currency:"", purpose:"stars_trial_setup", finalFailure:false, trial:trial.trial } });
+      return res.json({ success:true, payment:{ status:trial.status, transactionId:null, redomTransactionId:null, amountMinor:String(trial.trial?.conversion_amount_minor??"199"), currency:String(trial.trial?.currency??"USD"), purpose:"stars_trial_setup", finalFailure:false, trial:trial.trial } });
     }
     const stripeTx = await pool.query("SELECT metadata FROM payment_transactions WHERE reference=$1 AND user_id=$2 LIMIT 1",[reference.data,req.user.userId]);
     let stripeMetadata:any={}; try { stripeMetadata = stripeTx.rows[0]?.metadata ? (typeof stripeTx.rows[0].metadata==="string" ? JSON.parse(stripeTx.rows[0].metadata) : stripeTx.rows[0].metadata) : {}; } catch {}
