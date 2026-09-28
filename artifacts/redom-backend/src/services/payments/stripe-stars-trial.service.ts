@@ -157,7 +157,9 @@ async function finalizeTrialPaid(row:any,pi:StripePaymentIntent){
 
 async function convertTrial(row:any):Promise<void>{
  const amount=Number(row.conversion_amount_minor);
- await pool.query("UPDATE redom_stars_trials SET status='conversion_pending',conversion_attempt_number=1,first_conversion_attempt_at=now(),updated_at=now() WHERE id=$1",[row.id]);
+ const claim=await pool.query("UPDATE redom_stars_trials SET status='conversion_pending',conversion_attempt_number=1,first_conversion_attempt_at=now(),updated_at=now() WHERE id=$1 AND status='active' AND trial_ends_at<=now() RETURNING *",[row.id]);
+ if(!claim.rows[0])return;
+ row=claim.rows[0];
  let pi:StripePaymentIntent|null=null;
  try{
   pi=await stripe<StripePaymentIntent>("post","/payment_intents",form({
@@ -202,6 +204,9 @@ async function finalizeTrialFailed(row:any,message:string,piId:string|null){
 }
 
 async function retryTrial(row:any):Promise<void>{
+ const claim=await pool.query("UPDATE redom_stars_trials SET status='conversion_pending',conversion_attempt_number=2,updated_at=now() WHERE id=$1 AND status='retry_pending' AND retry_at IS NOT NULL AND retry_at<=now() RETURNING *",[row.id]);
+ if(!claim.rows[0])return;
+ row=claim.rows[0];
  let pi:StripePaymentIntent|null=null;
  try{
   pi=await stripe<StripePaymentIntent>("post","/payment_intents",form({
