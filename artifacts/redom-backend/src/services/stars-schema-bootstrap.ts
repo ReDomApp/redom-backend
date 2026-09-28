@@ -47,6 +47,7 @@ export async function ensureStarsSchema(): Promise<void> {
   )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS stripe_stars_attempts_user_idx ON stripe_stars_checkout_attempts(user_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS stripe_stars_attempts_status_idx ON stripe_stars_checkout_attempts(status, updated_at DESC)`);
+  await pool.query(`ALTER TABLE stripe_stars_checkout_attempts ADD COLUMN IF NOT EXISTS failure_count integer NOT NULL DEFAULT 0`);
 
   await pool.query(`CREATE TABLE IF NOT EXISTS redom_stars_gifts (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
