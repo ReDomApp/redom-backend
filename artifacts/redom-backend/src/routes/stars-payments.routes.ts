@@ -89,17 +89,21 @@ async function paystack<T>(method: "get" | "post", path: string, data?: unknown)
 }
 function makeReference(): string { return "rdstars-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
 function makeStripeReference(): string { return "rdstripe-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
-function makeStripeTransactionId(): string { const max = 100_000_000_000_00000n; const value = BigInt("0x" + crypto.randomBytes(9).toString("hex")) % max; return "RS-" + value.toString().padStart(16,"0"); }
-function makePaystackTransactionId(): string { const max = 10_000_000_000_000n; const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max; return "RP-" + value.toString().padStart(13,"0"); }
-const AFRICAN_COUNTRIES = new Set(["DZ","AO","BJ","BW","BF","BI","CV","CM","CF","TD","KM","CG","CD","CI","DJ","EG","GQ","ER","SZ","ET","GA","GM","GH","GN","GW","KE","LS","LR","LY","MG","MW","ML","MR","MU","MA","MZ","NA","NE","NG","RW","ST","SN","SC","SL","SO","ZA","SS","SD","TZ","TG","TN","UG","ZM","ZW"]);
-function makeSetupReference(): string { return "rdcard-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
-async function uniqueRedomTransactionId(client: import("pg").PoolClient, provider: "paystack"|"stripe"): Promise<string> {
-  for (let i = 0; i < 20; i += 1) {
-    const value = provider === "stripe" ? makeStripeTransactionId() : makePaystackTransactionId();
-    const found = await client.query("SELECT 1 FROM payment_transactions WHERE redom_transaction_id=$1 LIMIT 1", [value]);
-    if (!found.rows[0]) return value;
-  }
-  throw new Error("Could not allocate a unique ReDom transaction ID.");
+function makeStripeTransactionId(): string {
+  // Stripe IDs: RS- + 13–16 digits; first digit is restricted to 1–3.
+  const length = 13 + crypto.randomInt(0, 4);
+  const first = String(crypto.randomInt(1, 4));
+  let digits = first;
+  while (digits.length < length) digits += String(crypto.randomInt(0, 10));
+  return "RS-" + digits;
+}
+function makePaystackTransactionId(): string {
+  // Paystack IDs: RP- + 7–12 digits; first digit is restricted to 7–9.
+  const length = 7 + crypto.randomInt(0, 6);
+  const first = String(crypto.randomInt(7, 10));
+  let digits = first;
+  while (digits.length < length) digits += String(crypto.randomInt(0, 10));
+  return "RP-" + digits;
 }
 function keyFromSecret(): Buffer { return crypto.createHash("sha256").update(env.authentication.sessionSecret).digest(); }
 function encryptAuthorization(value: string): string {
