@@ -39,11 +39,20 @@ export interface OrderSummary {
   paymentStatus: string; orderStatus: string; trackingNumber: string | null; courierName: string | null;
   estimatedDeliveryDate: string | null; createdAt: string; updatedAt: string;
 }
-export interface PaymentSettings { currency: string; pin_enabled: boolean; biometric_enabled: boolean; }
+export interface PaymentSettings { currency: string; pin_enabled: boolean; biometric_enabled: boolean; backup_payment_methods_enabled?: boolean; }
+export interface SavedPaymentMethod {
+  id:string; provider:string; email:string; brand:string|null; cardType:string|null; last4:string|null;
+  expMonth:number|null; expYear:number|null; bank:string|null; countryCode:string|null; currency:string|null;
+  reusable:boolean; status?:string; createdAt:string; cardholderName?:string|null; stripePaymentMethodId?:string;
+}
+export interface SavedPaymentMethodDetails extends SavedPaymentMethod {
+  maskedLast4:string|null; maskedCvc:string; cardholderName:string|null;
+}
+export interface PaymentMethodCountry { isoCode:string; name:string; }
 export interface StarCountry { name:string; isoCode:string; currency:string; cardSupported?:boolean; successRate?:number|null; observedPayments?:number; }
 export interface StarPackage { key: string; stars: number; usdPrice: number; regularUsdPrice: number; firstPurchaseUsdPrice: number|null; firstPurchaseDiscountPercent: number; popular: boolean; localAmount: number; amountMinor: number; localAmountFormatted: string; currency: string; payable?: boolean; availabilityReason?: string | null; }
 export interface StarTransaction { id:string; type:string; stars:number; balanceAfter:number; packageKey:string|null; countryCode:string|null; currency:string|null; amountMinor:number|null; reference:string|null; createdAt:string; }
-export interface SavedPaymentMethod { id:string; provider:string; email:string; brand:string|null; cardType:string|null; last4:string|null; expMonth:number|null; expYear:number|null; bank:string|null; countryCode:string|null; currency:string|null; reusable:boolean; createdAt:string; }
+
 export interface RefundCaseMessage {
   id:string; senderType:"user"|"ai"|"system"; senderEmail:string|null; body:string; createdAt:string;
 }
@@ -99,8 +108,16 @@ export const ordersPaymentsService = {
     return api.post<{success:boolean;mode:string;checkoutUrl:string|null;accessCode:string|null;reference:string;redomTransactionId:string|null;status?:string;channel?:string;attemptNumber?:number;paymentMethodTypes?:string[]}>("/orders-payments/stars/initialize",input);
   },
   paymentMethods() { return api.get<{success:boolean;methods:SavedPaymentMethod[]}>("/orders-payments/payment-methods"); },
-  setupPaymentMethod() { return api.post<{success:boolean;checkoutUrl:string;accessCode:string;reference:string;currency:string;amountMinor:number;verificationUsdAmount:number}>("/orders-payments/payment-methods/setup",{}); },
-  reportPaymentProblem(input:{transactionKey:string;transactionNumber:string;email:string;description:string}) {
+  paymentMethodDetails(id:string) { return api.get<{success:boolean;method:SavedPaymentMethodDetails}>("/orders-payments/payment-methods/"+encodeURIComponent(id)); },
+  paymentMethodCountries() { return api.get<{success:boolean;countries:PaymentMethodCountry[]}>("/orders-payments/payment-methods/countries"); },
+  stripePublishableKey() { return api.get<{success:boolean;publishableKey:string}>("/orders-payments/payment-methods/stripe/publishable-key"); },
+  setupStripePaymentMethod(input:{paymentMethodId:string;name:string}) { return api.post<{success:boolean;setupIntentId:string;clientSecret:string|null;status:string;method?:SavedPaymentMethod}>("/orders-payments/payment-methods/setup",input); },
+  finalizeStripePaymentMethod(setupIntentId:string) { return api.post<{success:boolean;status:string;method?:SavedPaymentMethod}>("/orders-payments/payment-methods/setup/finalize",{setupIntentId}); },
+  requestPaymentMethodRemoval(id:string) { return api.post<{success:boolean;channel:string;target:string;expiresAt:string}>("/orders-payments/payment-methods/"+encodeURIComponent(id)+"/removal-challenge",{}); },
+  verifyPaymentMethodRemoval(id:string,code:string) { return api.post<{success:boolean;locked?:boolean;lockedUntil?:string;codeInvalid?:boolean;attemptsRemaining?:number;channel?:string;target?:string;expiresAt?:string;message?:string}>("/orders-payments/payment-methods/"+encodeURIComponent(id)+"/removal-challenge/verify",{code}); },
+  backupPaymentMethods() { return api.get<{success:boolean;enabled:boolean}>("/orders-payments/payment-settings/backup"); },
+  setBackupPaymentMethods(enabled:boolean) { return api.patch<{success:boolean;enabled:boolean}>("/orders-payments/payment-settings/backup",{enabled}); },
+  reportPaymentProblem(input:{transactionKey?:string;transactionNumber?:string;paymentMethodId?:string;email?:string;description:string}) {
     return api.post<{success:boolean;caseNumber:string}>("/support/payment-problem", input);
   },
   removePaymentMethod(id:string,password:string) { return api.delete<{success:boolean}>("/orders-payments/payment-methods/"+encodeURIComponent(id),{password}); },
