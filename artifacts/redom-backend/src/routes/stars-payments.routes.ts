@@ -10,7 +10,7 @@ import { geocodePlace } from "../lib/mapbox";
 import { createStripeStarsCheckout } from "../services/payments/stripe-payment.service";
 import { createStarsTrialSetupCheckout, getStarsTrialEligibility, TERMS_VERSION } from "../services/payments/stripe-stars-trial.service";
 import { getStripeStarsCountries, getStripeStarsCountry, stripeMinimumMinor } from "../services/payments/stripe-country.service";
-import { createStripeCardSetup, finalizeStripeCardSetup, listStripeCardMethods, getStripeCardMethodForUser, detachStripeCardMethod } from "../services/payments/stripe-saved-payment.service";
+import { createStripeCardSetup, finalizeStripeCardSetup, createStripeCardSetupCheckout, finalizeStripeCardSetupCheckout, listStripeCardMethods, getStripeCardMethodForUser, detachStripeCardMethod } from "../services/payments/stripe-saved-payment.service";
 import { createSupportCase, addSupportMessage } from "../services/support/support.service";
 import { Resend } from "resend";
 import { twilioSmsProvider } from "../lib/providers/sms/twilio-sms-provider";
@@ -277,6 +277,41 @@ router.get("/payment-methods/countries", authMiddleware, async (_req,res)=>{
     const countries=all.map((x:any)=>({isoCode:String(x.id).toUpperCase(),name:String(names.of(String(x.id).toUpperCase())||x.id)})).sort((a:any,b:any)=>a.name.localeCompare(b.name));
     return res.json({success:true,countries});
   } catch { return res.status(502).json({success:false,message:"Unable to load supported payment countries."}); }
+});
+router.post("/payment-methods/setup/checkout", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId;
+  const parsed=z.object({name:z.string().trim().min(1).max(180),returnUrl:z.string().url(),cancelUrl:z.string().url().optional()}).safeParse(req.body);
+  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  if(!parsed.success)return res.status(400).json({success:false,message:"A valid return URL and cardholder name are required."});
+  const returnUrl=parsed.data.returnUrl;
+  if(!/^(redom|exp):\/\//i.test(returnUrl))return res.status(400).json({success:false,message:"Unsupported ReDom return URL."});
+  const cancelUrl=parsed.data.cancelUrl&&/^(redom|exp):\/\//i.test(parsed.data.cancelUrl)?parsed.data.cancelUrl:returnUrl;
+  const successPage="https://redom-backend.onrender.com/redom-backend/orders-payments/payment-methods/setup/web/success?return_url="+encodeURIComponent(returnUrl)+"&session_id={CHECKOUT_SESSION_ID}";
+  const cancelPage="https://redom-backend.onrender.com/redom-backend/orders-payments/payment-methods/setup/web/cancel?return_url="+encodeURIComponent(cancelUrl);
+  try {
+    const user=await getUser(userId); if(!user?.email)return res.status(400).json({success:false,message:"A verified email address is required."});
+    const result=await createStripeCardSetupCheckout({userId,email:String(user.email),name:parsed.data.name,successUrl:successPage,cancelUrl:cancelPage});
+    return res.json({success:true,...result});
+  } catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to start secure Stripe card entry."});}
+});
+router.post("/payment-methods/setup/checkout/finalize", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId; const parsed=z.object({sessionId:z.string().regex(/^cs_[A-Za-z0-9_]+$/)}).safeParse(req.body);
+  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  if(!parsed.success)return res.status(400).json({success:false,message:"Invalid Checkout Session."});
+  try{return res.json({success:true,...await finalizeStripeCardSetupCheckout(userId,parsed.data.sessionId)});}
+  catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to finalize the secure card save."});}
+});
+router.get("/payment-methods/setup/web/success", async (req,res)=>{
+  const returnUrl=typeof req.query.return_url==="string"?req.query.return_url:"";
+  const sessionId=typeof req.query.session_id==="string"?req.query.session_id:"";
+  if(!/^(redom|exp):\/\//i.test(returnUrl)||!/^cs_[A-Za-z0-9_]+$/.test(sessionId))return res.status(400).send("Invalid ReDom Pay return request.");
+  const target=returnUrl+(returnUrl.includes("?")?"&":"?")+"session_id="+encodeURIComponent(sessionId);
+  res.type("html").send("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ReDom Pay</title></head><body style=\"font-family:Arial;text-align:center;padding:48px\"><h2>Card setup complete</h2><p>Returning to ReDom Pay securely…</p><p><a href=\""+target.replace(/&/g,"&amp;")+"\">Return to ReDom</a></p><script>setTimeout(function(){location.href="+JSON.stringify(target)+"},350);</script></body></html>");
+});
+router.get("/payment-methods/setup/web/cancel", async (req,res)=>{
+  const returnUrl=typeof req.query.return_url==="string"?req.query.return_url:"";
+  if(!/^(redom|exp):\/\//i.test(returnUrl))return res.status(400).send("Invalid ReDom Pay return request.");
+  res.type("html").send("<!doctype html><html><body style=\"font-family:Arial;text-align:center;padding:48px\"><h2>Card setup cancelled</h2><p>You can return to ReDom Pay and try again.</p><p><a href=\""+returnUrl.replace(/&/g,"&amp;")+"\">Return to ReDom</a></p></body></html>");
 });
 router.post("/payment-methods/setup", authMiddleware, async (req,res)=>{
   const userId=req.user?.userId; if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
