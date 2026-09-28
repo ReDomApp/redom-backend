@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { initializeSubscriptionRenewal, verifyPayment, handlePaymentWebhook, verifyPaymentFromCallback, sendPaymentEmailForReference } from "../services/payments/payment.service";
+import { verifyStripePayment, handleStripeWebhook, stripeCallbackRedirect } from "../services/payments/stripe-payment.service";
 
 const router = Router();
 
@@ -22,12 +23,23 @@ router.get("/verify/:reference", authMiddleware, async (req, res) => {
   const reference = z.string().min(8).max(100).regex(/^[A-Za-z0-9_.=-]+$/).safeParse(req.params.reference);
   if (!reference.success) return res.status(400).json({ success: false, message: "Invalid payment reference." });
   try {
-    const payment = await verifyPayment(req.user.userId, reference.data);
+    const stripeTx = await pool.query("SELECT metadata FROM payment_transactions WHERE reference=$1 AND user_id=$2 LIMIT 1",[reference.data,req.user.userId]);
+    let stripeMetadata:any={}; try { stripeMetadata = stripeTx.rows[0]?.metadata ? (typeof stripeTx.rows[0].metadata==="string" ? JSON.parse(stripeTx.rows[0].metadata) : stripeTx.rows[0].metadata) : {}; } catch {}
+    const payment = stripeMetadata?.provider === "stripe" ? await verifyStripePayment(req.user.userId, reference.data) : await verifyPayment(req.user.userId, reference.data);
     if (payment.status === "paid") await sendPaymentEmailForReference(reference.data);
     return res.json({ success: true, payment });
   } catch (error) {
     return res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to verify payment." });
   }
+});
+
+router.get("/stripe/callback", async (req,res)=>{
+  const reference=z.string().min(8).max(100).regex(/^[A-Za-z0-9_.=-]+$/).safeParse(req.query.reference);
+  const sessionId=typeof req.query.session_id==="string" ? req.query.session_id : undefined;
+  const status=typeof req.query.status==="string" ? req.query.status : undefined;
+  if(!reference.success)return res.status(400).send("Invalid Stripe payment reference.");
+  const target=await stripeCallbackRedirect(reference.data,sessionId,status);
+  return res.redirect(target);
 });
 
 router.get("/callback", async (req, res) => {
