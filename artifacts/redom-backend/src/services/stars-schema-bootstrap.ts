@@ -11,7 +11,7 @@ export async function ensureStarsSchema(): Promise<void> {
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     payment_transaction_id uuid REFERENCES payment_transactions(id) ON DELETE SET NULL,
-    type varchar(20) NOT NULL CHECK (type IN ('purchase','adjustment','refund')),
+    type varchar(20) NOT NULL CHECK (type IN ('purchase','adjustment','refund','trial')),
     stars bigint NOT NULL,
     balance_after bigint NOT NULL CHECK (balance_after >= 0),
     package_key varchar(50),
@@ -21,6 +21,32 @@ export async function ensureStarsSchema(): Promise<void> {
     reference varchar(100),
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS redom_stars_trials (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    status varchar(30) NOT NULL CHECK (status IN ('active','conversion_pending','conversion_paid','conversion_failed','retry_pending','conversion_failed_final')),
+    trial_started_at timestamptz NOT NULL,
+    trial_ends_at timestamptz NOT NULL,
+    stars_granted bigint NOT NULL DEFAULT 20 CHECK (stars_granted = 20),
+    conversion_stars bigint NOT NULL DEFAULT 10 CHECK (conversion_stars = 10),
+    country_code varchar(2) NOT NULL,
+    currency varchar(3) NOT NULL,
+    conversion_amount_minor bigint NOT NULL CHECK (conversion_amount_minor > 0),
+    stripe_customer_id varchar(255),
+    stripe_payment_method_id varchar(255),
+    consent_terms_version varchar(100) NOT NULL,
+    consent_timestamp timestamptz NOT NULL,
+    consent_disclosure text NOT NULL,
+    conversion_attempt_number integer NOT NULL DEFAULT 0 CHECK (conversion_attempt_number IN (0,1,2)),
+    first_conversion_attempt_at timestamptz,
+    retry_at timestamptz,
+    final_conversion_status varchar(30),
+    stripe_payment_intent_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+    failure_reason varchar(500),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS redom_stars_trials_due_idx ON redom_stars_trials(status, trial_ends_at, retry_at)`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS reward_value_minor bigint`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS creator_share_minor bigint`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS redom_gross_minor bigint`);
