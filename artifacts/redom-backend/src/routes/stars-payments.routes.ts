@@ -260,10 +260,6 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       paymentMethodTypes: stripe.paymentMethodTypes,
     });
   } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally { client.release(); }
-  } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to start Stars payment.";
     return res.status(400).json({ success: false, message });
   }
