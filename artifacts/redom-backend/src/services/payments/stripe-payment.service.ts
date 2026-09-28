@@ -188,7 +188,7 @@ async function markStripeFailed(reference: string, message: string, gatewayStatu
 
 export async function handleStripeWebhook(rawBody: Buffer, signature: string | undefined): Promise<void> {
   const supplied = String(signature ?? "");
-  const match = supplied.match(/(?:^|,)[eventKey]*t=([eventKey]+)(?:,|$).*?(?:^|,)[eventKey]*v1=([a-f0-9]+)(?:,|$)/i);
+  const match = supplied.match(/(?:^|,)\\s*t=(\\d+)(?:,|$).*?(?:^|,)\\s*v1=([a-f0-9]+)(?:,|$)/i);
   if (!match) throw new Error("Invalid Stripe webhook signature.");
   const timestamp = Number(match[1]);
   if (!Number.isFinite(timestamp) || Math.abs(Date.now()/1000 - timestamp) > 300) throw new Error("Expired Stripe webhook signature.");
@@ -236,7 +236,7 @@ export async function handleStripeWebhook(rawBody: Buffer, signature: string | u
         }
       }
     }
-    await pool.query("UPDATE payment_webhook_events SET processed=true,processed_at=now(),processing_error=NULL WHERE event_key=$1",["stripe:"+eventId]);
+    await pool.query("UPDATE payment_webhook_events SET processed=true,processed_at=now(),processing_error=NULL WHERE event_key=$1",[eventKey]);
   } catch(error) {
     await pool.query("UPDATE payment_webhook_events SET processing_error=$1 WHERE event_key=$2",[error instanceof Error?error.message:String(error),"stripe:"+eventId]);
     throw error;
