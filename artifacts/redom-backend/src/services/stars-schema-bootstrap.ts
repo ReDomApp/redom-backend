@@ -21,6 +21,26 @@ export async function ensureStarsSchema(): Promise<void> {
     reference varchar(100),
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS redom_stars_trial_setups (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    reference varchar(100) NOT NULL UNIQUE,
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    stripe_session_id varchar(255) NOT NULL UNIQUE,
+    stripe_setup_intent_id varchar(255),
+    stripe_customer_id varchar(255),
+    stripe_payment_method_id varchar(255),
+    terms_version varchar(100) NOT NULL,
+    consent_timestamp timestamptz NOT NULL,
+    consent_disclosure text NOT NULL,
+    country_code varchar(2) NOT NULL,
+    currency varchar(3) NOT NULL,
+    conversion_amount_minor bigint NOT NULL CHECK (conversion_amount_minor > 0),
+    status varchar(30) NOT NULL DEFAULT 'open',
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS redom_stars_trial_setups_user_idx ON redom_stars_trial_setups(user_id,created_at DESC)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS redom_stars_trials (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
