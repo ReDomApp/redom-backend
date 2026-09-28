@@ -1,24 +1,106 @@
-import React,{useEffect,useState}from"react";
-import{SafeAreaView,View,Text,Pressable,StyleSheet,ScrollView,ActivityIndicator}from"react-native";
+import React,{useCallback,useEffect,useMemo,useState}from"react";
+import{ActivityIndicator,Linking,Pressable,ScrollView,StyleSheet,Text,View}from"react-native";
 import{useNavigation}from"@react-navigation/native";
 import{useTheme}from"../theme/ThemeProvider";
-import{ordersPaymentsService}from"../services/ordersPaymentsService";import type{StarCountry,StarPackage}from"../services/ordersPaymentsService";
+import{ordersPaymentsService}from"../services/ordersPaymentsService";
+import type{StarCountry,StarPackage}from"../services/ordersPaymentsService";
 import BackIcon from"../assets/navigation/back.svg";
+import ReDomLogo from"../assets/brand/redom-logo.svg";
+
+type Step="catalog"|"payment";
+type PaymentResult="processing"|"success"|"failed"|null;
 
 export function BuyStarsScreen(){
  const n=useNavigation<any>();const{colors}=useTheme();
  const[countries,setCountries]=useState<StarCountry[]>([]);const[packages,setPackages]=useState<StarPackage[]>([]);
- const[country,setCountry]=useState<StarCountry|null>(null);const[loading,setLoading]=useState(true);
- useEffect(()=>{void ordersPaymentsService.starsCatalog().then(r=>{setCountries(r.countries);setPackages(r.packages)}).finally(()=>setLoading(false))},[]);
- const choose=(c:StarCountry)=>{setCountry(c);void ordersPaymentsService.starsCatalog(c.isoCode).then(r=>setPackages(r.packages))};
- return <SafeAreaView style={[s.root,{backgroundColor:colors.background}]}>
-  <View style={[s.header,{backgroundColor:colors.surface,borderBottomColor:colors.border}]}><Pressable onPress={()=>n.goBack()}><BackIcon width={24} height={24}/></Pressable><Text style={[s.title,{color:colors.text}]}>Buy ReDom Stars</Text></View>
-  <ScrollView contentContainerStyle={s.content}>
-   <Text style={[s.heading,{color:colors.text}]}>Choose your country first</Text>
-   <Text style={[s.sub,{color:colors.textSecondary}]}>This determines the currency and payment options available for your purchase.</Text>
-   {loading?<ActivityIndicator color={colors.primary}/>:countries.map(c=><Pressable key={c.isoCode} onPress={()=>choose(c)} style={[s.country,{backgroundColor:colors.surface,borderColor:country?.isoCode===c.isoCode?colors.primary:colors.border}]}><Text style={[s.countryName,{color:colors.text}]}>{c.name}</Text><Text style={{color:colors.textSecondary}}>{c.currency}</Text></Pressable>)}
-   {country?<><Text style={[s.heading,{color:colors.text,marginTop:24}]}>Choose Stars</Text>{packages.map(p=><Pressable key={p.key} onPress={()=>n.navigate("StarsCheckout",{packageKey:p.key,countryCode:country.isoCode})} style={[s.package,{backgroundColor:colors.surface,borderColor:p.popular?colors.primary:colors.border}]}><View style={{flex:1}}>{p.popular?<View style={[s.badge,{backgroundColor:colors.primary}]}><Text style={s.badgeText}>MOST POPULAR</Text></View>:null}<Text style={[s.stars,{color:colors.text}]}>{p.stars.toLocaleString()} Stars</Text>{p.firstPurchaseUsdPrice!=null&&p.usdPrice<p.regularUsdPrice?<View style={s.priceRow}><Text style={[s.oldPrice,{color:colors.textSecondary}]}>$ {p.regularUsdPrice.toFixed(2)}</Text><Text style={[s.discount,{color:colors.primary}]}>{p.firstPurchaseDiscountPercent}% OFF</Text></View>:null}<Text style={{color:colors.textSecondary}}>USD {p.usdPrice.toFixed(2)}</Text></View><Text style={[s.price,{color:colors.text}]}>{p.localAmountFormatted}</Text></Pressable>)}</>:null}
-  </ScrollView>
- </SafeAreaView>
+ const[country,setCountry]=useState<StarCountry|null>(null);const[selected,setSelected]=useState<StarPackage|null>(null);
+ const[loading,setLoading]=useState(true);const[countryOpen,setCountryOpen]=useState(false);const[step,setStep]=useState<Step>("catalog");
+ const[agreed,setAgreed]=useState(false);const[processing,setProcessing]=useState(false);const[result,setResult]=useState<PaymentResult>(null);const[reference,setReference]=useState<string|null>(null);
+
+ useEffect(()=>{let active=true;void ordersPaymentsService.starsCatalog().then(r=>{if(!active)return;setCountries(r.countries);setPackages(r.packages);if(r.selectedCountry)setCountry(r.selectedCountry)}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[]);
+ const chooseCountry=useCallback((c:StarCountry)=>{setCountry(c);setCountryOpen(false);setSelected(null);void ordersPaymentsService.starsCatalog(c.isoCode).then(r=>setPackages(r.packages))},[]);
+ const openPackage=useCallback((pkg:StarPackage)=>{if(pkg.payable===false)return;setSelected(pkg);setAgreed(false);setResult(null);setStep("payment")},[]);
+ const priceText=useCallback((pkg:StarPackage)=>pkg.currency==="USD"?"$"+pkg.usdPrice.toFixed(2)+" USD":"$"+pkg.usdPrice.toFixed(2)+" USD • "+pkg.localAmountFormatted,[]);
+ const verifyAndResolve=useCallback(async(ref:string)=>{setReference(ref);setProcessing(true);for(let i=0;i<24;i+=1){try{const r=await ordersPaymentsService.verifyPayment(ref);const status=String(r.payment.status);if(status==="paid"){setResult("success");setProcessing(false);return}if(["failed","abandoned","reversed"].includes(status)){setResult("failed");setProcessing(false);return}}catch{}await new Promise(resolve=>setTimeout(resolve,5000))}setResult("failed");setProcessing(false)},[]);
+ useEffect(()=>{const handle=({url}:{url:string})=>{if(!url.startsWith("redom://payment/callback"))return;const m=url.match(/[?&]reference=([^&]+)/);const ref=m?decodeURIComponent(m[1]):reference;if(ref)void verifyAndResolve(ref)};const sub=Linking.addEventListener("url",handle);void Linking.getInitialURL().then(url=>{if(url?.startsWith("redom://payment/callback")){const m=url.match(/[?&]reference=([^&]+)/);const ref=m?decodeURIComponent(m[1]):reference;if(ref)void verifyAndResolve(ref)}}).catch(()=>undefined);return()=>sub.remove()},[reference,verifyAndResolve]);
+ const continueToCheckout=useCallback(async()=>{if(!country||!selected||!agreed)return;setProcessing(true);setResult(null);try{const r=await ordersPaymentsService.initializeStars({packageKey:selected.key,countryCode:country.isoCode,email:"",preferredChannel:"card"});setReference(r.reference);if(!r.checkoutUrl)throw new Error("ReDom Pay did not receive a secure checkout URL.");await Linking.openURL(r.checkoutUrl)}catch{setProcessing(false);setResult("failed")}},[country,selected,agreed]);
+ const discountAmount=useMemo(()=>selected&&selected.regularUsdPrice>selected.usdPrice?(selected.regularUsdPrice-selected.usdPrice).toFixed(2):null,[selected]);
+
+ if(loading)return <View style={styles.overlay}><View style={[styles.sheet,{backgroundColor:colors.surface}]}><ActivityIndicator style={{marginTop:50}} color={colors.primary}/></View></View>;
+
+ if(result==="success")return <View style={styles.overlay}><View style={[styles.sheet,{backgroundColor:colors.surface}]}><View style={styles.sheetHandle}/><View style={styles.header}><Pressable onPress={()=>n.goBack()}><BackIcon width={25} height={25}/></Pressable><Text style={[styles.headerTitle,{color:colors.text}]}>Payment</Text><View style={{width:25}}/></View><View style={styles.resultWrap}><Text style={styles.successMark}>✓</Text><Text style={[styles.resultTitle,{color:colors.text}]}>Transaction successful</Text><Text style={[styles.resultText,{color:colors.textSecondary}]}>Your payment has been confirmed and your ReDom Stars balance is being updated.</Text><Pressable onPress={()=>n.navigate("StarsActivity",{refresh:Date.now()})} style={[styles.primaryButton,{backgroundColor:colors.primary}]}><Text style={styles.primaryText}>View Stars Activity</Text></Pressable></View></View></View>;
+
+ if(result==="failed")return <View style={styles.overlay}><View style={[styles.sheet,{backgroundColor:colors.surface}]}><View style={styles.sheetHandle}/><View style={styles.header}><Pressable onPress={()=>{setResult(null);setProcessing(false)}}><BackIcon width={25} height={25}/></Pressable><Text style={[styles.headerTitle,{color:colors.text}]}>Payment</Text><View style={{width:25}}/></View><View style={styles.resultWrap}><Text style={styles.failMark}>!</Text><Text style={[styles.resultTitle,{color:colors.text}]}>Payment failed</Text><Text style={[styles.resultText,{color:colors.textSecondary}]}>We couldn't complete this payment attempt.</Text><Pressable onPress={()=>{setResult(null);setStep("payment");setAgreed(false)}} style={[styles.primaryButton,{backgroundColor:colors.primary}]}><Text style={styles.primaryText}>Return to payment</Text></Pressable></View></View></View>;
+
+ return <View style={styles.overlay}><View style={[styles.sheet,{backgroundColor:colors.surface}]}>
+  <View style={styles.sheetHandle}/>
+  <View style={[styles.header,{borderBottomColor:colors.border}]}>
+   <Pressable onPress={()=>step==="payment"?setStep("catalog"):n.goBack()} hitSlop={10}><BackIcon width={25} height={25}/></Pressable>
+   <View style={styles.headerBrand}><ReDomLogo width={30} height={24}/><Text style={[styles.headerTitle,{color:colors.text}]}>{step==="payment"?"Payment":"Buy Stars"}</Text></View>
+   <View style={{width:25}}/>
+  </View>
+  {step==="catalog"?<ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+   <Text style={[styles.heading,{color:colors.text}]}>Choose your country</Text>
+   <Pressable onPress={()=>setCountryOpen(v=>!v)} style={[styles.countryField,{backgroundColor:colors.surface,borderColor:colors.border}]}>
+    <View><Text style={[styles.fieldLabel,{color:colors.textSecondary}]}>Choose country</Text><Text style={[styles.fieldValue,{color:colors.text}]}>{country?.name||"Choose country"}{country?"  •  "+country.currency:""}</Text></View><Text style={[styles.chevron,{color:colors.textSecondary}]}>{countryOpen?"⌃":"⌄"}</Text>
+   </Pressable>
+   {countryOpen?<View style={[styles.countryList,{borderColor:colors.border,backgroundColor:colors.surface}]}>{countries.map(c=><Pressable key={c.isoCode} onPress={()=>chooseCountry(c)} style={styles.countryOption}><Text style={[styles.countryName,{color:colors.text}]}>{c.name}</Text><Text style={[styles.countryCurrency,{color:colors.textSecondary}]}>{c.currency}</Text></Pressable>)}</View>:null}
+   {country?<><Text style={[styles.sectionTitle,{color:colors.text}]}>ReDom Stars</Text>
+   {packages.map(pkg=><Pressable key={pkg.key} onPress={()=>openPackage(pkg)} style={({pressed})=>[styles.packageCard,{backgroundColor:colors.surface,borderColor:pkg.popular?colors.primary:colors.border,opacity:pressed?.65:1}]}>
+    <View style={{flex:1}}>{pkg.popular?<View style={[styles.badge,{backgroundColor:colors.primary}]}><Text style={styles.badgeText}>MOST POPULAR</Text></View>:null}
+     <Text style={[styles.packageStars,{color:colors.text}]}>{pkg.stars.toLocaleString()} Stars</Text>
+     {pkg.firstPurchaseUsdPrice!=null&&pkg.usdPrice<pkg.regularUsdPrice?<View style={styles.discountRow}><Text style={[styles.oldPrice,{color:colors.textSecondary}]}>$"+pkg.regularUsdPrice.toFixed(2)</Text><Text style={[styles.discount,{color:colors.primary}]}>{pkg.firstPurchaseDiscountPercent}% OFF</Text></View>:null}
+     <Text style={[styles.packagePrice,{color:colors.text}]}>{priceText(pkg)}</Text>
+     {pkg.currency!=="USD"?<Text style={[styles.localPrice,{color:colors.textSecondary}]}>{pkg.localAmountFormatted}</Text>:null}
+    </View><Text style={[styles.arrow,{color:colors.textSecondary}]}>›</Text>
+   </Pressable>)}
+   <View style={[styles.trialCard,{borderColor:colors.primary,backgroundColor:colors.surface}]}>
+    <Text style={[styles.trialTitle,{color:colors.text}]}>20 ReDom Stars</Text><Text style={[styles.trialSub,{color:colors.primary}]}>7-day trial</Text><Text style={[styles.trialText,{color:colors.textSecondary}]}>No charge today</Text>
+    <Text style={[styles.trialText,{color:colors.textSecondary}]}>After 7 days, a one-time payment for 10 Stars will be attempted using the authorized payment method.</Text>
+    <Text style={[styles.trialText,{color:colors.textSecondary}]}>If the payment fails, ReDom will retry once after 24 hours. If the second attempt fails, the transaction will be marked failed.</Text>
+    <Pressable onPress={()=>{const p=packages.find(x=>x.stars===20);if(p){setSelected(p);setAgreed(false);setStep("payment")}}} style={[styles.trialButton,{borderColor:colors.primary}]}><Text style={[styles.trialButtonText,{color:colors.primary}]}>Start 7-day trial</Text></Pressable>
+   </View>
+   </>:null}
+  </ScrollView>:<ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+   {selected?<><View style={[styles.summaryCard,{borderColor:colors.border,backgroundColor:colors.surface}]}>
+    <Text style={[styles.sectionTitleSmall,{color:colors.text}]}>ReDom Stars</Text><Text style={[styles.selectedStars,{color:colors.text}]}>{selected.stars.toLocaleString()} Stars</Text>
+    <Text style={[styles.detail,{color:colors.textSecondary}]}>Selected country: {country?.name}</Text><Text style={[styles.detail,{color:colors.textSecondary}]}>Selected currency: {country?.currency}</Text>
+    <Text style={[styles.detail,{color:colors.textSecondary}]}>Current price: {priceText(selected)}</Text>
+    {discountAmount?<><Text style={[styles.detail,{color:colors.textSecondary}]}>Original price: $"+selected.regularUsdPrice.toFixed(2)</Text><Text style={[styles.detail,{color:colors.primary}]}>Discount: {selected.firstPurchaseDiscountPercent}% OFF • $"+discountAmount</Text></>:null}
+    <Text style={[styles.total,{color:colors.text}]}>Final amount: {selected.currency==="USD"?"$"+selected.usdPrice.toFixed(2):selected.localAmountFormatted}</Text>
+   </View>
+   <Text style={[styles.sectionTitleSmall,{color:colors.text}]}>Available payment methods</Text>
+   <View style={[styles.methodCard,{borderColor:colors.border,backgroundColor:colors.surface}]}><Text style={[styles.methodName,{color:colors.text}]}>Cards</Text><Text style={[styles.methodState,{color:colors.textSecondary}]}>Available</Text></View>
+   <Text style={[styles.smallText,{color:colors.textSecondary}]}>Other payment methods available in your region are determined by the payment provider for this country, currency, amount, and payment flow.</Text>
+   <Text style={[styles.sectionTitleSmall,{color:colors.text}]}>ReDom Terms</Text>
+   <View style={[styles.termsCard,{borderColor:colors.border,backgroundColor:colors.surface}]}><Text style={[styles.termsText,{color:colors.textSecondary}]}>By continuing, you agree to the applicable ReDom payment Terms and authorize the payment described above. The final payment amount is determined by the selected package and the current backend catalog.</Text><Text style={[styles.termsText,{color:colors.textSecondary}]}>For a future-payment offer, the authorization disclosure must be read before consent is given.</Text></View>
+   <Pressable onPress={()=>setAgreed(v=>!v)} style={styles.checkboxRow}><View style={[styles.checkbox,{borderColor:agreed?colors.primary:colors.border,backgroundColor:agreed?colors.primary:"transparent"}]}>{agreed?<Text style={styles.check}>✓</Text>:null}</View><Text style={[styles.agreement,{color:colors.text}]}>I agree to the ReDom Terms and authorize the payment described above.</Text></Pressable>
+   <Pressable disabled={!agreed||processing} onPress={()=>void continueToCheckout()} style={[styles.primaryButton,{backgroundColor:agreed&&!processing?colors.primary:colors.border}]}><Text style={styles.primaryText}>{processing?"Processing…":"Continue to checkout"}</Text></Pressable>
+   <Text style={[styles.security,{color:colors.textSecondary}]}>Do not enter your ReDom password, payment PIN, CVV, full card number, or security code into this ReDom terms screen.</Text>
+   </>:<Text style={[styles.smallText,{color:colors.textSecondary}]}>Select a Stars package to continue.</Text>}
+  </ScrollView>}
+ </View></View>
 }
-const s=StyleSheet.create({root:{flex:1},header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",paddingHorizontal:14},title:{fontSize:19,fontWeight:"800",marginLeft:12},content:{padding:20,paddingBottom:50},heading:{fontSize:24,fontWeight:"900",marginBottom:7},sub:{fontSize:15,lineHeight:22,marginBottom:16},country:{padding:16,borderWidth:1,borderRadius:14,marginBottom:9,flexDirection:"row",justifyContent:"space-between"},countryName:{fontSize:17,fontWeight:"700"},package:{padding:17,borderWidth:1,borderRadius:16,marginBottom:10,flexDirection:"row",justifyContent:"space-between",alignItems:"center"},stars:{fontSize:18,fontWeight:"800"},price:{fontSize:17,fontWeight:"800"},badge:{alignSelf:"flex-start",paddingHorizontal:9,paddingVertical:5,borderRadius:999,marginBottom:7},badgeText:{color:"#fff",fontSize:10,fontWeight:"900",letterSpacing:.5},priceRow:{flexDirection:"row",alignItems:"center",gap:8},oldPrice:{fontSize:13,textDecorationLine:"line-through"},discount:{fontSize:12,fontWeight:"900"}});
+
+const styles=StyleSheet.create({
+ overlay:{flex:1,backgroundColor:"rgba(0,0,0,0.28)",justifyContent:"flex-end"},
+ sheet:{height:"92%",borderTopLeftRadius:28,borderTopRightRadius:28,overflow:"hidden"},
+ sheetHandle:{width:42,height:4,borderRadius:2,backgroundColor:"#BCC0C4",alignSelf:"center",marginTop:8,marginBottom:4},
+ header:{height:58,borderBottomWidth:1,flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:18},
+ headerBrand:{flex:1,flexDirection:"row",alignItems:"center",justifyContent:"center",gap:6},headerTitle:{fontSize:21,fontWeight:"800"},
+ content:{padding:20,paddingBottom:55},heading:{fontSize:24,fontWeight:"900",marginBottom:12},
+ countryField:{minHeight:64,borderWidth:1,borderRadius:16,paddingHorizontal:16,paddingVertical:10,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+ fieldLabel:{fontSize:12,fontWeight:"700"},fieldValue:{fontSize:17,fontWeight:"700",marginTop:2},chevron:{fontSize:24},
+ countryList:{borderWidth:1,borderRadius:16,marginTop:8,overflow:"hidden"},countryOption:{padding:14,borderBottomWidth:1,borderBottomColor:"#DADDE1",flexDirection:"row",justifyContent:"space-between"},countryName:{fontSize:16,fontWeight:"700"},countryCurrency:{fontSize:15},
+ sectionTitle:{fontSize:22,fontWeight:"900",marginTop:25,marginBottom:11},sectionTitleSmall:{fontSize:20,fontWeight:"900",marginTop:21,marginBottom:10},
+ packageCard:{minHeight:82,borderWidth:1,borderRadius:17,padding:15,marginBottom:10,flexDirection:"row",alignItems:"center"},packageStars:{fontSize:18,fontWeight:"800"},packagePrice:{fontSize:15,fontWeight:"800",marginTop:5},localPrice:{fontSize:14,marginTop:2},arrow:{fontSize:29},
+ badge:{alignSelf:"flex-start",paddingHorizontal:8,paddingVertical:4,borderRadius:999,marginBottom:6},badgeText:{color:"#fff",fontSize:9,fontWeight:"900",letterSpacing:.4},
+ discountRow:{flexDirection:"row",gap:8,alignItems:"center",marginTop:4},oldPrice:{fontSize:13,textDecorationLine:"line-through"},discount:{fontSize:12,fontWeight:"900"},
+ trialCard:{borderWidth:2,borderRadius:18,padding:17,marginTop:9},trialTitle:{fontSize:19,fontWeight:"900"},trialSub:{fontSize:16,fontWeight:"900",marginTop:3},trialText:{fontSize:14,lineHeight:20,marginTop:8},trialButton:{height:48,borderWidth:1.5,borderRadius:24,alignItems:"center",justifyContent:"center",marginTop:15},trialButtonText:{fontSize:16,fontWeight:"900"},
+ summaryCard:{borderWidth:1,borderRadius:18,padding:17},selectedStars:{fontSize:25,fontWeight:"900",marginBottom:8},detail:{fontSize:14,lineHeight:21},total:{fontSize:19,fontWeight:"900",marginTop:12},
+ methodCard:{borderWidth:1,borderRadius:15,padding:15,flexDirection:"row",justifyContent:"space-between",alignItems:"center"},methodName:{fontSize:16,fontWeight:"800"},methodState:{fontSize:15},
+ smallText:{fontSize:14,lineHeight:21,marginTop:9},termsCard:{borderWidth:1,borderRadius:15,padding:15},termsText:{fontSize:14,lineHeight:21,marginBottom:8},
+ checkboxRow:{flexDirection:"row",alignItems:"flex-start",marginTop:17},checkbox:{width:24,height:24,borderWidth:2,borderRadius:6,alignItems:"center",justifyContent:"center",marginRight:10},check:{color:"#fff",fontSize:16,fontWeight:"900"},agreement:{flex:1,fontSize:15,lineHeight:21},
+ primaryButton:{height:56,borderRadius:28,alignItems:"center",justifyContent:"center",marginTop:22},primaryText:{color:"#fff",fontSize:17,fontWeight:"900"},security:{fontSize:12,lineHeight:18,textAlign:"center",marginTop:13},
+ resultWrap:{flex:1,alignItems:"center",justifyContent:"center",padding:24},successMark:{fontSize:48,fontWeight:"900",color:"#16a34a"},failMark:{fontSize:48,fontWeight:"900",color:"#dc2626"},resultTitle:{fontSize:25,fontWeight:"900",marginTop:12},resultText:{fontSize:16,lineHeight:24,textAlign:"center",marginTop:9}
+});
