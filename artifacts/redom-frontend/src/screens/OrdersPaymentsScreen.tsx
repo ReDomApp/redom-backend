@@ -1,4 +1,4 @@
-import { Pressable, SafeAreaView, StyleSheet, Text, View, Image } from "react-native";
+import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
@@ -12,6 +12,7 @@ import SecurityIcon from "../assets/home-feed/security-controls.svg";
 import HelpIcon from "../assets/home-feed/help-support.svg";
 import TermsIcon from "../assets/home-feed/terms-policies.svg";
 import ChevronIcon from "../assets/home-feed/chevron-right.svg";
+import ProfilePlaceholder from "../assets/home-feed/profile-placeholder.svg";
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -53,11 +54,7 @@ export function OrdersPaymentsScreen() {
             <MenuIcon width={29} height={29} />
           </Pressable>
           <View style={styles.avatarWrap}>
-            <Image
-              source={require("../assets/home-feed/profile-placeholder.svg")}
-              style={styles.avatar}
-              resizeMode="contain"
-            />
+            <ProfilePlaceholder width={34} height={34} />
           </View>
         </View>
       </View>
@@ -193,10 +190,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 2,
-  },
-  avatar: {
-    width: 34,
-    height: 34,
   },
   content: {
     paddingHorizontal: 31,
