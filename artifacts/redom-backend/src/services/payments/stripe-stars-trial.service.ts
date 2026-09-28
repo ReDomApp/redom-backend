@@ -95,6 +95,10 @@ export async function finalizeStarsTrialSetup(referenceValue:string){
  const setupIntentId=id(session);
  if(!setupIntentId) return {status:"processing"};
  const intent=await stripe<StripeSetupIntent>("get","/setup_intents/"+encodeURIComponent(setupIntentId));
+ if(["canceled","requires_payment_method"].includes(String(intent.status))){
+  await pool.query("UPDATE redom_stars_trial_setups SET status='failed',updated_at=now() WHERE id=$1",[row.id]);
+  return {status:"failed"};
+ }
  if(String(intent.status)!=="succeeded") return {status:"processing"};
  const customer=customerId(intent.customer??session.customer);
  const pm=paymentMethodId(intent.payment_method);
