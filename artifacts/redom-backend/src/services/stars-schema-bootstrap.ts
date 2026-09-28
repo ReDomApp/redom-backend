@@ -67,6 +67,8 @@ export async function ensureStarsSchema(): Promise<void> {
     updated_at timestamptz NOT NULL DEFAULT now()
   )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS redom_stars_trials_due_idx ON redom_stars_trials(status, trial_ends_at, retry_at)`);
+  await pool.query(`ALTER TABLE redom_stars_transactions DROP CONSTRAINT IF EXISTS redom_stars_transactions_type_check`);
+  await pool.query(`ALTER TABLE redom_stars_transactions ADD CONSTRAINT redom_stars_transactions_type_check CHECK (type IN ('purchase','adjustment','refund','trial'))`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS reward_value_minor bigint`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS creator_share_minor bigint`);
   await pool.query(`ALTER TABLE redom_stars_transactions ADD COLUMN IF NOT EXISTS redom_gross_minor bigint`);
