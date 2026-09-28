@@ -24,7 +24,7 @@ export function AddCardScreen(){
  useEffect(()=>{ordersPaymentsService.paymentMethodCountries().then(r=>setCountries(r.countries)).catch(()=>setCountries([{isoCode:"US",name:"United States"}]));},[]);
  useEffect(()=>{if(!processing)return;const t=setInterval(()=>setStatusIndex(i=>Math.min(i+1,statuses.length-1)),1500);return()=>clearInterval(t);},[processing]);
  const countryTitle=useMemo(()=>countryName(country),[country]);
- const ready=Boolean(card?.complete&&name.trim()&&address.trim()&&city.trim()&&postal.trim());
+ const ready=Boolean(card?.complete&&name.trim()&&address.trim()&&city.trim());
  const searchAddress=async(v:string)=>{setAddress(v);if(v.trim().length<3){setSuggestions([]);return;}try{setSuggestions((await ordersPaymentsService.addressSearch(v)).suggestions||[]);}catch{setSuggestions([]);}};
  const chooseAddress=(item:any)=>{const ctx=item.context||[];setAddress(item.placeName||"");setCity(contextValue(ctx,["place","locality","district"]));setState(contextValue(ctx,["region"]));setPostal(contextValue(ctx,["postcode"]));setSuggestions([]);};
  const save=async()=>{
@@ -49,7 +49,7 @@ export function AddCardScreen(){
     <Field label="Full name" value={name} onChangeText={setName} error={attempted&&!name.trim()?"Required":undefined}/>
     <View><Field label="Address" value={address} onChangeText={searchAddress}/>{suggestions.length>0&&<View style={s.suggestions}>{suggestions.slice(0,4).map((x:any)=><Pressable key={x.id} onPress={()=>chooseAddress(x)} style={s.suggestion}><Text style={s.suggestionText}>{x.placeName}</Text></Pressable>)}</View>}</View>
     <Field label="Address line 2 (optional)" value={line2} onChangeText={setLine2}/><Field label="City" value={city} onChangeText={setCity}/>
-    <View style={s.two}><View style={{flex:1}}><Field label={stateLabel(country)} value={state} onChangeText={setState}/></View><View style={{flex:1}}><Field label="Zip code" value={postal} onChangeText={setPostal}/></View></View>
+    <View style={s.two}><View style={{flex:1}}><Field label={stateLabel(country)} value={state} onChangeText={setState}/></View><View style={{flex:1}}><Field label={country==="US"?"Zip code":"Postal code"} value={postal} onChangeText={setPostal}/></View></View>
    </View>
    <Text style={s.policy}>This information will be saved with ReDom Pay and synced in Accounts Center, where it can be managed. <Text style={s.learn} onPress={()=>navigation.navigate("Policy",{slug:"saved"})}>Learn more</Text>.</Text>
    <Text style={s.consent}>By saving this card, you agree that ReDom Pay may securely save the card's provider token/payment-method information with secure ReDom third-party payment providers for future eligible payments.</Text>
