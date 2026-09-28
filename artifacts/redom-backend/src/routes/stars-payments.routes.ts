@@ -205,9 +205,12 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      const isAfrican = AFRICAN_COUNTRIES.has(country.isoCode);
+      const provider: "paystack" | "stripe" = isAfrican ? "paystack" : "stripe";
+      if (parsed.data.paymentMethodId && provider !== "paystack") throw new Error("Saved Paystack payment methods are available only for African payments.");
       const redomId = await uniqueRedomTransactionId(client, provider);
-      const paymentChannel = parsed.data.paymentMethodId ? "saved_card" : (parsed.data.preferredChannel ?? "card");
-      const reference = paymentChannel === "card" ? makeStripeReference() : makeReference();
+      const paymentChannel = parsed.data.paymentMethodId ? "saved_card" : (provider === "stripe" ? "card" : (parsed.data.preferredChannel ?? "card"));
+      const reference = provider === "stripe" ? makeStripeReference() : makeReference();
       const metadata = { provider, purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null, preferredChannel: paymentChannel };
       const inserted = await client.query(
         `INSERT INTO payment_transactions
