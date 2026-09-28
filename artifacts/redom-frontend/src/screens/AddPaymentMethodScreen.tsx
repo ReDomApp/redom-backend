@@ -4,8 +4,8 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
 import CloseIcon from "../assets/navigation/close.svg";
 import AddPaymentIcon from "../assets/home-feed/add-payment-method.svg";
-import PaymentIcon from "../assets/home-feed/orders-payments.svg";
-import BankIcon from "../assets/home-feed/currency.svg";
+import PaymentIcon from "../assets/payment/paypal.svg";
+import BankIcon from "../assets/payment/bank-payment.svg";
 import ChevronIcon from "../assets/home-feed/chevron-right.svg";
 
 type Nav=NativeStackNavigationProp<RootStackParamList>;
