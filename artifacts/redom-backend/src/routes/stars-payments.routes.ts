@@ -7,6 +7,7 @@ import { pool } from "../database/db";
 import { env } from "../config/env";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { geocodePlace } from "../lib/mapbox";
+import { createStripeStarsCheckout } from "../services/payments/stripe-payment.service";
 
 const router = Router();
 const API = "https://api.paystack.co";
@@ -87,6 +88,7 @@ async function paystack<T>(method: "get" | "post", path: string, data?: unknown)
   return response.data.data;
 }
 function makeReference(): string { return "rdstars-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
+function makeStripeReference(): string { return "rdstripe-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
 function makeSetupReference(): string { return "rdcard-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
 function makeRedomTransactionId(): string {
   const max = 10_000_000_000_000n;
@@ -201,8 +203,9 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
     try {
       await client.query("BEGIN");
       const redomId = await uniqueRedomTransactionId(client);
-      const reference = makeReference();
-      const metadata = { purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null, preferredChannel: parsed.data.preferredChannel ?? "card_or_bank_transfer" };
+      const paymentChannel = parsed.data.paymentMethodId ? "saved_card" : (parsed.data.preferredChannel ?? "card");
+      const reference = paymentChannel === "card" ? makeStripeReference() : makeReference();
+      const metadata = { purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null, preferredChannel: paymentChannel };
       const inserted = await client.query(
         `INSERT INTO payment_transactions
           (user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email)
@@ -220,6 +223,21 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       }
       await client.query("COMMIT");
 
+      if (!parsed.data.paymentMethodId && paymentChannel === "card") {
+        const stripe = await createStripeStarsCheckout({
+          userId,
+          reference,
+          redomTransactionId: redomId,
+          amountMinor: priced.amountMinor,
+          currency: priced.currency,
+          email: parsed.data.email,
+          stars: pkg.stars,
+          packageKey: pkg.key,
+          countryCode: country.isoCode,
+        });
+        return res.json({ success: true, mode: "stripe", checkoutUrl: stripe.checkoutUrl, accessCode: null, reference, redomTransactionId: redomId, status: "checkout_created", channel: "card" });
+      }
+
       if (parsed.data.paymentMethodId) {
         const method = await pool.query("SELECT * FROM redom_payment_methods WHERE id=$1 AND user_id=$2 AND active=true AND reusable=true LIMIT 1", [parsed.data.paymentMethodId, userId]);
         if (!method.rows[0]) throw new Error("Saved payment method not found.");
@@ -233,11 +251,11 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       }
 
       const initialized = await paystack<{ authorization_url: string; access_code: string; reference: string }>("post", "/transaction/initialize", {
-        email: parsed.data.email, amount: String(priced.amountMinor), currency: priced.currency, channels: parsed.data.preferredChannel ? [parsed.data.preferredChannel] : ["card", "bank_transfer"],
+        email: parsed.data.email, amount: String(priced.amountMinor), currency: priced.currency, channels: ["bank_transfer"],
         callback_url: paymentCallbackUrl(), metadata: JSON.stringify(metadata),
       });
       await pool.query("UPDATE payment_transactions SET checkout_url=$1, access_code=$2, reference=$3, updated_at=now() WHERE id=$4", [initialized.authorization_url, initialized.access_code, initialized.reference, inserted.rows[0].id]);
-      return res.json({ success: true, mode: "redom_gateway", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId, channel: parsed.data.preferredChannel ?? "card_or_bank_transfer" });
+      return res.json({ success: true, mode: "redom_gateway", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId, channel: "bank_transfer" });
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
