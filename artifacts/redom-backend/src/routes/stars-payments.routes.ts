@@ -89,15 +89,18 @@ async function paystack<T>(method: "get" | "post", path: string, data?: unknown)
 }
 function makeReference(): string { return "rdstars-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
 function makeStripeReference(): string { return "rdstripe-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
+function makeStripeTransactionId(): string { const max = 100_000_000_000_00000n; const value = BigInt("0x" + crypto.randomBytes(9).toString("hex")) % max; return "RS-" + value.toString().padStart(16,"0"); }
+function makePaystackTransactionId(): string { const max = 10_000_000_000_000n; const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max; return "RP-" + value.toString().padStart(13,"0"); }
+const AFRICAN_COUNTRIES = new Set(["DZ","AO","BJ","BW","BF","BI","CV","CM","CF","TD","KM","CG","CD","CI","DJ","EG","GQ","ER","SZ","ET","GA","GM","GH","GN","GW","KE","LS","LR","LY","MG","MW","ML","MR","MU","MA","MZ","NA","NE","NG","RW","ST","SN","SC","SL","SO","ZA","SS","SD","TZ","TG","TN","UG","ZM","ZW"]);
 function makeSetupReference(): string { return "rdcard-" + Date.now().toString(36) + "-" + crypto.randomBytes(5).toString("hex"); }
-function makeRedomTransactionId(): string {
+function makeLegacyRedomTransactionId(): string {
   const max = 10_000_000_000_000n;
   const value = BigInt("0x" + crypto.randomBytes(7).toString("hex")) % max;
   return "R-" + value.toString().padStart(13, "0");
 }
-async function uniqueRedomTransactionId(client: import("pg").PoolClient): Promise<string> {
+async function uniqueRedomTransactionId(client: import("pg").PoolClient, provider: "paystack"|"stripe"): Promise<string> {
   for (let i = 0; i < 20; i += 1) {
-    const value = makeRedomTransactionId();
+    const value = provider === "stripe" ? makeStripeTransactionId() : makePaystackTransactionId();
     const found = await client.query("SELECT 1 FROM payment_transactions WHERE redom_transaction_id=$1 LIMIT 1", [value]);
     if (!found.rows[0]) return value;
   }
@@ -202,15 +205,15 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const redomId = await uniqueRedomTransactionId(client);
+      const redomId = await uniqueRedomTransactionId(client, provider);
       const paymentChannel = parsed.data.paymentMethodId ? "saved_card" : (parsed.data.preferredChannel ?? "card");
       const reference = paymentChannel === "card" ? makeStripeReference() : makeReference();
-      const metadata = { purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null, preferredChannel: paymentChannel };
+      const metadata = { provider, purpose: "stars_purchase", packageKey: pkg.key, stars: pkg.stars, countryCode: country.isoCode, currency: country.currency, customerEmail: parsed.data.email, redomTransactionId: redomId, paymentMethodId: parsed.data.paymentMethodId ?? null, preferredChannel: paymentChannel };
       const inserted = await client.query(
         `INSERT INTO payment_transactions
-          (user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email)
+          (user_id,reference,redom_transaction_id,amount_minor,currency,purpose,status,metadata,country_code,customer_email,payment_provider)
          VALUES($1,$2,$3,$4,$5,'stars_purchase','initialized',$6::jsonb,$7,$8) RETURNING id`,
-        [userId, reference, redomId, priced.amountMinor, priced.currency, JSON.stringify(metadata), country.isoCode, parsed.data.email],
+        [userId, reference, redomId, priced.amountMinor, priced.currency, JSON.stringify(metadata), country.isoCode, parsed.data.email, provider],
       );
       if (parsed.data.address) {
         const a = parsed.data.address;
@@ -223,7 +226,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
       }
       await client.query("COMMIT");
 
-      if (!parsed.data.paymentMethodId && paymentChannel === "card") {
+      if (provider === "stripe") {
         const stripe = await createStripeStarsCheckout({
           userId,
           reference,
@@ -238,7 +241,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
         return res.json({ success: true, mode: "stripe", checkoutUrl: stripe.checkoutUrl, accessCode: null, reference, redomTransactionId: redomId, status: "checkout_created", channel: "card" });
       }
 
-      if (parsed.data.paymentMethodId) {
+      if (provider === "paystack" && parsed.data.paymentMethodId) {
         const method = await pool.query("SELECT * FROM redom_payment_methods WHERE id=$1 AND user_id=$2 AND active=true AND reusable=true LIMIT 1", [parsed.data.paymentMethodId, userId]);
         if (!method.rows[0]) throw new Error("Saved payment method not found.");
         const authorizationCode = decryptAuthorization(String(method.rows[0].authorization_code_encrypted));
@@ -255,7 +258,7 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
         callback_url: paymentCallbackUrl(), metadata: JSON.stringify(metadata),
       });
       await pool.query("UPDATE payment_transactions SET checkout_url=$1, access_code=$2, reference=$3, updated_at=now() WHERE id=$4", [initialized.authorization_url, initialized.access_code, initialized.reference, inserted.rows[0].id]);
-      return res.json({ success: true, mode: "redom_gateway", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId, channel: "bank_transfer" });
+      return res.json({ success: true, mode: "paystack", checkoutUrl: initialized.authorization_url, accessCode: initialized.access_code, reference: initialized.reference, redomTransactionId: redomId, channel: "bank_transfer" });
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
