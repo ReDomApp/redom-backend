@@ -236,7 +236,7 @@ router.get("/redom-pay/transactions/:transactionKey", authMiddleware, async (req
   if (kind === "order") {
     const result = await pool.query(
       `SELECT mt.id, mt.transaction_id, ml.title, mt.total_price, mt.currency, mt.payment_method,
-              mt.payment_provider, mt.payment_status, mt.order_status, mt.created_at, mt.paid_at, mt.completed_at
+              mt.payment_provider, mt.payment_status, mt.order_status, mt.created_at, mt.paid_at, mt.completed_at, mt.transaction_reference
          FROM marketplace_transactions mt
          JOIN marketplace_listings ml ON ml.id = mt.listing_id
          JOIN user_profiles up ON up.id = mt.buyer_user_id
