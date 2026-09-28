@@ -63,6 +63,220 @@ router.get("/overview", authMiddleware, async (req, res) => {
   return res.json({ success: true, orders: mappedOrders, payments: mappedPayments });
 });
 
+const parseMetadata = (value: unknown): any => {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try { return JSON.parse(String(value)); } catch { return {}; }
+};
+
+function paymentProductName(row: any, metadata: any): string {
+  const stars = Number(metadata?.stars ?? 0);
+  if (row.plan_name) return String(row.plan_name);
+  if (row.purpose === "stars_purchase" && Number.isFinite(stars) && stars > 0) return `ReDom Stars`;
+  if (row.purpose === "payment_method_setup") return "Payment method verification";
+  if (row.purpose === "subscription_renewal") return "ReDom Subscription";
+  if (row.purpose === "subscription") return "ReDom Subscription";
+  if (row.purpose === "donation" || row.purpose === "donations") return "ReDom Donation";
+  if (row.purpose === "money_transfer" || row.purpose === "transfer" || row.purpose === "p2p_transfer") return "Money transfer";
+  return String(row.purpose || "ReDom payment").replaceAll("_", " ");
+}
+
+function paymentCategory(row: any, metadata: any): "money_transfer"|"orders"|"donations"|"cards"|"other" {
+  const purpose = String(row.purpose || "").toLowerCase();
+  const d = metadata?.paymentDetails ?? {};
+  const channel = String(d.channel ?? metadata?.preferredChannel ?? "").toLowerCase();
+  if (purpose === "donation" || purpose === "donations" || channel.includes("donat")) return "donations";
+  if (purpose === "money_transfer" || purpose === "transfer" || purpose === "p2p_transfer" || channel.includes("bank") || channel.includes("transfer")) return "money_transfer";
+  if (purpose === "order" || purpose === "marketplace_order") return "orders";
+  if (channel.includes("card") || d.last4 || d.cardType || d.card_type || metadata?.paymentMethodId) return "cards";
+  return "other";
+}
+
+function paymentTransferMethod(metadata: any): string | null {
+  const d = metadata?.paymentDetails ?? {};
+  const channel = String(d.channel ?? metadata?.preferredChannel ?? "").toLowerCase();
+  if (!channel) return null;
+  if (channel.includes("bank") || channel.includes("transfer")) return "Bank transfer";
+  if (channel.includes("card")) return "Card";
+  return String(d.channel ?? metadata?.preferredChannel);
+}
+
+router.get("/redom-pay/transactions", authMiddleware, async (req, res) => {
+  const userId = req.user?.userId;
+  if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
+
+  const payments = await pool.query(
+    `SELECT pt.id, pt.reference, pt.redom_transaction_id, pt.amount_minor, pt.currency, pt.purpose,
+            pt.status, pt.refund_status, pt.created_at, pt.paid_at, pt.metadata, pt.failure_message,
+            pp.name AS plan_name
+       FROM payment_transactions pt
+       LEFT JOIN payment_plans pp ON pp.id = pt.plan_id
+      WHERE pt.user_id = $1
+      ORDER BY pt.created_at DESC
+      LIMIT 200`,
+    [userId],
+  );
+  const orders = await pool.query(
+    `SELECT mt.id, mt.transaction_id, ml.title, mt.total_price, mt.currency, mt.payment_method,
+            mt.payment_provider, mt.payment_status, mt.order_status, mt.created_at, mt.paid_at, mt.completed_at
+       FROM marketplace_transactions mt
+       JOIN marketplace_listings ml ON ml.id = mt.listing_id
+       JOIN user_profiles up ON up.id = mt.buyer_user_id
+      WHERE up.user_id = $1
+      ORDER BY mt.created_at DESC
+      LIMIT 200`,
+    [userId],
+  );
+
+  const mappedPayments = payments.rows.map((row) => {
+    const metadata = parseMetadata(row.metadata);
+    const category = paymentCategory(row, metadata);
+    return {
+      transactionKey: `payment:${String(row.id)}`,
+      kind: "payment",
+      category,
+      transferMethod: category === "money_transfer" ? paymentTransferMethod(metadata) : null,
+      id: String(row.id),
+      redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
+      reference: String(row.reference),
+      productName: paymentProductName(row, metadata),
+      status: String(row.status),
+      refundStatus: row.refund_status ? String(row.refund_status) : null,
+      amountMinor: String(row.amount_minor),
+      currency: String(row.currency),
+      createdAt: new Date(row.created_at).toISOString(),
+      effectiveAt: row.paid_at ? new Date(row.paid_at).toISOString() : new Date(row.created_at).toISOString(),
+      metadata,
+    };
+  });
+
+  const mappedOrders = orders.rows.map((row) => ({
+    transactionKey: `order:${String(row.id)}`,
+    kind: "order",
+    category: "orders",
+    transferMethod: row.payment_method ? String(row.payment_method) : null,
+    id: String(row.id),
+    redomTransactionId: null,
+    reference: String(row.transaction_id),
+    productName: String(row.title),
+    status: String(row.payment_status || row.order_status || "pending"),
+    refundStatus: null,
+    amountMinor: String(Math.round(Number(row.total_price) * 100)),
+    currency: String(row.currency),
+    createdAt: new Date(row.created_at).toISOString(),
+    effectiveAt: row.paid_at ? new Date(row.paid_at).toISOString() : new Date(row.created_at).toISOString(),
+    metadata: {
+      orderStatus: String(row.order_status),
+      paymentStatus: String(row.payment_status),
+      paymentMethod: row.payment_method ? String(row.payment_method) : null,
+      paymentProvider: row.payment_provider ? String(row.payment_provider) : null,
+    },
+  }));
+
+  return res.json({ success: true, transactions: [...mappedPayments, ...mappedOrders].sort((a, b) => new Date(b.effectiveAt).getTime() - new Date(a.effectiveAt).getTime()) });
+});
+
+router.get("/redom-pay/transactions/:transactionKey", authMiddleware, async (req, res) => {
+  const userId = req.user?.userId;
+  const key = decodeURIComponent(String(req.params.transactionKey || ""));
+  if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  const split = key.indexOf(":");
+  if (split <= 0) return res.status(400).json({ success: false, message: "Invalid transaction reference." });
+  const kind = key.slice(0, split);
+  const id = key.slice(split + 1);
+
+  if (kind === "payment") {
+    const result = await pool.query(
+      `SELECT pt.id, pt.reference, pt.redom_transaction_id, pt.amount_minor, pt.currency, pt.purpose,
+              pt.status, pt.refund_status, pt.created_at, pt.paid_at, pt.metadata, pt.failure_message,
+              pp.name AS plan_name
+         FROM payment_transactions pt
+         LEFT JOIN payment_plans pp ON pp.id = pt.plan_id
+        WHERE pt.id = $1 AND pt.user_id = $2
+        LIMIT 1`,
+      [id, userId],
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ success: false, message: "Transaction not found." });
+    const metadata = parseMetadata(row.metadata);
+    const paymentDetails = metadata?.paymentDetails ?? {};
+    const amountMinor = String(row.amount_minor);
+    const discountMinor = Number.isFinite(Number(metadata?.discountMinor)) ? String(Math.max(0, Number(metadata.discountMinor))) : "0";
+    const discountPercent = Number.isFinite(Number(metadata?.discountPercent)) ? Number(metadata.discountPercent) : 0;
+    const subtotalMinor = Number.isFinite(Number(metadata?.subtotalMinor)) ? String(metadata.subtotalMinor) : String(Number(amountMinor) + Number(discountMinor));
+    const productName = paymentProductName(row, metadata);
+    const status = row.refund_status === "processed" ? "refunded" : row.refund_status === "failed" ? "refund_failed" : row.status;
+    return res.json({
+      success: true,
+      transaction: {
+        transactionKey: key,
+        kind: "payment",
+        redomTransactionId: row.redom_transaction_id ? String(row.redom_transaction_id) : null,
+        reference: String(row.reference),
+        productName,
+        status,
+        refundStatus: row.refund_status ? String(row.refund_status) : null,
+        amountMinor,
+        subtotalMinor,
+        discountMinor,
+        discountPercent,
+        totalMinor: amountMinor,
+        currency: String(row.currency),
+        createdAt: new Date(row.created_at).toISOString(),
+        effectiveAt: row.paid_at ? new Date(row.paid_at).toISOString() : new Date(row.created_at).toISOString(),
+        providerReference: paymentDetails?.providerReference ? String(paymentDetails.providerReference) : String(row.reference),
+        paymentMethod: paymentDetails?.channel ? String(paymentDetails.channel) : null,
+        transferMethod: paymentCategory(row, metadata) === "money_transfer" ? paymentTransferMethod(metadata) : null,
+        failureMessage: row.failure_message ? String(row.failure_message) : null,
+        metadata,
+      },
+    });
+  }
+
+  if (kind === "order") {
+    const result = await pool.query(
+      `SELECT mt.id, mt.transaction_id, ml.title, mt.total_price, mt.currency, mt.payment_method,
+              mt.payment_provider, mt.payment_status, mt.order_status, mt.created_at, mt.paid_at, mt.completed_at
+         FROM marketplace_transactions mt
+         JOIN marketplace_listings ml ON ml.id = mt.listing_id
+         JOIN user_profiles up ON up.id = mt.buyer_user_id
+        WHERE mt.id = $1 AND up.user_id = $2
+        LIMIT 1`,
+      [id, userId],
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ success: false, message: "Transaction not found." });
+    const amountMinor = String(Math.round(Number(row.total_price) * 100));
+    return res.json({
+      success: true,
+      transaction: {
+        transactionKey: key,
+        kind: "order",
+        redomTransactionId: null,
+        reference: String(row.transaction_id),
+        productName: String(row.title),
+        status: String(row.payment_status || row.order_status || "pending"),
+        refundStatus: null,
+        amountMinor,
+        subtotalMinor: amountMinor,
+        discountMinor: "0",
+        discountPercent: 0,
+        totalMinor: amountMinor,
+        currency: String(row.currency),
+        createdAt: new Date(row.created_at).toISOString(),
+        effectiveAt: row.paid_at ? new Date(row.paid_at).toISOString() : new Date(row.created_at).toISOString(),
+        providerReference: row.transaction_reference ? String(row.transaction_reference) : null,
+        paymentMethod: row.payment_method ? String(row.payment_method) : null,
+        transferMethod: row.payment_method ? String(row.payment_method) : null,
+        failureMessage: null,
+        metadata: { orderStatus: String(row.order_status), paymentStatus: String(row.payment_status), paymentMethod: row.payment_method, paymentProvider: row.payment_provider },
+      },
+    });
+  }
+
+  return res.status(400).json({ success: false, message: "Unsupported transaction type." });
+});
+
 router.get("/transactions/:transactionId", authMiddleware, async (req, res) => {
   const userId = req.user?.userId;
   const transactionId = String(req.params.transactionId || "");
