@@ -5,7 +5,7 @@ import { AuthProvider } from "./auth/context";
 import { LanguageContainer } from "./i18n/LanguageContainer";
 import { ThemeProvider, useTheme } from "./theme/ThemeProvider";
 import { AppNavigator } from "./routing/AppNavigator";
-import { StripeProvider } from "@stripe/stripe-react-native";
+import { StripeProviderCompat } from "./services/stripeNative";
 import { useEffect, useState } from "react";
 import { ordersPaymentsService } from "./services/ordersPaymentsService";
 
@@ -18,7 +18,7 @@ function AppShell(){
   const navigationTheme=isDark
     ? {...NavigationDarkTheme,colors:{...NavigationDarkTheme.colors,background:colors.background,card:colors.surface,text:colors.text,border:colors.border,primary:colors.primary}}
     : {...NavigationLightTheme,colors:{...NavigationLightTheme.colors,background:colors.background,card:colors.surface,text:colors.text,border:colors.border,primary:colors.primary}};
-  return <AuthProvider><StripeProvider publishableKey={stripeKey} urlScheme="redom"><NavigationContainer linking={linking} theme={navigationTheme}><StatusBar style={isDark?"light":"dark"}/><AppNavigator/></NavigationContainer></StripeProvider></AuthProvider>;
+  return <AuthProvider><StripeProviderCompat publishableKey={stripeKey} urlScheme="redom"><NavigationContainer linking={linking} theme={navigationTheme}><StatusBar style={isDark?"light":"dark"}/><AppNavigator/></NavigationContainer></StripeProviderCompat></AuthProvider>;
 }
 
 export function App(){return <SafeAreaProvider><LanguageContainer><ThemeProvider><AppShell/></ThemeProvider></LanguageContainer></SafeAreaProvider>;}
