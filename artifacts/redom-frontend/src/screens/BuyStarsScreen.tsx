@@ -129,7 +129,7 @@ export function BuyStarsScreen(){
 
  return <View style={styles.overlay}><View style={[styles.sheet,{backgroundColor:colors.surface}]}>
   <View style={styles.sheetHandle}/><View style={[styles.header,{borderBottomColor:colors.border}]}>
-   <Pressable onPress={()=>step==="catalog"?n.goBack():setStep("catalog")} hitSlop={10}><BackIcon width={25} height={25}/></Pressable>
+   <Pressable onPress={()=>step==="catalog"?n.goBack():step==="savedTerms"?setStep("savedVerification"):setStep("catalog")} hitSlop={10}><BackIcon width={25} height={25}/></Pressable>
    <View style={styles.headerBrand}><ReDomLogo width={30} height={24}/><Text style={[styles.headerTitle,{color:colors.text}]}>{step==="catalog"?"Buy Stars":step==="savedVerification"?"ReDom Pay!":"Payment"}</Text></View><View style={{width:25}}/>
   </View>
   {step==="catalog"?<ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
