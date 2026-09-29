@@ -20,6 +20,29 @@ const API = "https://api.paystack.co";
 type Currency = string;
 type Country = { name:string; isoCode:string; currency:Currency; rate:number; cardSupported:boolean; successRate:number|null; observedPayments:number };
 
+const packages = [
+  { key:"stars_10", stars:10, usdPrice:2.21, firstPurchaseUsdPrice:1.99, firstPurchaseDiscountPercent:10, popular:false },
+  { key:"stars_20", stars:20, usdPrice:2.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_50", stars:50, usdPrice:4.87, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_100", stars:100, usdPrice:10.76, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:true },
+  { key:"stars_150", stars:150, usdPrice:14.00, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_200", stars:200, usdPrice:19.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_500", stars:500, usdPrice:50.00, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_700", stars:700, usdPrice:70.00, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_1000", stars:1000, usdPrice:99.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_1500", stars:1500, usdPrice:149.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_2000", stars:2000, usdPrice:199.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_2500", stars:2500, usdPrice:249.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_5000", stars:5000, usdPrice:499.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_7500", stars:7500, usdPrice:749.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_10000", stars:10000, usdPrice:999.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_15000", stars:15000, usdPrice:1499.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_20000", stars:20000, usdPrice:1999.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_50000", stars:50000, usdPrice:4999.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_75000", stars:75000, usdPrice:7499.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_100000", stars:100000, usdPrice:9999.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+] as const;
+
 let countries:Country[]=[];
 async function refreshCountries(){countries=await getStripeStarsCountries();return countries;}
 async function getCountry(code:string):Promise<Country>{
