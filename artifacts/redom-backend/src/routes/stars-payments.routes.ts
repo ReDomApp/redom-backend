@@ -22,9 +22,9 @@ type Country = { name:string; isoCode:string; currency:Currency; rate:number; ca
 
 const packages = [
   { key:"stars_10", stars:10, usdPrice:2.21, firstPurchaseUsdPrice:1.99, firstPurchaseDiscountPercent:10, popular:false },
-  { key:"stars_20", stars:20, usdPrice:2.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
+  { key:"stars_20", stars:20, usdPrice:20.00, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:true },
   { key:"stars_50", stars:50, usdPrice:4.87, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
-  { key:"stars_100", stars:100, usdPrice:10.76, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:true },
+  { key:"stars_100", stars:100, usdPrice:10.76, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
   { key:"stars_150", stars:150, usdPrice:14.00, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
   { key:"stars_200", stars:200, usdPrice:19.99, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
   { key:"stars_500", stars:500, usdPrice:50.00, firstPurchaseUsdPrice:null, firstPurchaseDiscountPercent:0, popular:false },
