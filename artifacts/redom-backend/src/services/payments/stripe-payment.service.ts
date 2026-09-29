@@ -259,9 +259,22 @@ export async function createSavedStripeStarsPayment(input:{
   await pool.query(
     `INSERT INTO stripe_stars_checkout_attempts
       (user_id,reference,stripe_session_id,stripe_payment_intent_id,package_key,stars,country_code,currency,amount_minor,customer_email,attempt_number,status,metadata)
-     VALUES($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,1,'open',$10::jsonb)`,
-    [input.userId,input.reference,intent.id,input.packageKey,input.stars,input.countryCode,input.currency,input.amountMinor,input.email,JSON.stringify(metadata)],
+     VALUES($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,1,$10,$11::jsonb)`,
+    [input.userId,input.reference,intent.id,input.packageKey,input.stars,input.countryCode,input.currency,input.amountMinor,input.email,
+      intent.status==="succeeded"?"completed":intent.status==="requires_action"?"requires_action":"open",JSON.stringify(metadata)],
   );
+
+  if(intent.status==="succeeded"){
+    await fulfillStripeStarsAttempt({
+      id:intent.id,
+      amount_total:intent.amount,
+      currency:intent.currency,
+      payment_intent:intent.id,
+      payment_method_types:["card"],
+      metadata,
+      payment_status:"paid",
+    });
+  }
 
   return {reference:input.reference,paymentIntentId:intent.id,clientSecret:intent.client_secret,status:intent.status,brand:provider.brand,last4:provider.last4};
 }
