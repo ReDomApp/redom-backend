@@ -7,7 +7,7 @@ import { pool } from "../database/db";
 import { env } from "../config/env";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { geocodePlace } from "../lib/mapbox";
-import { createStripeStarsCheckout } from "../services/payments/stripe-payment.service";
+import { createStripeStarsCheckout, createSavedStripeStarsPayment, verifyStripeStarsCheckout } from "../services/payments/stripe-payment.service";
 import { createStarsTrialSetupCheckout, getStarsTrialEligibility, TERMS_VERSION } from "../services/payments/stripe-stars-trial.service";
 import { getStripeStarsCountries, getStripeStarsCountry, stripeMinimumMinor } from "../services/payments/stripe-country.service";
 import { createStripeCardSetup, finalizeStripeCardSetup, createStripeCardSetupCheckout, finalizeStripeCardSetupCheckout, listStripeCardMethods, getStripeCardMethodForUser, detachStripeCardMethod } from "../services/payments/stripe-saved-payment.service";
@@ -259,6 +259,39 @@ router.post("/stars/initialize", authMiddleware, async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to start Stars payment.";
     return res.status(400).json({ success: false, message });
+  }
+});
+
+router.post("/stars/saved-payment/start", authMiddleware, async (req,res)=>{
+  const userId=req.user?.userId;
+  const parsed=z.object({
+    packageKey:z.string().min(1).max(50),
+    countryCode:z.string().length(2),
+    email:z.string().email().max(255),
+    paymentMethodId:z.string().uuid(),
+  }).safeParse(req.body);
+  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+  if(!parsed.success)return res.status(400).json({success:false,message:"Invalid saved-card Stars payment details."});
+  const user=await getUser(userId);
+  if(!user?.email||String(user.email).toLowerCase()!==String(parsed.data.email).toLowerCase())return res.status(400).json({success:false,message:"Use the email address on your ReDom account."});
+  try{
+    const country=await getCountry(parsed.data.countryCode);
+    const pkg=getPackage(parsed.data.packageKey);
+    const prior=await pool.query("SELECT 1 FROM redom_stars_transactions WHERE user_id=$1 AND type='purchase' LIMIT 1",[userId]);
+    const priced=quote(country,pkg,!prior.rows[0]);
+    if(!priced.payable)return res.status(400).json({success:false,message:priced.availabilityReason});
+    const reference=makeStripeReference();
+    const payment=await createSavedStripeStarsPayment({
+      userId,reference,amountMinor:priced.amountMinor,currency:priced.currency,email:String(user.email),
+      stars:pkg.stars,packageKey:pkg.key,countryCode:country.isoCode,paymentMethodId:parsed.data.paymentMethodId,
+    });
+    if(payment.status==="succeeded"){
+      await pool.query("UPDATE stripe_stars_checkout_attempts SET status='open',updated_at=now() WHERE reference=$1",[reference]);
+      await verifyStripeStarsCheckout(userId,reference);
+    }
+    return res.json({success:true,reference,paymentIntentId:payment.paymentIntentId,clientSecret:payment.clientSecret,status:payment.status,brand:payment.brand,last4:payment.last4});
+  }catch(error){
+    return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to start the saved ReDom Pay payment."});
   }
 });
 
