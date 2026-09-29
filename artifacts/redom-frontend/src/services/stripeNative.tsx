@@ -72,7 +72,7 @@ export function CardFormCompat(props: any) {
 
   return (
     <View style={styles.unavailable}>
-      <Text style={styles.title}>Card entry unavailable in Expo Go</Text>
+      <Text style={styles.title}>Secure Stripe card entry</Text>
       <Text style={styles.text}>
         ReDom Pay's native Stripe card field requires the ReDom development build. Expo Go remains available for testing the rest of the app.
       </Text>
