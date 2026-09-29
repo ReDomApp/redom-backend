@@ -367,7 +367,8 @@ router.get("/payment-methods/setup/web/success", async (req,res)=>{
 router.get("/payment-methods/setup/web/cancel", async (req,res)=>{
   const returnUrl=typeof req.query.return_url==="string"?req.query.return_url:"";
   if(!/^(redom|exp):\/\//i.test(returnUrl))return res.status(400).send("Invalid ReDom Pay return request.");
-  res.type("html").send("<!doctype html><html><body style=\"font-family:Arial;text-align:center;padding:48px\"><h2>Card setup cancelled</h2><p>You can return to ReDom Pay and try again.</p><p><a href=\""+returnUrl.replace(/&/g,"&amp;")+"\">Return to ReDom</a></p></body></html>");
+  const target=returnUrl+(returnUrl.includes("?")?"&":"?")+"status=cancelled";
+  res.type("html").send("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ReDom Pay</title></head><body style=\"font-family:Arial;text-align:center;padding:48px\"><h2>Card setup cancelled</h2><p>Returning to ReDom Pay…</p><p><a href=\""+target.replace(/&/g,"&amp;")+"\">Return to ReDom</a></p><script>setTimeout(function(){location.href="+JSON.stringify(target)+"},350);</script></body></html>");
 });
 router.post("/payment-methods/setup", authMiddleware, async (req,res)=>{
   const userId=req.user?.userId; if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
