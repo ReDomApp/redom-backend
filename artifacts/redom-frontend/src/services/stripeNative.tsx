@@ -47,6 +47,18 @@ export function useStripeCompat() {
         code: "StripeNativeModuleUnavailable",
         message: "Stripe card verification requires a ReDom development build."
       }
+    }),
+    confirmPayment: async () => ({
+      error: {
+        code: "StripeNativeModuleUnavailable",
+        message: "Stripe payment confirmation requires a ReDom development build."
+      }
+    }),
+    handleNextAction: async () => ({
+      error: {
+        code: "StripeNativeModuleUnavailable",
+        message: "Stripe payment authentication requires a ReDom development build."
+      }
     })
   };
 }
