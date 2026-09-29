@@ -4,6 +4,7 @@ import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import { sendPaymentEmailForReference } from "./payment.service";
 import { finalizeStarsTrialSetup, markStarsTrialSetupAbandoned } from "./stripe-stars-trial.service";
+import { getStripeCardMethodForUser } from "./stripe-saved-payment.service";
 
 const API = "https://api.stripe.com/v1";
 const APP_CALLBACK = "redom://payment/callback";
@@ -193,6 +194,76 @@ export async function createDeferredStripeStarsCheckout(input: {
   });
 
   return { ...created, attemptNumber };
+}
+
+type StripePaymentIntent = {
+  id:string;
+  client_secret?:string|null;
+  status:string;
+  amount:number;
+  currency:string;
+  customer?:string|null;
+  payment_method?:string|null;
+  metadata?:Record<string,string>;
+  last_payment_error?:{message?:string|null;decline_code?:string|null;code?:string|null}|null;
+};
+
+export async function createSavedStripeStarsPayment(input:{
+  userId:string;
+  reference:string;
+  amountMinor:number;
+  currency:string;
+  email:string;
+  stars:number;
+  packageKey:string;
+  countryCode:string;
+  paymentMethodId:string;
+}):Promise<{reference:string;paymentIntentId:string;clientSecret:string|null;status:string;brand:string|null;last4:string|null}> {
+  const method=await getStripeCardMethodForUser(input.userId,input.paymentMethodId);
+  const provider=method.provider;
+  if(String(method.row.status||"active")!=="active"||!Boolean(method.row.active)||!Boolean(method.row.reusable)){
+    throw new Error("The saved ReDom Pay payment method is no longer active.");
+  }
+  if(!provider.stripePaymentMethodId)throw new Error("The saved ReDom Pay payment method is unavailable.");
+  if(!provider.stripeCustomerId)throw new Error("The saved ReDom Pay customer is unavailable.");
+
+  const metadata:Record<string,string>={
+    provider:"stripe",purpose:"stars_purchase",reference:input.reference,userId:input.userId,
+    stars:String(input.stars),packageKey:input.packageKey,countryCode:input.countryCode,
+    currency:input.currency.toUpperCase(),savedPaymentMethodId:input.paymentMethodId,
+  };
+
+  const intent=await stripeRequest<StripePaymentIntent>("post","/payment_intents",form({
+    amount:input.amountMinor,
+    currency:input.currency.toLowerCase(),
+    customer:provider.stripeCustomerId,
+    payment_method:provider.stripePaymentMethodId,
+    confirmation_method:"automatic",
+    confirm:"false",
+    payment_method_types:"card",
+    "payment_method_options[card][require_cvc_recollection]":"true",
+    description:`ReDom Stars • ${input.stars} Stars`,
+    receipt_email:input.email,
+    "metadata[provider]":metadata.provider,
+    "metadata[purpose]":metadata.purpose,
+    "metadata[reference]":metadata.reference,
+    "metadata[userId]":metadata.userId,
+    "metadata[stars]":metadata.stars,
+    "metadata[packageKey]":metadata.packageKey,
+    "metadata[countryCode]":metadata.countryCode,
+    "metadata[currency]":metadata.currency,
+    "metadata[savedPaymentMethodId]":metadata.savedPaymentMethodId,
+  }));
+  if(!intent.id||!intent.client_secret)throw new Error("Stripe did not return a secure payment client secret.");
+
+  await pool.query(
+    `INSERT INTO stripe_stars_checkout_attempts
+      (user_id,reference,stripe_session_id,stripe_payment_intent_id,package_key,stars,country_code,currency,amount_minor,customer_email,attempt_number,status,metadata)
+     VALUES($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,1,'open',$10::jsonb)`,
+    [input.userId,input.reference,intent.id,input.packageKey,input.stars,input.countryCode,input.currency,input.amountMinor,input.email,JSON.stringify(metadata)],
+  );
+
+  return {reference:input.reference,paymentIntentId:intent.id,clientSecret:intent.client_secret,status:intent.status,brand:provider.brand,last4:provider.last4};
 }
 
 async function insertStripePaymentTransaction(
