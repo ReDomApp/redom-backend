@@ -107,6 +107,9 @@ export const ordersPaymentsService = {
   initializeStars(input:{packageKey:string;countryCode:string;email:string;pin?:string;paymentMethodId?:string;preferredChannel?:"card"|"bank_transfer";retryReference?:string|null;address?:{countryCode:string;countryName:string;fullName:string;addressLine1:string;addressLine2?:string|null;city:string;state?:string|null;postalCode?:string|null;mapboxPlaceId?:string|null;latitude?:number|null;longitude?:number|null}}) {
     return api.post<{success:boolean;mode:string;checkoutUrl:string|null;accessCode:string|null;reference:string;redomTransactionId:string|null;status?:string;channel?:string;attemptNumber?:number;paymentMethodTypes?:string[]}>("/orders-payments/stars/initialize",input);
   },
+  initializeSavedStarsPayment(input:{packageKey:string;countryCode:string;email:string;paymentMethodId:string}) {
+    return api.post<{success:boolean;reference:string;paymentIntentId:string;clientSecret:string|null;status:string;brand:string|null;last4:string|null}>("/orders-payments/stars/saved-payment/start",input);
+  },
   paymentMethods() { return api.get<{success:boolean;methods:SavedPaymentMethod[]}>("/orders-payments/payment-methods"); },
   paymentMethodDetails(id:string) { return api.get<{success:boolean;method:SavedPaymentMethodDetails}>("/orders-payments/payment-methods/"+encodeURIComponent(id)); },
   paymentMethodCountries() { return api.get<{success:boolean;countries:PaymentMethodCountry[]}>("/orders-payments/payment-methods/countries"); },
