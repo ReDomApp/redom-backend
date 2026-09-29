@@ -111,7 +111,7 @@ export function BuyStarsScreen(){
    setReference(ref);setProcessing(true);
    for(let i=0;i<24;i+=1){try{const r=await ordersPaymentsService.verifyPayment(ref);const p=r.payment;
      if(String(p.status)==="paid"){setResult("success");setProcessing(false);return;}
-     if(String(p.status)==="failed"){setProcessing(false);if(p.finalFailure)setResult("failed");else{setRetryReference(ref);setAgreed(false);setStep("payment");}return;}
+     if(String(p.status)==="failed"){setProcessing(false);if(p.finalFailure)setResult("failed");else{setRetryReference(ref);setAgreed(false);setStep("payment");try{if(country&&selected){const retry=await ordersPaymentsService.initializeStars({packageKey:selected.key,countryCode:country.isoCode,email:String(user?.email||""),preferredChannel:"card",retryReference:ref});setReference(retry.reference);setPaymentMethodTypes(retry.paymentMethodTypes??[]);if(retry.checkoutUrl)await Linking.openURL(retry.checkoutUrl)}}catch{} }return;}
      if(String(p.status)==="abandoned"){setProcessing(false);setAgreed(false);setStep("payment");return;}
    }catch{}await new Promise(resolve=>setTimeout(resolve,5000))}
    setProcessing(false);setResult("failed");
