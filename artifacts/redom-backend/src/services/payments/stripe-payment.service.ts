@@ -556,14 +556,28 @@ export async function verifyStripeStarsCheckout(userId:string,reference:string){
   const attemptResult=await pool.query("SELECT * FROM stripe_stars_checkout_attempts WHERE reference=$1 AND user_id=$2 LIMIT 1",[reference,userId]);
   if(!attemptResult.rows[0])throw new Error("Stripe Stars checkout attempt not found.");
   const attempt=attemptResult.rows[0];
-  const session=await stripeRequest<StripeSession>("get","/checkout/sessions/"+encodeURIComponent(String(attempt.stripe_session_id)));
+  let session:StripeSession|null=null;
+  if(attempt.stripe_session_id){
+    session=await stripeRequest<StripeSession>("get","/checkout/sessions/"+encodeURIComponent(String(attempt.stripe_session_id)));
+  }else if(attempt.stripe_payment_intent_id){
+    const pi=await stripeRequest<StripePaymentIntent>("get","/payment_intents/"+encodeURIComponent(String(attempt.stripe_payment_intent_id)));
+    session={
+      id:String(attempt.stripe_payment_intent_id),
+      amount_total:Number(pi.amount),
+      currency:String(pi.currency),
+      payment_intent:String(pi.id),
+      payment_method_types:["card"],
+      metadata:pi.metadata,
+      payment_status:pi.status==="succeeded"?"paid":"unpaid",
+    };
+  }
 
-  if(String(session.payment_status)==="paid"){
+  if(session&&String(session.payment_status)==="paid"){
     await fulfillStripeStarsAttempt(session);
     return verifyStripeStarsCheckout(userId,reference);
   }
 
-  if(String(session.status)==="expired"){
+  if(session&&String(session.status)==="expired"){
     await markStripeAbandoned(reference);
   }
 
@@ -574,7 +588,7 @@ export async function verifyStripeStarsCheckout(userId:string,reference:string){
     transactionId:null,
     redomTransactionId:null,
     reference:String(reference),
-    status:status==="completed"?"paid":status==="failed_final"?"failed":status==="failed"?"failed":status==="abandoned"?"abandoned":"processing",
+    status:status==="completed"?"paid":status==="failed_final"?"failed":status==="failed"?"failed":status==="abandoned"?"abandoned":status==="requires_action"?"processing":"processing",
     amountMinor:String(attempt.amount_minor),
     currency:String(attempt.currency),
     purpose:"stars_purchase",
@@ -583,9 +597,9 @@ export async function verifyStripeStarsCheckout(userId:string,reference:string){
     retryAvailable:status==="failed",
     attemptNumber:Number(row?.attempt_number??attempt.attempt_number),
     failureReason:row?.failure_message?String(row.failure_message):null,
-    stripeCheckoutSessionId:String(attempt.stripe_session_id),
-    stripePaymentIntentId:row?.stripe_payment_intent_id?String(row.stripe_payment_intent_id):paymentIntentId(session),
-    paymentMethodTypes:Array.isArray(session.payment_method_types)?session.payment_method_types:[],
+    stripeCheckoutSessionId:attempt.stripe_session_id?String(attempt.stripe_session_id):undefined,
+    stripePaymentIntentId:row?.stripe_payment_intent_id?String(row.stripe_payment_intent_id):undefined,
+    paymentMethodTypes:["card"],
   };
 }
 
@@ -655,10 +669,23 @@ export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefi
     }else if(type==="payment_intent.succeeded"){
       const reference=String(object?.metadata?.reference??"");
       if(reference){
-        const attempt=await pool.query("SELECT stripe_session_id FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[reference]);
+        const attempt=await pool.query("SELECT * FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[reference]);
         if(attempt.rows[0]){
-          const session=await stripeRequest<StripeSession>("get","/checkout/sessions/"+encodeURIComponent(String(attempt.rows[0].stripe_session_id)));
-          await fulfillStripeStarsAttempt(session);
+          if(attempt.rows[0].stripe_session_id){
+            const session=await stripeRequest<StripeSession>("get","/checkout/sessions/"+encodeURIComponent(String(attempt.rows[0].stripe_session_id)));
+            await fulfillStripeStarsAttempt(session);
+          }else{
+            const session:StripeSession={
+              id:String(object.id??""),
+              amount_total:Number(object.amount??attempt.rows[0].amount_minor),
+              currency:String(object.currency??attempt.rows[0].currency),
+              payment_intent:String(object.id??""),
+              payment_method_types:["card"],
+              metadata:object.metadata??{},
+              payment_status:"paid",
+            };
+            await fulfillStripeStarsAttempt(session);
+          }
         }else{
           await pool.query("UPDATE payment_transactions SET provider_transaction_id=$1,payment_provider='stripe',gateway_status='succeeded',updated_at=now() WHERE reference=$2",[String(object.id??""),reference]);
         }
