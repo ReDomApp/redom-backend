@@ -117,7 +117,7 @@ export function BuyStarsScreen(){
      if(String(p.status)==="abandoned"){setProcessing(false);setAgreed(false);setStep("payment");return;}
    }catch{}await new Promise(resolve=>setTimeout(resolve,5000))}
    setProcessing(false);setResult("failed");
- },[]);
+ },[country,selected,user?.email]);
 
  useEffect(()=>{const handle=({url}:{url:string})=>{if(!url.startsWith("redom://payment/callback"))return;const m=url.match(/[?&]reference=([^&]+)/);const ref=m?decodeURIComponent(m[1]):reference;if(ref)void verifyAndResolve(ref)};const sub=Linking.addEventListener("url",handle);void Linking.getInitialURL().then(url=>{if(url?.startsWith("redom://payment/callback")){const m=url.match(/[?&]reference=([^&]+)/);const ref=m?decodeURIComponent(m[1]):reference;if(ref)void verifyAndResolve(ref)}}).catch(()=>undefined);return()=>sub.remove()},[reference,verifyAndResolve]);
  useEffect(()=>{if(result!=="success")return;const t=setTimeout(()=>n.navigate("StarsActivity",{refresh:Date.now()}),2500);return()=>clearTimeout(t)},[result,n]);
