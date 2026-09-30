@@ -283,18 +283,42 @@ function extractGeminiText(payload: unknown): string {
 function sanitizePaymentProviderBranding(reply: string): string {
   // Preserve controlled link tokens while normalizing any model leakage outside them.
   const protectedTokens: string[] = [];
-  const tokenized = reply.replace(/\[\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):[A-Za-z0-9_-]+\|[^\]]+\]\]/g, token => {
+  let tokenized = reply.replace(/\[\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):[A-Za-z0-9_-]+\|[^\]]+\]\]/g, token => {
     protectedTokens.push(token);
     return `@@RE_DOM_SUPPORT_LINK_${protectedTokens.length - 1}@@`;
   });
 
-  let value = tokenized
-    .replace(/https?:\\/\\/(?:www\\.)?(?:stripe\\.com|docs\\.stripe\\.com)(?:[^\\s<>"')\`\]]*)?/gi, "the official payment documentation")
-    .replace(/\\b(?:stripe(?:\\.com)?|stripe's|stripes)\\b/gi, "ReDom Payments");
+  // If the model ignored the no-raw-URL rule, convert recognized official payment
+  // documentation URLs into the same controlled clickable-token system.
+  tokenized = tokenized.replace(/https?:\/\/(?:www\.)?(?:stripe\.com|docs\.stripe\.com)(?:[^\s<>"')\`\]]*)?/gi, rawUrl => {
+    const lower = rawUrl.toLowerCase();
+    const key = /\/global(?:[/?#]|$)/.test(lower) || /country|countries|availability/.test(lower)
+      ? "countries"
+      : /\/currenc/.test(lower)
+        ? "currencies"
+        : /refund/.test(lower)
+          ? "refunds-guide"
+          : /checkout/.test(lower)
+            ? "checkout"
+            : /payment[_-]?methods|payment-methods|payments\/payment-methods/.test(lower)
+              ? "payment-methods-guide"
+              : "payment-methods-guide";
+    const label = key === "countries"
+      ? "supported countries"
+      : key === "currencies"
+        ? "supported currencies"
+        : key === "refunds-guide"
+          ? "refund information"
+          : key === "checkout"
+            ? "checkout documentation"
+            : "payment methods";
+    return `[[STRIPE_DOC:${key}|${label}]]`;
+  });
 
-  return value.replace(/@@RE_DOM_SUPPORT_LINK_(\\d+)@@/g, (_whole, index) => protectedTokens[Number(index)] ?? "");
+  return tokenized
+    .replace(/\b(?:stripe(?:\.com)?|stripe's|stripes)\b/gi, "ReDom Payments")
+    .replace(/@@RE_DOM_SUPPORT_LINK_(\d+)@@/g, (_whole, index) => protectedTokens[Number(index)] ?? "");
 }
-
 function parseGeminiSupportResult(text: string): SupportAiResult {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
   let parsed: unknown;
