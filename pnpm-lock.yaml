@@ -5727,7 +5727,7 @@ snapshots:
       expo-server: 57.0.3
       react: 19.2.3
     optionalDependencies:
-      react-dom: 19.1.0(react@19.2.3)
+      react-dom: 19.2.3(react@19.2.3)
     transitivePeerDependencies:
       - supports-color
 
@@ -7489,7 +7489,7 @@ snapshots:
       whatwg-url-minimum: 0.1.2
     optionalDependencies:
       '@expo/dom-webview': 57.0.1(expo@57.0.25)(react-native@0.86.3(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
-      react-dom: 19.1.0(react@19.2.3)
+      react-dom: 19.2.3(react@19.2.3)
     transitivePeerDependencies:
       - '@babel/core'
       - bufferutil
