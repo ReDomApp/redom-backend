@@ -17,7 +17,7 @@ async function rawRequest(path:string, options:RequestInit={}, token?:string) {
   headers.set("Accept","application/json");
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type","application/json");
   if (token) headers.set("Authorization",`Bearer ${token}`);
-  const res = await fetch(/^https?:\\/\\//i.test(path) ? path : `${API_BASE_URL}${path.startsWith("/") ? path : "/"+path}`, {...options,headers});
+  const res = await fetch(/^https?:\/\//i.test(path) ? path : `${API_BASE_URL}${path.startsWith("/") ? path : "/"+path}`, {...options,headers});
   const type=res.headers.get("content-type")||"";
   const payload=type.includes("application/json") ? await res.json().catch(()=>null) : await res.text().catch(()=>null);
   if(!res.ok){ const body=payload && typeof payload==="object" ? payload as Record<string,unknown> : {}; throw new Error(typeof body.message==="string" ? body.message : `Request failed (${res.status})`); }
