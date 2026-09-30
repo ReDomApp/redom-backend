@@ -47,9 +47,10 @@ function action(label: string, url: string): SupportEmailResolvedAction | null {
 function extractPaymentIdentifiers(message: string): string[] {
   const values = new Set<string>();
   const text = String(message ?? "");
-  for (const match of text.matchAll(/\\bR-?\\d{7,20}\\b/gi)) values.add(match[0].replace(/-/g, "").toUpperCase());
-  for (const match of text.matchAll(/(?:transaction(?:\\s*(?:id|number))?|reference(?:\\s*(?:id|number))?|payment(?:\\s*(?:id|reference))?)\\s*[:#-]?\\s*([A-Za-z0-9_-]{6,100})/gi)) {
-    values.add(match[1].toUpperCase());
+  for (const match of text.matchAll(/\b(?:R-?\d{7,20}|RP-[7-9]\d{6,11}|RS-[1-3]\d{12,15})\b/gi)) {
+    const raw = match[0].toUpperCase();
+    values.add(raw);
+    if (/^R-/.test(raw)) values.add(raw.replace("-", ""));
   }
   return [...values].slice(0, 8);
 }
