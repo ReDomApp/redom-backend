@@ -45,3 +45,7 @@ jobs:
         run: pnpm --filter @workspace/redom-frontend run typecheck
       - name: Typecheck ReDom backend
         run: pnpm --filter @workspace/redom-backend run typecheck
+      - name: Typecheck ReDom Web
+        run: pnpm --filter @workspace/redomweb run typecheck
+      - name: Build ReDom Web
+        run: pnpm --filter @workspace/redomweb run build
