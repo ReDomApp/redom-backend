@@ -39,7 +39,9 @@ async function processSupportMessage(input: { message: string; userId?: string |
   if (closedCaseNumber) {
     const reply = `This support case has been permanently closed and cannot be reopened. If you're experiencing a new issue, please create a new support case. For your security, closed case numbers cannot be reused.\n\nA new support case has been created for this message.\n\nCase Number: ${supportCase.caseNumber}`;
     await addSupportMessage({ caseId: supportCase.id, senderType: "ai", senderEmail: env.email.supportFrom, body: reply });
-    return { supportCase, isSafe: true, reply };
+    const account = input.userId ? await getAccountContextById(input.userId) : await getAccountContextByEmail(input.senderEmail);
+    const actions = await buildSupportEmailActions({ account, message: input.message, category: supportCase.category, caseNumber: supportCase.caseNumber });
+    return { supportCase, isSafe: true, reply, actions };
   }
   const account = input.userId ? await getAccountContextById(input.userId) : await getAccountContextByEmail(input.senderEmail);
   const history = await getSupportCaseMessages(supportCase.id, 20);
@@ -47,7 +49,8 @@ async function processSupportMessage(input: { message: string; userId?: string |
   if (!aiResult.is_safe || aiResult.support_reply === null) return { supportCase, isSafe: false, reply: null };
   const reply = formatCaseReply(supportCase.caseNumber, applySenderGreeting(aiResult.support_reply, input.senderDisplayName));
   await addSupportMessage({ caseId: supportCase.id, senderType: "ai", senderEmail: env.email.supportFrom, body: reply });
-  return { supportCase, isSafe: true, reply };
+  const actions = await buildSupportEmailActions({ account, message: input.message, category: supportCase.category, caseNumber: supportCase.caseNumber, policySlug: aiResult.policySlug });
+  return { supportCase, isSafe: true, reply, actions };
 }
 
 router.post("/chat", authMiddleware, async (req, res) => {
