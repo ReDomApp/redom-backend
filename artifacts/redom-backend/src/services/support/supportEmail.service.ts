@@ -31,7 +31,29 @@ function renderInlineFormatting(value: string): string {
 function renderSupportText(value: string): string {
   return value.split(/\n/).map((line) => renderInlineFormatting(line)).join("<br>");
 }
-function fallbackHtml(caseNumber: string, reply: string): string {
+
+export type SupportEmailAction = {
+  label: string;
+  path: string;
+};
+
+function supportWebUrl(path: string): string {
+  const base = env.email.webBaseUrl.replace(/\/+$/, "");
+  const normalized = path.startsWith("/") ? path : "/" + path;
+  return base + normalized;
+}
+
+function renderActionButtons(actions: SupportEmailAction[]): string {
+  if (!actions.length) return "";
+  const buttons = actions.map((action) => {
+    const label = escapeHtml(action.label.trim());
+    const href = escapeHtml(supportWebUrl(action.path.trim()));
+    return '<a href="' + href + '" style="display:inline-block;margin:0 8px 10px 0;padding:12px 18px;background:' + REDOM_EMAIL_BRAND.primary + ';color:#FFFFFF;text-decoration:none;border-radius:9px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:18px;font-weight:700;">' + label + '</a>';
+  }).join("");
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 24px 0;"><tr><td>' + buttons + '</td></tr></table>';
+}
+
+function fallbackHtml(caseNumber: string, reply: string, actions: SupportEmailAction[] = []): string {
   const safeCase = escapeHtml(caseNumber);
   const paragraphs = reply.trim().split(/\n\s*\n/).map((part) =>
     `<p style="margin:0 0 18px 0;color:${REDOM_EMAIL_BRAND.text};font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.65;">${renderSupportText(part)}</p>`
@@ -61,6 +83,7 @@ function fallbackHtml(caseNumber: string, reply: string): string {
 </td></tr>
 <tr><td style="padding:30px 28px 24px 28px;">
 ${paragraphs}
+${renderActionButtons(actions)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr><td style="border-top:1px solid ${REDOM_EMAIL_BRAND.border};padding-top:18px;color:${REDOM_EMAIL_BRAND.secondary};font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;">Reply to this email to continue your support case.</td></tr>
 </table>
@@ -83,10 +106,11 @@ export async function generateSupportEmailHtml(input: {
   category: string;
   subject?: string | null;
   supportReply: string;
+  actions?: SupportEmailAction[];
 }): Promise<string> {
   // Keep the customer-facing email shell deterministic. AI supplies the support message; it does not control the email layout.
   const body = input.supportReply.replace(/^Case Number:\s*R\d{11}\s*\n\s*/i, "").trim();
-  return fallbackHtml(input.caseNumber, body);
+  return fallbackHtml(input.caseNumber, body, input.actions ?? []);
 }
 
 export async function sendGeneratedSupportEmail(input: {
@@ -95,8 +119,13 @@ export async function sendGeneratedSupportEmail(input: {
   caseNumber: string;
   category: string;
   supportReply: string;
+  actions?: SupportEmailAction[];
 }): Promise<void> {
-  const html = await generateSupportEmailHtml(input);
+  const actions: SupportEmailAction[] = [
+    { label: "View Support Case", path: "/support/cases/" + encodeURIComponent(input.caseNumber) },
+    ...(input.actions ?? []),
+  ];
+  const html = await generateSupportEmailHtml({ ...input, actions });
   const { error } = await resend.emails.send({
     from: env.email.supportFrom,
     to: [input.to],
