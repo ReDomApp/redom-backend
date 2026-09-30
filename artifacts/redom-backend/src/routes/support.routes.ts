@@ -8,6 +8,7 @@ import { addSupportMessage, classifySupportCategory, createSupportCase, extractC
 import { generatePolicyAwareSupportReply } from "../services/support/policy-aware-support.service";
 import { sendGeneratedSupportEmail } from "../services/support/supportEmail.service";
 import { processRefundSupportEmail } from "../services/refund/refund.service";
+import { buildSupportEmailActions } from "../services/support/supportWebLinks.service";
 
 const router = Router();
 const resend = new Resend(env.email.resend.apiKey);
@@ -32,7 +33,7 @@ async function resolveCaseForMessage(input: { userId?: string | null; senderEmai
   return { supportCase: await createSupportCase({ userId: input.userId, requesterEmail: input.senderEmail, subject: input.subject, category: classifySupportCategory(input.message) }) };
 }
 
-async function processSupportMessage(input: { message: string; userId?: string | null; senderEmail: string; senderDisplayName?: string | null; subject?: string | null; caseNumber?: string | null }): Promise<{ supportCase: SupportCase; isSafe: boolean; reply: string | null }> {
+async function processSupportMessage(input: { message: string; userId?: string | null; senderEmail: string; senderDisplayName?: string | null; subject?: string | null; caseNumber?: string | null }): Promise<{ supportCase: SupportCase; isSafe: boolean; reply: string | null; actions: Awaited<ReturnType<typeof buildSupportEmailActions>> }> {
   const { supportCase, closedCaseNumber } = await resolveCaseForMessage(input);
   await addSupportMessage({ caseId: supportCase.id, senderType: "user", senderEmail: input.senderEmail, body: input.message });
   if (closedCaseNumber) {
@@ -258,7 +259,7 @@ router.post("/email/webhook", async (req, res) => {
     }
     const account = await getAccountContextByEmail(senderEmail); const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
     const result = await processSupportMessage({ message, userId: account?.userId ?? null, senderEmail, senderDisplayName, subject: email.subject ?? "ReDom Support", caseNumber: referenced });
-    if (result.isSafe && result.reply) { const baseSubject = String(email.subject || "ReDom Support").replace(/^\s*((re|fwd|fw):\s*)+/i, "").replace(/\s*\[?Case\s*R\d{11}\]?\s*$/i, "").trim() || "ReDom Support"; await sendGeneratedSupportEmail({ to: senderEmail, subject: `Re: ${baseSubject} [Case ${result.supportCase.caseNumber}]`, caseNumber: result.supportCase.caseNumber, category: result.supportCase.category, supportReply: result.reply }); }
+    if (result.isSafe && result.reply) { const baseSubject = String(email.subject || "ReDom Support").replace(/^\s*((re|fwd|fw):\s*)+/i, "").replace(/\s*\[?Case\s*R\d{11}\]?\s*$/i, "").trim() || "ReDom Support"; await sendGeneratedSupportEmail({ to: senderEmail, subject: `Re: ${baseSubject} [Case ${result.supportCase.caseNumber}]`, caseNumber: result.supportCase.caseNumber, category: result.supportCase.category, supportReply: result.reply, actions: result.actions }); }
     await linkInboundEvent(id, result.supportCase.id);
     await markInboundEvent(id, emailId);
     return res.status(200).json({ received: true, caseNumber: result.supportCase.caseNumber, is_safe: result.isSafe });
