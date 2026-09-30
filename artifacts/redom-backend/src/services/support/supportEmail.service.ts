@@ -31,8 +31,7 @@ function renderInlineFormatting(value: string): string {
 }
 
 function renderSupportText(value: string): string {
-  const withLinks = renderSupportInlineLinkTokens(value, "html");
-  return withLinks.split(/\n/).map((line) => renderInlineFormatting(line)).join("<br>");
+  return value.split(/\n/).map((line) => renderSupportInlineLinkTokens(renderInlineFormatting(line), "html")).join("<br>");
 }
 
 export type SupportEmailAction = {
