@@ -1,10 +1,22 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+function AppBoot() {
+  useEffect(() => {
+    document.getElementById("fallback-shell")?.setAttribute("hidden", "");
+  }, []);
+
+  return <App />;
+}
+
+const rootElement = document.getElementById("root");
+
+if (rootElement) {
+  createRoot(rootElement).render(
+    <StrictMode>
+      <AppBoot />
+    </StrictMode>,
+  );
+}
