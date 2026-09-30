@@ -17,6 +17,26 @@ function extractEmailAddress(value: string): string { const angle = value.match(
 function extractEmailDisplayName(value: string): string | null { const angle = value.match(/^\s*["']?(.+?)["']?\s*<[^>]+>\s*$/); if (!angle?.[1]) return null; const name = angle[1].trim().replace(/^['"]|['"]$/g, "").trim(); return name && !/@/.test(name) ? name : null; }
 function stripHtml(value: string): string { return value.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim(); }
 function emailBody(email: { text?: string | null; html?: string | null }): string { return email.text?.trim() || (email.html ? stripHtml(email.html) : ""); }
+function isAutomaticSupportResponse(email: any, message: string): boolean {
+  const headers = email?.headers && typeof email.headers === "object" ? email.headers as Record<string, unknown> : {};
+  const header = (name: string): string => {
+    const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+    const value = key ? headers[key] : undefined;
+    return Array.isArray(value) ? value.join(", ") : String(value ?? "");
+  };
+  const autoSubmitted = header("auto-submitted").trim().toLowerCase();
+  if (autoSubmitted && autoSubmitted !== "no") return true;
+  if (/^(?:list|bulk|junk)$/i.test(header("precedence").trim())) return true;
+  if (header("x-autorespond") || header("x-autoreply") || header("x-autoreply-from")) return true;
+
+  const subject = String(email?.subject ?? "");
+  const body = String(message ?? "");
+  // Common helpdesk/transactional auto-replies must never become a new support conversation.
+  if (/^\s*(?:auto(?:matic)?\s+(?:reply|response)|out of office|vacation reply)\s*:/i.test(subject)) return true;
+  if (/your request\s*\(\d+\)\s+has been received and is being reviewed/i.test(body)) return true;
+  if (/this is an automated (?:message|response)|do not reply to this (?:email|message)/i.test(body)) return true;
+  return false;
+}
 function applySenderGreeting(reply: string, senderName?: string | null): string { if (!senderName) return reply.trim(); const normalized = reply.trim(); const greeting = `Hello ${senderName},`; return normalized.replace(/^hello(?:\s+[^,\n]{1,120})?,\s*/i, `${greeting}\n\n`).replace(/^hi(?:\s+[^,\n]{1,120})?,\s*/i, `${greeting}\n\n`); }
 
 async function resolveCaseForMessage(input: { userId?: string | null; senderEmail: string; message: string; subject?: string | null; caseNumber?: string | null }): Promise<{ supportCase: SupportCase; closedCaseNumber?: string }> {
@@ -293,6 +313,10 @@ router.post("/email/webhook", async (req, res) => {
     if (!message) {
       await markInboundEvent(id, inboundEmailId);
       return res.status(200).json({ received: true, ignored: true });
+    }
+    if (isAutomaticSupportResponse(email, message)) {
+      await markInboundEvent(id, inboundEmailId);
+      return res.status(200).json({ received: true, ignored: true, automatic: true });
     }
 
     const looksLikeRefund = /\b(refund|refunds|money back|return (?:my|the) (?:payment|money)|charged in error)\b/i.test(`${email.subject ?? ""}\n${message}`);
