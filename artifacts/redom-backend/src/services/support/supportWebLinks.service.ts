@@ -92,6 +92,36 @@ function isStripeUrl(value: string): boolean {
   }
 }
 
+export function resolveSupportInlineLinkToken(token: string): { label: string; url: string } | null {
+  const match = token.match(/^\\[\\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):([A-Za-z0-9_-]+)\\|([^\\]]+)\\]\\]$/);
+  if (!match) return null;
+  const kind = match[1];
+  const key = match[2];
+  const label = match[3].trim();
+  if (!label || label.length > 140) return null;
+
+  if (kind === "REDOM_POLICY") {
+    if (!REDOM_POLICY_PATHS[key]) return null;
+    return { label, url: REDOM_DOCS + REDOM_POLICY_PATHS[key] };
+  }
+  if (kind === "REDOM_HELP") {
+    if (!REDOM_HELP_PATHS[key]) return null;
+    return { label, url: REDOM_HELP + REDOM_HELP_PATHS[key] };
+  }
+  if (!STRIPE_DOC_PATHS[key]) return null;
+  return { label, url: STRIPE_DOCS + STRIPE_DOC_PATHS[key] };
+}
+
+export function renderSupportInlineLinkTokens(value: string, mode: "html" | "text"): string {
+  return value.replace(/\\[\\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):([A-Za-z0-9_-]+)\\|([^\\]]+)\\]\\]/g, (whole) => {
+    const resolved = resolveSupportInlineLinkToken(whole);
+    if (!resolved) return mode === "html" ? "" : whole;
+    return mode === "html"
+      ? '<a href="' + resolved.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '" style="color:#1877F2;text-decoration:underline;font-weight:600;">' + resolved.label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</a>'
+      : resolved.label;
+  });
+}
+
 export function isAllowedSupportEmailUrl(value: string): boolean {
   try {
     const url = new URL(value);
