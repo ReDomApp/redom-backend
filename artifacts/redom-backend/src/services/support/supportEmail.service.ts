@@ -141,8 +141,11 @@ export async function sendGeneratedSupportEmail(input: {
     try {
       const parsed = new URL(url);
       const configuredWebOrigin = new URL(env.email.webBaseUrl).origin;
+      const configuredDocsOrigin = new URL(env.email.supportDocsUrl).origin;
+      const configuredHelpOrigin = new URL(env.email.supportHelpUrl).origin;
       const stripe = parsed.hostname === "stripe.com" || parsed.hostname.endsWith(".stripe.com");
-      return parsed.origin === configuredWebOrigin || (stripe && paymentCategory);
+      const redomSupport = parsed.origin === configuredDocsOrigin || parsed.origin === configuredHelpOrigin;
+      return parsed.origin === configuredWebOrigin || redomSupport || (stripe && paymentCategory);
     } catch {
       return false;
     }
