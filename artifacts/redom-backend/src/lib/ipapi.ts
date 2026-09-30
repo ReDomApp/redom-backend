@@ -46,8 +46,10 @@ const IPAPI_ENDPOINTS = [
   "https://us.ipapi.is/",
   "https://sg.ipapi.is/",
 ] as const;
-const REQUEST_TIMEOUT_MS = 8_000;
-const MAX_TRANSIENT_ATTEMPTS = 2;
+const REQUEST_TIMEOUT_MS = 5_000;
+// Fail over to the next regional API server instead of spending the entire
+// startup window retrying one unhealthy server.
+const MAX_TRANSIENT_ATTEMPTS = 1;
 
 function normalizeIp(ip: string): string {
   const value = ip.trim().replace(/^\[|\]$/g, "");
