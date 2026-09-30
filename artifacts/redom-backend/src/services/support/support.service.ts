@@ -297,13 +297,20 @@ async function requestGeminiSupport(model: string, requestContext: object): Prom
   return parseGeminiSupportResult(extractGeminiText(await response.json()));
 }
 
-export async function generateSupportReply(input: { message: string; account: SupportAccountContext | null; supportCase: SupportCase; history: SupportMessage[]; approvedPolicyContext?: string | null }): Promise<SupportAiResult> {
+export async function generateSupportReply(input: { message: string; account: SupportAccountContext | null; supportCase: SupportCase; history: SupportMessage[]; approvedPolicyContext?: string | null; approvedPolicySlug?: string | null }): Promise<SupportAiResult> {
   const requestContext = {
     account: input.account,
     case: { caseNumber: input.supportCase.caseNumber, category: input.supportCase.category, status: input.supportCase.status, subject: input.supportCase.subject },
     recentConversation: input.history.map((message) => ({ sender: message.senderType, message: message.body })),
     currentUserMessage: input.message,
     approvedPolicyContext: input.approvedPolicyContext ?? null,
+    approvedPolicySlug: input.approvedPolicySlug ?? null,
+    link_token_rules: {
+      redom_policy: "Use [[REDOM_POLICY:<approvedPolicySlug>|Label]] only when an approved ReDom policy was used and a link is genuinely useful.",
+      redom_help: "Use [[REDOM_HELP:<approved-help-key>|Label]] only for a relevant ReDom help destination.",
+      stripe_docs: "Use [[STRIPE_DOC:<approved-stripe-doc-key>|Label]] only when the user asks for Stripe/payment documentation. Allowed keys are currencies, payment-methods, payment-methods-guide, checkout, refunds, refunds-guide, payment-intents, setup-intents.",
+      no_raw_urls: true,
+    },
   };
 
   let lastError: unknown;
