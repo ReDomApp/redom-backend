@@ -11,19 +11,19 @@ const STRIPE_API = "https://api.stripe.com/v1";
 const STRIPE_DOCS = "https://docs.stripe.com";
 const STRIPE_ROOT = "https://stripe.com";
 const PAYMENT_WORDS = /payment|pay|paid|charge|charged|invoice|receipt|refund|refunds|billing|card|transaction|checkout|subscription/i;
-const LINK_REQUEST_WORDS = /\\b(?:link|url|website|page|open|where|documentation|docs|policy|terms|conditions|receipt|invoice|view|access|see|show)\\b/i;
+const LINK_REQUEST_WORDS = /\b(?:link|url|website|page|open|where|documentation|docs|policy|terms|conditions|receipt|invoice|view|access|see|show)\b/i;
 
 function explicitlyRequestsLink(message: string): boolean {
   return LINK_REQUEST_WORDS.test(String(message ?? ""));
 }
 
 function explicitlyRequestsInvoice(message: string): boolean {
-  return /\\b(?:invoice|receipt|payment receipt|proof of payment)\\b/i.test(String(message ?? ""));
+  return /\b(?:invoice|receipt|payment receipt|proof of payment)\b/i.test(String(message ?? ""));
 }
 
 function explicitlyRequestsPaymentDocs(message: string): boolean {
-  return /\\b(?:stripe|payment|refund|billing|checkout)\\b/i.test(String(message ?? ""))
-    && /\\b(?:link|url|website|documentation|docs|guide|information|info|policy|how does)\\b/i.test(String(message ?? ""));
+  return /\b(?:stripe|payment|refund|billing|checkout)\b/i.test(String(message ?? ""))
+    && /\b(?:link|url|website|documentation|docs|guide|information|info|policy|how does)\b/i.test(String(message ?? ""));
 }
 
 function redomUrl(path: string): string {
@@ -195,7 +195,7 @@ export async function buildSupportEmailActions(input: {
       "SELECT 1 FROM support_cases WHERE case_number=$1 AND user_id=$2 LIMIT 1",
       [input.caseNumber.toUpperCase(), input.account.userId],
     );
-    if (supportCase.rows[0] && (wantsLink || /\\b(?:case|status|conversation|ticket)\\b/i.test(input.message))) {
+    if (supportCase.rows[0] && (wantsLink || /\b(?:case|status|conversation|ticket)\b/i.test(input.message))) {
       const viewCase = action(
         "View Your Support Case",
         redomUrl("/support/cases/" + encodeURIComponent(input.caseNumber)),
