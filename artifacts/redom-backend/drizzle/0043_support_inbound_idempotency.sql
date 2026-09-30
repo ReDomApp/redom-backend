@@ -13,7 +13,10 @@ UPDATE support_inbound_events
 DELETE FROM support_inbound_events a
 USING support_inbound_events b
 WHERE a.email_id = b.email_id
-  AND a.created_at > b.created_at;
+  AND (
+    a.created_at > b.created_at
+    OR (a.created_at = b.created_at AND a.id > b.id)
+  );
 
 CREATE UNIQUE INDEX IF NOT EXISTS support_inbound_events_email_id_idx
   ON support_inbound_events(email_id);
