@@ -47,7 +47,8 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interaction
 // 3.8 is preferred, but support must remain available if a single model is under temporary load.
 const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"] as const;
 const CASE_PATTERN = /\bR\d{11}\b/i;
-const PAYMENT_PROVIDER_KNOWLEDGE = `Payment-provider general knowledge for ReDom Payments:
+const PAYMENT_PROVIDER_KNOWLEDGE = `Payment-provider general knowledge for ReDom Payments. Apply this knowledge when a question is directly about payments OR indirectly concerns a paid product, subscription, plan, tier, package, purchase, checkout, billing, price, currency, country availability, payment method, invoice, receipt, refund, or how a paid ReDom product works. Do not wait for the customer to name a payment provider:
+
 - Business availability is country/region dependent. The current official availability list is authoritative and should be linked with [[STRIPE_DOC:countries|supported countries]] when the customer asks for the current list.
 - Payment-method availability depends on the business country/region, customer locale, currency, and the payment method itself.
 - More than 135 payment currencies are supported for presentment, but currency availability can vary by country and payment method.
@@ -356,9 +357,7 @@ export async function generateSupportReply(input: { message: string; account: Su
     case: { caseNumber: input.supportCase.caseNumber, category: input.supportCase.category, status: input.supportCase.status, subject: input.supportCase.subject },
     recentConversation: input.history.map((message) => ({ sender: message.senderType, message: message.body })),
     currentUserMessage: input.message,
-    payment_provider_knowledge: input.supportCase.category === "refund_payment" || input.supportCase.category === "payment_transaction_problem" || input.supportCase.category === "payment_method_problem" || /payment|pay|paid|charge|charged|refund|billing|card|transaction|checkout|currency|country|payment method/i.test(input.message)
-      ? PAYMENT_PROVIDER_KNOWLEDGE
-      : null,
+    payment_provider_knowledge: PAYMENT_PROVIDER_KNOWLEDGE,
     approvedPolicyContext: input.approvedPolicyContext ?? null,
     approvedPolicySlug: input.approvedPolicySlug ?? null,
     link_token_rules: {
