@@ -11,6 +11,20 @@ const STRIPE_API = "https://api.stripe.com/v1";
 const STRIPE_DOCS = "https://docs.stripe.com";
 const STRIPE_ROOT = "https://stripe.com";
 const PAYMENT_WORDS = /payment|pay|paid|charge|charged|invoice|receipt|refund|refunds|billing|card|transaction|checkout|subscription/i;
+const LINK_REQUEST_WORDS = /\\b(?:link|url|website|page|open|where|documentation|docs|policy|terms|conditions|receipt|invoice|view|access|see|show)\\b/i;
+
+function explicitlyRequestsLink(message: string): boolean {
+  return LINK_REQUEST_WORDS.test(String(message ?? ""));
+}
+
+function explicitlyRequestsInvoice(message: string): boolean {
+  return /\\b(?:invoice|receipt|payment receipt|proof of payment)\\b/i.test(String(message ?? ""));
+}
+
+function explicitlyRequestsPaymentDocs(message: string): boolean {
+  return /\\b(?:stripe|payment|refund|billing|checkout)\\b/i.test(String(message ?? ""))
+    && /\\b(?:link|url|website|documentation|docs|guide|information|info|policy|how does)\\b/i.test(String(message ?? ""));
+}
 
 function redomUrl(path: string): string {
   const base = env.email.webBaseUrl.replace(/\/+$/, "");
@@ -154,6 +168,9 @@ export async function buildSupportEmailActions(input: {
     || PAYMENT_WORDS.test(input.message)
     || input.policySlug === "payments"
     || input.policySlug === "refunds";
+  const wantsLink = explicitlyRequestsLink(input.message);
+  const wantsPaymentDocs = explicitlyRequestsPaymentDocs(input.message);
+  const wantsInvoice = explicitlyRequestsInvoice(input.message);
 
   if (input.policySlug) {
     const policy = action(
@@ -163,13 +180,12 @@ export async function buildSupportEmailActions(input: {
     if (policy) actions.push(policy);
   }
 
-  if (paymentRelated) {
-    const stripeDocs = action("View Stripe Payment Information", STRIPE_DOCS + "/payments");
+  if (paymentRelated && (wantsPaymentDocs || input.policySlug === "payments" || input.policySlug === "refunds")) {
+    const stripeDocs = action(
+      input.policySlug === "refunds" || /refund/i.test(input.message) ? "View Stripe Refund Information" : "View Stripe Payment Information",
+      input.policySlug === "refunds" || /refund/i.test(input.message) ? STRIPE_DOCS + "/refunds" : STRIPE_DOCS + "/payments",
+    );
     if (stripeDocs) actions.push(stripeDocs);
-    if (input.policySlug === "refunds" || input.category === "refund_payment" || /refund/i.test(input.message)) {
-      const stripeRefunds = action("View Stripe Refund Information", STRIPE_DOCS + "/refunds");
-      if (stripeRefunds) actions.push(stripeRefunds);
-    }
   }
 
   // Account-specific destinations are only emitted for an authenticated, currently active
@@ -179,7 +195,7 @@ export async function buildSupportEmailActions(input: {
       "SELECT 1 FROM support_cases WHERE case_number=$1 AND user_id=$2 LIMIT 1",
       [input.caseNumber.toUpperCase(), input.account.userId],
     );
-    if (supportCase.rows[0]) {
+    if (supportCase.rows[0] && (wantsLink || /\\b(?:case|status|conversation|ticket)\\b/i.test(input.message))) {
       const viewCase = action(
         "View Your Support Case",
         redomUrl("/support/cases/" + encodeURIComponent(input.caseNumber)),
@@ -187,7 +203,7 @@ export async function buildSupportEmailActions(input: {
       if (viewCase) actions.push(viewCase);
     }
 
-    if (paymentRelated) {
+    if (paymentRelated && wantsInvoice) {
       const stripePayment = await getOwnedStripePayment(input.account.userId, input.message);
       if (stripePayment?.providerTransactionId) {
         const stripeUrl = await resolveStripeCustomerUrl(
