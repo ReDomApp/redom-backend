@@ -104,6 +104,7 @@ export async function generatePolicyAwareSupportReply(input: {
     supportCase: input.supportCase,
     history: input.history,
     approvedPolicyContext: policyText,
+    approvedPolicySlug: document?.slug ?? null,
   });
   if (!base.is_safe || !base.support_reply) return base;
   return { ...base, policySlug: document?.slug ?? null };
