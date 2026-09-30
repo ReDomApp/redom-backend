@@ -148,6 +148,8 @@ const POLICY_ALIASES: Record<string, string> = {
   ai: "ai", artificial_intelligence: "ai",
   regional: "regional", country: "regional", availability: "regional",
   refunds: "refunds", refund: "refunds", payments: "payments", payment: "payments", chargeback: "refunds",
+  subscriptions: "payments", subscription: "payments", "paid-product": "payments", product: "payments", products: "payments",
+  plans: "payments", plan: "payments", tiers: "payments", tier: "payments", packages: "payments", package: "payments",
   support: "support", reporting: "support", reports: "support",
   appearance: "appearance", dark_mode: "appearance", darkmode: "appearance", theme: "appearance",
 };
