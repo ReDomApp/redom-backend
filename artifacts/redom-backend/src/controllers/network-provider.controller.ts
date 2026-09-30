@@ -10,19 +10,37 @@ function normalizeIp(value: unknown): string | undefined {
   return valueTrimmed.startsWith("::ffff:") ? valueTrimmed.slice(7) : valueTrimmed;
 }
 
+function isUsablePublicIp(ip: string): boolean {
+  const value = ip.trim();
+  if (value.includes(":")) {
+    const lower = value.toLowerCase();
+    return lower !== "::" && lower !== "::1" &&
+      !lower.startsWith("fc") && !lower.startsWith("fd") &&
+      !lower.startsWith("fe8") && !lower.startsWith("fe9") &&
+      !lower.startsWith("fea") && !lower.startsWith("feb");
+  }
+
+  const parts = value.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+
+  const [a, b] = parts;
+  if (a === 10 || a === 127 || a === 0 || a >= 224) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false;
+  return true;
+}
+
 /**
- * The mobile app first asks api.ipapi.is for the public IP visible from the
- * handset's current Wi-Fi/mobile connection, then sends that IP here.
- *
- * The handset-discovered public IP is authoritative for network intelligence.
- * Render sits behind managed proxies, so req.ip is useful as an observation
- * but must not replace the public IP discovered directly from the handset.
+ * The client discovers its current public IP directly from IPAPI.
+ * Never substitute req.ip: behind Vercel/Render that address can belong to
+ * the hosting/proxy path rather than the user's actual network.
  */
 function requestAddress(req: Request): string | undefined {
   const discoveredPublicIp = normalizeIp(req.query.ip);
-  if (discoveredPublicIp) return discoveredPublicIp;
-
-  return normalizeIp(req.ip);
+  if (!discoveredPublicIp || !isUsablePublicIp(discoveredPublicIp)) return undefined;
+  return discoveredPublicIp;
 }
 
 export class NetworkProviderController {
@@ -30,7 +48,7 @@ export class NetworkProviderController {
     const ip = requestAddress(req);
 
     if (!ip) {
-      const warning = "Unable to determine the public IP address of the current network.";
+      const warning = "Unable to determine a usable public IP address from the current client network. The hosting server IP is never used for this check.";
       res.status(503).json({
         success: false,
         code: "NETWORK_IP_UNAVAILABLE",
