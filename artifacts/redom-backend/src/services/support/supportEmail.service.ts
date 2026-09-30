@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { createHash } from "node:crypto";
 import { env } from "../../config/env";
+import { isAllowedSupportEmailUrl } from "./supportWebLinks.service";
 
 const resend = new Resend(env.email.resend.apiKey);
 
@@ -34,22 +35,30 @@ function renderSupportText(value: string): string {
 
 export type SupportEmailAction = {
   label: string;
-  path: string;
+  path?: string;
+  url?: string;
 };
 
-function supportWebUrl(path: string): string {
+function supportWebUrl(action: SupportEmailAction): string | null {
+  const raw = action.url?.trim() || action.path?.trim();
+  if (!raw) return null;
+  if (action.url) return isAllowedSupportEmailUrl(raw) ? raw : null;
   const base = env.email.webBaseUrl.replace(/\/+$/, "");
-  const normalized = path.startsWith("/") ? path : "/" + path;
-  return base + normalized;
+  const normalized = raw.startsWith("/") ? raw : "/" + raw;
+  const url = base + normalized;
+  return isAllowedSupportEmailUrl(url) ? url : null;
 }
 
 function renderActionButtons(actions: SupportEmailAction[]): string {
   if (!actions.length) return "";
   const buttons = actions.map((action) => {
     const label = escapeHtml(action.label.trim());
-    const href = escapeHtml(supportWebUrl(action.path.trim()));
+    const resolved = supportWebUrl(action);
+    if (!label || !resolved) return "";
+    const href = escapeHtml(resolved);
     return '<a href="' + href + '" style="display:inline-block;margin:0 8px 10px 0;padding:12px 18px;background:' + REDOM_EMAIL_BRAND.primary + ';color:#FFFFFF;text-decoration:none;border-radius:9px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:18px;font-weight:700;">' + label + '</a>';
   }).join("");
+  if (!buttons) return "";
   return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 24px 0;"><tr><td>' + buttons + '</td></tr></table>';
 }
 
@@ -121,10 +130,7 @@ export async function sendGeneratedSupportEmail(input: {
   supportReply: string;
   actions?: SupportEmailAction[];
 }): Promise<void> {
-  const actions: SupportEmailAction[] = [
-    { label: "View Support Case", path: "/support/cases/" + encodeURIComponent(input.caseNumber) },
-    ...(input.actions ?? []),
-  ];
+  const actions = input.actions ?? [];
   const html = await generateSupportEmailHtml({ ...input, actions });
   const { error } = await resend.emails.send({
     from: env.email.supportFrom,
