@@ -99,5 +99,5 @@ export async function generatePolicyAwareSupportReply(input: {
   const document = getPolicyDocument(intent.policy_slug);
   if (!document) return base;
   const policyText = renderCompletePolicy(document, intent.requested_sections);
-  return { is_safe: true, support_reply: `${base.support_reply.trim()}\n\nOfficial ReDom policy information\n\n${policyText}` };
+  return { is_safe: true, support_reply: `${base.support_reply.trim()}\n\nOfficial ReDom policy information\n\n${policyText}`, policySlug: intent.policy_slug };
 }
