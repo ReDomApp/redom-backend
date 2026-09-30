@@ -4,7 +4,7 @@ import { z } from "zod";
 import { env } from "../config/env";
 import { pool } from "../database/db";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, markInboundEvent, type SupportCase } from "../services/support/support.service";
+import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, claimInboundEvent, markInboundEvent, markInboundEventFailed, findRecentActiveSupportCase, type SupportCase } from "../services/support/support.service";
 import { generatePolicyAwareSupportReply } from "../services/support/policy-aware-support.service";
 import { sendGeneratedSupportEmail } from "../services/support/supportEmail.service";
 import { processRefundSupportEmail } from "../services/refund/refund.service";
@@ -33,7 +33,27 @@ async function resolveCaseForMessage(input: { userId?: string | null; senderEmai
   return { supportCase: await createSupportCase({ userId: input.userId, requesterEmail: input.senderEmail, subject: input.subject, category: classifySupportCategory(input.message) }) };
 }
 
-async function processSupportMessage(input: { message: string; userId?: string | null; senderEmail: string; senderDisplayName?: string | null; subject?: string | null; caseNumber?: string | null }): Promise<{ supportCase: SupportCase; isSafe: boolean; reply: string | null; actions: Awaited<ReturnType<typeof buildSupportEmailActions>> }> {
+async function processSupportMessage(input: { message: string; userId?: string | null; senderEmail: string; senderDisplayName?: string | null; subject?: string | null; caseNumber?: string | null }): Promise<{ supportCase: SupportCase; isSafe: boolean; reply: string | null; actions: Awaited<ReturnType<typeof buildSupportEmailActions>>; duplicate?: boolean }> {
+  const referenced = input.caseNumber || extractCaseNumber(`${input.subject ?? ""}\n${input.message}`);
+  if (!referenced) {
+    const duplicateCase = await findRecentActiveSupportCase({
+      userId: input.userId ?? null,
+      requesterEmail: input.senderEmail,
+      message: input.message,
+    });
+    if (duplicateCase) {
+      const recentMessages = await getSupportCaseMessages(duplicateCase.id, 20);
+      const previousReply = [...recentMessages].reverse().find((message) => message.senderType === "ai")?.body ?? null;
+      return {
+        supportCase: duplicateCase,
+        isSafe: true,
+        reply: previousReply,
+        actions: [],
+        duplicate: true,
+      };
+    }
+  }
+
   const { supportCase, closedCaseNumber } = await resolveCaseForMessage(input);
   await addSupportMessage({ caseId: supportCase.id, senderType: "user", senderEmail: input.senderEmail, body: input.message });
   if (closedCaseNumber) {
@@ -46,7 +66,7 @@ async function processSupportMessage(input: { message: string; userId?: string |
   const account = input.userId ? await getAccountContextById(input.userId) : await getAccountContextByEmail(input.senderEmail);
   const history = await getSupportCaseMessages(supportCase.id, 20);
   const aiResult = await generatePolicyAwareSupportReply({ message: input.message, subject: input.subject, account, supportCase, history });
-  if (!aiResult.is_safe || aiResult.support_reply === null) return { supportCase, isSafe: false, reply: null };
+  if (!aiResult.is_safe || aiResult.support_reply === null) return { supportCase, isSafe: false, reply: null, actions: [] };
   const reply = formatCaseReply(supportCase.caseNumber, applySenderGreeting(aiResult.support_reply, input.senderDisplayName));
   await addSupportMessage({ caseId: supportCase.id, senderType: "ai", senderEmail: env.email.supportFrom, body: reply });
   const actions = await buildSupportEmailActions({ account, message: input.message, category: supportCase.category, caseNumber: supportCase.caseNumber, policySlug: aiResult.policySlug });
@@ -232,40 +252,108 @@ router.get("/cases/:caseNumber", authMiddleware, async (req, res) => { const cas
 
 router.post("/email/webhook", async (req, res) => {
   if (!env.email.resend.webhookSecret) return res.status(503).send("Support email webhook is not configured.");
+
+  let inboundSvixId = "";
+  let inboundEmailId = "";
+  let claimed = false;
   try {
     const payload = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : String(req.body ?? "");
-    const id = String(req.headers["svix-id"] ?? ""), timestamp = String(req.headers["svix-timestamp"] ?? ""), signature = String(req.headers["svix-signature"] ?? "");
+    const id = String(req.headers["svix-id"] ?? "");
+    const timestamp = String(req.headers["svix-timestamp"] ?? "");
+    const signature = String(req.headers["svix-signature"] ?? "");
+    inboundSvixId = id;
     if (!id || !timestamp || !signature) return res.status(400).send("Missing webhook signature headers.");
-    const event = resend.webhooks.verify({ payload, headers: { id, timestamp, signature }, webhookSecret: env.email.resend.webhookSecret });
+
+    const event = resend.webhooks.verify({
+      payload,
+      headers: { id, timestamp, signature },
+      webhookSecret: env.email.resend.webhookSecret,
+    });
     if (event.type !== "email.received") return res.status(200).json({ received: true });
 
-    // Do not mark the event as complete until the entire support pipeline succeeds.
-    // If Gemini/Resend temporarily fails, Resend can retry the webhook and the message will be processed again.
-    const emailId = event.data.email_id;
-    const { data: email, error } = await resend.emails.receiving.get(emailId);
+    inboundEmailId = String(event.data.email_id);
+    const claim = await claimInboundEvent(id, inboundEmailId);
+    if (claim === "processed" || claim === "processing") {
+      return res.status(200).json({ received: true, duplicate: true, processing: claim === "processing" });
+    }
+    claimed = true;
+
+    const { data: email, error } = await resend.emails.receiving.get(inboundEmailId);
     if (error || !email) throw new Error(error?.message || "Inbound email could not be retrieved.");
+
     const senderEmail = extractEmailAddress(email.from ?? "");
     const senderDisplayName = extractEmailDisplayName(email.from ?? "");
     const supportAddress = env.email.supportFrom.toLowerCase();
-    if (!senderEmail || senderEmail === supportAddress || senderEmail === "noreply@wnncompany.com") return res.status(200).json({ received: true, ignored: true });
-    const message = emailBody(email); if (!message) return res.status(200).json({ received: true, ignored: true });
+    if (!senderEmail || senderEmail === supportAddress || senderEmail === "noreply@wnncompany.com") {
+      await markInboundEvent(id, inboundEmailId);
+      return res.status(200).json({ received: true, ignored: true });
+    }
+
+    const message = emailBody(email);
+    if (!message) {
+      await markInboundEvent(id, inboundEmailId);
+      return res.status(200).json({ received: true, ignored: true });
+    }
+
     const looksLikeRefund = /\b(refund|refunds|money back|return (?:my|the) (?:payment|money)|charged in error)\b/i.test(`${email.subject ?? ""}\n${message}`);
     if (looksLikeRefund) {
       const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
-      const refundResult = await processRefundSupportEmail({senderEmail,message,subject:String(email.subject ?? "Refund Request"),caseNumber:referenced});
+      const refundResult = await processRefundSupportEmail({
+        senderEmail,
+        message,
+        subject: String(email.subject ?? "Refund Request"),
+        caseNumber: referenced,
+      });
       if (refundResult.caseNumber) {
         const refundCase = await getSupportCase(refundResult.caseNumber);
         if (refundCase) await linkInboundEvent(id, refundCase.id);
       }
-      await markInboundEvent(id, emailId);
+      await markInboundEvent(id, inboundEmailId);
       return res.status(200).json({ received: true, caseNumber: refundResult.caseNumber, refund: true });
     }
-    const account = await getAccountContextByEmail(senderEmail); const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
-    const result = await processSupportMessage({ message, userId: account?.userId ?? null, senderEmail, senderDisplayName, subject: email.subject ?? "ReDom Support", caseNumber: referenced });
-    if (result.isSafe && result.reply) { const baseSubject = String(email.subject || "ReDom Support").replace(/^\s*((re|fwd|fw):\s*)+/i, "").replace(/\s*\[?Case\s*R\d{11}\]?\s*$/i, "").trim() || "ReDom Support"; await sendGeneratedSupportEmail({ to: senderEmail, subject: `Re: ${baseSubject} [Case ${result.supportCase.caseNumber}]`, caseNumber: result.supportCase.caseNumber, category: result.supportCase.category, supportReply: result.reply, actions: result.actions }); }
+
+    const account = await getAccountContextByEmail(senderEmail);
+    const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
+    const result = await processSupportMessage({
+      message,
+      userId: account?.userId ?? null,
+      senderEmail,
+      senderDisplayName,
+      subject: email.subject ?? "ReDom Support",
+      caseNumber: referenced,
+    });
+
+    if (result.isSafe && result.reply && !result.duplicate) {
+      const baseSubject = String(email.subject || "ReDom Support")
+        .replace(/^\s*((re|fwd|fw):\s*)+/i, "")
+        .replace(/\s*\[?Case\s*R\d{11}\]?\s*$/i, "")
+        .trim() || "ReDom Support";
+      await sendGeneratedSupportEmail({
+        to: senderEmail,
+        subject: `Re: ${baseSubject} [Case ${result.supportCase.caseNumber}]`,
+        caseNumber: result.supportCase.caseNumber,
+        category: result.supportCase.category,
+        supportReply: result.reply,
+        actions: result.actions,
+        idempotencyKey: `support-reply/${inboundEmailId}`,
+        inReplyToMessageId: typeof (email as any).message_id === "string" ? (email as any).message_id : null,
+      });
+    }
+
     await linkInboundEvent(id, result.supportCase.id);
-    await markInboundEvent(id, emailId);
-    return res.status(200).json({ received: true, caseNumber: result.supportCase.caseNumber, is_safe: result.isSafe });
-  } catch (error) { req.log?.error?.({ err: error }, "Support email webhook failed"); return res.status(500).send("Support email processing failed."); }
+    await markInboundEvent(id, inboundEmailId);
+    return res.status(200).json({
+      received: true,
+      caseNumber: result.supportCase.caseNumber,
+      is_safe: result.isSafe,
+      duplicate: Boolean(result.duplicate),
+    });
+  } catch (error) {
+    if (claimed && inboundSvixId && inboundEmailId) {
+      await markInboundEventFailed(inboundSvixId, inboundEmailId, error instanceof Error ? error.message : String(error)).catch(() => undefined);
+    }
+    req.log?.error?.({ err: error, emailId: inboundEmailId }, "Support email webhook failed");
+    return res.status(500).send("Support email processing failed.");
+  }
 });
 export default router;
