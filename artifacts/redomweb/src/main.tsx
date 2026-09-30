@@ -4,6 +4,12 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
+declare global {
+  interface Window {
+    __REDOM_REACT_BOOT__?: boolean;
+  }
+}
+
 const rootElement = document.getElementById("root");
 
 type ErrorBoundaryProps = { children: ReactNode };
@@ -35,7 +41,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         </div>
       );
     }
-
     return this.props.children;
   }
 }
@@ -44,11 +49,11 @@ function AppBoot() {
   useEffect(() => {
     document.documentElement.dataset.redomReady = "true";
   }, []);
-
   return <App />;
 }
 
-if (rootElement) {
+if (rootElement && !window.__REDOM_REACT_BOOT__) {
+  window.__REDOM_REACT_BOOT__ = true;
   createRoot(rootElement).render(
     <StrictMode>
       <ErrorBoundary>
