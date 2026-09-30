@@ -655,16 +655,26 @@ export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefi
   const object=payload?.data?.object??{};
   try{
     if(["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(type)){
-      if(String(object?.metadata?.purpose??"")==="stars_trial_setup"){
+      const purpose=String(object?.metadata?.purpose??"");
+      if(purpose==="stars_trial_setup"){
         const reference=String(object?.metadata?.reference??"");
         if(reference) await finalizeStarsTrialSetup(reference);
-      } else {
-      await fulfillStripeStarsAttempt(object as StripeSession).catch(async(error)=>{
-        const attempt=await pool.query("SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[String(object?.metadata?.reference??"")]);
-        if(attempt.rows[0])throw error;
-        await markLegacyStripePaid(object as StripeSession);
-      });
+      }else if(purpose==="redom_saved_card_expo_fallback"){
+        const userId=String(object?.metadata?.reDomUserId??"");
+        if(userId && String(object?.status??"") === "complete" && object?.setup_intent){
+          await finalizeStripeCardSetupCheckout(userId,String(object.id));
+        }
+      }else{
+        await fulfillStripeStarsAttempt(object as StripeSession).catch(async(error)=>{
+          const attempt=await pool.query("SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[String(object?.metadata?.reference??"")]);
+          if(attempt.rows[0])throw error;
+          await markLegacyStripePaid(object as StripeSession);
+        });
       }
+    }else if(type==="setup_intent.succeeded"){
+      const userId=String(object?.metadata?.reDomUserId??"");
+      const setupIntentId=String(object?.id??"");
+      if(userId && setupIntentId) await finalizeStripeCardSetup(userId,setupIntentId);
     }else if(type==="checkout.session.async_payment_failed"){
       const reference=String(object?.metadata?.reference??"");
       if(reference)await markStripeFailed(reference,"Stripe reported that the payment could not be completed.","failed",paymentIntentId(object as StripeSession),object as StripeSession);
