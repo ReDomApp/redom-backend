@@ -47,7 +47,7 @@ function parseIntent(text: string): { policy_requested: boolean; policy_slug: st
 }
 
 async function detectPolicyIntent(message: string, subject: string | null, baseReply: string | null) {
-  const policyCatalog = ["terms", "privacy", "community", "messaging", "media", "calls", "notifications", "security", "verification", "ai", "regional", "refunds", "support", "link_history", "payments"];
+  const policyCatalog = ["terms", "privacy", "community", "messaging", "media", "calls", "notifications", "security", "verification", "ai", "regional", "refunds", "support", "link_history", "payments", "subscriptions"];
   const input = JSON.stringify({
     task: "Identify whether this ReDom support request asks for an official policy or a policy-derived explanation. Select only a policy from the supplied catalog. Never invent a policy or section.",
     allowed_policy_slugs: policyCatalog,
@@ -63,7 +63,7 @@ async function detectPolicyIntent(message: string, subject: string | null, baseR
         headers: { "Content-Type": "application/json", "x-goog-api-key": env.gemini.apiKey },
         body: JSON.stringify({
           model,
-          system_instruction: "You are ReDom AI Policy Router. Classify only user-facing ReDom policy intent. Do not answer the user. Return JSON matching the supplied schema. A question about how a rule applies to a specific support issue is policy-derived intent. If uncertain, return policy_requested=false. Never select internal implementation or confidential information.",
+          system_instruction: "You are ReDom AI Policy Router. Classify only user-facing ReDom policy intent. Do not answer the user. Return JSON matching the supplied schema. A question about how a rule applies to a specific support issue is policy-derived intent. If uncertain, return policy_requested=false. Never select internal implementation or confidential information. Treat paid products, subscriptions, plans, tiers, recurring purchases, billing rules, cancellation/renewal rules, and subscription-product policy questions as payment/product-policy intent. If the supplied catalog contains a matching subscription policy, select subscriptions; otherwise select payments or refunds when appropriate.",
           input,
           response_format: { type: "text", mime_type: "application/json", schema: POLICY_INTENT_SCHEMA },
         }),
