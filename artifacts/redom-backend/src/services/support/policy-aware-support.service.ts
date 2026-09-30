@@ -92,12 +92,19 @@ export async function generatePolicyAwareSupportReply(input: {
   supportCase: SupportCase;
   history: SupportMessage[];
 }): Promise<SupportAiResult> {
-  const base = await generateSupportReply({ message: input.message, account: input.account, supportCase: input.supportCase, history: input.history });
+  // Route policy intent before drafting so the model receives the exact approved policy text
+  // as authority instead of drafting from memory and appending a policy dump afterward.
+  const intent = await detectPolicyIntent(input.message, input.subject ?? input.supportCase.subject, null);
+  const document = intent.policy_requested && intent.policy_slug ? getPolicyDocument(intent.policy_slug) : null;
+  const policyText = document ? renderCompletePolicy(document, intent.requested_sections) : null;
+
+  const base = await generateSupportReply({
+    message: input.message,
+    account: input.account,
+    supportCase: input.supportCase,
+    history: input.history,
+    approvedPolicyContext: policyText,
+  });
   if (!base.is_safe || !base.support_reply) return base;
-  const intent = await detectPolicyIntent(input.message, input.subject ?? input.supportCase.subject, base.support_reply);
-  if (!intent.policy_requested || !intent.policy_slug) return base;
-  const document = getPolicyDocument(intent.policy_slug);
-  if (!document) return base;
-  const policyText = renderCompletePolicy(document, intent.requested_sections);
-  return { is_safe: true, support_reply: `${base.support_reply.trim()}\n\nOfficial ReDom policy information\n\n${policyText}`, policySlug: intent.policy_slug };
+  return { ...base, policySlug: document?.slug ?? null };
 }
