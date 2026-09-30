@@ -17,6 +17,8 @@ export const env = {
     moderationFrom: optional("MODERATION_EMAIL_FROM") ?? "moderation@wnncompany.com",
     moderationReplyTo: optional("MODERATION_EMAIL_REPLY_TO") ?? "no-reply@wnncompany.com",
     webBaseUrl: optional("REDOM_WEB_URL") ?? "https://www.wnncompany.com",
+    supportDocsUrl: optional("REDOM_SUPPORT_DOCS_URL") ?? "https://docs.wnncompany.com",
+    supportHelpUrl: optional("REDOM_SUPPORT_HELP_URL") ?? "https://help.wnncompany.com",
     bugReportsFrom: optional("BUG_REPORTS_EMAIL_FROM") ?? "bugs@wnncompany.com",
     problemReportsFrom: optional("PROBLEM_REPORTS_EMAIL_FROM") ?? "problem@wnncompany.com",
     paymentFrom: optional("PAYMENT_EMAIL_FROM") ?? "payment@wnncompany.com",
