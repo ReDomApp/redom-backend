@@ -95,7 +95,7 @@ function isStripeUrl(value: string): boolean {
 }
 
 export function resolveSupportInlineLinkToken(token: string): { label: string; url: string } | null {
-  const match = token.match(/^\\[\\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):([A-Za-z0-9_-]+)\\|([^\\]]+)\\]\\]$/);
+  const match = token.match(/^\[\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):([A-Za-z0-9_-]+)\|([^\]]+)\]\]$/);
   if (!match) return null;
   const kind = match[1];
   const key = match[2];
@@ -116,7 +116,7 @@ export function resolveSupportInlineLinkToken(token: string): { label: string; u
 }
 
 export function renderSupportInlineLinkTokens(value: string, mode: "html" | "text"): string {
-  return value.replace(/\\[\\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):([A-Za-z0-9_-]+)\\|([^\\]]+)\\]\\]/g, (whole) => {
+  return value.replace(/\[\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):([A-Za-z0-9_-]+)\|([^\]]+)\]\]/g, (whole) => {
     const resolved = resolveSupportInlineLinkToken(whole);
     if (!resolved) return mode === "html" ? "" : whole;
     return mode === "html"
