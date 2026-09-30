@@ -13,7 +13,7 @@ const DEVICE_KEY="redom.web.device";
 const readReg=():RegFlow|null=>{try{const x=sessionStorage.getItem(REG_KEY);return x?JSON.parse(x):null}catch{return null}};
 const writeReg=(x:RegFlow)=>sessionStorage.setItem(REG_KEY,JSON.stringify(x));
 const deviceId=()=>{let x=localStorage.getItem(DEVICE_KEY);if(!x){x=crypto.randomUUID?crypto.randomUUID():"web-"+Date.now();localStorage.setItem(DEVICE_KEY,x)}return x};
-const routePage=():Page|null=>{const p=window.location.pathname;if(/^\/policy\/[^/]+$/.test(p))return "policy";if(/^\/support\/cases\/R\d{11}$/i.test(p))return "support-case";return null};
+const routePage=():Page|null=>{const p=window.location.pathname;if(/^\/policy\/[^/]+$/.test(p))return "policy";if(/^\/support\/cases\/R\d{11}$/i.test(p))return "support-case";if(/^\/app(?:\/|$)/i.test(p))return "web-parity";return null};
 const ageFrom=(v:string)=>{const d=new Date(v+"T00:00:00"),n=new Date();let a=n.getFullYear()-d.getFullYear();const m=n.getMonth()-d.getMonth();if(m<0||(m===0&&n.getDate()<d.getDate()))a--;return a};
 const fmt=(s:number)=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
 function useTimer(until?:string){const[s,setS]=useState(until?Math.max(0,Math.ceil((new Date(until).getTime()-Date.now())/1000)):0);useEffect(()=>{if(!until)return;const f=()=>setS(Math.max(0,Math.ceil((new Date(until).getTime()-Date.now())/1000)));f();const t=setInterval(f,1000);return()=>clearInterval(t)},[until]);return s}
