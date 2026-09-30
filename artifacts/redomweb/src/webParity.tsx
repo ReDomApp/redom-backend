@@ -150,7 +150,7 @@ export function WebParity({ user, onLogout }: { user: any; onLogout: () => void 
           <section className="web-route-card">
             <div className="web-route-card-head"><div><h2>{route.title}</h2><p>Route: <code>{route.path}</code></p></div><span className="web-status-pill">Web ready</span></div>
             <div className="web-route-grid">
-              <div><span>Reference</span><b>redom-frontend/src/screens/{route.key}.tsx</b></div>
+              <div><span>Reference</span><b>redom-frontend navigation: {route.key}</b></div>
               <div><span>Web language</span><b>TypeScript + React + Vite</b></div>
               <div><span>Shared backend</span><b>ReDom Backend API</b></div>
               <div><span>Deployment target</span><b>ReDom Web / Vercel</b></div>
