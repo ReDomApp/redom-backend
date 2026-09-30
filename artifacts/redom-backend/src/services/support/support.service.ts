@@ -39,7 +39,7 @@ export type SupportMessage = {
   createdAt: string;
 };
 
-export type SupportAiResult = { is_safe: boolean; support_reply: string | null };
+export type SupportAiResult = { is_safe: boolean; support_reply: string | null; policySlug?: string | null };
 
 const resend = new Resend(env.email.resend.apiKey);
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
