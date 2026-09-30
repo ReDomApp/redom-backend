@@ -131,7 +131,20 @@ export async function sendGeneratedSupportEmail(input: {
   supportReply: string;
   actions?: SupportEmailAction[];
 }): Promise<void> {
-  const actions = input.actions ?? [];
+  const paymentCategory = /payment|refund|billing|subscription|payout/i.test(input.category);
+  const actions = (input.actions ?? []).filter((item) => {
+    const url = item.url?.trim();
+    if (!url) return true;
+    if (!isAllowedSupportEmailUrl(url)) return false;
+    try {
+      const parsed = new URL(url);
+      const configuredWebOrigin = new URL(env.email.webBaseUrl).origin;
+      const stripe = parsed.hostname === "stripe.com" || parsed.hostname.endsWith(".stripe.com");
+      return parsed.origin === configuredWebOrigin || (stripe && paymentCategory);
+    } catch {
+      return false;
+    }
+  });
   const html = await generateSupportEmailHtml({ ...input, actions });
   const { error } = await resend.emails.send({
     from: env.email.supportFrom,
