@@ -130,6 +130,8 @@ export async function sendGeneratedSupportEmail(input: {
   category: string;
   supportReply: string;
   actions?: SupportEmailAction[];
+  idempotencyKey?: string;
+  inReplyToMessageId?: string | null;
 }): Promise<void> {
   const paymentCategory = /payment|refund|billing|subscription|payout/i.test(input.category);
   const actions = (input.actions ?? []).filter((item) => {
@@ -152,7 +154,11 @@ export async function sendGeneratedSupportEmail(input: {
     subject: input.subject,
     text: input.supportReply,
     html,
-  });
+    ...(input.inReplyToMessageId ? { headers: {
+      "In-Reply-To": input.inReplyToMessageId,
+      "References": input.inReplyToMessageId,
+    } } : {}),
+  }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
   if (error) throw new Error(`Support email could not be sent: ${error.message}`);
 }
 
