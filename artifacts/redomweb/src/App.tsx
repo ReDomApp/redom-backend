@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, clearSession, getSession, saveSession } from "./lib/api";
 import { startupNetworkCheck, type NetworkProviderResponse } from "./lib/network";
-import { ReDomMark, ShieldIcon, LockIcon, HomeIcon, CheckIcon } from "./components/Icons";
+import { ReDomMark, ShieldIcon, LockIcon, HomeIcon } from "./components/Icons";
 import { COUNTRIES } from "./data/countries";
 
 type User={id:string;firstName:string;lastName:string;username:string;profilePhoto?:string|null};
