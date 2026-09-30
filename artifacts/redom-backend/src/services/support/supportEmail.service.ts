@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import { createHash } from "node:crypto";
 import { env } from "../../config/env";
-import { isAllowedSupportEmailUrl, buildSupportEmailActions } from "./supportWebLinks.service";
+import { isAllowedSupportEmailUrl, buildSupportEmailActions, renderSupportInlineLinkTokens } from "./supportWebLinks.service";
 import { getAccountContextByEmail } from "./support.service";
 
 const resend = new Resend(env.email.resend.apiKey);
@@ -31,7 +31,8 @@ function renderInlineFormatting(value: string): string {
 }
 
 function renderSupportText(value: string): string {
-  return value.split(/\n/).map((line) => renderInlineFormatting(line)).join("<br>");
+  const withLinks = renderSupportInlineLinkTokens(value, "html");
+  return withLinks.split(/\n/).map((line) => renderInlineFormatting(line)).join("<br>");
 }
 
 export type SupportEmailAction = {
@@ -152,7 +153,7 @@ export async function sendGeneratedSupportEmail(input: {
     from: env.email.supportFrom,
     to: [input.to],
     subject: input.subject,
-    text: input.supportReply,
+    text: renderSupportInlineLinkTokens(input.supportReply, "text"),
     html,
     headers: {
       "Auto-Submitted": "auto-replied",
