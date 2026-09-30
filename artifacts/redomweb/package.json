@@ -17,7 +17,7 @@
   "devDependencies": {
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "typescript": "~6.0.3",
+    "typescript": "~5.9.3",
     "vite": "catalog:"
   }
 }
