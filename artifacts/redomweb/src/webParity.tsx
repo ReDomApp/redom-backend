@@ -1,6 +1,3 @@
-import { useMemo, useState } from "react";
-import { ReDomMark, HomeIcon, ShieldIcon } from "./components/Icons";
-
 export type WebRoute = { key: string; category: string; title: string; path: string; description: string };
 
 export const WEB_SCREEN_REGISTRY: WebRoute[] = [
@@ -107,62 +104,3 @@ export const WEB_SCREEN_REGISTRY: WebRoute[] = [
   { key: "Policy", category: "Policies", title: "Policy", path: "/app/policy", description: "Mobile parity reference for individual policy documents." },
 ];
 
-const CATEGORIES = ["All", ...Array.from(new Set(WEB_SCREEN_REGISTRY.map((route) => route.category)))];
-
-function routeFromLocation() {
-  const path = window.location.pathname.replace(/\/+$/, "");
-  return WEB_SCREEN_REGISTRY.find((route) => route.path === path) ?? WEB_SCREEN_REGISTRY.find((route) => route.key === "HomeFeed")!;
-}
-
-export function WebParity({ user, onLogout }: { user: any; onLogout: () => void }) {
-  const [route, setRoute] = useState(routeFromLocation);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("Core");
-  const visible = useMemo(
-    () => WEB_SCREEN_REGISTRY.filter((item) => (!query || `${item.title} ${item.key}`.toLowerCase().includes(query.toLowerCase())) && (category === "All" || item.category === category)),
-    [query, category],
-  );
-  const navigate = (next: WebRoute) => {
-    window.history.pushState({}, "", next.path);
-    setRoute(next);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-  const goHome = () => navigate(WEB_SCREEN_REGISTRY.find((x) => x.key === "HomeFeed")!);
-  return (
-    <div className="web-parity">
-      <header className="web-parity-header">
-        <button className="web-parity-brand" onClick={goHome}><ReDomMark size={38}/><span>ReDom</span></button>
-        <div className="web-parity-search"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search web screens" /></div>
-        <div className="web-parity-user"><span>{user?.firstName || "ReDom"}</span><button onClick={onLogout}>Log out</button></div>
-      </header>
-      <div className="web-parity-body">
-        <aside className="web-parity-sidebar">
-          <button className="web-parity-home" onClick={goHome}><HomeIcon/> <span>Home Feed</span></button>
-          <div className="web-parity-section-title">Screen structure</div>
-          {CATEGORIES.map((item) => <button key={item} className={category === item ? "web-nav active" : "web-nav"} onClick={() => setCategory(item)}>{item}<b>{item === "All" ? WEB_SCREEN_REGISTRY.length : WEB_SCREEN_REGISTRY.filter((x) => x.category === item).length}</b></button>)}
-        </aside>
-        <main className="web-parity-main">
-          <div className="web-breadcrumb">ReDom Web <span>/</span> {route.category} <span>/</span> {route.title}</div>
-          <section className="web-route-hero">
-            <div className="web-route-icon"><ShieldIcon/></div>
-            <div><span className="eyebrow">MOBILE PARITY STRUCTURE</span><h1>{route.title}</h1><p>{route.description}</p></div>
-          </section>
-          <section className="web-route-card">
-            <div className="web-route-card-head"><div><h2>{route.title}</h2><p>Route: <code>{route.path}</code></p></div><span className="web-status-pill">Web ready</span></div>
-            <div className="web-route-grid">
-              <div><span>Reference</span><b>redom-frontend navigation: {route.key}</b></div>
-              <div><span>Web language</span><b>TypeScript + React + Vite</b></div>
-              <div><span>Shared backend</span><b>ReDom Backend API</b></div>
-              <div><span>Deployment target</span><b>ReDom Web / Vercel</b></div>
-            </div>
-            <div className="web-route-note"><b>Parity baseline</b><p>This route is registered from the current mobile navigation structure so the web application can be upgraded screen-by-screen without changing the backend/frontend boundaries.</p></div>
-          </section>
-          <section className="web-screen-list">
-            <div className="web-list-head"><h2>{query || category !== "Core" ? "Matching screens" : "Current web structure"}</h2><span>{visible.length} routes</span></div>
-            <div className="web-route-list">{visible.map((item) => <button key={item.key} className={item.key === route.key ? "web-route-item selected" : "web-route-item"} onClick={() => navigate(item)}><span><b>{item.title}</b><small>{item.category} · {item.path}</small></span><strong>›</strong></button>)}</div>
-          </section>
-        </main>
-      </div>
-    </div>
-  );
-}
