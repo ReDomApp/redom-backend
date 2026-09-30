@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import { REDOM_SUPPORT_SYSTEM_PROMPT, SUPPORT_JSON_SCHEMA } from "./supportPolicy";
+import { renderSupportInlineLinkTokens } from "./supportWebLinks.service";
 
 export type SupportAccountContext = {
   userId: string | null;
@@ -46,6 +47,17 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interaction
 // 3.8 is preferred, but support must remain available if a single model is under temporary load.
 const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"] as const;
 const CASE_PATTERN = /\bR\d{11}\b/i;
+const PAYMENT_PROVIDER_KNOWLEDGE = `Payment-provider general knowledge for ReDom Payments:
+- Business availability is country/region dependent. The current official availability list is authoritative and should be linked with [[STRIPE_DOC:countries|supported countries]] when the customer asks for the current list.
+- Payment-method availability depends on the business country/region, customer locale, currency, and the payment method itself.
+- More than 135 payment currencies are supported for presentment, but currency availability can vary by country and payment method.
+- Presentment currency is the currency charged to the customer; settlement currency is the currency accepted by the destination bank account. A conversion may occur when they differ.
+- Payment-method flows can be immediate or delayed. Delayed methods can remain processing until a later success/failure notification, so ReDom Payments should not describe a transaction as successful until the backend confirms it.
+- Payment methods can be used with PaymentIntents; reusable payment methods can also be saved with SetupIntents when the applicable flow supports it.
+- Checkout is a prebuilt payment experience; payment-method availability still depends on the applicable country, currency, and configuration.
+- Refunds are provider payment operations, but ReDom refund eligibility, case status, approval, and timing are controlled by the ReDom Backend and must never be inferred from provider documentation.
+- Provider documentation is available through controlled tokens only: [[STRIPE_DOC:countries|supported countries]], [[STRIPE_DOC:currencies|supported currencies]], [[STRIPE_DOC:payment-methods-guide|payment methods]], [[STRIPE_DOC:checkout|checkout]], [[STRIPE_DOC:refunds-guide|refunds]], [[STRIPE_DOC:payment-intents|PaymentIntents]], and [[STRIPE_DOC:setup-intents|saving payment methods]].
+`;
 
 function mapCase(row: Record<string, unknown>): SupportCase {
   return {
@@ -267,6 +279,22 @@ function extractGeminiText(payload: unknown): string {
   throw new Error("Gemini did not return text output.");
 }
 
+
+function sanitizePaymentProviderBranding(reply: string): string {
+  // Preserve controlled link tokens while normalizing any model leakage outside them.
+  const protectedTokens: string[] = [];
+  const tokenized = reply.replace(/\[\[(REDOM_POLICY|REDOM_HELP|STRIPE_DOC):[A-Za-z0-9_-]+\|[^\]]+\]\]/g, token => {
+    protectedTokens.push(token);
+    return `@@RE_DOM_SUPPORT_LINK_${protectedTokens.length - 1}@@`;
+  });
+
+  let value = tokenized
+    .replace(/https?:\\/\\/(?:www\\.)?(?:stripe\\.com|docs\\.stripe\\.com)(?:[^\\s<>"')\`\]]*)?/gi, "the official payment documentation")
+    .replace(/\\b(?:stripe(?:\\.com)?|stripe's|stripes)\\b/gi, "ReDom Payments");
+
+  return value.replace(/@@RE_DOM_SUPPORT_LINK_(\\d+)@@/g, (_whole, index) => protectedTokens[Number(index)] ?? "");
+}
+
 function parseGeminiSupportResult(text: string): SupportAiResult {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
   let parsed: unknown;
@@ -278,7 +306,8 @@ function parseGeminiSupportResult(text: string): SupportAiResult {
   const value = parsed as Record<string, unknown>;
   if (typeof value.is_safe !== "boolean") throw new Error("Gemini support response is missing is_safe.");
   if (value.support_reply !== null && typeof value.support_reply !== "string") throw new Error("Gemini support response has an invalid support_reply.");
-  return { is_safe: value.is_safe, support_reply: value.support_reply as string | null };
+  const reply = typeof value.support_reply === "string" ? sanitizePaymentProviderBranding(value.support_reply) : null;
+  return { is_safe: value.is_safe, support_reply: reply };
 }
 
 async function requestGeminiSupport(model: string, requestContext: object): Promise<SupportAiResult> {
@@ -303,12 +332,15 @@ export async function generateSupportReply(input: { message: string; account: Su
     case: { caseNumber: input.supportCase.caseNumber, category: input.supportCase.category, status: input.supportCase.status, subject: input.supportCase.subject },
     recentConversation: input.history.map((message) => ({ sender: message.senderType, message: message.body })),
     currentUserMessage: input.message,
+    payment_provider_knowledge: input.supportCase.category === "refund_payment" || input.supportCase.category === "payment_transaction_problem" || input.supportCase.category === "payment_method_problem" || /payment|pay|paid|charge|charged|refund|billing|card|transaction|checkout|currency|country|payment method/i.test(input.message)
+      ? PAYMENT_PROVIDER_KNOWLEDGE
+      : null,
     approvedPolicyContext: input.approvedPolicyContext ?? null,
     approvedPolicySlug: input.approvedPolicySlug ?? null,
     link_token_rules: {
       redom_policy: "Use [[REDOM_POLICY:<approvedPolicySlug>|Label]] only when an approved ReDom policy was used and a link is genuinely useful.",
       redom_help: "Use [[REDOM_HELP:<approved-help-key>|Label]] only for a relevant ReDom help destination.",
-      stripe_docs: "Use [[STRIPE_DOC:<approved-stripe-doc-key>|Label]] only when the user asks for Stripe/payment documentation. Allowed keys are currencies, payment-methods, payment-methods-guide, checkout, refunds, refunds-guide, payment-intents, setup-intents.",
+      stripe_docs: "Use [[STRIPE_DOC:<approved-stripe-doc-key>|Label]] only when the user asks for payment documentation or when a current official provider fact needs a useful source. Allowed keys are countries, global-availability, currencies, payment-methods, payment-methods-guide, checkout, refunds, refunds-guide, payment-intents, setup-intents. Visible labels must describe ReDom Payments or the documentation topic and must never name the external provider.",
       no_raw_urls: true,
     },
   };
