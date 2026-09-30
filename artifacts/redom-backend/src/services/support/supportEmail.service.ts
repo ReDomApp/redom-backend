@@ -154,10 +154,13 @@ export async function sendGeneratedSupportEmail(input: {
     subject: input.subject,
     text: input.supportReply,
     html,
-    ...(input.inReplyToMessageId ? { headers: {
-      "In-Reply-To": input.inReplyToMessageId,
-      "References": input.inReplyToMessageId,
-    } } : {}),
+    headers: {
+      "Auto-Submitted": "auto-replied",
+      ...(input.inReplyToMessageId ? {
+        "In-Reply-To": input.inReplyToMessageId,
+        "References": input.inReplyToMessageId,
+      } : {}),
+    },
   }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
   if (error) throw new Error(`Support email could not be sent: ${error.message}`);
 }
