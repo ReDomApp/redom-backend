@@ -10,6 +10,47 @@ export type SupportEmailResolvedAction = {
 const STRIPE_API = "https://api.stripe.com/v1";
 const STRIPE_DOCS = "https://docs.stripe.com";
 const STRIPE_ROOT = "https://stripe.com";
+const REDOM_DOCS = env.email.supportDocsUrl.replace(/\/+$/, "");
+const REDOM_HELP = env.email.supportHelpUrl.replace(/\/+$/, "");
+
+const STRIPE_DOC_PATHS: Record<string, string> = {
+  currencies: "/currencies",
+  "payment-methods": "/api/payment_methods",
+  "payment-methods-guide": "/payments/payment-methods",
+  checkout: "/payments/checkout",
+  refunds: "/api/refunds",
+  "refunds-guide": "/refunds",
+  "payment-intents": "/payments/payment-intents",
+  "setup-intents": "/payments/save-and-reuse",
+};
+
+const REDOM_POLICY_PATHS: Record<string, string> = {
+  terms: "/policies/terms",
+  privacy: "/policies/privacy",
+  community: "/policies/community",
+  messaging: "/policies/messaging",
+  media: "/policies/media",
+  calls: "/policies/calls",
+  notifications: "/policies/notifications",
+  security: "/policies/security",
+  verification: "/policies/verification",
+  ai: "/policies/ai",
+  regional: "/policies/regional",
+  refunds: "/policies/refunds",
+  support: "/policies/support",
+  link_history: "/policies/link-history",
+  payments: "/policies/payments",
+};
+
+const REDOM_HELP_PATHS: Record<string, string> = {
+  payments: "/payments",
+  refunds: "/payments/refunds",
+  account: "/account",
+  security: "/security",
+  verification: "/verification",
+  messaging: "/messaging",
+  marketplace: "/marketplace",
+};
 const PAYMENT_WORDS = /payment|pay|paid|charge|charged|invoice|receipt|refund|refunds|billing|card|transaction|checkout|subscription/i;
 const LINK_REQUEST_WORDS = /\b(?:link|url|website|page|open|where|documentation|docs|policy|terms|conditions|receipt|invoice|view|access|see|show)\b/i;
 
@@ -32,6 +73,15 @@ function redomUrl(path: string): string {
   return base + normalized;
 }
 
+function isRedomSupportUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.origin === new URL(REDOM_DOCS).origin || url.origin === new URL(REDOM_HELP).origin;
+  } catch {
+    return false;
+  }
+}
+
 function isStripeUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -48,7 +98,7 @@ export function isAllowedSupportEmailUrl(value: string): boolean {
     if (url.protocol !== "https:") return false;
     const web = new URL(env.email.webBaseUrl);
     if (url.origin === web.origin) return true;
-    return isStripeUrl(value);
+    return isRedomSupportUrl(value) || isStripeUrl(value);
   } catch {
     return false;
   }
@@ -172,18 +222,28 @@ export async function buildSupportEmailActions(input: {
   const wantsPaymentDocs = explicitlyRequestsPaymentDocs(input.message);
   const wantsInvoice = explicitlyRequestsInvoice(input.message);
 
-  if (input.policySlug) {
-    const policy = action(
-      "View ReDom " + (input.policySlug === "payments" ? "Payment Policy" : input.policySlug === "refunds" ? "Refund Policy" : "Policy"),
-      redomUrl("/policy/" + encodeURIComponent(input.policySlug)),
-    );
+  if (input.policySlug && REDOM_POLICY_PATHS[input.policySlug]) {
+    const policyLabel = input.policySlug === "payments"
+      ? "Understanding ReDom Payment Policy"
+      : input.policySlug === "refunds"
+        ? "Understanding ReDom Refund Policy"
+        : "Understanding ReDom " + input.policySlug.replace(/_/g, " ") + " Policy";
+    const policy = action(policyLabel, REDOM_DOCS + REDOM_POLICY_PATHS[input.policySlug]);
     if (policy) actions.push(policy);
   }
 
   if (paymentRelated && wantsPaymentDocs) {
+    const lower = input.message.toLowerCase();
+    let key = "payment-methods-guide";
+    if (/currency|currencies|supported currency|charge in .*currency|ngn|usd|eur|gbp/.test(lower)) key = "currencies";
+    else if (/refund/.test(lower)) key = "refunds-guide";
+    else if (/checkout/.test(lower)) key = "checkout";
     const stripeDocs = action(
-      input.policySlug === "refunds" || /refund/i.test(input.message) ? "View Stripe Refund Information" : "View Stripe Payment Information",
-      input.policySlug === "refunds" || /refund/i.test(input.message) ? STRIPE_DOCS + "/refunds" : STRIPE_DOCS + "/payments",
+      key === "currencies" ? "View Stripe Supported Currencies" :
+      key === "refunds-guide" ? "View Stripe Refund Information" :
+      key === "checkout" ? "View Stripe Checkout Documentation" :
+      "View Stripe Payment Methods",
+      STRIPE_DOCS + STRIPE_DOC_PATHS[key],
     );
     if (stripeDocs) actions.push(stripeDocs);
   }
@@ -226,6 +286,8 @@ export async function buildSupportEmailActions(input: {
 
 export const SUPPORT_EMAIL_LINK_RULES = {
   reDomOrigin: new URL(env.email.webBaseUrl).origin,
+  reDomDocsOrigin: new URL(REDOM_DOCS).origin,
+  reDomHelpOrigin: new URL(REDOM_HELP).origin,
   stripeRoot: STRIPE_ROOT,
   stripeDocsRoot: STRIPE_DOCS,
   accountSpecificRequiresActiveAccount: true,
