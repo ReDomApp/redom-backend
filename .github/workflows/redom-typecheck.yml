@@ -6,6 +6,7 @@ on:
     paths:
       - "artifacts/redom-frontend/**"
       - "artifacts/redom-backend/**"
+      - "artifacts/redomweb/**"
       - "lib/**"
       - "package.json"
       - "pnpm-lock.yaml"
