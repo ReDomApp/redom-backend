@@ -180,7 +180,7 @@ export async function buildSupportEmailActions(input: {
     if (policy) actions.push(policy);
   }
 
-  if (paymentRelated && (wantsPaymentDocs || input.policySlug === "payments" || input.policySlug === "refunds")) {
+  if (paymentRelated && wantsPaymentDocs) {
     const stripeDocs = action(
       input.policySlug === "refunds" || /refund/i.test(input.message) ? "View Stripe Refund Information" : "View Stripe Payment Information",
       input.policySlug === "refunds" || /refund/i.test(input.message) ? STRIPE_DOCS + "/refunds" : STRIPE_DOCS + "/payments",
