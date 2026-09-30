@@ -15,6 +15,8 @@ const REDOM_HELP = env.email.supportHelpUrl.replace(/\/+$/, "");
 
 const STRIPE_DOC_PATHS: Record<string, string> = {
   currencies: "/currencies",
+  countries: "/global",
+  "global-availability": "/global",
   "payment-methods": "/api/payment_methods",
   "payment-methods-guide": "/payments/payment-methods",
   checkout: "/payments/checkout",
@@ -109,7 +111,8 @@ export function resolveSupportInlineLinkToken(token: string): { label: string; u
     return { label, url: REDOM_HELP + REDOM_HELP_PATHS[key] };
   }
   if (!STRIPE_DOC_PATHS[key]) return null;
-  return { label, url: STRIPE_DOCS + STRIPE_DOC_PATHS[key] };
+  const stripeBase = key === "countries" || key === "global-availability" ? STRIPE_ROOT : STRIPE_DOCS;
+  return { label, url: stripeBase + STRIPE_DOC_PATHS[key] };
 }
 
 export function renderSupportInlineLinkTokens(value: string, mode: "html" | "text"): string {
@@ -265,15 +268,16 @@ export async function buildSupportEmailActions(input: {
   if (paymentRelated && wantsPaymentDocs) {
     const lower = input.message.toLowerCase();
     let key = "payment-methods-guide";
-    if (/currency|currencies|supported currency|charge in .*currency|ngn|usd|eur|gbp/.test(lower)) key = "currencies";
+    if (/country|countries|supported country|available country|where.*available|availability|region|regions/.test(lower)) key = "countries";
+    else if (/currency|currencies|supported currency|charge in .*currency|ngn|usd|eur|gbp/.test(lower)) key = "currencies";
     else if (/refund/.test(lower)) key = "refunds-guide";
     else if (/checkout/.test(lower)) key = "checkout";
     const stripeDocs = action(
-      key === "currencies" ? "View Stripe Supported Currencies" :
-      key === "refunds-guide" ? "View Stripe Refund Information" :
-      key === "checkout" ? "View Stripe Checkout Documentation" :
-      "View Stripe Payment Methods",
-      STRIPE_DOCS + STRIPE_DOC_PATHS[key],
+      key === "currencies" ? "View Supported Payment Currencies" :
+      key === "refunds-guide" ? "View Refund Information" :
+      key === "checkout" ? "View Checkout Documentation" :
+      "View Payment Methods",
+      (key === "countries" || key === "global-availability" ? STRIPE_ROOT : STRIPE_DOCS) + STRIPE_DOC_PATHS[key],
     );
     if (stripeDocs) actions.push(stripeDocs);
   }
