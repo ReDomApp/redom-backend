@@ -163,18 +163,80 @@ export async function listOwnedSupportCases(userId: string, limit = 50): Promise
   return result.rows.map(mapCase);
 }
 
-export async function markInboundEvent(svixId: string, emailId: string): Promise<boolean> {
-  try {
-    await pool.query(`INSERT INTO support_inbound_events (svix_id, email_id) VALUES ($1, $2)`, [svixId, emailId]);
-    return true;
-  } catch (error) {
-    if ((error as { code?: string }).code === "23505") return false;
-    throw error;
+export type InboundEventClaim = "claimed" | "processed" | "processing";
+
+export async function claimInboundEvent(svixId: string, emailId: string): Promise<InboundEventClaim> {
+  const inserted = await pool.query(
+    `INSERT INTO support_inbound_events (svix_id, email_id, status, processing_started_at)
+     VALUES ($1, $2, 'processing', now())
+     ON CONFLICT (email_id) DO NOTHING
+     RETURNING status`,
+    [svixId, emailId],
+  );
+  if (inserted.rows[0]) return "claimed";
+
+  const existing = await pool.query(
+    `SELECT status, processing_started_at FROM support_inbound_events WHERE email_id = $1 LIMIT 1`,
+    [emailId],
+  );
+  if (!existing.rows[0]) return "claimed";
+  const status = String(existing.rows[0].status);
+  if (status === "processed") return "processed";
+
+  const stale = !existing.rows[0].processing_started_at
+    || new Date(String(existing.rows[0].processing_started_at)).getTime() <= Date.now() - 10 * 60 * 1000;
+  if (status === "failed" || (status === "processing" && stale)) {
+    const reclaimed = await pool.query(
+      `UPDATE support_inbound_events
+          SET svix_id = $2, status = 'processing', processing_started_at = now(), last_error = NULL
+        WHERE email_id = $1
+          AND (status = 'failed' OR (status = 'processing' AND (processing_started_at IS NULL OR processing_started_at <= now() - interval '10 minutes')))
+        RETURNING status`,
+      [emailId, svixId],
+    );
+    if (reclaimed.rows[0]) return "claimed";
   }
+  return "processing";
+}
+
+export async function markInboundEvent(svixId: string, emailId: string): Promise<void> {
+  await pool.query(
+    `UPDATE support_inbound_events
+        SET status = 'processed', processed_at = COALESCE(processed_at, now()), processing_started_at = NULL, last_error = NULL
+      WHERE svix_id = $1 AND email_id = $2`,
+    [svixId, emailId],
+  );
+}
+
+export async function markInboundEventFailed(svixId: string, emailId: string, errorMessage: string): Promise<void> {
+  await pool.query(
+    `UPDATE support_inbound_events
+        SET status = 'failed', processing_started_at = NULL, last_error = LEFT($3, 1000)
+      WHERE svix_id = $1 AND email_id = $2 AND status = 'processing'`,
+    [svixId, emailId, errorMessage],
+  );
 }
 
 export async function linkInboundEvent(svixId: string, caseId: string): Promise<void> {
   await pool.query(`UPDATE support_inbound_events SET case_id = $2 WHERE svix_id = $1`, [svixId, caseId]);
+}
+
+export async function findRecentActiveSupportCase(input: { userId?: string | null; requesterEmail: string; message: string }): Promise<SupportCase | null> {
+  const result = await pool.query(
+    `SELECT sc.*
+       FROM support_cases sc
+       JOIN support_case_messages scm ON scm.case_id = sc.id
+      WHERE sc.status <> 'closed'
+        AND lower(COALESCE(sc.requester_email, '')) = lower($1)
+        AND scm.sender_type = 'user'
+        AND regexp_replace(lower(trim(scm.body)), E'\\s+', ' ', 'g') = regexp_replace(lower(trim($2)), E'\\s+', ' ', 'g')
+        AND scm.created_at >= now() - interval '30 minutes'
+        AND ($3::uuid IS NULL OR sc.user_id = $3::uuid)
+      ORDER BY scm.created_at DESC
+      LIMIT 1`,
+    [input.requesterEmail.trim(), input.message, input.userId ?? null],
+  );
+  return result.rows[0] ? mapCase(result.rows[0]) : null;
 }
 
 export async function permanentlyCloseSupportCase(caseId: string): Promise<void> {
@@ -235,12 +297,13 @@ async function requestGeminiSupport(model: string, requestContext: object): Prom
   return parseGeminiSupportResult(extractGeminiText(await response.json()));
 }
 
-export async function generateSupportReply(input: { message: string; account: SupportAccountContext | null; supportCase: SupportCase; history: SupportMessage[] }): Promise<SupportAiResult> {
+export async function generateSupportReply(input: { message: string; account: SupportAccountContext | null; supportCase: SupportCase; history: SupportMessage[]; approvedPolicyContext?: string | null }): Promise<SupportAiResult> {
   const requestContext = {
     account: input.account,
     case: { caseNumber: input.supportCase.caseNumber, category: input.supportCase.category, status: input.supportCase.status, subject: input.supportCase.subject },
     recentConversation: input.history.map((message) => ({ sender: message.senderType, message: message.body })),
     currentUserMessage: input.message,
+    approvedPolicyContext: input.approvedPolicyContext ?? null,
   };
 
   let lastError: unknown;
