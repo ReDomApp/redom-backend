@@ -70,7 +70,7 @@ function renderCompanyEmailFooter(): string {
     '<div style="display:inline-block;width:34px;height:34px;border-radius:9px;background:#1877F2;color:#FFFFFF;font:bold 18px/34px Arial;text-align:center;">R</div>' +
     '<div style="margin-top:8px;font:bold 14px/20px Arial;color:' + REDOM_EMAIL_BRAND.text + ';">ReDom Platforms, Inc.</div>' +
     '<div style="margin-top:4px;font:11px/17px Arial;color:' + REDOM_EMAIL_BRAND.secondary + ';">Technology services behind ReDom — a social platform for connection, communication, sharing, discovery and digital experiences.</div>' +
-    '<div style="margin-top:8px;font:11px/17px Arial;color:' + REDOM_EMAIL_BRAND.secondary + ';">1001-10/7 ReDom Way, Parkside Court, Brooklyn, NY 11225, USA</div>' +
+    '<div style="margin-top:8px;font:11px/17px Arial;color:' + REDOM_EMAIL_BRAND.secondary + ';">ReDom Way, Parkside Court · 495 Flatbush Ave, Brooklyn, NY 11225, USA</div>' +
     '<div style="margin-top:8px;font:11px/17px Arial;">' +
     '<a href="https://about.wnncompany.com" style="color:' + REDOM_EMAIL_BRAND.primary + ';text-decoration:underline;">About ReDom</a> · ' +
     '<a href="https://docs.wnncompany.com" style="color:' + REDOM_EMAIL_BRAND.primary + ';text-decoration:underline;">Documentation</a> · ' +
