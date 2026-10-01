@@ -201,6 +201,21 @@ Never move sensitive validation solely to the client.
 - Vercel = web.
 - Render = backend.
 
+## CHANGE-FAST / VERIFY-FIRST — PERMANENT RULE
+ReDom is developed continuously, often daily or weekly. Navigation, screen counts, routes, services, security logic, payment methods, policies, UI, deployments, and implementation patterns can change faster than this document is updated.
+
+Therefore:
+- This file preserves durable knowledge and historical decisions; it is **not** a frozen specification.
+- **Current GitHub `main` source code takes precedence over historical context in this file.**
+- Before relying on any count, route, navigation structure, provider, policy value, feature status, URL, deployment state, API behavior, or implementation detail, inspect the current repository when the task depends on it.
+- If current code conflicts with this file, treat the code/current explicit requirement as the current implementation and update this context when the change is durable.
+- Never assume yesterday's implementation is today's implementation merely because it appears in this document.
+- Use Git history to understand **how and why** ReDom evolved, not to override current source behavior.
+
+**Fast-changing areas require verification first:** navigation/screen registries, Web parity, payments, refunds, security/authentication, AI behavior, policies, Docs/Help, provider integrations, deployment infrastructure, database schema, and UI/assets.
+
+Working rule remains: **READ → UNDERSTAND → VERIFY → IMPLEMENT → TEST → DOCUMENT.**
+
 ## Working rule
 **READ → UNDERSTAND → VERIFY → IMPLEMENT → TEST → DOCUMENT.**
 
