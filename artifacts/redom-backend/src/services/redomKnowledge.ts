@@ -29,6 +29,17 @@ export const REDOM_KNOWLEDGE = {
       "Backend-authoritative account state",
     ],
     aiRule: "AI explains ReDom; the backend decides ReDom state.",
+    company: {
+      legalName: "ReDom Platforms, Inc.",
+      businessActivity: "Service",
+      principalProductOrService: "Technology",
+      address: "1001-10/7 ReDom Way, Parkside Court, Brooklyn, NY 11225, USA",
+      supportEmail: "support@wnncompany.com",
+      description: "Technology services behind ReDom, a social platform for connection, communication, sharing, discovery and digital experiences.",
+      aboutUrl: "https://about.wnncompany.com",
+      docsUrl: "https://docs.wnncompany.com",
+      helpUrl: "https://help.wnncompany.com",
+    },
   },
 
   canonicalNavigation: {
