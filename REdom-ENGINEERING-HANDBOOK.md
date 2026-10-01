@@ -1,0 +1,844 @@
+# ReDom Engineering Handbook
+
+> **Purpose:** Permanent, repository-local engineering memory for ReDom Platforms, Inc.
+>
+> This document captures the architecture, product rules, implementation decisions, security requirements, AI behavior, payment rules, UI conventions, deployment model, and workflow constraints accumulated during ReDom development. It exists so a new developer or AI agent can continue the project without requiring the project owner to re-explain the system from scratch.
+>
+> **Repository source of truth:** GitHub.
+> **Primary repository:** `ReDomApp/redom-backend`
+> **Primary branch:** `main`
+>
+> **Important:** This handbook is a durable design/context record, not a replacement for reading the actual source code. When this document conflicts with current code, current explicit product requirements, or an authoritative provider specification, investigate the conflict and do not silently invent behavior.
+
+---
+
+## 1. ReDom in one sentence
+
+ReDom is a social/platform product with mobile and web clients, a production backend, PostgreSQL persistence, payments, notifications/email, documentation/help surfaces, and an AI-assisted product experience.
+
+The goal of this handbook is to preserve the **why, what, and non-negotiable implementation rules** around that system.
+
+---
+
+# 2. Absolute engineering principles
+
+1. **GitHub is the source of truth.**
+2. Do not invent architecture merely because a framework convention suggests it.
+3. Read the existing implementation before changing an existing feature.
+4. Preserve existing security logic unless the requested change explicitly replaces it.
+5. Preserve exact copy, object placement, dimensions, navigation, validation, and behavior when implementing parity.
+6. Do not replace real provider branding with text labels when an official/approved logo asset is required.
+7. Prefer the existing ReDom SVG assets and ReDom visual language over generic icons/images.
+8. Never expose secrets, API keys, private tokens, PAN, CVV, or credentials in source, logs, documentation, or client state.
+9. Payment state must be authoritative from the backend/provider verification, not from client optimism.
+10. Any change to policy/behavior should update the relevant policy/documentation section as part of the same product change when appropriate.
+11. Do not create a second competing implementation when the existing implementation is the intended source of behavior.
+12. A new AI/developer joining the project should read this handbook **before making architectural or cross-cutting changes**.
+
+---
+
+# 3. System architecture
+
+## 3.1 Production relationship
+
+**GitHub → Render → ReDom Production API → Neon PostgreSQL**
+
+- GitHub: source of truth.
+- Render: production backend deployment.
+- ReDom backend: authoritative API/business/security layer.
+- Neon: production PostgreSQL database.
+- Replit: development workspace.
+- Expo Go/development builds: mobile testing/development.
+- Vercel: ReDom Web deployment.
+- The Web application is a separate web implementation; it is not an Expo/React Native web wrapper.
+
+Do **not** substitute Railway for Render in the architecture.
+
+## 3.2 Client separation
+
+### Mobile
+- ReDom mobile application.
+- Expo/React Native implementation.
+- Mobile screens, navigation, assets, services, and security behavior are the reference implementation for mobile product behavior.
+
+### Web
+- ReDom Web is a distinct web application.
+- TypeScript + React + Vite.
+- Located under the web artifact/workspace structure used by the repository.
+- Must not import React Native or Expo merely to obtain parity.
+- Web parity means reproducing the mobile product's intended behavior in native web implementation.
+
+### Documentation/help
+- ReDom Docs and Help are separate web surfaces.
+- Intended domains include:
+  - `docs.wnncompany.com`
+  - `help.wnncompany.com`
+- Temporary/current ReDom web infrastructure has used `wnncompany.com`.
+- Checkout infrastructure has included `checkout.wnncompany.com`.
+
+---
+
+# 4. ReDom Web mobile-to-web parity rules
+
+The project has a strict **Mobile-to-Web Parity Implementation Brief**.
+
+## Before changing or creating ANY Web screen
+
+1. Read the corresponding mobile screen.
+2. Read its navigation entry/route.
+3. Read related assets.
+4. Read related services and API calls.
+5. Read validation/security logic.
+6. Read dependent components.
+7. Understand exact user flow.
+8. Only then implement the equivalent web screen.
+
+## Parity means
+
+Reproduce:
+
+- exact or intentionally equivalent copy;
+- field labels and descriptions;
+- field/card dimensions;
+- spacing;
+- hierarchy;
+- button placement;
+- object order;
+- states;
+- loading states;
+- error states;
+- validation;
+- security checks;
+- navigation destinations;
+- back behavior;
+- success behavior;
+- failure behavior;
+- disabled states;
+- bottom sheets/modals/popups;
+- confirmation screens;
+- provider logos;
+- SVG assets;
+- policy links;
+- account/security requirements.
+
+Do not make a generic web approximation when the mobile implementation already defines the intended behavior.
+
+## Screen registry
+
+The established parity target was:
+
+- **101 navigable mobile screens** in `AppNavigator.tsx`.
+- **101 corresponding entries** in the Web parity registry.
+
+If the current source changes this count, the source takes precedence and the registry/documentation should be updated.
+
+---
+
+# 5. ReDom visual/asset system
+
+## Core colors
+
+- ReDom Blue: `#1877F2`
+- TEXT: `#1C1E21`
+- MUTED: `#65676B`
+- BORDER: `#CCD0D5`
+- ERROR: `#E41E3F`
+- WHITE: `#FFFFFF`
+
+## Asset rules
+
+- Prefer ReDom's own SVG assets.
+- ReDom logo must use the actual official SVG rather than an invented text substitute.
+- Security shield must use the approved ReDom security SVG.
+- Provider branding must use real/official logos where required, not merely the provider name written as text.
+- Do not use arbitrary stock images where a product SVG is required.
+- Chrome/site identity should use the actual ReDom logo/favicon asset.
+
+---
+
+# 6. ReDom Pay
+
+## Product structure
+
+ReDom Pay is accessible through:
+
+**Menu → Settings and Privacy → Orders and Payments → ReDom Pay**
+
+Primary tabs:
+
+- Transactions (default)
+- Manage
+
+Transaction categories:
+
+- All
+- Money transfer
+- Orders
+- Donations
+- Cards
+
+Transaction cards use the established ReDom Pay design and date presentation, including formats such as **April 4, 2026**.
+
+## Payment providers
+
+### Card payments
+The authoritative provider for ReDom card flows is the ReDom Platforms payment account with the card-payment provider used by the implementation.
+
+Important implementation rule:
+- Card data is tokenized/validated by the payment provider.
+- ReDom must not store PAN or CVV.
+- Provider verification is authoritative.
+
+### Bank transfer
+Paystack is used for Bank Transfer flows in supported African-country scenarios.
+
+Paystack is **not** the card provider for the Add Card flow.
+
+### Other methods
+The Add Payment Method bottom sheet has established options:
+
+1. Credit/Debit Card — active card flow.
+2. PayPal — Coming Soon.
+3. Bank Payment Method — Under Development (unless the current implementation has subsequently changed this state).
+
+---
+
+# 7. Saved payment methods
+
+Established rule:
+
+- Maximum **3 saved payment methods per ReDom account**.
+- Manage shows saved methods with provider logo, last four digits, and country.
+- Updating a saved payment method is not supported.
+- The intended operation is **Remove & Add New**.
+- Removing a payment method requires the established connected-account security-code flow.
+
+Security code:
+- Normally 8 digits.
+- Delivered through the connected account's verified email or phone mechanism as implemented.
+- Never store plaintext security codes.
+
+---
+
+# 8. Add Card flow
+
+Established fields/requirements:
+
+- Card number
+- MM/YY
+- CVV
+- Country selector
+- Full name
+- Address
+
+Country selection must follow the payment provider's supported-country capability rather than an arbitrary hardcoded six-country restriction.
+
+Address autocomplete uses the established ReDom address-search service flow.
+
+Important security rule:
+- Never store PAN or CVV in ReDom's database.
+- Use provider tokenization/payment methods.
+- Validate through the provider.
+- Preserve the established processing state.
+
+The UI has an intentional **minimum 10-second processing presentation** for the card-validation flow where that requirement is still active. Do not remove it merely because a provider response arrives faster; inspect the current implementation first.
+
+---
+
+# 9. ReDom Stars
+
+## Internal value
+
+**1 ReDom Star = $0.10 internal value.**
+
+Established package examples include:
+
+- 10 Stars — $1.99 promotional price
+- 20 Stars — $2.99
+- 50 Stars — $4.87
+- 100 Stars — $10.76
+- 150 Stars — $14.00
+- 200 Stars — $19.99
+- 500 Stars — $50.00
+- 700 Stars — $70.00
+- 1000 Stars — $99.99
+
+If the live product catalog differs, use the authoritative database/provider configuration and update this handbook.
+
+## Buy Stars payment rule
+
+- Buy Stars is card-payment-provider based.
+- Only card payment is used for the Stars purchase flow.
+- Local currency/country behavior must use supported-country/currency mechanisms and authoritative FX rather than a fake hardcoded exchange rate.
+
+---
+
+# 10. ReDom Stars trial
+
+The first Stars buyer can receive the established one-time trial behavior.
+
+Current durable design:
+
+- Trial grants **20 Stars**.
+- Trial is one-time.
+- No immediate charge at trial creation.
+- The future one-time charge is attempted at the scheduled day-7 point.
+- The user must be told the exact expected charge date/time.
+- The backend records trial start time.
+- The backend stores the payment method association required for the future charge.
+- No Stars/transaction should be treated as fully purchased before the appropriate confirmed states exist.
+
+### Retry rule
+
+If the first scheduled charge fails:
+
+- retry approximately 24 hours later;
+- this is the final retry;
+- do not perform a third attempt;
+- after the final failure, mark the transaction/final state as failed according to the current schema.
+
+### Authoritative processing
+
+The client must not decide that payment succeeded.
+
+The unified payment flow should:
+
+1. Create/initialize the provider checkout/payment session.
+2. Return/launch the appropriate client payment experience.
+3. Use the ReDom deep-link callback where required:
+   `redom://payment/callback`
+4. Keep the UI in processing state as required.
+5. Backend verifies session/payment/account/package.
+6. Backend atomically fulfills the purchase.
+7. Only after confirmed backend state does the client show success/credit Stars.
+
+Abandoned checkout should not create a successful Stars transaction.
+
+---
+
+# 11. Transaction identifiers
+
+Established formats:
+
+- Paystack: `RP-` + 7–12 digits.
+- Stripe/card-provider transaction: `RS-` + 13–16 digits.
+- Existing legacy transactions using `R-` + digits remain valid and should not be unnecessarily migrated solely for cosmetic consistency.
+
+Do not generate IDs that violate the established format.
+
+---
+
+# 12. Refund system
+
+## Refund window
+
+The refund workflow uses the **refund request creation timestamp** as the authoritative timestamp for the review window.
+
+Do not incorrectly calculate eligibility from the original purchase timestamp when the policy specifically refers to refund-request creation.
+
+Established implementation progression included:
+
+- earlier 10-minute minimum review timing;
+- later upgraded to a **1-hour refund window** where the current policy specifies that value.
+
+When code and older documentation disagree, inspect the current policy/implementation and update stale documentation.
+
+## Refund request security flow
+
+Established requirements include:
+
+1. Validate requester email.
+2. Locate the transaction.
+3. Require Transaction ID or provider reference as appropriate.
+4. Generate a security code through the established security-mail mechanism.
+5. Security code is normally 8 digits; the older fallback design used 6 digits.
+6. Store a secure hash rather than plaintext.
+7. Limit failed verification attempts.
+8. After 3 failed attempts, close the verification/refund attempt according to the security policy.
+9. Use the payment provider's webhook/state as an authoritative external payment signal.
+10. Send transactional/refund emails through the established email service.
+
+Known support addresses used in the project include:
+- `support@wnncompany.com`
+- `refunds@...` where configured
+- `payment@...` where configured
+- `security@...` for security-code delivery
+
+Do not invent addresses if the current environment/configuration differs.
+
+---
+
+# 13. Payment URL / account URL encoding rules
+
+The ReDom AI/payment-support system has a deliberate security boundary around links.
+
+### For validated active ReDom accounts
+
+- It may encode/return valid ReDom account-specific web URLs when the account is authenticated/validated and the URL is actually related to that account.
+- It must never encode another user's account URL.
+- Account-specific URLs must be tied to the currently authenticated/validated account.
+
+### Payment-related questions
+
+Payment-related public information can be provided without requiring a ReDom account where appropriate.
+
+The AI can use authoritative payment-provider knowledge for payment concepts, supported countries, payment methods, refunds, etc., while presenting the information as ReDom product guidance.
+
+### Provider disclosure rule
+
+The established product requirement was that a user should not need to know which external payment provider powers a feature in order to ask a payment question. The AI should answer the actual ReDom question naturally rather than unnecessarily exposing internal provider relationships in plain product copy.
+
+When a provider name is specifically required by the legal/UI/product context, follow that explicit context.
+
+### URL safety
+
+Only encode URLs that are:
+- validated;
+- relevant to the requested operation;
+- permitted for the requesting account;
+- not another user's private/account-specific resource.
+
+Never create an account-specific URL from guesswork.
+
+---
+
+# 14. ReDom AI behavior
+
+The ReDom AI is a product feature, not merely a generic chatbot.
+
+## Core behavior
+
+It should:
+
+- understand ReDom's product terminology;
+- understand ReDom policies;
+- answer settings/privacy/payment/product questions;
+- understand the relationship between account state and permitted actions;
+- distinguish public information from authenticated/account-specific information;
+- respect security boundaries;
+- never invent account state;
+- never claim an action succeeded without backend confirmation;
+- never reveal secrets or another user's data;
+- use the correct current policy rather than stale remembered wording;
+- explain policy behavior clearly to users.
+
+## Payment knowledge
+
+The AI should have broad knowledge of payment concepts and the external payment infrastructure used by ReDom so it can answer questions such as:
+
+- supported countries;
+- supported currencies;
+- payment methods;
+- payment failures;
+- refunds;
+- transaction behavior;
+- card verification;
+- payment security.
+
+But the user may simply ask a ReDom question without knowing the underlying provider. The AI should answer the ReDom question directly and follow the product's provider-disclosure rule above.
+
+## Account-aware links
+
+The AI must not turn arbitrary user text into a private account URL.
+
+Before producing a private ReDom account URL:
+- validate the account;
+- validate the relationship between the URL and that account;
+- ensure the URL is an allowed route;
+- reject cross-account access.
+
+---
+
+# 15. Settings and Privacy
+
+Established top-level areas include:
+
+- Your account
+- Tools and resources
+- Preferences
+- Audience and visibility
+- Payments
+- Your activity
+- Community Standards and legal policies
+
+Known settings include:
+
+- Language
+- Dark Mode
+- Link History — Under Development (unless current implementation changed)
+- Orders and Payments
+
+### Policy-upgrade rule
+
+When an implementation change modifies behavior covered by a policy:
+
+1. implement the product/security change;
+2. update the corresponding policy/documentation section;
+3. keep user-facing wording aligned with actual implementation;
+4. do not leave policy text describing an obsolete flow.
+
+---
+
+# 16. Documentation and Help
+
+## Domains
+
+Targeted documentation/help surfaces include:
+
+- `docs.wnncompany.com`
+- `help.wnncompany.com`
+
+## Footer requirement
+
+**Every footer on every screen/page inside Docs and Help must contain the required official ReDom company information.**
+
+Do not implement the footer only on the home page.
+
+The established company/address information used for the docs/help footer is:
+
+**ReDom Platforms, Inc.**  
+**495 Flatbush Ave, Brooklyn, NY 11225, United States**
+
+If an authoritative corporate/legal record specifies updated information, update all relevant footers consistently.
+
+## Logo
+
+Docs/help must use the **official ReDom logo asset**, not a text approximation.
+
+## Payment-provider logos
+
+Where payment providers are shown, use the actual current provider branding/logo assets, not text-only labels where the design specifically requires logos.
+
+---
+
+# 17. ReDom Web deployment
+
+The established deployment model:
+
+- Web application → Vercel.
+- Backend → Render.
+- Database → Neon.
+- GitHub → source of truth.
+
+The ReDom Web project is separate from the mobile Expo project.
+
+A Vercel project has been used for ReDom Web, with `wnncompany.com` infrastructure and planned/used subdomains.
+
+Do not accidentally move Web deployment responsibility to Render merely because the backend is on Render.
+
+---
+
+# 18. Backend/development workflow
+
+The current repository is a pnpm workspace.
+
+Verified repository facts at the time this handbook was created include:
+
+- repository: `ReDomApp/redom-backend`
+- branch: `main`
+- package manager: pnpm
+- workspace configuration: `pnpm-workspace.yaml`
+- lockfile: `pnpm-lock.yaml`
+- development environment includes Replit configuration.
+- root build includes typechecking and workspace builds.
+
+Do not delete/replace the lockfile casually.
+
+Where Render requires reproducible installs, the project has used frozen-lockfile installation behavior. If dependency manifests and lockfile disagree, resolve the dependency graph correctly rather than bypassing reproducibility as a permanent fix.
+
+---
+
+# 19. Database
+
+Neon PostgreSQL is the production database.
+
+Established requirements:
+
+- use migrations;
+- do not assume an empty database means the application is healthy;
+- schema changes must be reflected in migrations;
+- production schema must be verified;
+- payment/account/security state must be persisted atomically where required;
+- never store sensitive payment-card authentication data that the payment provider forbids/states should not be stored.
+
+Drizzle migrations were an important part of the established database workflow.
+
+---
+
+# 20. Previously encountered backend problem areas
+
+Past work identified/changed code around areas including:
+
+- network provider controller/service;
+- MaxMind/IP information;
+- event routes;
+- bug reporting service;
+- authentication/network-provider logic;
+- database/migration setup.
+
+These names are historical context, not permission to recreate deleted files. Always inspect the current repository before modifying them.
+
+---
+
+# 21. Location/IP services
+
+The project has considered MaxMind and IPinfo for IP/location intelligence.
+
+An earlier MaxMind implementation had problems and IPinfo was considered/used as the replacement/reference.
+
+Do not assume an IP provider is authoritative for exact physical address. IP geolocation is approximate unless an explicit trusted location mechanism exists.
+
+---
+
+# 22. Email and notifications
+
+Known integrations include:
+
+- Resend for transactional email.
+- OneSignal for notifications.
+
+Email should be:
+- triggered by authoritative backend events;
+- safe against duplicate delivery where idempotency is required;
+- free of secrets and sensitive payment data unless explicitly required and protected;
+- aligned with the current policy wording.
+
+Security codes should never be logged in plaintext.
+
+---
+
+# 23. Third-party/service ecosystem
+
+The established ReDom ecosystem has included:
+
+- GitHub
+- Render
+- Neon PostgreSQL
+- Replit
+- Vercel
+- Expo
+- OpenAI
+- Stripe/card-payment infrastructure
+- Paystack
+- Resend
+- OneSignal
+- MaxMind
+- IPinfo
+- RCS for Business / Google
+- Namecheap
+- payment/identity services as explicitly integrated
+
+Use the actual current repository/environment configuration rather than assuming every historical service remains active.
+
+---
+
+# 24. Domain/DNS context
+
+Known domain infrastructure has included:
+
+- `wnncompany.com`
+- `www.wnncompany.com`
+- `docs.wnncompany.com`
+- `help.wnncompany.com`
+- `checkout.wnncompany.com`
+
+Namecheap has been used for domain registration/DNS.
+
+Vercel has been used for ReDom Web and documentation/help projects.
+
+---
+
+# 25. Identity/KYC/payment-account context
+
+ReDom's payment setup has involved business verification and identity/business documentation.
+
+Do not put copies of sensitive identity documents, SSNs, EIN documents, passports, driver's licenses, or private verification material into the public repository.
+
+Only record:
+- non-secret configuration;
+- public company information;
+- references to where private documents are securely stored;
+- required provider setup steps.
+
+---
+
+# 26. Security philosophy
+
+Security is part of product behavior, not a final checklist.
+
+Always consider:
+
+- authentication;
+- authorization;
+- account ownership;
+- session validity;
+- provider verification;
+- webhook signature verification;
+- idempotency;
+- replay protection;
+- rate limits;
+- failed-attempt limits;
+- secure code hashing;
+- data minimization;
+- private URL authorization;
+- transaction atomicity;
+- auditability;
+- secret management.
+
+Never solve a security problem by moving sensitive validation solely to the client.
+
+---
+
+# 27. UX behavior rules
+
+When copying an established ReDom screen:
+
+- Do not casually rename labels.
+- Do not replace a button with a different control.
+- Do not change a bottom sheet into a page unless explicitly required.
+- Do not change a modal into a toast if the reference uses a modal.
+- Do not change the navigation destination.
+- Do not omit loading/error/empty states.
+- Do not make cards arbitrarily larger/smaller.
+- Do not replace SVGs with generic icon libraries when an approved asset exists.
+- Do not invent copy.
+- Do not remove security messaging simply because it makes the screen shorter.
+
+---
+
+# 28. Current Web implementation philosophy
+
+The Web project is approaching a large mobile-to-web parity target.
+
+For every screen:
+
+**Reference mobile → understand behavior → reproduce in Web → verify navigation → verify state → verify visuals → verify security → verify copy.**
+
+Do not treat parity as only a visual exercise.
+
+---
+
+# 29. AI/developer handoff protocol
+
+When a new AI or developer starts on ReDom:
+
+### Step 1
+Read this handbook.
+
+### Step 2
+Inspect the GitHub repository tree.
+
+### Step 3
+Identify whether the requested change is:
+- mobile;
+- web;
+- backend;
+- database;
+- payment;
+- docs/help;
+- AI;
+- security;
+- deployment.
+
+### Step 4
+Read the existing implementation for the exact feature.
+
+### Step 5
+Search the repository for:
+- routes;
+- services;
+- models/schema;
+- policy text;
+- existing components;
+- tests;
+- assets;
+- environment variable names.
+
+### Step 6
+Make the smallest change that satisfies the requirement without breaking established behavior.
+
+### Step 7
+Run the appropriate typecheck/build/test/verification.
+
+### Step 8
+If the behavior changed, update relevant policy/documentation.
+
+### Step 9
+Record important architectural decisions here.
+
+---
+
+# 30. Things an AI must NOT do
+
+- Do not claim to have deployed something without verifying the deployment.
+- Do not claim a payment succeeded without backend/provider confirmation.
+- Do not claim a Google/Vercel/Render/Neon state is current without checking when current state matters.
+- Do not fabricate an API response.
+- Do not fabricate a URL.
+- Do not expose secrets.
+- Do not use another user's account URL.
+- Do not store card PAN/CVV.
+- Do not weaken authentication to make a test pass.
+- Do not silently change product policy.
+- Do not silently replace the payment architecture.
+- Do not use generic placeholder logos when actual branding is required.
+- Do not import React Native/Expo into ReDom Web solely to avoid implementing web parity.
+- Do not treat a historical design decision as current if source code proves it has changed.
+
+---
+
+# 31. Decision log principle
+
+When a major decision is made, record:
+
+- Date
+- Decision
+- Why
+- Affected systems
+- Security implications
+- Policy/documentation implications
+- Migration/rollback implications
+
+This prevents the project from accumulating undocumented assumptions.
+
+---
+
+# 32. Known product/legal/company presentation
+
+Established public-facing company identity:
+
+**ReDom Platforms, Inc.**
+
+Established business address used in ReDom's public-facing company/footer context:
+
+**495 Flatbush Ave, Brooklyn, NY 11225, United States**
+
+Google Maps has been associated with a ReDom Platforms, Inc. corporate-office listing at this address in the development context.
+
+Do not represent a map listing as legal incorporation proof. Public directory/map data and legal corporate records are different evidence sources.
+
+---
+
+# 33. What this handbook is for
+
+This file exists specifically so that:
+
+> If the original AI conversation becomes unavailable, another AI can read the repository and understand how ReDom is supposed to work before touching the code.
+
+It should therefore be updated whenever an important permanent ReDom rule is established.
+
+**Do not put secrets or private credentials into this file.**
+
+---
+
+# 34. Final instruction to future ReDom agents
+
+**Treat ReDom as an existing production-oriented product, not a blank template.**
+
+Before implementing anything:
+
+**READ → UNDERSTAND → VERIFY → IMPLEMENT → TEST → DOCUMENT.**
+
+Preserve established behavior. Follow the source code. Follow the current product requirement. Protect account and payment security. Keep mobile/web behavior aligned. Keep policy and implementation synchronized.
+
+If something is ambiguous, inspect the repository and the existing implementation before guessing.
