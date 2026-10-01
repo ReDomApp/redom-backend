@@ -37,6 +37,65 @@ The goal of this handbook is to preserve the **why, what, and non-negotiable imp
 
 ---
 
+---
+
+# 2A. CHANGE-FAST / VERIFY-FIRST — PERMANENT RULE
+
+ReDom is actively developed almost every day/week. The implementation can evolve faster than this handbook, so historical documentation must never be mistaken for a frozen specification.
+
+## Precedence order
+
+When determining what ReDom does **today**, use this order:
+
+1. Current explicit product/security requirement from the project owner.
+2. Current code and configuration on GitHub `main`.
+3. Current authoritative database/provider/infrastructure state when the task depends on runtime state.
+4. Current tests and verification results.
+5. This handbook and AI context files as durable engineering context.
+6. Git history as historical evidence of how/why the product evolved.
+
+If two sources conflict, do not silently pick the older description. Investigate the current implementation and resolve the discrepancy.
+
+## Verify before relying on fast-changing information
+
+Before implementing or answering a task that depends on any of the following, inspect the current repository/state rather than relying on an old remembered value:
+
+- screen/navigation count;
+- route names and destinations;
+- Web parity registry;
+- UI layout/copy/assets;
+- security/authentication/authorization logic;
+- payment providers and payment methods;
+- refund windows and retry rules;
+- Stars packages/trials;
+- API endpoints and services;
+- database schema/migrations;
+- policy/legal wording;
+- Docs/Help pages and footers;
+- provider integrations;
+- environment/deployment architecture;
+- domains/URLs;
+- feature availability such as “Coming Soon” or “Under Development”;
+- AI behavior and URL-generation rules.
+
+## Historical counts and decisions
+
+Numbers such as the previously established **101 mobile screens / 101 Web registry entries** are historical checkpoints unless the current source confirms them. The same principle applies to any other screen count, package list, policy duration, provider, route, or implementation detail.
+
+Git history is valuable for understanding development chronology and why an implementation changed. It must not be used to force an old implementation back into the current product.
+
+## Continuous-update rule
+
+Whenever a durable product/engineering rule changes:
+
+1. change the implementation;
+2. verify the resulting behavior;
+3. update the relevant policy/documentation;
+4. update this handbook/context when the change is durable;
+5. preserve the historical decision in Git history rather than pretending the old state never existed.
+
+This keeps ReDom's memory useful without allowing its memory to become stale authority.
+
 # 3. System architecture
 
 ## 3.1 Production relationship
