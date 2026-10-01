@@ -63,6 +63,22 @@ function renderActionButtons(actions: SupportEmailAction[]): string {
   return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 24px 0;"><tr><td>' + buttons + '</td></tr></table>';
 }
 
+
+function renderCompanyEmailFooter(): string {
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">' +
+    '<tr><td style="padding:24px 0 8px;border-top:1px solid ' + REDOM_EMAIL_BRAND.border + ';text-align:center;">' +
+    '<div style="display:inline-block;width:34px;height:34px;border-radius:9px;background:#1877F2;color:#FFFFFF;font:bold 18px/34px Arial;text-align:center;">R</div>' +
+    '<div style="margin-top:8px;font:bold 14px/20px Arial;color:' + REDOM_EMAIL_BRAND.text + ';">ReDom Platforms, Inc.</div>' +
+    '<div style="margin-top:4px;font:11px/17px Arial;color:' + REDOM_EMAIL_BRAND.secondary + ';">Technology services behind ReDom — a social platform for connection, communication, sharing, discovery and digital experiences.</div>' +
+    '<div style="margin-top:8px;font:11px/17px Arial;color:' + REDOM_EMAIL_BRAND.secondary + ';">1001-10/7 ReDom Way, Parkside Court, Brooklyn, NY 11225, USA</div>' +
+    '<div style="margin-top:8px;font:11px/17px Arial;">' +
+    '<a href="https://about.wnncompany.com" style="color:' + REDOM_EMAIL_BRAND.primary + ';text-decoration:underline;">About ReDom</a> · ' +
+    '<a href="https://docs.wnncompany.com" style="color:' + REDOM_EMAIL_BRAND.primary + ';text-decoration:underline;">Documentation</a> · ' +
+    '<a href="https://help.wnncompany.com" style="color:' + REDOM_EMAIL_BRAND.primary + ';text-decoration:underline;">Help Center</a> · ' +
+    '<a href="mailto:support@wnncompany.com" style="color:' + REDOM_EMAIL_BRAND.primary + ';text-decoration:underline;">support@wnncompany.com</a>' +
+    '</div></td></tr></table>';
+}
+
 function fallbackHtml(caseNumber: string, reply: string, actions: SupportEmailAction[] = []): string {
   const safeCase = escapeHtml(caseNumber);
   const paragraphs = reply.trim().split(/\n\s*\n/).map((part) =>
@@ -99,11 +115,7 @@ ${renderActionButtons(actions)}
 </table>
 <p style="margin:24px 0 0 0;color:${REDOM_EMAIL_BRAND.text};font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;">ReDom Support</p>
 </td></tr>
-<tr><td style="padding:16px 28px;border-top:1px solid ${REDOM_EMAIL_BRAND.border};color:${REDOM_EMAIL_BRAND.secondary};font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:17px;">
-<strong style="color:${REDOM_EMAIL_BRAND.text};">ReDom Platforms, Inc.</strong><br>
-<a href="https://www.google.com/maps/search/?api=1&amp;query=Brooklyn%2C%20NY%2011225" style="color:${REDOM_EMAIL_BRAND.primary};text-decoration:underline;">1001-10/7 ReDom Way, Parkside Court, Brooklyn, NY 11225</a><br>
-© ReDom
-</td></tr>
+${renderCompanyEmailFooter()}
 </table>
 </td></tr>
 </table>
@@ -250,7 +262,7 @@ export async function sendRefundCaseEmail(input: {
 <tr><td style="padding:0 24px 20px;"><div style="font:800 18px/24px Arial;color:${REDOM_EMAIL_BRAND.text};margin-bottom:8px;">Transaction</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${line("ReDom Transaction ID",input.transactionNumber,true)}${line("Amount",input.amount && input.currency ? input.amount+" "+input.currency : null,true)}${line("Refund destination",input.target)}${line("Refund ID",input.refundId)}</table></td></tr>
 <tr><td style="padding:0 24px 20px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F8FA;border:1px solid ${REDOM_EMAIL_BRAND.border};border-radius:12px;"><tr><td style="padding:15px;"><div style="font:800 15px/20px Arial;color:${REDOM_EMAIL_BRAND.text};">What happens next?</div><div style="font:13px/20px Arial;color:${REDOM_EMAIL_BRAND.secondary};margin-top:6px;">${reasonHtml}</div>${input.nextStep ? '<div style="margin-top:12px;padding-top:12px;border-top:1px solid '+REDOM_EMAIL_BRAND.border+';font:13px/20px Arial;color:'+REDOM_EMAIL_BRAND.text+';"><strong>Next step:</strong><br>'+nextHtml+'</div>' : ""}</td></tr></table></td></tr>
 <tr><td style="padding:0 24px 24px;font:12px/19px Arial;color:${REDOM_EMAIL_BRAND.secondary};">${closed ? "<strong>This refund case has reached a terminal state.</strong>" : "<strong>Reply to this email</strong> to continue your existing ReDom refund support case."}</td></tr><tr><td style="padding:0 24px 8px;">${renderActionButtons(refundActions)}</td></tr>
-<tr><td style="padding:18px 24px;background:#F7F8FA;border-top:1px solid ${REDOM_EMAIL_BRAND.border};font:11px/17px Arial;color:${REDOM_EMAIL_BRAND.secondary};"><strong style="color:${REDOM_EMAIL_BRAND.text};">ReDom Platforms, Inc.</strong><br><a href="https://www.google.com/maps/search/?api=1&amp;query=Brooklyn%2C%20NY%2011225" style="color:${REDOM_EMAIL_BRAND.primary};text-decoration:underline;">1001-10/7 ReDom Way, Parkside Court, Brooklyn, NY 11225</a><br>Case ${safe(input.caseNumber)} · Transaction ${safe(input.transactionNumber)}<br><br>${renderInlineFormatting(input.securityWarning)}<br><br>© ReDom</td></tr>
+<tr><td style="padding:18px 24px;background:#F7F8FA;border-top:1px solid ${REDOM_EMAIL_BRAND.border};font:11px/17px Arial;color:${REDOM_EMAIL_BRAND.secondary};">Case ${safe(input.caseNumber)} · Transaction ${safe(input.transactionNumber)}<br><br>${renderInlineFormatting(input.securityWarning)}</td></tr>${renderCompanyEmailFooter()}
 </table></td></tr></table></body></html>`;
 
   const text = "ReDom Refund Case\n\nCase: " + input.caseNumber + "\nTransaction: " + input.transactionNumber + "\nStatus: " + input.status + "\nReason: " + input.reason + (input.nextStep ? "\nNext step: " + input.nextStep : "") + "\n\n" + input.securityWarning;
