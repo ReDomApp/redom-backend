@@ -117,9 +117,12 @@ function ExistingLogin({go,network,setUser}:{go:(p:Page)=>void;network:NetworkPr
        <p>Sign in to your ReDom account.</p>
      </section>
      <section className="web-login-terms" aria-label="Network terms">
+       <span>By proceeding, you agree to </span>
        <button type="button" className="web-login-provider-terms" disabled={!termsUrl} onClick={()=>termsUrl&&window.open(termsUrl,"_blank","noopener,noreferrer")}>
-         {provider ? provider+" Terms and Conditions" : "ReDom Terms and Conditions"}
+         {provider ? provider+"'s Terms" : "ReDom's Terms"}
        </button>
+       <span> which includes letting Facebook request and receive your phone number. </span>
+       <button type="button" className="web-login-change-settings" onClick={()=>setNetworkWarningOpen(true)}>Change Settings</button>
      </section>
      <form className="web-login-form" onSubmit={e=>{e.preventDefault();void submit()}} autoComplete="on">
        <label className="web-login-field-label" htmlFor="web-login-identifier">Email, phone or username</label>
