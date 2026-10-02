@@ -179,7 +179,7 @@
 /* ReDom Web — exact Login reference implementation. Scoped to the login entry screen only. */
 .web-login-screen{min-height:100vh;min-height:100dvh;background:#fff;color:#050505;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-sizing:border-box;overflow-x:hidden}
 .web-login-screen *{box-sizing:border-box}
-.web-login-top{width:min(100%,686px);height:145px;margin:0 auto;display:grid;grid-template-columns:52px 1fr 52px;align-items:center;padding:98px 30px 0}
+.web-login-top{width:min(100%,686px);height:145px;margin:0 auto;display:grid;grid-template-columns:52px 1fr 52px;align-items:center;padding:86px 30px 0}
 .web-login-back,.web-login-language{border:0;background:transparent;cursor:pointer;padding:0}
 .web-login-back{width:42px;height:42px;display:grid;place-items:center;justify-self:start}
 .web-login-back img{width:30px;height:30px;object-fit:contain}
@@ -230,7 +230,7 @@
 .web-login-settings-sheet p{font-size:16px;line-height:23px;color:#65676B;margin:0 0 20px}
 .web-login-settings-sheet .web-login-primary{height:56px;font-size:17px;margin-top:0}
 @media(max-width:760px){
-  .web-login-top{width:100%;height:145px;padding:98px 30px 0}
+  .web-login-top{width:100%;height:145px;padding:86px 30px 0}
   .web-login-main{width:100%;padding:0 11.4vw 22px;min-height:calc(100dvh - 145px)}
   .web-login-logo{height:82px;margin-bottom:44px}
   .web-login-logo img{width:min(294px,58vw);height:auto}
