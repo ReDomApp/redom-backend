@@ -179,22 +179,22 @@
 /* ReDom Web — exact Login reference implementation. Scoped to the login entry screen only. */
 .web-login-screen{min-height:100vh;min-height:100dvh;background:#fff;color:#050505;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-sizing:border-box;overflow-x:hidden}
 .web-login-screen *{box-sizing:border-box}
-.web-login-top{width:min(100%,686px);height:78px;margin:0 auto;display:grid;grid-template-columns:52px 1fr 52px;align-items:center;padding:14px 30px 0}
+.web-login-top{width:min(100%,686px);height:145px;margin:0 auto;display:grid;grid-template-columns:52px 1fr 52px;align-items:center;padding:98px 30px 0}
 .web-login-back,.web-login-language{border:0;background:transparent;cursor:pointer;padding:0}
 .web-login-back{width:42px;height:42px;display:grid;place-items:center;justify-self:start}
 .web-login-back img{width:30px;height:30px;object-fit:contain}
 .web-login-language{justify-self:center;display:inline-flex;align-items:center;justify-content:center;gap:7px;color:#1877F2;font-size:25px;line-height:31px;font-weight:700;white-space:nowrap}
 .web-login-language>img{width:18px;height:18px;transform:rotate(90deg)}
 .web-login-top-spacer{width:42px;height:42px}
-.web-login-main{width:min(100%,686px);min-height:calc(100vh - 78px);min-height:calc(100dvh - 78px);margin:0 auto;padding:8px 78px 28px;display:flex;flex-direction:column}
-.web-login-logo{display:flex;justify-content:center;align-items:center;height:82px;margin-bottom:30px}
+.web-login-main{width:min(100%,686px);min-height:calc(100vh - 145px);min-height:calc(100dvh - 145px);margin:0 auto;padding:0 78px 28px;display:flex;flex-direction:column}
+.web-login-logo{display:flex;justify-content:center;align-items:center;height:82px;margin-bottom:44px}
 .web-login-logo img{width:294px;height:auto;max-height:94px;object-fit:contain}
 .web-login-intro{text-align:left;margin:0 0 14px}
 .web-login-intro h1{margin:0;color:#050505;font-size:49px;line-height:1.08;letter-spacing:-1.6px;font-weight:750}
 .web-login-intro p{margin:6px 0 0;color:#65676B;font-size:32px;line-height:1.22;font-weight:400;letter-spacing:-.4px}
-.web-login-terms{display:flex;justify-content:center;align-items:center;text-align:center;margin:0 0 32px;min-height:48px}
-.web-login-provider-terms{border:0;background:transparent;padding:0;color:#1877F2;font:inherit;font-size:29px;line-height:1.25;font-weight:750;text-align:center;cursor:pointer}
-.web-login-provider-terms:disabled{cursor:default}
+.web-login-terms{display:block;text-align:center;margin:0 0 32px;min-height:48px;color:#1C1E21;font-size:19px;line-height:1.45;font-weight:400}
+.web-login-provider-terms{border:0;background:transparent;padding:0;color:#1877F2;font:inherit;font-size:inherit;line-height:inherit;font-weight:800;text-align:center;cursor:pointer}
+.web-login-provider-terms:disabled{cursor:default}.web-login-change-settings{border:0;background:transparent;padding:0;color:#1877F2;font:inherit;font-weight:800;cursor:pointer}
 .web-login-form{display:flex;flex-direction:column;width:100%;margin:0}
 .web-login-field-label{display:block;color:#1C1E21;font-size:25px;line-height:31px;font-weight:700;margin:0 0 10px}
 .web-login-password-label{margin-top:49px}
@@ -230,13 +230,14 @@
 .web-login-settings-sheet p{font-size:16px;line-height:23px;color:#65676B;margin:0 0 20px}
 .web-login-settings-sheet .web-login-primary{height:56px;font-size:17px;margin-top:0}
 @media(max-width:760px){
-  .web-login-top{width:100%;height:76px;padding-left:30px;padding-right:30px}
-  .web-login-main{width:100%;padding:8px 11.4vw 22px;min-height:calc(100dvh - 76px)}
-  .web-login-logo{height:82px;margin-bottom:30px}
+  .web-login-top{width:100%;height:145px;padding:98px 30px 0}
+  .web-login-main{width:100%;padding:0 11.4vw 22px;min-height:calc(100dvh - 145px)}
+  .web-login-logo{height:82px;margin-bottom:44px}
   .web-login-logo img{width:min(294px,58vw);height:auto}
   .web-login-intro h1{font-size:clamp(38px,7.15vw,49px)}
   .web-login-intro p{font-size:clamp(24px,4.65vw,32px)}
-  .web-login-provider-terms{font-size:clamp(20px,4.22vw,29px)}
+  .web-login-terms{font-size:clamp(17px,2.8vw,19px)}
+  .web-login-provider-terms{font-size:inherit}
   .web-login-field-label{font-size:clamp(20px,3.65vw,25px)}
   .web-login-field{height:109px}
   .web-login-field input{font-size:clamp(20px,3.65vw,25px)}
@@ -245,12 +246,12 @@
   .web-login-create{height:82px;font-size:clamp(21px,4.08vw,28px)}
 }
 @media(max-width:470px){
-  .web-login-main{padding:8px 30px 20px}
-  .web-login-logo{height:76px;margin-bottom:25px}
+  .web-login-main{padding:0 30px 20px}
+  .web-login-logo{height:76px;margin-bottom:35px}
   .web-login-logo img{width:min(294px,74vw)}
   .web-login-intro h1{font-size:39px}
   .web-login-intro p{font-size:24px}
-  .web-login-provider-terms{font-size:22px}
+  .web-login-terms{font-size:17px;line-height:1.45}.web-login-provider-terms{font-size:inherit}
   .web-login-terms{margin-bottom:27px}
   .web-login-field-label{font-size:21px}
   .web-login-field{height:109px}
