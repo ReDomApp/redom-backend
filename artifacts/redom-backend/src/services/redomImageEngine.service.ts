@@ -107,38 +107,32 @@ export async function generateReDomImage(userId: string, options: GenerateOption
   try {
     const security = await enforceReDomImageSecurity(userId, prompt, { hasImage: false, operation: "generate" });
     const width = options.width ?? DEFAULT_WIDTH;
-  const height = options.height ?? DEFAULT_HEIGHT;
-  const steps = options.steps ?? DEFAULT_STEPS;
-  const images = options.images ?? 1;
-  validateDimensions(width, height);
-  if (steps < 1 || steps > 60 || images < 1 || images > 4) throw new Error("Invalid ReDom-1.6RD— Image generation settings.");
+    const height = options.height ?? DEFAULT_HEIGHT;
+    const steps = options.steps ?? DEFAULT_STEPS;
+    const images = options.images ?? 1;
+    validateDimensions(width, height);
+    if (steps < 1 || steps > 60 || images < 1 || images > 4) throw new Error("Invalid ReDom-1.6RD— Image generation settings.");
 
-  const jobId = "gen_" + randomUUID().replace(/-/g, "");
-  const started = Date.now();
-  const response = await callEngine("/v1/generate", { prompt, width, height, steps, images, seed: options.seed ?? null });
-  const first = response.images[0];
-  const outputDataUri = "data:" + (first.mimeType || "image/png") + ";base64," + first.dataBase64;
-  await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
-  const stored = await storeImage(userId, jobId, first, 0);
+    const jobId = "gen_" + randomUUID().replace(/-/g, "");
+    const started = Date.now();
+    const response = await callEngine("/v1/generate", { prompt, width, height, steps, images, seed: options.seed ?? null });
+    const first = response.images[0];
+    const outputDataUri = "data:" + (first.mimeType || "image/png") + ";base64," + first.dataBase64;
+    await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
+    const stored = await storeImage(userId, jobId, first, 0);
 
-  await db.insert(reDomAiImages).values({
-    userId,
-    jobId,
-    operation: "generate",
-    model: REDOM_IMAGE_MODEL,
-    modelId: response.modelId ?? null,
-    prompt,
-    width: first.width || width,
-    height: first.height || height,
-    steps,
-    seed: first.seed == null ? null : String(first.seed),
-    storageKey: stored.storageKey,
-    status: "completed",
-    generationMs: response.generationMs ?? Date.now() - started,
-    completedAt: new Date(),
-  });
-
-  return { image: stored.url, model: REDOM_IMAGE_MODEL, jobId, generationMs: response.generationMs ?? Date.now() - started };
+    await db.insert(reDomAiImages).values({
+      userId, jobId, operation: "generate", model: REDOM_IMAGE_MODEL, modelId: response.modelId ?? null, prompt,
+      width: first.width || width, height: first.height || height, steps,
+      seed: first.seed == null ? null : String(first.seed), storageKey: stored.storageKey, status: "completed",
+      generationMs: response.generationMs ?? Date.now() - started, completedAt: new Date(),
+    });
+    await quota.commit();
+    return { image: stored.url, model: REDOM_IMAGE_MODEL, jobId, generationMs: response.generationMs ?? Date.now() - started, quota: await getReDomImageQuota(userId) };
+  } catch (error) {
+    await quota.release().catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function editReDomImage(userId: string, imageDataUri: string, prompt: string) {
@@ -163,44 +157,27 @@ export async function editReDomImage(userId: string, imageDataUri: string, promp
     if (!bytes.length || bytes.length > MAX_INPUT_BYTES) throw new Error("Image is too large.");
   }
 
-  const security = await enforceReDomImageSecurity(userId, trimmed, {
-    hasImage: true,
-    imageDataUri: sourceDataUri,
-    operation: "edit",
-  });
+  const quota = await reserveReDomImageQuota(userId);
+  try {
+    const security = await enforceReDomImageSecurity(userId, trimmed, { hasImage: true, imageDataUri: sourceDataUri, operation: "edit" });
+    const jobId = "edit_" + randomUUID().replace(/-/g, "");
+    const started = Date.now();
+    const response = await callEngine("/v1/edit", { prompt: trimmed, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT, steps: DEFAULT_STEPS, images: 1, image_data_uri: sourceDataUri, strength: 0.65 });
+    const first = response.images[0];
+    const outputDataUri = "data:" + (first.mimeType || "image/png") + ";base64," + first.dataBase64;
+    await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
+    const stored = await storeImage(userId, jobId, first, 0);
 
-  const jobId = "edit_" + randomUUID().replace(/-/g, "");
-  const started = Date.now();
-  const response = await callEngine("/v1/edit", {
-    prompt: trimmed,
-    width: DEFAULT_WIDTH,
-    height: DEFAULT_HEIGHT,
-    steps: DEFAULT_STEPS,
-    images: 1,
-    image_data_uri: sourceDataUri,
-    strength: 0.65,
-  });
-  const first = response.images[0];
-  const outputDataUri = "data:" + (first.mimeType || "image/png") + ";base64," + first.dataBase64;
-  await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
-  const stored = await storeImage(userId, jobId, first, 0);
-
-  await db.insert(reDomAiImages).values({
-    userId,
-    jobId,
-    operation: "edit",
-    model: REDOM_IMAGE_MODEL,
-    modelId: response.modelId ?? null,
-    prompt: trimmed,
-    width: first.width || DEFAULT_WIDTH,
-    height: first.height || DEFAULT_HEIGHT,
-    steps: DEFAULT_STEPS,
-    seed: first.seed == null ? null : String(first.seed),
-    storageKey: stored.storageKey,
-    status: "completed",
-    generationMs: response.generationMs ?? Date.now() - started,
-    completedAt: new Date(),
-  });
-
-  return { image: stored.url, model: REDOM_IMAGE_MODEL, jobId, generationMs: response.generationMs ?? Date.now() - started };
+    await db.insert(reDomAiImages).values({
+      userId, jobId, operation: "edit", model: REDOM_IMAGE_MODEL, modelId: response.modelId ?? null, prompt: trimmed,
+      width: first.width || DEFAULT_WIDTH, height: first.height || DEFAULT_HEIGHT, steps: DEFAULT_STEPS,
+      seed: first.seed == null ? null : String(first.seed), storageKey: stored.storageKey, status: "completed",
+      generationMs: response.generationMs ?? Date.now() - started, completedAt: new Date(),
+    });
+    await quota.commit();
+    return { image: stored.url, model: REDOM_IMAGE_MODEL, jobId, generationMs: response.generationMs ?? Date.now() - started, quota: await getReDomImageQuota(userId) };
+  } catch (error) {
+    await quota.release().catch(() => undefined);
+    throw error;
+  }
 }
