@@ -78,7 +78,8 @@ export class LoginFlowService {
     const deviceCredential = data.deviceCredential?.trim() || deviceId;
     const recognized = deviceCredential ? await recognizedDeviceService.list(deviceCredential) : { accounts: [] };
     const knownDevice = recognized.accounts.some(account => account.userId === user.id);
-    // Only a server-side recognized-device association can satisfy device recognition.\n    if (!knownDevice) {
+    // Only a server-side recognized-device association can satisfy device recognition.
+    if (!knownDevice) {
       const channel = user.phoneNumber && user.phoneVerified ? "sms" : "email"; const target = channel === "sms" ? user.phoneNumber! : user.email!;
       if (channel === "email" && (!user.email || !user.emailVerified)) throw new Error("A verified email address or phone number is required to verify this device.");
       const challenge = await verificationService.createVerification({ userId: user.id, purpose: "LOGIN_DEVICE_VERIFICATION", target, channel, requestedLength: 6, firstName: user.firstName, requestIp: data.ipAddress, userAgent: data.userAgent, deviceId });
