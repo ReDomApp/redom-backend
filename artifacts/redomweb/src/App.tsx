@@ -100,7 +100,7 @@ function ExistingLogin({go,network,setUser}:{go:(p:Page)=>void;network:NetworkPr
  const invalidate=async()=>{if(!pendingChallengeId||pendingCode.length!==4)return;setPendingBusy(true);setPendingError("");try{const r=await api<any>("/auth/pending-registration/invalidate",{method:"POST",body:JSON.stringify({challengeId:pendingChallengeId,code:pendingCode,deviceId:deviceId()})});if(!r.success||!r.invalidated)throw new Error(r.message||"The pending registration could not be invalidated.");setPendingSuccess(true)}catch(e){setPendingError(e instanceof Error?e.message:"Invalid Code. Enter the 4-digit verification code.")}finally{setPendingBusy(false)}};
 
  const provider=network?.networkProvider||null;
- const providerTermsLabel=provider?provider.replace(/\s+(Nigeria|Ghana|Kenya|South Africa|United States|United Kingdom)$/i,"")+"'s Terms":null;
+ const providerTermsLabel=provider?provider+"'s Terms":null;
  const termsUrl=network?.termsUrl||null;
  const maskedIdentifier=/^\+?[0-9*]+$/.test(id.trim())&&id.trim().includes("*")?id.trim():"";
  const goBack=()=>{window.history.back()};
@@ -113,7 +113,7 @@ function ExistingLogin({go,network,setUser}:{go:(p:Page)=>void;network:NetworkPr
    <main className="web-login-main">
      <div className="web-login-logo"><SvgAsset src={ReDomMarkSvg}/></div>
      <section className="web-login-terms" aria-label="Network terms">
-       {providerTermsLabel&&termsUrl?<><span>By proceeding, you agree to </span><button type="button" className="web-login-link" onClick={()=>window.open(termsUrl,"_blank","noopener,noreferrer")}>{providerTermsLabel}</button><span> which includes letting Facebook request and receive your phone number. </span><button type="button" className="web-login-link" onClick={()=>setNetworkWarningOpen(true)}>Change Settings</button></>:<span>By proceeding, you agree to ReDom's Terms. Change Settings</span>}
+       {providerTermsLabel?<><span>By proceeding, you agree to </span><button type="button" className="web-login-link" disabled={!termsUrl} onClick={()=>termsUrl&&window.open(termsUrl,"_blank","noopener,noreferrer")}>{providerTermsLabel}</button><span> which includes letting Facebook request and receive your phone number. </span><button type="button" className="web-login-link" onClick={()=>setNetworkWarningOpen(true)}>Change Settings</button></>:<span>By proceeding, you agree to ReDom's Terms. Change Settings</span>}
      </section>
      <form className="web-login-form" onSubmit={e=>{e.preventDefault();void submit()}} autoComplete="on">
        <label className="web-login-field">
