@@ -5,6 +5,7 @@ import { reDomAiImages } from "../database/reDomAiImages";
 import { env } from "../config/env";
 import { r2 } from "../lib/r2";
 import { enforceReDomImageOutputSecurity, enforceReDomImageSecurity } from "./redomImageSecurity.service";
+import { getReDomImageQuota, reserveReDomImageQuota } from "./redomImageQuota.service";
 
 export const REDOM_IMAGE_MODEL = "ReDom-1.6RD— Image";
 const DEFAULT_WIDTH = 1024;
@@ -102,8 +103,10 @@ async function storeImage(userId: string, jobId: string, image: EngineImage, ind
 export async function generateReDomImage(userId: string, options: GenerateOptions) {
   const prompt = options.prompt.trim();
   if (!prompt) throw new Error("Image prompt is required.");
-  const security = await enforceReDomImageSecurity(userId, prompt, { hasImage: false, operation: "generate" });
-  const width = options.width ?? DEFAULT_WIDTH;
+  const quota = await reserveReDomImageQuota(userId);
+  try {
+    const security = await enforceReDomImageSecurity(userId, prompt, { hasImage: false, operation: "generate" });
+    const width = options.width ?? DEFAULT_WIDTH;
   const height = options.height ?? DEFAULT_HEIGHT;
   const steps = options.steps ?? DEFAULT_STEPS;
   const images = options.images ?? 1;
