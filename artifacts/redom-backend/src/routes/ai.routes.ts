@@ -7,6 +7,7 @@ import { db } from "../database/db";
 import { activityLog } from "../database/activityLog";
 import { translateUiTexts } from "../services/aiContent.service";
 import { generateReDomAiReply } from "../services/reDomAiChat.service";
+import { getReDomImageQuota, ReDomImageQuotaError } from "../services/redomImageQuota.service";
 import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
 
 const router = Router();
@@ -36,14 +37,22 @@ router.post("/chat", authMiddleware, async (req, res) => {
   catch (error) { req.log?.error?.({ err: error }, "ReDom AI chat failed"); return res.status(502).json({ success: false, message: "ReDom AI is temporarily unavailable. Please try again shortly." }); }
 });
 
+router.get("/image/quota", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  try { return res.status(200).json({ success: true, quota: await getReDomImageQuota(req.user.userId) }); } catch (error) { req.log?.error?.({ err: error }, "ReDom AI image quota lookup failed"); return res.status(500).json({ success: false, message: "Image quota could not be loaded." }); }
+});
+
 router.post("/image", imageRateLimit, authMiddleware, async (req, res) => {
   const parsed = imageSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid image request." });
   try {
     const result = await generateReDomAiImage(req.user.userId, parsed.data.prompt);
-    return res.status(200).json({ success: true, image: result.dataUri, model: result.model });
+    return res.status(200).json({ success: true, image: result.dataUri, model: result.model, quota: result.quota });
   } catch (error) {
     req.log?.error?.({ err: error }, "ReDom AI image generation failed");
+    if (error instanceof ReDomImageQuotaError) {
+      return res.status(error.status).json({ success: false, code: error.code, message: error.message, quota: error.quota, upgrade: { available: Boolean(error.upgradeProduct), product: error.upgradeProduct } });
+    }
     const message = error instanceof Error ? error.message : "ReDom-1.6RD— Image generation failed.";
     const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
     return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message });
@@ -56,6 +65,9 @@ router.post("/image/edit", imageRateLimit, authMiddleware, async (req, res) => {
   try { const result = await editReDomAiImage(req.user.userId, parsed.data.imageDataUri, parsed.data.prompt); return res.status(200).json({ success: true, image: result.dataUri, model: result.model }); }
   catch (error) {
     req.log?.error?.({ err: error }, "ReDom AI image edit failed");
+    if (error instanceof ReDomImageQuotaError) {
+      return res.status(error.status).json({ success: false, code: error.code, message: error.message, quota: error.quota, upgrade: { available: Boolean(error.upgradeProduct), product: error.upgradeProduct } });
+    }
     const message = error instanceof Error ? error.message : "ReDom-1.6RD— Image editing failed.";
     const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
     return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message });
