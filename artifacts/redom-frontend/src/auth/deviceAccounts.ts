@@ -1,42 +1,37 @@
-import * as SecureStore from "expo-secure-store";
 import type { AuthSession, AuthUser } from "./types";
+import { api } from "../api/client";
+import { getDeviceId } from "../utils/device";
 
 export interface DeviceAccount {
-  user: AuthUser;
-  session: AuthSession;
+  user: AuthUser & { profilePhoto?: string | null; displayName?: string };
   addedAt: string;
 }
 
-const KEY = "redom.device.accounts";
-
-async function read(): Promise<DeviceAccount[]> {
-  try {
-    const raw = await SecureStore.getItemAsync(KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item) => item?.user?.id && item?.session?.refreshToken) as DeviceAccount[];
-  } catch {
-    return [];
-  }
-}
-
-async function write(accounts: DeviceAccount[]): Promise<void> {
-  await SecureStore.setItemAsync(KEY, JSON.stringify(accounts.slice(0, 8)), {
-    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-  });
-}
-
 export async function getDeviceAccounts(): Promise<DeviceAccount[]> {
-  return read();
+  const deviceCredential = await getDeviceId();
+  const response = await api<{ success: boolean; accounts: DeviceAccount[] }>("/auth/device/recognized", {
+    method: "POST",
+    body: JSON.stringify({
+      deviceCredential,
+      deviceType: "mobile",
+      platform: "react-native",
+      deviceName: "ReDom Mobile",
+    }),
+  });
+  return response.accounts || [];
 }
 
-export async function rememberDeviceAccount(user: AuthUser, session: AuthSession): Promise<void> {
-  const accounts = await read();
-  const next = [{ user, session, addedAt: new Date().toISOString() }, ...accounts.filter((item) => item.user.id !== user.id)];
-  await write(next);
+export async function rememberDeviceAccount(user: AuthUser, _session: AuthSession): Promise<void> {
+  // The backend creates/reactivates the device-account association after a
+  // password + device/2FA authenticated login. No local session copy is used
+  // as proof of recognition.
+  void user;
 }
 
 export async function removeDeviceAccount(userId: string): Promise<void> {
-  await write((await read()).filter((item) => item.user.id !== userId));
+  const deviceCredential = await getDeviceId();
+  await api(`/auth/device/recognized/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ deviceCredential }),
+  });
 }
