@@ -13,6 +13,6 @@ export const reDomAiImageQuota = pgTable("redom_ai_image_quota", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
-  userWindowUnique: uniqueIndex("redom_ai_image_quota_user_window_unique").on(table.userId, table.windowStartedAt),
+  userUnique: uniqueIndex("redom_ai_image_quota_user_unique").on(table.userId),
   userReset: index("redom_ai_image_quota_user_reset_idx").on(table.userId, table.windowResetAt),
 }));
