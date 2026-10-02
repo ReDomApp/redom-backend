@@ -19,10 +19,7 @@ function maskIp(ip: string | null) {
 }
 
 function titleFor(profile: NetworkProviderResponse) {
-  if (!profile.security) return "ReDom Network Security Check";
-  return profile.security.vpn || profile.security.datacenter
-    ? "Your VPN Provider Terms and Conditions"
-    : "Your Network Provider Terms and Conditions";
+  return profile.termsLabel || "ReDom Network Security Check";
 }
 
 function warningFor(profile: NetworkProviderResponse) {
