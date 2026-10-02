@@ -76,19 +76,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     await activate(user, session);
   }, [activate]);
 
-  const switchDeviceAccount = useCallback(async (userId: string) => {
-    const accounts = await getDeviceAccounts();
-    const target = accounts.find((item) => item.user.id === userId);
-    if (!target) throw new Error("That ReDom profile is no longer available on this device.");
-    try {
-      const response = await authService.refreshSession({ refreshToken: target.session.refreshToken });
-      if (!response.success || !response.session || !response.user) throw new Error("This profile needs you to sign in again.");
-      await activate(response.user, response.session);
-    } catch (error) {
-      await removeDeviceAccount(userId);
-      throw error instanceof Error ? error : new Error("Unable to switch profiles.");
-    }
-  }, [activate]);
+  const switchDeviceAccount = useCallback(async (_userId: string) => {
+    // Account switching returns to the server-authoritative recognized-account
+    // entry layer. A saved refresh token is never treated as proof of identity.
+    await clearStoredSession();
+    setState(unauthenticatedState);
+  }, []);
 
   const prepareForAccountLogin = useCallback(async () => {
     await clearStoredSession();
