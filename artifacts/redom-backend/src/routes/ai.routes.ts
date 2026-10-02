@@ -43,7 +43,7 @@ router.post("/image", authMiddleware, async (req, res) => {
     return res.status(200).json({ success: true, image: result.dataUri, model: result.model });
   } catch (error) {
     req.log?.error?.({ err: error }, "ReDom AI image generation failed");
-    const message = error instanceof Error ? error.message : "OpenAI image generation failed.";
+    const message = error instanceof Error ? error.message : "ReDom-1.6RD— Image generation failed.";
     return res.status(502).json({ success: false, message });
   }
 });
@@ -52,7 +52,7 @@ router.post("/image/edit", authMiddleware, async (req, res) => {
   const parsed = imageEditSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid AI image edit request." });
   try { const result = await editReDomAiImage(req.user.userId, parsed.data.imageDataUri, parsed.data.prompt); return res.status(200).json({ success: true, image: result.dataUri, model: result.model }); }
-  catch (error) { req.log?.error?.({ err: error }, "ReDom AI image edit failed"); return res.status(502).json({ success: false, message: error instanceof Error ? error.message : "OpenAI image editing failed." }); }
+  catch (error) { req.log?.error?.({ err: error }, "ReDom AI image edit failed"); return res.status(502).json({ success: false, message: error instanceof Error ? error.message : "ReDom-1.6RD— Image editing failed." }); }
 });
 
 router.post("/voice/transcribe", authMiddleware, async (req, res) => {
