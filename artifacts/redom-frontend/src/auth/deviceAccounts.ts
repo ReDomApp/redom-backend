@@ -9,7 +9,7 @@ export interface DeviceAccount {
 
 export async function getDeviceAccounts(): Promise<DeviceAccount[]> {
   const deviceCredential = await getDeviceId();
-  const response = await api<{ success: boolean; accounts: DeviceAccount[] }>("/auth/device/recognized", {
+  const response = await api.post<{ success: boolean; accounts: DeviceAccount[] }>("/auth/device/recognized", {
     method: "POST",
     body: JSON.stringify({
       deviceCredential,
@@ -30,7 +30,7 @@ export async function rememberDeviceAccount(user: AuthUser, _session: AuthSessio
 
 export async function removeDeviceAccount(userId: string): Promise<void> {
   const deviceCredential = await getDeviceId();
-  await api(`/auth/device/recognized/${encodeURIComponent(userId)}`, {
+  await api.delete(`/auth/device/recognized/${encodeURIComponent(userId)}`, {
     method: "DELETE",
     body: JSON.stringify({ deviceCredential }),
   });
