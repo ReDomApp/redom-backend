@@ -154,7 +154,12 @@ export async function reserveReDomImageQuota(userId: string) {
   )).returning();
 
   if (!updated[0]) {
-    const quota = publicQuota({ ...row, entitlement: entitlement.entitlement, limit: entitlement.limit });
+    const adaptiveResetAt = await determineAdaptiveResetAt(userId, entitlement.limit, new Date());
+    const refreshed = await db.update(reDomAiImageQuota).set({
+      entitlement: entitlement.entitlement, limit: entitlement.limit, windowResetAt: adaptiveResetAt, updatedAt: new Date(),
+    }).where(eq(reDomAiImageQuota.id, row.id)).returning();
+    const effectiveRow = refreshed[0] ?? row;
+    const quota = publicQuota({ ...effectiveRow, entitlement: entitlement.entitlement, limit: entitlement.limit });
     throw new ReDomImageQuotaError(quota, UPGRADE_PRODUCT_BY_ENTITLEMENT[entitlement.entitlement] ?? "redom_ai_standard");
   }
 
