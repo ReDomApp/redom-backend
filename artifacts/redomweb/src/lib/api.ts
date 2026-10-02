@@ -1,4 +1,4 @@
-export type Session = { sessionId: string; accessToken: string; refreshToken: string; expiresAt: string };
+export type Session = { sessionId: string; accessToken: string; refreshToken: string; expiresAt: string };\nexport class WebApiError extends Error { constructor(message:string, readonly status:number, readonly code?:string, readonly details?:unknown){ super(message); this.name="WebApiError"; } }
 const SESSION_KEY = "redom.web.session";
 const DEFAULT_API = "https://redom-backend.onrender.com/redom-backend";
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API).replace(/\/+$/, "");
@@ -20,7 +20,7 @@ async function rawRequest(path:string, options:RequestInit={}, token?:string) {
   const res = await fetch(/^https?:\/\//i.test(path) ? path : `${API_BASE_URL}${path.startsWith("/") ? path : "/"+path}`, {...options,credentials: options.credentials ?? "include",headers});
   const type=res.headers.get("content-type")||"";
   const payload=type.includes("application/json") ? await res.json().catch(()=>null) : await res.text().catch(()=>null);
-  if(!res.ok){ const body=payload && typeof payload==="object" ? payload as Record<string,unknown> : {}; throw new Error(typeof body.message==="string" ? body.message : `Request failed (${res.status})`); }
+  if(!res.ok){ const body=payload && typeof payload==="object" ? payload as Record<string,unknown> : {}; throw new WebApiError(typeof body.message==="string" ? body.message : `Request failed (${res.status})`,res.status,typeof body.code==="string"?body.code:undefined,body); }
   return payload;
 }
 
