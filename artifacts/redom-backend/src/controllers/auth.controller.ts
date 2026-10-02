@@ -16,7 +16,7 @@ function requestIp(req: Request) {
   return candidates.map(v => v?.trim()).filter((v): v is string => Boolean(v)).map(normalizeIp).find(isPublicIp);
 }
 function requestContext(req: Request) {
-  return { ipAddress: requestIp(req), userAgent: req.get("user-agent") ?? undefined, platform: req.body?.platform, browser: req.body?.browser, deviceName: req.body?.deviceName, deviceId: req.body?.deviceId, deviceCredential: req.body?.deviceCredential ?? req.get("x-redom-device-credential"), deviceType: req.body?.deviceType, loginSource: req.body?.loginSource, appVersion: req.body?.appVersion, networkIp: req.body?.networkIp, country: req.body?.country, region: req.body?.region, city: req.body?.city };
+  return { ipAddress: requestIp(req), userAgent: req.get("user-agent") ?? undefined, platform: req.body?.platform, browser: req.body?.browser, deviceName: req.body?.deviceName, deviceId: req.body?.deviceId, deviceCredential: req.body?.deviceCredential ?? req.get("x-redom-device-credential") ?? req.body?.deviceId, deviceType: req.body?.deviceType, loginSource: req.body?.loginSource, appVersion: req.body?.appVersion, networkIp: req.body?.networkIp, country: req.body?.country, region: req.body?.region, city: req.body?.city };
 }
 
 export class AuthController {
