@@ -4,6 +4,20 @@ import { startupNetworkCheck, type NetworkProviderResponse } from "./lib/network
 
 import { COUNTRIES } from "./data/countries";
 import { WebParityRouter } from "./WebParityRouter";
+import ReDomLogoSvg from "./assets/brand/redom-logo.svg";
+import ReDomMarkSvg from "./assets/brand/redom-mark.svg";
+import SecurityShieldSvg from "./assets/auth/security-shield.svg";
+import PasswordVisibleSvg from "./assets/auth/password-visible.svg";
+import PasswordHiddenSvg from "./assets/auth/password-hidden.svg";
+import LockedKeySvg from "./assets/auth/locked-key.svg";
+import InfoBlackSvg from "./assets/auth/info-black.svg";
+import WarningBlackSvg from "./assets/auth/warning-black.svg";
+import CheckWhiteSvg from "./assets/auth/check-white.svg";
+import EmailSvg from "./assets/auth/email.svg";
+import SearchSvg from "./assets/auth/search.svg";
+import HomeSvg from "./assets/home-feed/home.svg";
+
+function SvgAsset({src,className=""}:{src:string;className?:string}){return <img src={src} className={className} alt="" />}
 
 type User={id:string;firstName:string;lastName:string;username:string;profilePhoto?:string|null};
 type Page="startup"|"login"|"find-account"|"reset-code"|"reset-password"|"device-verify"|"two-factor"|"register-welcome"|"register-identity"|"register-birthday"|"register-gender"|"register-phone"|"register-email"|"register-password"|"register-review"|"register-verify"|"customizing"|"home"|"policy"|"support-case"|"web-parity";
