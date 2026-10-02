@@ -140,6 +140,8 @@ export async function editReDomImage(userId: string, imageDataUri: string, promp
   const source = imageDataUri.trim();
   let sourceDataUri = source;
   if (/^https:\/\//i.test(source)) {
+    const allowedBase = env.cloudflare.r2.bucketEndpoint.replace(/\/$/, "");
+    if (!source.startsWith(allowedBase + "/")) throw new Error("Only images stored by ReDom can be edited from a stored image URL.");
     const response = await fetch(source);
     if (!response.ok) throw new Error("The selected ReDom image could not be loaded.");
     const bytes = Buffer.from(await response.arrayBuffer());
