@@ -75,7 +75,7 @@ export class LoginFlowService {
     if (user.accountStatus === "pending") throw new Error("Your account is pending verification. Please verify your email address or phone number before logging in.");
     const ipapi = await this.inspectIp(data.ipAddress); await fraudService.checkLogin({ userId: user.id, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, userAgent: data.userAgent });
     const deviceId = data.deviceId?.trim();
-    const deviceCredential = data.deviceCredential?.trim() || deviceId;
+    const deviceCredential = data.deviceCredential?.trim() || (data.deviceType === "mobile" ? deviceId : undefined);
     const recognized = deviceCredential ? await recognizedDeviceService.list(deviceCredential) : { accounts: [] as Array<{ userId: string }> };
     const knownDevice = recognized.accounts.some(account => account.userId === user.id);
     // Only a server-side recognized-device association can satisfy device recognition.
