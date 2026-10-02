@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, lte, or, asc } from "drizzle-orm";
+import { and, eq, gt, isNull, or, asc, sql } from "drizzle-orm";
 import { db } from "../database/db";
 import { reDomAiImageQuota } from "../database/reDomAiImageQuota";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
@@ -127,7 +127,7 @@ export async function reserveReDomImageQuota(userId: string) {
     updatedAt: new Date(),
   }).where(and(
     eq(reDomAiImageQuota.id, row.id),
-    lte(reDomAiImageQuota.used + reDomAiImageQuota.reserved, entitlement.limit - 1),
+    sql`(${reDomAiImageQuota.used} + ${reDomAiImageQuota.reserved}) < ${entitlement.limit}`,
   )).returning();
 
   if (!updated[0]) {
