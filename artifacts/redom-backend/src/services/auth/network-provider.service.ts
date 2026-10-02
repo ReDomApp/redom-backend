@@ -72,7 +72,15 @@ export async function getNetworkProvider(ip: string | undefined): Promise<Networ
   if (cached) resultCache.delete(cacheKey);
 
   const result = await checkIP(cacheKey);
-  const networkProvider = result.company?.name ?? result.asn?.org ?? null;
+  const networkProvider =
+    (result.is_vpn && result.vpn_details?.service) ||
+    (result.is_proxy && result.egress_service?.provider) ||
+    (result.is_tor && (result.company?.name ?? result.asn?.org)) ||
+    (result.is_datacenter && (result.datacenter?.datacenter ?? result.company?.name ?? result.asn?.org)) ||
+    result.egress_service?.provider ||
+    result.company?.name ||
+    result.asn?.org ||
+    null;
   const security: NetworkSecurityResult = {
     ip: result.ip ?? cacheKey,
     connection: connectionType(result),
@@ -99,7 +107,12 @@ export async function getNetworkProvider(ip: string | undefined): Promise<Networ
     fraudScore: Number(result.fraud_score ?? 0),
   };
 
-  const providerDomain = result.company?.domain ?? result.asn?.domain ?? result.vpn_details?.url ?? null;
+  const providerDomain =
+    (result.is_vpn ? result.vpn_details?.url : null) ??
+    result.company?.domain ??
+    result.asn?.domain ??
+    (result.datacenter as any)?.domain ??
+    null;
   const response: NetworkProviderResult = {
     success: true,
     networkProvider,
