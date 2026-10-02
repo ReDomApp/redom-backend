@@ -1,4 +1,4 @@
-import { boolean, index, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { users } from "./schema";
 
 export const recognizedDevices = pgTable("recognized_devices", {
