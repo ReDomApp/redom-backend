@@ -111,24 +111,31 @@ function ExistingLogin({go,network,setUser}:{go:(p:Page)=>void;network:NetworkPr
      <span className="web-login-top-spacer" aria-hidden="true"/>
    </header>
    <main className="web-login-main">
-     <div className="web-login-logo"><SvgAsset src={ReDomMarkSvg}/></div>
+     <div className="web-login-logo"><SvgAsset src={ReDomLogoSvg}/></div>
+     <section className="web-login-intro">
+       <h1>Welcome back</h1>
+       <p>Sign in to your ReDom account.</p>
+     </section>
      <section className="web-login-terms" aria-label="Network terms">
-       {providerTermsLabel?<><span>By proceeding, you agree to </span><button type="button" className="web-login-link" disabled={!termsUrl} onClick={()=>termsUrl&&window.open(termsUrl,"_blank","noopener,noreferrer")}>{providerTermsLabel}</button><span> which includes letting Facebook request and receive your phone number. </span><button type="button" className="web-login-link" onClick={()=>setNetworkWarningOpen(true)}>Change Settings</button></>:<span>By proceeding, you agree to ReDom's Terms. Change Settings</span>}
+       <button type="button" className="web-login-provider-terms" disabled={!termsUrl} onClick={()=>termsUrl&&window.open(termsUrl,"_blank","noopener,noreferrer")}>
+         {provider ? provider+" Terms and Conditions" : "ReDom Terms and Conditions"}
+       </button>
      </section>
      <form className="web-login-form" onSubmit={e=>{e.preventDefault();void submit()}} autoComplete="on">
-       <label className="web-login-field">
-         <span>Mobile number or email</span>
-         <input name="username" autoComplete="username" inputMode="email" type="text" value={id} placeholder={maskedIdentifier||""} onChange={e=>{setId(e.target.value);setErr("")}} />
+       <label className="web-login-field-label" htmlFor="web-login-identifier">Email, phone or username</label>
+       <div className="web-login-field">
+         <input id="web-login-identifier" name="username" autoComplete="username" inputMode="email" type="text" value={id} placeholder={maskedIdentifier||""} onChange={e=>{setId(e.target.value);setErr("")}} />
          <SvgAsset src={InfoBlackSvg} className="web-login-info" />
-       </label>
-       <label className="web-login-field web-login-password">
-         <span>Password</span>
-         <input name="password" autoComplete="current-password" type={passwordVisible?"text":"password"} value={pw} onChange={e=>{setPw(e.target.value);setErr("")}} onKeyDown={e=>{if(e.key==="Enter")void submit()}} />
+       </div>
+       <label className="web-login-field-label web-login-password-label" htmlFor="web-login-password">Password</label>
+       <div className="web-login-field web-login-password">
+         <input id="web-login-password" name="password" autoComplete="current-password" type={passwordVisible?"text":"password"} value={pw} onChange={e=>{setPw(e.target.value);setErr("")}} onKeyDown={e=>{if(e.key==="Enter")void submit()}} />
          <button type="button" className="web-login-eye" onClick={()=>setPasswordVisible(v=>!v)} aria-label={passwordVisible?"Hide password":"Show password"}><SvgAsset src={passwordVisible?PasswordVisibleSvg:PasswordHiddenSvg}/></button>
-       </label>
+       </div>
        {err?<div className="web-login-error" role="alert">{err}</div>:null}
-       <button type="submit" className="web-login-primary" disabled={busy}>{busy?"Logging in…":"Log in"}</button>
+       <button type="submit" className="web-login-primary" disabled={busy}>{busy?"Signing in…":"Sign in"}</button>
        <button type="button" className="web-login-forgot" onClick={()=>go("find-account")}>Forgot password?</button>
+       <div className="web-login-or" aria-hidden="true">or</div>
        <button type="button" className="web-login-create" onClick={()=>go("register-welcome")}>Create new account</button>
      </form>
      <div className="web-login-footer"><SvgAsset src={ReDomLogoSvg}/></div>
@@ -146,7 +153,6 @@ function ExistingLogin({go,network,setUser}:{go:(p:Page)=>void;network:NetworkPr
    {pendingChallengeId&&!pendingSuccess?<div className="web-modal-backdrop"><div className="web-sheet pending-sheet"><div className="security-hero"><SvgAsset src={InfoBlackSvg} className="auth-svg-icon" /></div><h2>Verify your pending registration</h2><p>Enter the 4-digit code sent to {pendingTarget}.</p><Field label="4-digit verification code" value={pendingCode} onChange={v=>{setPendingCode(v.replace(/\D/g,"").slice(0,4));setPendingError("")}}/><ErrorBox text={pendingError}/><Primary disabled={pendingBusy||pendingCode.length!==4} onClick={()=>void invalidate()}>{pendingBusy?"Verifying…":"Verify Code"}</Primary><button className="text-btn" onClick={()=>{setPendingChallengeId(null);setPendingCode("")}}>Cancel</button></div></div>:null}
    {pendingSuccess?<div className="web-modal-backdrop"><div className="web-sheet pending-sheet"><div className="success-icon">✓</div><h2>Your Pending Registration Has Been Invalidated</h2><p>The unverified registration and associated data have been permanently deleted. The previous Registration Flow ID is no longer valid.</p><Primary onClick={()=>{setPendingSuccess(false);setPendingChallengeId(null);setPendingCode("");setId("");setPw("");go("register-welcome")}}>Create Account</Primary></div></div>:null}
  </div>;
-}
 
 function FindAccount({go}:{go:(p:Page)=>void}){
  const[id,setId]=useState(""),[methods,setMethods]=useState<any[]>([]),[err,setErr]=useState(""),[busy,setBusy]=useState(false);
