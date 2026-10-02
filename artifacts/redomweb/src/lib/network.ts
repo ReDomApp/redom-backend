@@ -1,5 +1,5 @@
 export type NetworkSecurity={ip:string|null;connection:string;country:string|null;countryCode:string|null;callingCode:string|null;region:string|null;city:string|null;timezone:string|null;organization:string|null;companyType:string|null;asn:number|null;datacenter:string|null;vpnService:string|null;egressService:string|null;egressProvider:string|null;proxy:boolean;vpn:boolean;tor:boolean;bot:boolean;abuser:boolean;mobile:boolean;satellite:boolean;fraudScore:number};
-export type NetworkProviderResponse={success:boolean;networkProvider:string|null;termsUrl:string|null;security:NetworkSecurity|null;warning:string|null};
+export type NetworkProviderResponse={success:boolean;networkProvider:string|null;termsUrl:string|null;termsLabel:string|null;security:NetworkSecurity|null;warning:string|null};
 
 const PUBLIC_IP_TIMEOUT_MS=8_000;
 const IPAPI_ENDPOINTS=["https://api.ipapi.is","https://us.ipapi.is"] as const;
@@ -54,7 +54,7 @@ export async function startupNetworkCheck(api:(path:string,options?:RequestInit)
     try{
       const result=await api("/auth/network-provider?ip="+encodeURIComponent(ip),{signal:controller.signal});
       if(result?.success&&result?.security)return result as NetworkProviderResponse;
-      return {success:false,networkProvider:null,termsUrl:null,security:null,warning:result?.warning||result?.message||"ReDom could not complete the network security check."};
+      return {success:false,networkProvider:null,termsUrl:null,termsLabel:null,security:null,warning:result?.warning||result?.message||"ReDom could not complete the network security check."};
     }finally{
       window.clearTimeout(timer);
     }
@@ -63,6 +63,7 @@ export async function startupNetworkCheck(api:(path:string,options?:RequestInit)
       success:false,
       networkProvider:null,
       termsUrl:null,
+      termsLabel:null,
       security:null,
       warning:error instanceof Error&&error.name==="AbortError"
         ?"The network security check timed out."
