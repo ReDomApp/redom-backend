@@ -43,4 +43,5 @@ export const env = {
   postHog: { apiKey: required("POSTHOG_API_KEY"), host: required("POSTHOG_HOST") },
   openAI: { apiKey: required("OPENAI_API_KEY") },
   gemini: { apiKey: required("GEMINI_API_KEY") },
+  redomImageEngine: { url: optional("REDOM_IMAGE_ENGINE_URL"), token: optional("REDOM_IMAGE_ENGINE_TOKEN"), timeoutMs: Number(optional("REDOM_IMAGE_ENGINE_TIMEOUT_MS") ?? "180000") },
 } as const;
