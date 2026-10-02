@@ -164,6 +164,7 @@ function Login({go,network,setUser}:{go:(p:Page)=>void;network:NetworkProviderRe
    {pendingChallengeId&&!pendingSuccess?<div className="web-modal-backdrop"><div className="web-sheet pending-sheet"><div className="security-hero"><SvgAsset src={InfoBlackSvg} className="auth-svg-icon" /></div><h2>Verify your pending registration</h2><p>Enter the 4-digit code sent to {pendingTarget}.</p><Field label="4-digit verification code" value={pendingCode} onChange={v=>{setPendingCode(v.replace(/\D/g,"").slice(0,4));setPendingError("")}}/><ErrorBox text={pendingError}/><Primary disabled={pendingBusy||pendingCode.length!==4} onClick={()=>void invalidate()}>{pendingBusy?"Verifying…":"Verify Code"}</Primary><button className="text-btn" onClick={()=>{setPendingChallengeId(null);setPendingCode("")}}>Cancel</button></div></div>:null}
    {pendingSuccess?<div className="web-modal-backdrop"><div className="web-sheet pending-sheet"><div className="success-icon">✓</div><h2>Your Pending Registration Has Been Invalidated</h2><p>The unverified registration and associated data have been permanently deleted. The previous Registration Flow ID is no longer valid.</p><Primary onClick={()=>{setPendingSuccess(false);setPendingChallengeId(null);setPendingCode("");setId("");setPw("");go("register-welcome")}}>Create Account</Primary></div></div>:null}
  </div>;
+}
 
 function FindAccount({go}:{go:(p:Page)=>void}){
  const[id,setId]=useState(""),[methods,setMethods]=useState<any[]>([]),[err,setErr]=useState(""),[busy,setBusy]=useState(false);
