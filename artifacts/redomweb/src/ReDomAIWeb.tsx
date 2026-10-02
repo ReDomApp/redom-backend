@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { api } from "./lib/api";
+import { api, WebApiError } from "./lib/api";
 import ReDomMark from "./assets/brand/redom-mark.svg";
 
-type Result = { success: boolean; image: string; model: string; jobId?: string; generationMs?: number };
+type Quota = { entitlement: string; used: number; limit: number; remaining: number; resetAt: string };\ntype Result = { success: boolean; image: string; model: string; jobId?: string; generationMs?: number; quota?: Quota };
 
-function toDataUri(file: File): Promise<string> {
+function quotaErrorMessage(error: unknown) {\n  if (error instanceof WebApiError && error.code === "IMAGE_QUOTA_EXCEEDED") {\n    const quota = (error.details as { quota?: Quota } | undefined)?.quota;\n    const reset = quota?.resetAt ? new Date(quota.resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";\n    return "You’ve reached your current image-generation limit." + (reset ? " You can create another image at " + reset + "." : "") + " Upgrade your ReDom AI plan for enhanced image support.";\n  }\n  return error instanceof Error ? error.message : "ReDom-1.6RD— Image is temporarily unavailable.";\n}\n\nfunction toDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read image."));
@@ -21,7 +21,7 @@ export function ReDomAIWeb({ go }: { go: (path: string) => void }) {
   const [reference, setReference] = useState("");
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState("");\n  const [quota, setQuota] = useState<Quota | null>(null);
 
   const generate = async () => {
     const value = prompt.trim();
@@ -30,9 +30,9 @@ export function ReDomAIWeb({ go }: { go: (path: string) => void }) {
     try {
       const result = await api<Result>("/ai/image", { method: "POST", body: JSON.stringify({ prompt: value }) });
       if (!result.image) throw new Error("ReDom-1.6RD— Image returned no image.");
-      setImage(result.image); setModel(result.model || "ReDom-1.6RD— Image"); setJobId(result.jobId || ""); setEditing(false);
+      setImage(result.image); setModel(result.model || "ReDom-1.6RD— Image"); setJobId(result.jobId || ""); setQuota(result.quota || null); setEditing(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "ReDom-1.6RD— Image is temporarily unavailable.");
+      setError(quotaErrorMessage(e));
     } finally { setLoading(false); }
   };
 
@@ -42,7 +42,7 @@ export function ReDomAIWeb({ go }: { go: (path: string) => void }) {
     try {
       const result = await api<Result>("/ai/image/edit", { method: "POST", body: JSON.stringify({ imageDataUri: reference, prompt: prompt.trim() }) });
       if (!result.image) throw new Error("ReDom-1.6RD— Image returned no edited image.");
-      setImage(result.image); setModel(result.model || "ReDom-1.6RD— Image"); setJobId(result.jobId || ""); setEditing(true);
+      setImage(result.image); setModel(result.model || "ReDom-1.6RD— Image"); setJobId(result.jobId || ""); setQuota(result.quota || null); setEditing(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "ReDom-1.6RD— Image could not edit this image.");
     } finally { setLoading(false); }
@@ -54,7 +54,7 @@ export function ReDomAIWeb({ go }: { go: (path: string) => void }) {
       <div><div className="parity-eyebrow">AI</div><h1>ReDom AI</h1><p>Generate and edit images with the ReDom-controlled image engine.</p></div>
     </div>
 
-    <section className="parity-card" style={{ display: "grid", gap: 16 }}>
+    <section className="parity-card" style={{ display: "grid", gap: 16 }}>{quota ? <small style={{ color: "#667085" }}>Image allowance: {quota.remaining} of {quota.limit} remaining · resets {new Date(quota.resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small> : null}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <img src={ReDomMark} alt="" style={{ width: 44, height: 44 }} />
         <div><b>{model}</b><small style={{ display: "block", color: "#667085", marginTop: 3 }}>ReDom GPU inference environment</small></div>
