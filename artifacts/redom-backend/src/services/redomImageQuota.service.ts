@@ -14,6 +14,7 @@ export const IMAGE_QUOTA_LIMITS: Record<string, number> = {
 };
 
 const ENTITLEMENT_PRIORITY = ["corporate", "business", "creator", "plus", "standard_plus", "standard"] as const;
+const UPGRADE_PRODUCT_BY_ENTITLEMENT: Record<string, string | null> = { free: "redom_ai_standard", standard: "redom_ai_standard_plus", standard_plus: "redom_ai_plus", plus: "redom_ai_creator", creator: "redom_ai_business", business: "redom_ai_corporate", corporate: null };
 
 export type ImageQuotaStatus = {
   entitlement: string;
@@ -132,7 +133,7 @@ export async function reserveReDomImageQuota(userId: string) {
 
   if (!updated[0]) {
     const quota = publicQuota({ ...row, entitlement: entitlement.entitlement, limit: entitlement.limit });
-    throw new ReDomImageQuotaError(quota, entitlement.entitlement === "corporate" ? null : "redom_ai_standard");
+    throw new ReDomImageQuotaError(quota, UPGRADE_PRODUCT_BY_ENTITLEMENT[entitlement.entitlement] ?? "redom_ai_standard");
   }
 
   const reservationId = updated[0].id;
