@@ -177,40 +177,45 @@
 
 
 /* ReDom Web — exact Login reference implementation. Scoped to the login entry screen only. */
-.web-login-screen{min-height:100vh;min-height:100dvh;background:#fff;color:#1C1E21;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-sizing:border-box;overflow-x:hidden}
+.web-login-screen{min-height:100vh;min-height:100dvh;background:#fff;color:#050505;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-sizing:border-box;overflow-x:hidden}
 .web-login-screen *{box-sizing:border-box}
-.web-login-top{width:min(100%,720px);height:86px;margin:0 auto;display:grid;grid-template-columns:52px 1fr 52px;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 10px) 30px 0}
-.web-login-back,.web-login-language{border:0;background:transparent;color:#65676B;cursor:pointer;padding:0}
+.web-login-top{width:min(100%,686px);height:78px;margin:0 auto;display:grid;grid-template-columns:52px 1fr 52px;align-items:center;padding:14px 30px 0}
+.web-login-back,.web-login-language{border:0;background:transparent;cursor:pointer;padding:0}
 .web-login-back{width:42px;height:42px;display:grid;place-items:center;justify-self:start}
-.web-login-back img{width:31px;height:31px;object-fit:contain}
-.web-login-language{justify-self:center;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:24px;line-height:30px;font-weight:400;white-space:nowrap}
-.web-login-language>img{width:22px;height:22px;transform:rotate(90deg);opacity:.8}
+.web-login-back img{width:30px;height:30px;object-fit:contain}
+.web-login-language{justify-self:center;display:inline-flex;align-items:center;justify-content:center;gap:7px;color:#1877F2;font-size:25px;line-height:31px;font-weight:700;white-space:nowrap}
+.web-login-language>img{width:18px;height:18px;transform:rotate(90deg)}
 .web-login-top-spacer{width:42px;height:42px}
-.web-login-main{width:min(100%,688px);min-height:calc(100vh - 86px);min-height:calc(100dvh - 86px);margin:0 auto;padding:56px 30px calc(24px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column}
-.web-login-logo{height:150px;display:grid;place-items:center;margin-bottom:70px}
-.web-login-logo img{width:116px;height:116px;object-fit:contain;border:1.5px solid #B7B7B7;border-radius:50%;padding:15px}.web-login-link:disabled{cursor:default}
-.web-login-terms{border-top:1px solid #CCD0D5;border-bottom:1px solid #CCD0D5;padding:30px 0 29px;font-size:23px;line-height:1.35;font-weight:400;color:#050505}
-.web-login-link{border:0;background:transparent;padding:0;color:#1877F2;font:inherit;font-weight:800;cursor:pointer}
-.web-login-form{display:flex;flex-direction:column;margin-top:15px}
-.web-login-field{position:relative;width:100%;height:114px;border:2px solid #E0E2E5;border-radius:27px;background:#fff;padding:20px 62px 15px 30px;display:flex;flex-direction:column;justify-content:center;margin-top:10px}
-.web-login-field>span{display:block;color:#65676B;font-size:23px;line-height:29px;font-weight:400;margin-bottom:2px}
-.web-login-field input{width:100%;border:0;outline:0;background:transparent;color:#1C1E21;font-size:26px;line-height:34px;padding:0;font-family:inherit;min-width:0}
+.web-login-main{width:min(100%,686px);min-height:calc(100vh - 78px);min-height:calc(100dvh - 78px);margin:0 auto;padding:8px 78px 28px;display:flex;flex-direction:column}
+.web-login-logo{display:flex;justify-content:center;align-items:center;height:82px;margin-bottom:30px}
+.web-login-logo img{width:294px;height:auto;max-height:94px;object-fit:contain}
+.web-login-intro{text-align:left;margin:0 0 14px}
+.web-login-intro h1{margin:0;color:#050505;font-size:49px;line-height:1.08;letter-spacing:-1.6px;font-weight:750}
+.web-login-intro p{margin:6px 0 0;color:#65676B;font-size:32px;line-height:1.22;font-weight:400;letter-spacing:-.4px}
+.web-login-terms{display:flex;justify-content:center;align-items:center;text-align:center;margin:0 0 32px;min-height:48px}
+.web-login-provider-terms{border:0;background:transparent;padding:0;color:#1877F2;font:inherit;font-size:29px;line-height:1.25;font-weight:750;text-align:center;cursor:pointer}
+.web-login-provider-terms:disabled{cursor:default}
+.web-login-form{display:flex;flex-direction:column;width:100%;margin:0}
+.web-login-field-label{display:block;color:#1C1E21;font-size:25px;line-height:31px;font-weight:700;margin:0 0 10px}
+.web-login-password-label{margin-top:49px}
+.web-login-field{position:relative;width:100%;height:109px;border:2px solid #D9DDE4;border-radius:27px;background:#F7F8FC;display:flex;align-items:center;padding:0 67px 0 29px}
+.web-login-field input{width:100%;height:100%;border:0;outline:0;background:transparent;color:#1C1E21;font-size:25px;line-height:34px;padding:0;font-family:inherit;min-width:0}
 .web-login-field input::placeholder{color:#65676B;opacity:1}
-.web-login-info{position:absolute;right:29px;top:50%;transform:translateY(-50%);width:39px;height:39px;opacity:.9}
-.web-login-password{height:114px;padding-right:30px}
-.web-login-password input{padding-right:58px}
-.web-login-eye{position:absolute;right:23px;top:50%;transform:translateY(-50%);width:42px;height:42px;border:0;background:transparent;display:grid;place-items:center;padding:6px;cursor:pointer}
-.web-login-eye img{width:27px;height:27px}
-.web-login-error{margin:10px 4px 0;color:#E41E3F;font-size:15px;line-height:21px}
-.web-login-primary{width:100%;height:85px;margin-top:18px;border:0;border-radius:43px;background:#1877F2;color:#fff;font-family:inherit;font-size:27px;font-weight:600;cursor:pointer}
+.web-login-info{position:absolute;right:28px;top:50%;transform:translateY(-50%);width:31px;height:31px;opacity:.95}
+.web-login-password{padding-right:70px}
+.web-login-eye{position:absolute;right:20px;top:50%;transform:translateY(-50%);width:44px;height:44px;border:0;background:transparent;display:grid;place-items:center;padding:5px;cursor:pointer}
+.web-login-eye img{width:31px;height:31px}
+.web-login-error{margin:9px 3px 0;color:#E41E3F;font-size:15px;line-height:21px}
+.web-login-primary{width:100%;height:112px;margin-top:49px;border:0;border-radius:29px;background:#1877F2;color:#fff;font-family:inherit;font-size:30px;font-weight:700;cursor:pointer;box-shadow:0 10px 26px rgba(24,119,242,.13)}
 .web-login-primary:disabled{opacity:.65;cursor:default}
-.web-login-forgot{align-self:center;border:0;background:transparent;color:#050505;font-family:inherit;font-size:23px;line-height:30px;margin-top:36px;padding:5px 10px;cursor:pointer}
-.web-login-create{width:100%;height:84px;margin-top:auto;border:2px solid #1877F2;border-radius:43px;background:#fff;color:#1877F2;font-family:inherit;font-size:27px;font-weight:500;cursor:pointer}
-.web-login-footer{display:flex;justify-content:center;align-items:center;margin-top:24px}
-.web-login-footer img{width:112px;height:auto;max-height:32px;object-fit:contain}
+.web-login-forgot{align-self:center;border:0;background:transparent;color:#1877F2;font-family:inherit;font-size:29px;line-height:36px;font-weight:650;margin-top:35px;padding:0;cursor:pointer}
+.web-login-or{align-self:center;color:#98A2B3;font-size:24px;line-height:30px;font-weight:400;margin-top:36px}
+.web-login-create{width:100%;height:82px;margin-top:29px;border:0;border-radius:28px;background:#E8F0FD;color:#155DB8;font-family:inherit;font-size:28px;font-weight:650;cursor:pointer}
+.web-login-footer{display:flex;justify-content:center;align-items:center;margin-top:30px}
+.web-login-footer img{width:110px;height:auto;max-height:32px;object-fit:contain}
 .web-login-language-backdrop{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.58);display:flex;align-items:flex-end;justify-content:center;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .15s ease,visibility .15s ease}
 .web-login-language-backdrop.open{visibility:visible;opacity:1;pointer-events:auto}
-.web-login-language-sheet{position:relative;width:min(100%,688px);height:min(78vh,900px);height:min(78dvh,900px);background:#fff;border-radius:30px 30px 0 0;padding-top:11px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -12px 40px rgba(0,0,0,.12)}
+.web-login-language-sheet{position:relative;width:min(100%,686px);height:min(78vh,900px);height:min(78dvh,900px);background:#fff;border-radius:30px 30px 0 0;padding-top:11px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -12px 40px rgba(0,0,0,.12)}
 .web-login-language-handle{width:68px;height:7px;border-radius:999px;background:#D2D5D8;align-self:center;flex:none}
 .web-login-language-close{position:absolute;left:30px;top:62px;width:44px;height:44px;border:0;background:transparent;padding:5px;cursor:pointer}
 .web-login-language-close img{width:34px;height:34px}
@@ -225,43 +230,34 @@
 .web-login-settings-sheet p{font-size:16px;line-height:23px;color:#65676B;margin:0 0 20px}
 .web-login-settings-sheet .web-login-primary{height:56px;font-size:17px;margin-top:0}
 @media(max-width:760px){
-  .web-login-top{width:100%;height:88px;padding-left:30px;padding-right:30px}
-  .web-login-language{font-size:22px}
-  .web-login-main{width:100%;padding:42px 30px calc(20px + env(safe-area-inset-bottom,0px));min-height:calc(100dvh - 88px)}
-  .web-login-logo{height:138px;margin-bottom:70px}
-  .web-login-logo img{width:116px;height:116px}
-  .web-login-terms{font-size:22px;line-height:1.38;padding:28px 0 29px}
-  .web-login-field{height:114px;border-radius:27px;padding-left:30px}
-  .web-login-field>span{font-size:22px}
-  .web-login-field input{font-size:25px}
-  .web-login-primary{height:85px;font-size:27px}
-  .web-login-forgot{font-size:22px;margin-top:34px}
-  .web-login-create{height:84px;font-size:26px}
-  .web-login-language-sheet{height:76dvh;border-radius:30px 30px 0 0}
-  .web-login-language-sheet h2{font-size:34px;line-height:41px;margin-top:110px}
+  .web-login-top{width:100%;height:76px;padding-left:30px;padding-right:30px}
+  .web-login-main{width:100%;padding:8px 11.4vw 22px;min-height:calc(100dvh - 76px)}
+  .web-login-logo{height:82px;margin-bottom:30px}
+  .web-login-logo img{width:min(294px,58vw);height:auto}
+  .web-login-intro h1{font-size:clamp(38px,7.15vw,49px)}
+  .web-login-intro p{font-size:clamp(24px,4.65vw,32px)}
+  .web-login-provider-terms{font-size:clamp(20px,4.22vw,29px)}
+  .web-login-field-label{font-size:clamp(20px,3.65vw,25px)}
+  .web-login-field{height:109px}
+  .web-login-field input{font-size:clamp(20px,3.65vw,25px)}
+  .web-login-primary{height:112px;font-size:clamp(24px,4.4vw,30px)}
+  .web-login-forgot{font-size:clamp(21px,4.22vw,29px)}
+  .web-login-create{height:82px;font-size:clamp(21px,4.08vw,28px)}
 }
 @media(max-width:470px){
-  .web-login-top{height:76px;padding-left:30px;padding-right:30px}
-  .web-login-back,.web-login-top-spacer{width:38px;height:38px}
-  .web-login-back img{width:30px;height:30px}
-  .web-login-language{font-size:22px}
-  .web-login-main{padding:38px 30px calc(18px + env(safe-area-inset-bottom,0px));min-height:calc(100dvh - 76px)}
-  .web-login-logo{height:126px;margin-bottom:62px}
-  .web-login-logo img{width:112px;height:112px}
-  .web-login-terms{font-size:21px;line-height:1.42;padding:27px 0 28px}
-  .web-login-field{height:114px;padding-left:29px;padding-right:58px}
-  .web-login-field>span{font-size:21px}
-  .web-login-field input{font-size:24px}
-  .web-login-info{right:26px;width:37px;height:37px}
-  .web-login-password{padding-right:28px}
-  .web-login-primary{height:84px;font-size:26px}
-  .web-login-forgot{font-size:22px;margin-top:33px}
-  .web-login-create{height:83px;font-size:25px}
-  .web-login-footer{margin-top:23px}
-  .web-login-footer img{width:108px}
-  .web-login-language-sheet{height:76dvh}
-  .web-login-language-close{left:29px;top:58px}
-  .web-login-language-sheet h2{font-size:31px;line-height:38px;margin:105px 30px 27px}
-  .web-login-language-list{padding:0 30px 25px}
-  .web-login-language-list button{min-height:76px;font-size:20px;padding:0 30px}
+  .web-login-main{padding:8px 30px 20px}
+  .web-login-logo{height:76px;margin-bottom:25px}
+  .web-login-logo img{width:min(294px,74vw)}
+  .web-login-intro h1{font-size:39px}
+  .web-login-intro p{font-size:24px}
+  .web-login-provider-terms{font-size:22px}
+  .web-login-terms{margin-bottom:27px}
+  .web-login-field-label{font-size:21px}
+  .web-login-field{height:109px}
+  .web-login-field input{font-size:23px}
+  .web-login-password-label{margin-top:47px}
+  .web-login-primary{height:110px;margin-top:48px;font-size:27px}
+  .web-login-forgot{font-size:23px;margin-top:34px}
+  .web-login-or{font-size:22px;margin-top:34px}
+  .web-login-create{height:81px;margin-top:27px;font-size:23px}
 }
