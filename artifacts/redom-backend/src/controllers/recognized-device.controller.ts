@@ -1,14 +1,16 @@
 import { Request, Response } from "express";
 import { recognizedDeviceService } from "../services/auth/recognized-device.service";
 
-function credential(req: Request) { return typeof req.body?.deviceCredential === "string" ? req.body.deviceCredential : typeof req.get("x-redom-device-credential") === "string" ? req.get("x-redom-device-credential")! : ""; }
+function cookieCredential(req: Request) { const raw=req.get("cookie")||""; const match=raw.split(";").map(v=>v.trim()).find(v=>v.startsWith("redom_device_credential=")); return match ? decodeURIComponent(match.slice("redom_device_credential=".length)) : ""; }
+function credential(req: Request) { return typeof req.body?.deviceCredential === "string" ? req.body.deviceCredential : typeof req.get("x-redom-device-credential") === "string" ? req.get("x-redom-device-credential")! : cookieCredential(req); }
 
 export class RecognizedDeviceController {
   async bootstrap(req: Request, res: Response) {
     try {
       const supplied = credential(req) || undefined;
       const result = await recognizedDeviceService.ensureDevice({ credential: supplied, deviceType: req.body?.deviceType, platform: req.body?.platform, browser: req.body?.browser, deviceName: req.body?.deviceName });
-      res.status(200).json({ success: true, deviceId: result.deviceId, deviceCredential: result.created || !supplied ? result.credential : undefined });
+      if (!supplied) res.setHeader("Set-Cookie", "redom_device_credential="+encodeURIComponent(result.credential)+"; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=None");
+      res.status(200).json({ success: true, deviceId: result.deviceId, credentialStored: true });
     } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to initialize this device." }); }
   }
   async list(req: Request, res: Response) {
