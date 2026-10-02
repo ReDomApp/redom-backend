@@ -1,7 +1,7 @@
 import { api } from "../api/client";
 
 export interface ReDomAiTurn { role: "user" | "assistant"; content: string; }
-export interface ReDomAiImageResult { success: boolean; image: string; model: string; }
+export interface ReDomAiImageQuota { entitlement: string; used: number; limit: number; remaining: number; resetAt: string; }\nexport interface ReDomAiImageResult { success: boolean; image: string; model: string; quota?: ReDomAiImageQuota; }
 export interface ReDomAiVoiceResult { success: boolean; text: string; model: string; }
 export interface ReDomAiFileResult { success: boolean; reply: string; model: string; }
 export type ReDomAiFeedbackReason = "Not relevant" | "Not accurate" | "Too repetitive" | "Harmful or offensive" | "Something else";
