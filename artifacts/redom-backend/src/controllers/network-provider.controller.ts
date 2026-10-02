@@ -54,6 +54,7 @@ export class NetworkProviderController {
         code: "NETWORK_IP_UNAVAILABLE",
         networkProvider: null,
         termsUrl: null,
+        termsLabel: null,
         security: null,
         warning,
         message: warning,
