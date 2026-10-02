@@ -4,6 +4,7 @@ import { db } from "../database/db";
 import { reDomAiImages } from "../database/reDomAiImages";
 import { env } from "../config/env";
 import { r2 } from "../lib/r2";
+import { enforceReDomImageOutputSecurity, enforceReDomImageSecurity } from "./redomImageSecurity.service";
 
 export const REDOM_IMAGE_MODEL = "ReDom-1.6RD— Image";
 const DEFAULT_WIDTH = 1024;
@@ -101,6 +102,7 @@ async function storeImage(userId: string, jobId: string, image: EngineImage, ind
 export async function generateReDomImage(userId: string, options: GenerateOptions) {
   const prompt = options.prompt.trim();
   if (!prompt) throw new Error("Image prompt is required.");
+  const security = await enforceReDomImageSecurity(userId, prompt, { hasImage: false, operation: "generate" });
   const width = options.width ?? DEFAULT_WIDTH;
   const height = options.height ?? DEFAULT_HEIGHT;
   const steps = options.steps ?? DEFAULT_STEPS;
@@ -112,6 +114,8 @@ export async function generateReDomImage(userId: string, options: GenerateOption
   const started = Date.now();
   const response = await callEngine("/v1/generate", { prompt, width, height, steps, images, seed: options.seed ?? null });
   const first = response.images[0];
+  const outputDataUri = "data:" + (first.mimeType || "image/png") + ";base64," + first.dataBase64;
+  await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
   const stored = await storeImage(userId, jobId, first, 0);
 
   await db.insert(reDomAiImages).values({
@@ -156,6 +160,12 @@ export async function editReDomImage(userId: string, imageDataUri: string, promp
     if (!bytes.length || bytes.length > MAX_INPUT_BYTES) throw new Error("Image is too large.");
   }
 
+  const security = await enforceReDomImageSecurity(userId, trimmed, {
+    hasImage: true,
+    imageDataUri: sourceDataUri,
+    operation: "edit",
+  });
+
   const jobId = "edit_" + randomUUID().replace(/-/g, "");
   const started = Date.now();
   const response = await callEngine("/v1/edit", {
@@ -168,6 +178,8 @@ export async function editReDomImage(userId: string, imageDataUri: string, promp
     strength: 0.65,
   });
   const first = response.images[0];
+  const outputDataUri = "data:" + (first.mimeType || "image/png") + ";base64," + first.dataBase64;
+  await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
   const stored = await storeImage(userId, jobId, first, 0);
 
   await db.insert(reDomAiImages).values({
