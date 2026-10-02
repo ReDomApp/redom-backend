@@ -15,7 +15,8 @@ function requestIp(req: Request) {
   const candidates = [req.get("cf-connecting-ip"), req.get("true-client-ip"), ...(req.get("x-forwarded-for")?.split(",") ?? []), req.ip, req.socket.remoteAddress];
   return candidates.map(v => v?.trim()).filter((v): v is string => Boolean(v)).map(normalizeIp).find(isPublicIp);
 }
-function cookieCredential(req: Request) { const raw=req.get("cookie")||""; const match=raw.split(";").map(v=>v.trim()).find(v=>v.startsWith("redom_device_credential=")); return match ? decodeURIComponent(match.slice("redom_device_credential=".length)) : ""; }\nfunction requestContext(req: Request) {
+function cookieCredential(req: Request) { const raw=req.get("cookie")||""; const match=raw.split(";").map(v=>v.trim()).find(v=>v.startsWith("redom_device_credential=")); return match ? decodeURIComponent(match.slice("redom_device_credential=".length)) : ""; }
+function requestContext(req: Request) {
   return { ipAddress: requestIp(req), userAgent: req.get("user-agent") ?? undefined, platform: req.body?.platform, browser: req.body?.browser, deviceName: req.body?.deviceName, deviceId: req.body?.deviceId, deviceCredential: req.body?.deviceCredential ?? req.get("x-redom-device-credential") ?? cookieCredential(req) ?? req.body?.deviceId, deviceType: req.body?.deviceType, loginSource: req.body?.loginSource, appVersion: req.body?.appVersion, networkIp: req.body?.networkIp, country: req.body?.country, region: req.body?.region, city: req.body?.city };
 }
 
