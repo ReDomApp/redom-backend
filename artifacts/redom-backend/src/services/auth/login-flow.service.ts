@@ -1,7 +1,6 @@
 import { and, eq, or } from "drizzle-orm";
 import { db } from "../../database/db";
 import { users } from "../../database/schema";
-import { sessions } from "../../database/sessions.schema";
 import { verifications } from "../../database/verifications.schema";
 import { accountSecurity } from "../../database/accountSecurity";
 import { totpLoginChallenges } from "../../database/totp-login-challenges.schema";
@@ -13,8 +12,9 @@ import { sessionService } from "./session.service";
 import { loginHistoryService } from "./login-history.service";
 import { loginNotificationService } from "./login-notification.service";
 import { totpService } from "./totp.service";
+import { recognizedDeviceService } from "./recognized-device.service";
 
-export interface LoginRequest { identifier: string; password: string; networkIp?: string; ipAddress?: string; country?: string; region?: string; city?: string; userAgent?: string; platform?: string; browser?: string; deviceName?: string; deviceId?: string; deviceType?: string; loginSource?: string; appVersion?: string; }
+export interface LoginRequest { identifier: string; password: string; networkIp?: string; ipAddress?: string; country?: string; region?: string; city?: string; userAgent?: string; platform?: string; browser?: string; deviceName?: string; deviceId?: string; deviceCredential?: string; deviceType?: string; loginSource?: string; appVersion?: string; }
 export interface LoginFlowResult { success: true; message: string; requiresVerification: boolean; requiresTwoFactor?: boolean; user?: PublicUser; session?: LoginSession; verification?: LoginVerification; twoFactorVerification?: LoginVerification; }
 type PublicUser = { id: string; username: string; publicId: string; profileId: string; firstName: string; lastName: string; email: string | null; phoneNumber: string | null; emailVerified: boolean; phoneVerified: boolean; accountStatus: string; };
 type LoginSession = { sessionId: string; accessToken: string; refreshToken: string; expiresAt: Date };
@@ -47,6 +47,7 @@ export class LoginFlowService {
     return { challengeId: challenge.challengeId, channel, target, maskedTarget: channel === "sms" ? maskPhone(target) : maskEmail(target), codeLength: challenge.codeLength, expiresAt: challenge.expiresAt };
   }
   private async finishLogin(user: typeof users.$inferSelect, data: LoginRequest, ipapi: IPAPIResult | null, deviceId?: string) {
+    if (data.deviceCredential) await recognizedDeviceService.remember(data.deviceCredential, user.id, { deviceType: data.deviceType, platform: data.platform, browser: data.browser, deviceName: data.deviceName });
     const session = await sessionService.createSession({ userId: user.id, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, region: ipapi?.location?.state ?? data.region, city: ipapi?.location?.city ?? data.city, userAgent: data.userAgent, platform: data.platform, browser: data.browser, deviceName: data.deviceName, deviceId, deviceType: data.deviceType, loginSource: data.loginSource ?? "mobile", appVersion: data.appVersion });
     await loginHistoryService.create({ userId: user.id, sessionId: session.sessionId, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, region: ipapi?.location?.state ?? data.region, city: ipapi?.location?.city ?? data.city, deviceName: data.deviceName, deviceType: data.deviceType, loginSource: data.loginSource ?? "mobile", appVersion: data.appVersion });
     if (user.email) { try { await loginNotificationService.send({ email: user.email, firstName: user.firstName, lastName: user.lastName, ipAddress: data.ipAddress ?? "Unknown", eventAt: new Date(), deviceName: data.deviceName, deviceUserAgent: data.userAgent, ipapi }); } catch { } }
@@ -74,7 +75,9 @@ export class LoginFlowService {
     if (user.accountStatus === "pending") throw new Error("Your account is pending verification. Please verify your email address or phone number before logging in.");
     const ipapi = await this.inspectIp(data.ipAddress); await fraudService.checkLogin({ userId: user.id, ipAddress: data.ipAddress, country: ipapi?.location?.country ?? data.country, userAgent: data.userAgent });
     const deviceId = data.deviceId?.trim();
-    const knownDevice = Boolean(deviceId) && Boolean(await db.query.sessions.findFirst({ where: and(eq(sessions.userId, user.id), eq(sessions.deviceId, deviceId!)) }));
+    const deviceCredential = data.deviceCredential?.trim() || deviceId;
+    const recognized = deviceCredential ? await recognizedDeviceService.list(deviceCredential) : { accounts: [] };
+    const knownDevice = recognized.accounts.some(account => account.userId === user.id);
     const ipHistoryCount = await loginHistoryService.countByIp(user.id, data.ipAddress);
     const trustedIp = Boolean(data.ipAddress) && ipHistoryCount >= 3;
 
@@ -88,7 +91,7 @@ export class LoginFlowService {
     }
     return this.completeAfterSecurity(user, data, deviceId, ipapi);
   }
-  async verifyNewDevice(params: { challengeId: string; code: string; ipAddress?: string; deviceId: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; userAgent?: string; country?: string; region?: string; city?: string; loginSource?: string; appVersion?: string; }) {
+  async verifyNewDevice(params: { challengeId: string; code: string; ipAddress?: string; deviceId: string; deviceCredential?: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; userAgent?: string; country?: string; region?: string; city?: string; loginSource?: string; appVersion?: string; }) {
     const challenge = await db.query.verifications.findFirst({ where: eq(verifications.id, params.challengeId) }); if (!challenge) throw new Error("Verification challenge not found.");
     if (challenge.purpose !== "LOGIN_DEVICE_VERIFICATION") throw new Error("Invalid login verification challenge.");
     if (challenge.deviceId && challenge.deviceId !== params.deviceId) throw new Error("This verification belongs to another device.");
@@ -96,11 +99,11 @@ export class LoginFlowService {
     const verification = await verificationService.verifyVerification({ challengeId: params.challengeId, code: params.code, purpose: "LOGIN_DEVICE_VERIFICATION" }); if (!verification.userId) throw new Error("Verification is not associated with an account.");
     const user = await db.query.users.findFirst({ where: eq(users.id, verification.userId) }); if (!user) throw new Error("User not found.");
     if (user.accountStatus === "suspended") throw new Error("Your account has been suspended."); if (user.accountStatus === "banned") throw new Error("Your account has been banned.");
-    const data: LoginRequest = { identifier: user.email ?? user.phoneNumber ?? "", password: "", ipAddress: params.ipAddress, country: params.country, region: params.region, city: params.city, userAgent: params.userAgent, platform: params.platform, browser: params.browser, deviceName: params.deviceName, deviceId: params.deviceId, deviceType: params.deviceType, loginSource: params.loginSource ?? "mobile", appVersion: params.appVersion };
+    const data: LoginRequest = { identifier: user.email ?? user.phoneNumber ?? "", password: "", ipAddress: params.ipAddress, country: params.country, region: params.region, city: params.city, userAgent: params.userAgent, platform: params.platform, browser: params.browser, deviceName: params.deviceName, deviceId: params.deviceId, deviceCredential: params.deviceCredential, deviceType: params.deviceType, loginSource: params.loginSource ?? "mobile", appVersion: params.appVersion };
     const ipapi = await this.inspectIp(params.ipAddress); await fraudService.checkLogin({ userId: user.id, ipAddress: params.ipAddress, country: ipapi?.location?.country ?? params.country, userAgent: params.userAgent });
     return this.completeAfterSecurity(user, data, params.deviceId, ipapi);
   }
-  async verifyTwoFactor(params: { challengeId: string; code: string; deviceId: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; userAgent?: string; ipAddress?: string; country?: string; region?: string; city?: string; loginSource?: string; appVersion?: string; }) {
+  async verifyTwoFactor(params: { challengeId: string; code: string; deviceCredential?: string; deviceId: string; deviceName?: string; deviceType?: string; platform?: string; browser?: string; userAgent?: string; ipAddress?: string; country?: string; region?: string; city?: string; loginSource?: string; appVersion?: string; }) {
     const totpChallenge = await db.query.totpLoginChallenges.findFirst({ where: eq(totpLoginChallenges.id, params.challengeId) });
     if (totpChallenge) {
       const user = await db.query.users.findFirst({ where: eq(users.id, totpChallenge.userId) }); if (!user) throw new Error("User not found.");
