@@ -163,6 +163,8 @@ export const registerSchema =
 
 export const loginSchema =
   z.object({
+    accountUserId: z.string().uuid().optional(),
+
     identifier: z
       .string()
       .trim()
