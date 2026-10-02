@@ -99,7 +99,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const currentUserId = state.user?.id;
     try { await authService.logout(); } finally {
       await clearStoredSession();
-      if (currentUserId) await removeDeviceAccount(currentUserId);
       setState(unauthenticatedState);
     }
   }, [state.user?.id]);
