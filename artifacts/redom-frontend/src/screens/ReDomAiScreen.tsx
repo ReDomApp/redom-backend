@@ -7,6 +7,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useAuthContext } from "../auth/context";
+import { ApiError } from "../api/client";
 import type { RootStackParamList } from "../routing/types";
 import { reDomAiService, type ReDomAiTurn } from "../messages/reDomAiService";
 import { VoiceRecorderButton } from "../messages/voiceRecorder";
@@ -56,7 +57,7 @@ export function ReDomAiScreen({ navigation, route }: Props) {
     const withUser: AiThread = { ...thread, title: thread.messages.length ? thread.title : `Image: ${value.slice(0, 34)}`, updatedAt: Date.now(), messages: [...thread.messages, userMessage] };
     setThread(withUser); await persistCurrent(withUser);
     try { const response = await reDomAiService.generateImage(value); const assistant: AiMessage = { id: `${Date.now()}-i`, role: "assistant", content: "Generated image", kind: "image", imageUri: response.image, prompt: value }; const completed: AiThread = { ...withUser, updatedAt: Date.now(), messages: [...withUser.messages, assistant] }; setThread(completed); await persistCurrent(completed); setImagePromptMode(false); }
-    catch (e) { setError(e instanceof Error ? e.message : "ReDom AI could not create the image right now."); } finally { setGeneratingImage(false); }
+    catch (e) { if (e instanceof ApiError && e.code === "IMAGE_QUOTA_EXCEEDED") { const quota = (e.details as { quota?: { resetAt?: string } } | undefined)?.quota; const resetAt = quota?.resetAt ? new Date(quota.resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null; setError(`You’ve reached your current image-generation limit.${resetAt ? ` You can create another image at ${resetAt}.` : ""} Upgrade your ReDom AI plan for enhanced image support.`); } else { setError(e instanceof Error ? e.message : "ReDom AI could not create the image right now."); } } finally { setGeneratingImage(false); }
   }, [generatingImage, input, loading, persistCurrent, thread]);
 
   const onVoice = async (dataUri: string) => { setError(""); try { const result = await reDomAiService.transcribeVoice(dataUri); if (result.text.trim()) await sendText(result.text.trim(), null); } catch (e) { setError(e instanceof Error ? e.message : "Voice prompt could not be understood."); } };
