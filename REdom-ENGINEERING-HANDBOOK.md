@@ -34,8 +34,8 @@ The goal of this handbook is to preserve the **why, what, and non-negotiable imp
 10. Any change to policy/behavior should update the relevant policy/documentation section as part of the same product change when appropriate.
 11. Do not create a second competing implementation when the existing implementation is the intended source of behavior.
 12. A new AI/developer joining the project should read this handbook **before making architectural or cross-cutting changes**.
-
----
+13. **Nothing is generic.** When an authoritative source can identify a real provider, network, account, device, security state, website, language, or other dynamic value, use that actual value. Never replace it with a fabricated, placeholder, catch-all, guessed, or generic identity.
+14. An inability to determine one value must never be used as a reason to fabricate another value or silently weaken a security decision.
 
 ---
 
@@ -241,6 +241,7 @@ Transaction cards use the established ReDom Pay design and date presentation, in
 ## Payment providers
 
 ### Card payments
+
 The authoritative provider for ReDom card flows is the ReDom Platforms payment account with the card-payment provider used by the implementation.
 
 Important implementation rule:
@@ -249,11 +250,13 @@ Important implementation rule:
 - Provider verification is authoritative.
 
 ### Bank transfer
+
 Paystack is used for Bank Transfer flows in supported African-country scenarios.
 
 Paystack is **not** the card provider for the Add Card flow.
 
 ### Other methods
+
 The Add Payment Method bottom sheet has established options:
 
 1. Credit/Debit Card — active card flow.
@@ -782,12 +785,15 @@ Do not treat parity as only a visual exercise.
 When a new AI or developer starts on ReDom:
 
 ### Step 1
+
 Read this handbook.
 
 ### Step 2
+
 Inspect the GitHub repository tree.
 
 ### Step 3
+
 Identify whether the requested change is:
 - mobile;
 - web;
@@ -800,9 +806,11 @@ Identify whether the requested change is:
 - deployment.
 
 ### Step 4
+
 Read the existing implementation for the exact feature.
 
 ### Step 5
+
 Search the repository for:
 - routes;
 - services;
@@ -814,15 +822,19 @@ Search the repository for:
 - environment variable names.
 
 ### Step 6
+
 Make the smallest change that satisfies the requirement without breaking established behavior.
 
 ### Step 7
+
 Run the appropriate typecheck/build/test/verification.
 
 ### Step 8
+
 If the behavior changed, update relevant policy/documentation.
 
 ### Step 9
+
 Record important architectural decisions here.
 
 ---
@@ -843,6 +855,10 @@ Record important architectural decisions here.
 - Do not use generic placeholder logos when actual branding is required.
 - Do not import React Native/Expo into ReDom Web solely to avoid implementing web parity.
 - Do not treat a historical design decision as current if source code proves it has changed.
+- **Do not substitute a generic provider/network/account/device/security identity when an actual value is available.**
+- **Do not invent a carrier, ISP, VPN, Tor provider, proxy, hosting provider, official website, device identity, account identity, 2FA state, or other security-sensitive value.**
+- **Do not treat "generic" as a security fallback. Unknown state and generic identity are not interchangeable.**
+- **Do not silently assume a secure/recognized state when the authoritative backend cannot establish it.**
 
 ---
 
@@ -899,5 +915,588 @@ Before implementing anything:
 **READ → UNDERSTAND → VERIFY → IMPLEMENT → TEST → DOCUMENT.**
 
 Preserve established behavior. Follow the source code. Follow the current product requirement. Protect account and payment security. Keep mobile/web behavior aligned. Keep policy and implementation synchronized.
+
+If something is ambiguous, inspect the repository and the existing implementation before guessing.
+
+---
+
+# 35. Recognized-device authentication and account selector
+
+This is a permanent authentication architecture requirement for **both ReDom Web and ReDom Mobile**.
+
+## 35.1 Client separation
+
+The recognized-device experience must be implemented independently in:
+
+- **ReDom Web:** `artifacts/redomweb`
+- **ReDom Mobile:** `artifacts/redom-frontend`
+
+They share the ReDom backend but are not the same frontend implementation.
+
+**Web must not import React Native or Expo. Mobile must not be redesigned around the Web implementation.**
+
+Both clients must reproduce the same intended authentication behavior while using their own platform-native/web architecture.
+
+## 35.2 Authentication entry decision
+
+Whenever a user reaches the authentication entry point, the client must first determine whether the current browser/device has recognized ReDom account associations.
+
+Flow:
+
+```
+Authentication Entry
+        |
+        +-- Recognized accounts found --> Account selector
+        |
+        +-- No recognized accounts ----> Existing Login screen
+```
+
+If no recognized account exists, do not show fake accounts or an empty account picker. Continue directly to the existing ReDom login flow.
+
+## 35.3 Device recognition is backend-authoritative
+
+Do not implement recognized-device security as a frontend boolean or a browser/local-storage flag.
+
+Examples of invalid security shortcuts:
+
+```ts
+isRecognized = true;
+```
+
+or:
+
+```js
+localStorage.setItem("recognized", "true");
+```
+
+The backend must determine whether the device/browser is recognized.
+
+The architecture should maintain a protected ReDom device-recognition credential/record and account associations. A browser/device fingerprint may be a signal, but it must not by itself be treated as an authentication credential.
+
+Google/browser-saved account information may assist account discovery/autofill where available, but it is not proof of ReDom account ownership.
+
+## 35.4 Recognized account cards
+
+When recognized accounts exist, display each account in its own independent card.
+
+Each card contains:
+
+- actual account/profile image;
+- actual ReDom account display name;
+- right-facing chevron;
+- exact established spacing, dimensions, border, radius, typography, and alignment from the approved reference;
+- the entire card as the selectable target.
+
+Never hard-code the example names or photos from design references into production behavior.
+
+If a real account has no profile image, use the established ReDom neutral-avatar asset/state.
+
+## 35.5 Existing flows must be reused
+
+The recognized-account layer wraps the existing authentication system; it does not create competing login/signup/reset systems.
+
+### Log into another account
+
+The exact action:
+
+**Log into another account**
+
+must route to the existing ReDom login screen.
+
+### Create new account
+
+The exact action:
+
+**Create new account**
+
+must route to the existing ReDom account-creation flow.
+
+### Forgot password
+
+The exact action:
+
+**Forgot password?**
+
+must route to the existing ReDom forgot-password flow.
+
+Do not create parallel authentication flows for these actions.
+
+## 35.6 Selecting a recognized account
+
+Selecting a recognized account opens the existing-style password screen for that account.
+
+The password screen must preserve the approved reference:
+
+- back control;
+- actual profile image;
+- actual account name;
+- independent password field;
+- secure input;
+- eye/eye-slash SVG;
+- independent Log in button;
+- Forgot password? action;
+- exact visual hierarchy and spacing.
+
+Pressing **Log in** must send the credentials to the backend and must never simply navigate to Home-feed.
+
+The backend validates:
+
+1. account;
+2. password;
+3. account status;
+4. recognized-device state;
+5. additional device verification requirements;
+6. 2FA/security configuration;
+7. session eligibility.
+
+Only after the required authentication/security checks succeed may the user enter Home-feed.
+
+## 35.7 2FA and device verification
+
+The client must respect the backend's actual security state.
+
+Possible sequence:
+
+```
+Account password
+      |
+      +-- recognized + no extra verification --> Home-feed
+      |
+      +-- verification required --------------> Verification code
+      |
+      +-- 2FA enabled ------------------------> 2FA verification
+                                                     |
+                                                     v
+                                                  Home-feed
+```
+
+Do not assume that a recognized device automatically bypasses 2FA.
+
+Do not assume that a failed/unknown security determination means "no 2FA."
+
+Do not move security decisions exclusively to the client.
+
+## 35.8 Manage profiles
+
+The three-dot control on the recognized-account selector opens the account-management experience shown in the approved reference.
+
+The title is:
+
+**Manage profiles**
+
+Every account is again displayed in its own independent card with the same actual profile data and approved visual construction.
+
+Selecting an account opens its profile-management detail screen.
+
+The detail screen contains the established:
+
+**Remove profile**
+
+action and the corresponding account/device association explanation.
+
+## 35.9 Remove profile semantics
+
+**Remove profile** removes that account from the recognized-account picker for the current device/browser.
+
+It does **not**:
+
+- delete the ReDom account;
+- delete the profile;
+- disable the account;
+- delete database account data;
+- revoke every session;
+- revoke the entire recognized-device credential.
+
+The device itself remains recognized.
+
+Example:
+
+```
+Before:
+Device
+ ├── Account A
+ ├── Account B
+ └── Account C
+
+Remove Account B
+
+After:
+Device
+ ├── Account A
+ └── Account C
+```
+
+The recognized-device state remains valid.
+
+Removing an account from the picker and forgetting/revoking the entire device are separate operations.
+
+## 35.10 Language selector
+
+The language control at the authentication screen is interactive.
+
+For example:
+
+**English (US) ▼**
+
+opens the established bottom sheet rather than a full-page language screen.
+
+The sheet must reproduce the approved reference:
+
+- dimmed backdrop;
+- rounded top corners;
+- drag handle;
+- close X;
+- **Select your language** heading;
+- independently rendered language rows;
+- right-aligned selected/unselected checkbox;
+- horizontal separators;
+- scrolling;
+- exact language strings and native characters;
+- exact spacing and visual hierarchy.
+
+Established reference languages include:
+
+- English (US)
+- Hausa
+- Español
+- Français (France)
+- Português (Brasil)
+- العربية
+- 中文(简体)
+- Italiano
+- 한국어
+- Bahasa Indonesia
+- Deutsch
+- 日本語
+- Af-Soomaali
+- Afaan Oromoo
+- Afrikaans
+- Azərbaycan dili
+- Bahasa Melayu
+
+The current supported-language configuration remains authoritative if it differs.
+
+## 35.11 Reference visual fidelity
+
+The supplied authentication/profile screenshots are the visual source of truth for this flow.
+
+Do not replace the reference with a generic approximation.
+
+Preserve:
+
+- exact copy;
+- typography;
+- colors;
+- spacing;
+- card dimensions;
+- border thickness;
+- radius;
+- icon placement;
+- SVGs;
+- profile-image sizing;
+- button sizing;
+- sheet geometry;
+- backdrop;
+- navigation;
+- field hierarchy;
+- error/loading states.
+
+Every major object must have its own intentional card/field/container where the reference does.
+
+---
+
+# 36. Authentication network/provider Terms block
+
+The authentication selector includes a Terms block whose provider/network identity is dynamically resolved from the user's detected public IP/network information.
+
+## 36.1 Required wording
+
+The base wording is:
+
+> **By continuing, you agree to [NETWORK NAME]'s Terms which includes letting [NETWORK NAME] request and receive your phone number. Change Settings**
+
+Only the network/provider identity is dynamic. The wording, capitalization, punctuation, hierarchy, and visual treatment must otherwise follow the approved reference.
+
+Do not replace this with a permanently hard-coded carrier such as MTN.
+
+Do not replace it with:
+
+> "By continuing, you agree to our terms."
+
+when a real network/provider identity has been detected.
+
+## 36.2 Provider resolution
+
+The backend/network-intelligence layer must determine the actual identifiable provider/network for the current public IP.
+
+The resolved network object should conceptually contain:
+
+```ts
+{
+  name: string,
+  type: string,
+  officialWebsite: string | null,
+  detected: boolean
+}
+```
+
+The exact schema/service is determined by the existing implementation.
+
+## 36.3 Nothing is generic
+
+This is a **global security/product rule**, not merely a Terms-copy rule.
+
+When the network intelligence identifies:
+
+- mobile carrier/ISP;
+- VPN provider;
+- Tor-related network/provider;
+- proxy provider;
+- hosting/datacenter provider;
+- other identifiable network/provider;
+
+use the **actual detected identity**.
+
+Do not intentionally collapse these into:
+
+- Generic Network;
+- Generic Provider;
+- Generic Hosting;
+- Generic VPN;
+- Generic ISP;
+- Unknown Carrier;
+
+when the source actually provides an identifiable value.
+
+Examples:
+
+```
+Detected:
+MTN Nigeria
+Type:
+mobile/ISP
+
+Display:
+MTN Nigeria
+```
+
+```
+Detected:
+Example VPN
+Type:
+VPN
+
+Display:
+Example VPN
+```
+
+```
+Detected:
+Generic Hosting
+Type:
+hosting/datacenter
+
+Display:
+Generic Hosting
+```
+
+The fact that a provider happens to be a hosting company does not authorize replacing its actual name with another generic category.
+
+## 36.4 VPN/Tor/proxy/hosting requirement
+
+There is **no requirement to first convert VPN, Tor, proxy, or hosting traffic into a generic label**.
+
+If the detection service identifies the actual provider/network, use that identity.
+
+Examples of invalid behavior:
+
+```
+VPN detected
+    ↓
+Generic Network
+```
+
+```
+Tor detected
+    ↓
+Generic Network
+```
+
+```
+Hosting detected
+    ↓
+Generic Network
+```
+
+```
+Proxy detected
+    ↓
+Generic Network
+```
+
+The system must preserve the actual classification and provider identity returned by the authoritative network-intelligence source.
+
+## 36.5 No provider identity available
+
+Only when the authoritative network-intelligence service genuinely cannot establish an identifiable provider/network may the existing ReDom generic fallback wording be used.
+
+This is a true **no-identifiable-data state**.
+
+It is not a reason to replace a known VPN, Tor, proxy, hosting provider, ISP, mobile carrier, or other network identity with a generic label.
+
+Never invent a provider name.
+
+## 36.6 Official website link
+
+The network/provider Terms link must use the verified official website belonging to the **actually detected provider/network**.
+
+Flow:
+
+```
+Detected network/provider
+        ↓
+Verified provider metadata
+        ↓
+Official HTTPS website
+        ↓
+External browser
+```
+
+Do not:
+
+- construct an official website URL from guesswork;
+- send the user to an unrelated provider;
+- use an arbitrary user-supplied website;
+- substitute a generic website;
+- claim a website is official without verified provider metadata.
+
+The Web implementation should use the appropriate browser-opening mechanism. The Mobile implementation should use the platform's external-browser mechanism.
+
+## 36.7 Change Settings
+
+**Change Settings** remains a separate interactive control.
+
+It must not be merged into the network Terms link.
+
+The two actions are:
+
+- **[NETWORK NAME]'s Terms** → verified official network/provider website.
+- **Change Settings** → the established settings flow.
+
+## 36.8 Global "Nothing Is Generic" rule
+
+The following is an architectural invariant across ReDom:
+
+> **NOTHING IS GENERIC.**
+
+Do not use generic, placeholder, fabricated, guessed, or catch-all identity values anywhere in authentication, security, device recognition, network detection, account selection, profile management, payment, or related user-facing security flows when an actual authoritative value can be obtained.
+
+This applies to:
+
+- network/provider name;
+- ISP;
+- mobile carrier;
+- VPN;
+- Tor network/provider;
+- proxy;
+- hosting/datacenter;
+- official website;
+- country;
+- region;
+- language;
+- device identity;
+- browser/device state;
+- account identity;
+- profile information;
+- 2FA state;
+- verification state;
+- session state;
+- payment provider/state;
+- transaction state;
+- any other security-sensitive dynamic value.
+
+## 36.9 Unknown is not generic
+
+When a value genuinely cannot be determined:
+
+1. preserve the actual unknown state;
+2. follow the existing ReDom handling for that specific field;
+3. do not fabricate a replacement identity;
+4. do not silently downgrade security;
+5. do not assume the safest/least restrictive state without an explicit security rule.
+
+For example:
+
+```
+Unable to determine device recognition
+        ↓
+Do NOT assume recognized
+        ↓
+Use the existing secure verification path
+```
+
+and:
+
+```
+Unable to determine 2FA state
+        ↓
+Do NOT assume 2FA is disabled
+        ↓
+Use the authoritative backend security state/failure handling
+```
+
+## 36.10 Single authoritative source
+
+Where multiple UI fields depend on the same dynamic identity, resolve it once from the authoritative source and use that same resolved object consistently.
+
+Do not produce:
+
+```
+Detected provider → Actual Provider
+Terms name → Generic Provider
+Website → unrelated website
+Description → generic description
+```
+
+Instead:
+
+```
+Authoritative provider resolution
+        ↓
+name
+type
+official website
+other permitted metadata
+        ↓
+all relevant UI fields
+```
+
+This prevents inconsistent identity presentation and security mistakes.
+
+---
+
+# 37. Final security invariant
+
+For every ReDom implementation, the following rule overrides convenience:
+
+> **USE THE REAL AUTHORITATIVE VALUE OR PRESERVE THE TRUE UNKNOWN STATE. NEVER INVENT A GENERIC IDENTITY.**
+
+The implementation must never fabricate identity data to make a UI look complete, never replace an identifiable provider with a generic category, never use generic security state as a shortcut, and never treat frontend assumptions as authoritative security decisions.
+
+This rule applies equally to **ReDom Web, ReDom Mobile, the shared ReDom Backend, database state, AI behavior, and provider/network integrations**.
+
+---
+
+# 38. Final instruction to future ReDom agents
+
+**Treat ReDom as an existing production-oriented product, not a blank template.**
+
+Before implementing anything:
+
+**READ → UNDERSTAND → VERIFY → IMPLEMENT → TEST → DOCUMENT.**
+
+Preserve established behavior. Follow the source code. Follow the current product requirement. Protect account and payment security. Keep mobile/web behavior aligned. Keep policy and implementation synchronized.
+
+**Nothing is generic. If the real value can be determined, use the real value. If it cannot be determined, preserve the true unknown state and follow the established secure handling. Never fabricate an identity or silently weaken security.**
 
 If something is ambiguous, inspect the repository and the existing implementation before guessing.
