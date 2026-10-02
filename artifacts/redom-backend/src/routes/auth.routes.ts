@@ -11,9 +11,14 @@ import { registrationInitializationController } from "../controllers/registratio
 import { pendingRegistrationController } from "../controllers/pending-registration.controller";
 import { totpController } from "../controllers/totp.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
+import { recognizedDeviceController } from "../controllers/recognized-device.controller";
 import { authRateLimit, networkProviderRateLimit, passwordResetRateLimit, registrationRateLimit, registrationVerificationRateLimit, verificationRateLimit } from "../middleware/rate-limit.middleware";
 const router = Router();
 router.get("/network-provider", networkProviderRateLimit, networkProviderController.get.bind(networkProviderController));
+router.post("/device/bootstrap", authRateLimit, recognizedDeviceController.bootstrap.bind(recognizedDeviceController));
+router.post("/device/recognized", authRateLimit, recognizedDeviceController.list.bind(recognizedDeviceController));
+router.get("/device/recognized/:userId", authRateLimit, recognizedDeviceController.detail.bind(recognizedDeviceController));
+router.delete("/device/recognized/:userId", authRateLimit, recognizedDeviceController.remove.bind(recognizedDeviceController));
 router.post("/register", registrationRateLimit, authController.register.bind(authController));
 router.post("/register/flow", registrationRateLimit, registrationFlowController.reserve.bind(registrationFlowController));
 router.get("/register/flow/:reservationId/memory", registrationRateLimit, registrationFlowController.getMemory.bind(registrationFlowController));
