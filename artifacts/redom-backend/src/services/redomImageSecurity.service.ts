@@ -285,9 +285,11 @@ export async function enforceReDomImageOutputSecurity(
     throw Object.assign(new Error(decision.userMessage), { code: decision.policyCode, status: 502 });
   }
 
-  if (result.blocked || (result.governmentDocument && result.authenticityRelevant) || (result.financialDocument && result.authenticityRelevant)) {
+  const generatedOfficialDocument = context.operation === "generate" && result.governmentDocument;
+  const generatedFinancialDocument = context.operation === "generate" && result.financialDocument;
+  if (result.blocked || generatedOfficialDocument || generatedFinancialDocument || (result.governmentDocument && result.authenticityRelevant) || (result.financialDocument && result.authenticityRelevant)) {
     const decision: ImageSecurityDecision = {
-      requestId, operation: context.operation, action: "block", policyCode: result.governmentDocument ? "OUTPUT_INTEGRITY_FAILURE" : "FORGED_DOCUMENT", riskLevel: "CRITICAL",
+      requestId, operation: context.operation, action: "block", policyCode: (result.governmentDocument || result.financialDocument) ? "FORGED_DOCUMENT" : "OUTPUT_INTEGRITY_FAILURE", riskLevel: "CRITICAL",
       documentClass: result.documentClass || "unknown", governmentDocument: Boolean(result.governmentDocument), financialDocument: Boolean(result.financialDocument),
       authenticityRelevant: Boolean(result.authenticityRelevant), providerSignals: { gemini: result },
       userMessage: "The generated image did not pass ReDom’s security checks and was not saved.",
