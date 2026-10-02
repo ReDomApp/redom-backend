@@ -63,7 +63,7 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
   const warning = profile ? warningFor(profile) : null;
   const failed = Boolean(profile && (!profile.success || !security));
   const isVpnOrDatacenter = Boolean(security?.vpn || security?.datacenter);
-  const termsTitle = titleFor(profile ?? { success: false, networkProvider: null, termsUrl: null, security: null, warning: null });
+  const termsTitle = titleFor(profile ?? { success: false, networkProvider: null, termsUrl: null, termsLabel: null, security: null, warning: null });
 
   function continueToLogin() {
     if (checking || failed || !security || completed.current) return;
