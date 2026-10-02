@@ -31,6 +31,7 @@ export interface NetworkProviderResponse {
   success: boolean;
   networkProvider: string | null;
   termsUrl: string | null;
+  termsLabel: string | null;
   security: NetworkSecurity | null;
   warning: string | null;
 }
@@ -39,6 +40,7 @@ const emptyNetworkProvider = (warning: string | null = null): NetworkProviderRes
   success: false,
   networkProvider: null,
   termsUrl: null,
+  termsLabel: null,
   security: null,
   warning,
 });
