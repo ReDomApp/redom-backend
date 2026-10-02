@@ -39,7 +39,7 @@ function shouldTryImageFallback(error: unknown) {
 
 export async function generateReDomAiImage(userId: string, prompt: string) {
   const result = await generateReDomImage(userId, { prompt });
-  return { dataUri: result.image, model: REDOM_IMAGE_MODEL, jobId: result.jobId };
+  return { dataUri: result.image, model: REDOM_IMAGE_MODEL, jobId: result.jobId, quota: result.quota };
 }
 
 export async function editReDomAiImage(userId: string, imageDataUri: string, prompt: string) {
