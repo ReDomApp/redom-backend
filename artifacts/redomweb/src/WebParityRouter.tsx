@@ -57,6 +57,7 @@ const A:{[k:string]:string}={
 };
 
 const byKey=(key:string)=>WEB_SCREEN_REGISTRY.find(x=>x.key===key)||null;
+const nextFor=(key:string)=>byKey(key)?.path||"/app/homeFeed";
 const keyFromPath=()=>{const p=window.location.pathname.replace(/\/$/,"");const r=WEB_SCREEN_REGISTRY.find(x=>x.path.toLowerCase()===p.toLowerCase());return r?.key||"HomeFeed"};
 const go=(path:string)=>{window.history.pushState({}, "", path);window.dispatchEvent(new PopStateEvent("popstate"));window.scrollTo({top:0,behavior:"smooth"});};
 
