@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, or, asc, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, or, asc, sql, lte } from "drizzle-orm";
 import { db } from "../database/db";
 import { reDomAiImageQuota } from "../database/reDomAiImageQuota";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
@@ -73,20 +73,18 @@ async function currentOrCreateWindow(userId: string, entitlement: string, limit:
 
   const started = now;
   const reset = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const refreshed = await db.update(reDomAiImageQuota).set({
+    entitlement, windowStartedAt: started, windowResetAt: reset, limit, used: 0, reserved: 0, updatedAt: now,
+  }).where(and(eq(reDomAiImageQuota.userId, userId), lte(reDomAiImageQuota.windowResetAt, now))).returning();
+  if (refreshed[0]) return refreshed[0];
+
   const inserted = await db.insert(reDomAiImageQuota).values({
-    userId,
-    entitlement,
-    windowStartedAt: started,
-    windowResetAt: reset,
-    limit,
-    used: 0,
-    reserved: 0,
+    userId, entitlement, windowStartedAt: started, windowResetAt: reset, limit, used: 0, reserved: 0,
   }).onConflictDoNothing().returning();
   if (inserted[0]) return inserted[0];
 
   const raced = await db.select().from(reDomAiImageQuota)
     .where(and(eq(reDomAiImageQuota.userId, userId), gt(reDomAiImageQuota.windowResetAt, now)))
-    .orderBy(asc(reDomAiImageQuota.windowStartedAt))
     .limit(1);
   if (!raced[0]) throw new Error("Unable to initialize ReDom image quota.");
   return raced[0];
