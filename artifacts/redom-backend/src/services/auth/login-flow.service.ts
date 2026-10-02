@@ -14,7 +14,7 @@ import { loginNotificationService } from "./login-notification.service";
 import { totpService } from "./totp.service";
 import { recognizedDeviceService } from "./recognized-device.service";
 
-export interface LoginRequest { identifier: string; password: string; networkIp?: string; ipAddress?: string; country?: string; region?: string; city?: string; userAgent?: string; platform?: string; browser?: string; deviceName?: string; deviceId?: string; deviceCredential?: string; deviceType?: string; loginSource?: string; appVersion?: string; }
+export interface LoginRequest { accountUserId?: string; identifier: string; password: string; networkIp?: string; ipAddress?: string; country?: string; region?: string; city?: string; userAgent?: string; platform?: string; browser?: string; deviceName?: string; deviceId?: string; deviceCredential?: string; deviceType?: string; loginSource?: string; appVersion?: string; }
 export interface LoginFlowResult { success: true; message: string; requiresVerification: boolean; requiresTwoFactor?: boolean; user?: PublicUser; session?: LoginSession; verification?: LoginVerification; twoFactorVerification?: LoginVerification; }
 type PublicUser = { id: string; username: string; publicId: string; profileId: string; firstName: string; lastName: string; email: string | null; phoneNumber: string | null; emailVerified: boolean; phoneVerified: boolean; accountStatus: string; };
 type LoginSession = { sessionId: string; accessToken: string; refreshToken: string; expiresAt: Date };
@@ -59,14 +59,14 @@ export class LoginFlowService {
     const session = await this.finishLogin(user, data, network, deviceId); return { success: true, message: "Login successful.", requiresVerification: false, requiresTwoFactor: false, user: publicUser(user), session };
   }
   async login(data: LoginRequest): Promise<LoginFlowResult> {
-    const identifier = data.identifier.trim(); if (!identifier) throw new Error("Login identifier is required.");
-    if (/^\d{15}$/.test(identifier)) throw new Error("Please use your mobile number or email address to log in.");
+    const identifier = data.identifier.trim();
+    if (!data.accountUserId && !identifier) throw new Error("Login identifier is required.");
+    if (!data.accountUserId && /^\d{15}$/.test(identifier)) throw new Error("Please use your mobile number or email address to log in.");
     const phoneValues = /^\+/.test(identifier) ? phoneCandidates(identifier) : [identifier];
     const user = await db.query.users.findFirst({
-      where: or(
-        eq(users.email, identifier.toLowerCase()),
-        ...phoneValues.map((phone) => eq(users.phoneNumber, phone)),
-      ),
+      where: data.accountUserId
+        ? eq(users.id, data.accountUserId)
+        : or(eq(users.email, identifier.toLowerCase()), ...phoneValues.map((phone) => eq(users.phoneNumber, phone))),
     });
     if (!user) throw new Error("Please create an account if you're not a ReDom user.");
     if (!await passwordService.verify(data.password, user.passwordHash)) throw new Error("Invalid credentials.");
