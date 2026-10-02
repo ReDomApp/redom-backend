@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import { authService } from "./service";
 import { clearStoredSession, getStoredSession, storeSession } from "./storage";
-import { getDeviceAccounts, rememberDeviceAccount, removeDeviceAccount } from "./deviceAccounts";
+import { rememberDeviceAccount } from "./deviceAccounts";
 import type { AuthResult, AuthState, LoginInput, RegisterInput, VerifyLoginDeviceInput, VerifyLoginTwoFactorInput, AuthSession, AuthUser } from "./types";
 
 interface AuthContextValue extends AuthState {
