@@ -30,6 +30,7 @@ export interface NetworkProviderResult {
   success: boolean;
   networkProvider: string | null;
   termsUrl: string | null;
+  termsLabel: string | null;
   security: NetworkSecurityResult | null;
   warning: string | null;
 }
@@ -53,6 +54,11 @@ function officialProviderUrl(domain?: string | null) {
   return normalized ? `https://${normalized}` : null;
 }
 
+function providerTermsLabel(provider?: string | null) {
+  const firstName = provider?.trim().split(/\s+/)[0]?.replace(/[.,;:]+$/, "");
+  return firstName ? `${firstName} Terms` : null;
+}
+
 function warningFor(security: NetworkSecurityResult) {
   if (security.vpn) return "VPN detected. Your current connection appears to use a VPN provider.";
   if (security.proxy) return "Proxy detected. Your current connection appears to use a proxy.";
@@ -64,7 +70,7 @@ function warningFor(security: NetworkSecurityResult) {
 }
 
 export async function getNetworkProvider(ip: string | undefined): Promise<NetworkProviderResult> {
-  if (!ip) return { success: false, networkProvider: null, termsUrl: null, security: null, warning: null };
+  if (!ip) return { success: false, networkProvider: null, termsUrl: null, termsLabel: null, security: null, warning: null };
 
   const cacheKey = ip.trim();
   const cached = resultCache.get(cacheKey);
@@ -117,6 +123,7 @@ export async function getNetworkProvider(ip: string | undefined): Promise<Networ
     success: true,
     networkProvider,
     termsUrl: officialProviderUrl(providerDomain),
+    termsLabel: providerTermsLabel(networkProvider),
     security,
     warning: warningFor(security),
   };
