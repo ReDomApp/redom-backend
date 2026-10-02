@@ -45,7 +45,7 @@ function connectionType(result: Awaited<ReturnType<typeof checkIP>>) {
   if (result.is_mobile) return "Mobile";
   if (result.is_satellite) return "Satellite";
   if (result.egress_service?.type) return result.egress_service.type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-  return result.company?.type ? result.company.type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Residential / ISP";
+  return result.company?.type ? result.company.type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Unknown";
 }
 
 function officialProviderUrl(domain?: string | null) {
