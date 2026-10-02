@@ -137,10 +137,22 @@ export async function generateReDomImage(userId: string, options: GenerateOption
 export async function editReDomImage(userId: string, imageDataUri: string, prompt: string) {
   const trimmed = prompt.trim();
   if (!trimmed) throw new Error("Image edit prompt is required.");
-  const match = /^data:image\/[^;]+;base64,(.+)$/s.exec(imageDataUri.trim());
-  if (!match) throw new Error("Invalid image input.");
-  const bytes = Buffer.from(match[1], "base64");
-  if (!bytes.length || bytes.length > MAX_INPUT_BYTES) throw new Error("Image is too large.");
+  const source = imageDataUri.trim();
+  let sourceDataUri = source;
+  if (/^https:\/\//i.test(source)) {
+    const response = await fetch(source);
+    if (!response.ok) throw new Error("The selected ReDom image could not be loaded.");
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > MAX_INPUT_BYTES) throw new Error("Image is too large.");
+    const mimeType = response.headers.get("content-type")?.split(";")[0] || "image/png";
+    if (!mimeType.startsWith("image/")) throw new Error("The selected resource is not an image.");
+    sourceDataUri = "data:" + mimeType + ";base64," + bytes.toString("base64");
+  } else {
+    const match = /^data:image\/[^;]+;base64,(.+)$/s.exec(source);
+    if (!match) throw new Error("Invalid image input.");
+    const bytes = Buffer.from(match[1], "base64");
+    if (!bytes.length || bytes.length > MAX_INPUT_BYTES) throw new Error("Image is too large.");
+  }
 
   const jobId = "edit_" + randomUUID().replace(/-/g, "");
   const started = Date.now();
@@ -150,7 +162,7 @@ export async function editReDomImage(userId: string, imageDataUri: string, promp
     height: DEFAULT_HEIGHT,
     steps: DEFAULT_STEPS,
     images: 1,
-    image_data_uri: imageDataUri,
+    image_data_uri: sourceDataUri,
     strength: 0.65,
   });
   const first = response.images[0];
