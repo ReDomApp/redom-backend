@@ -78,12 +78,7 @@ export class LoginFlowService {
     const deviceCredential = data.deviceCredential?.trim() || deviceId;
     const recognized = deviceCredential ? await recognizedDeviceService.list(deviceCredential) : { accounts: [] };
     const knownDevice = recognized.accounts.some(account => account.userId === user.id);
-    const ipHistoryCount = await loginHistoryService.countByIp(user.id, data.ipAddress);
-    const trustedIp = Boolean(data.ipAddress) && ipHistoryCount >= 3;
-
-    // These checks run only after account/password validation above.
-    // Three or more successful logins from this user/IP bypass new-device verification.
-    if (!knownDevice && !trustedIp) {
+    // Only a server-side recognized-device association can satisfy device recognition.\n    if (!knownDevice) {
       const channel = user.phoneNumber && user.phoneVerified ? "sms" : "email"; const target = channel === "sms" ? user.phoneNumber! : user.email!;
       if (channel === "email" && (!user.email || !user.emailVerified)) throw new Error("A verified email address or phone number is required to verify this device.");
       const challenge = await verificationService.createVerification({ userId: user.id, purpose: "LOGIN_DEVICE_VERIFICATION", target, channel, requestedLength: 6, firstName: user.firstName, requestIp: data.ipAddress, userAgent: data.userAgent, deviceId });
@@ -108,7 +103,7 @@ export class LoginFlowService {
     if (totpChallenge) {
       const user = await db.query.users.findFirst({ where: eq(users.id, totpChallenge.userId) }); if (!user) throw new Error("User not found.");
       await totpService.verifyLoginChallenge({ challengeId: params.challengeId, userId: user.id, code: params.code, deviceId: params.deviceId, requestIp: params.ipAddress });
-      const data: LoginRequest = { identifier: user.email ?? user.phoneNumber ?? "", password: "", ipAddress: params.ipAddress, country: params.country, region: params.region, city: params.city, userAgent: params.userAgent, platform: params.platform, browser: params.browser, deviceName: params.deviceName, deviceId: params.deviceId, deviceType: params.deviceType, loginSource: params.loginSource ?? "mobile", appVersion: params.appVersion };
+      const data: LoginRequest = { identifier: user.email ?? user.phoneNumber ?? "", password: "", ipAddress: params.ipAddress, country: params.country, region: params.region, city: params.city, userAgent: params.userAgent, platform: params.platform, browser: params.browser, deviceName: params.deviceName, deviceId: params.deviceId, deviceCredential: params.deviceCredential, deviceType: params.deviceType, loginSource: params.loginSource ?? "mobile", appVersion: params.appVersion };
       const ipapi = await this.inspectIp(params.ipAddress); await fraudService.checkLogin({ userId: user.id, ipAddress: params.ipAddress, country: ipapi?.location?.country ?? params.country, userAgent: params.userAgent });
       const session = await this.finishLogin(user, data, ipapi, params.deviceId);
       return { success: true as const, message: "Authenticator verified and login successful.", requiresVerification: false, requiresTwoFactor: false, user: publicUser(user), session };
