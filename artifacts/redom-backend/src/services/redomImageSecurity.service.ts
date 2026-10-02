@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { and, count, eq, gt } from "drizzle-orm";
 import { db } from "../database/db";
 import { reDomAiSecurityEvents } from "../database/reDomAiSecurityEvents";
 import { env } from "../config/env";
@@ -198,6 +199,18 @@ async function inspectWithGemini(prompt: string, imageDataUri?: string): Promise
   };
 }
 
+async function recentCriticalBlocks(userId: string) {
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  const result = await db.select({ total: count() })
+    .from(reDomAiSecurityEvents)
+    .where(and(
+      eq(reDomAiSecurityEvents.userId, userId),
+      eq(reDomAiSecurityEvents.action, "block"),
+      gt(reDomAiSecurityEvents.createdAt, since),
+    ));
+  return Number(result[0]?.total ?? 0);
+}
+
 async function record(userId: string, decision: ImageSecurityDecision, metadata?: Record<string, unknown>) {
   await db.insert(reDomAiSecurityEvents).values({
     userId,
@@ -220,6 +233,16 @@ export async function enforceReDomImageSecurity(
   const cleanPrompt = prompt.trim();
   const requestId = "imgsec_" + randomUUID().replace(/-/g, "");
   const operation = options.operation ?? classifyOperation(cleanPrompt, Boolean(options.hasImage));
+  const criticalBlocks = await recentCriticalBlocks(userId);
+  if (criticalBlocks >= 5) {
+    const decision: ImageSecurityDecision = {
+      requestId, operation, action: "block", policyCode: "UNKNOWN_HIGH_RISK", riskLevel: "CRITICAL",
+      documentClass: "unknown", governmentDocument: false, financialDocument: false, authenticityRelevant: false,
+      providerSignals: {}, userMessage: "Image generation is temporarily restricted for this account after repeated blocked requests. Please try again later.",
+    };
+    await record(userId, decision, { phase: "abuse-prevention", windowMinutes: 60 });
+    throw Object.assign(new Error(decision.userMessage), { code: decision.policyCode, status: 429 });
+  }
   const deterministic = deterministicDecision(cleanPrompt, operation);
   const providerSignals: ProviderSignals = {};
   providerSignals.openai = await moderatePrompt(cleanPrompt, options.imageDataUri);
