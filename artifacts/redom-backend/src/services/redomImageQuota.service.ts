@@ -1,6 +1,7 @@
-import { and, eq, gt, isNull, or, asc, sql, lte } from "drizzle-orm";
+import { and, eq, gt, isNull, or, asc, desc, sql, lte } from "drizzle-orm";
 import { db } from "../database/db";
 import { reDomAiImageQuota } from "../database/reDomAiImageQuota";
+import { reDomAiImages } from "../database/reDomAiImages";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
 
 export const IMAGE_QUOTA_LIMITS: Record<string, number> = {
@@ -63,6 +64,29 @@ async function resolveEntitlement(userId: string) {
   return { entitlement, limit: normalizeLimit(IMAGE_QUOTA_LIMITS[entitlement], 5) };
 }
 
+const MIN_IMAGE_COOLDOWN_MS = 5 * 60 * 1000;
+const MAX_IMAGE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+async function determineAdaptiveResetAt(userId: string, limit: number, now: Date) {
+  const history = await db.select({ completedAt: reDomAiImages.completedAt, createdAt: reDomAiImages.createdAt })
+    .from(reDomAiImages)
+    .where(and(eq(reDomAiImages.userId, userId), eq(reDomAiImages.status, "completed")))
+    .orderBy(desc(reDomAiImages.completedAt), desc(reDomAiImages.createdAt))
+    .limit(Math.max(8, Math.min(24, limit * 2)));
+  const times = history.map((item) => item.completedAt ?? item.createdAt).map((value) => value.getTime()).sort((a, b) => b - a);
+  let cooldownMs = MAX_IMAGE_COOLDOWN_MS;
+  if (times.length >= 2) {
+    const intervals = times.slice(1).map((time, index) => times[index] - time).filter((value) => value > 0).sort((a, b) => a - b);
+    const middle = Math.floor(intervals.length / 2);
+    const median = intervals.length % 2 ? intervals[middle] : (intervals[middle - 1] + intervals[middle]) / 2;
+    cooldownMs = Math.min(MAX_IMAGE_COOLDOWN_MS, Math.max(MIN_IMAGE_COOLDOWN_MS, median * 2));
+  } else if (times.length === 1) {
+    cooldownMs = Math.min(MAX_IMAGE_COOLDOWN_MS, Math.max(MIN_IMAGE_COOLDOWN_MS, now.getTime() - times[0]));
+  }
+  const lastGenerationAt = times[0] ?? now.getTime();
+  const calculatedReset = lastGenerationAt + cooldownMs;
+  return new Date(Math.max(now.getTime() + MIN_IMAGE_COOLDOWN_MS, Math.min(now.getTime() + MAX_IMAGE_COOLDOWN_MS, calculatedReset)));
+}
 async function currentOrCreateWindow(userId: string, entitlement: string, limit: number) {
   const now = new Date();
   const existing = await db.select().from(reDomAiImageQuota)
@@ -72,7 +96,7 @@ async function currentOrCreateWindow(userId: string, entitlement: string, limit:
   if (existing[0]) return existing[0];
 
   const started = now;
-  const reset = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const reset = await determineAdaptiveResetAt(userId, limit, now);
   const refreshed = await db.update(reDomAiImageQuota).set({
     entitlement, windowStartedAt: started, windowResetAt: reset, limit, used: 0, reserved: 0, updatedAt: now,
   }).where(and(eq(reDomAiImageQuota.userId, userId), lte(reDomAiImageQuota.windowResetAt, now))).returning();
