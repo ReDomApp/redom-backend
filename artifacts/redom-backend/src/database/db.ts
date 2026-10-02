@@ -7,6 +7,7 @@ import { accountSecurity } from "./accountSecurity";
 import { twoFactorRecoveryCodes } from "./twoFactorRecoveryCodes";
 import { totpLoginChallenges } from "./totp-login-challenges.schema";
 import { sessions } from "./sessions.schema";
+import { recognizedDevices, recognizedDeviceAccounts } from "./recognizedDevices";
 import { activeSessions } from "./activeSessions";
 import { loginHistory } from "./loginHistory";
 import { activityLog } from "./activityLog";
@@ -79,7 +80,7 @@ pool.on("error", (error) => console.error("Database connection error:", error));
 
 export const db = drizzle(pool, { schema: {
   users, userProfiles, accountSecurity, twoFactorRecoveryCodes, totpLoginChallenges,
-  sessions, activeSessions, loginHistory, activityLog, userPrivacy, userSettings, notificationPreferences,
+  sessions, recognizedDevices, recognizedDeviceAccounts, activeSessions, loginHistory, activityLog, userPrivacy, userSettings, notificationPreferences,
   verification, verificationDocuments, verificationSubscriptions, paymentPlans, paymentTransactions, paymentSubscriptions, paymentWebhookEvents, verifications,
   accountActions, reports, reportEvidenceMessages, appeals, blockedUsers, restrictedUsers, mutedUsers,
   followers, following, friends, friendRequests,
