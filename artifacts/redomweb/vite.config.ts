@@ -5,7 +5,7 @@ function classicEntryFallback() {
   return {
     name: "redom-classic-entry-fallback",
     transformIndexHtml: {
-      order: "post",
+      order: "post" as const,
       handler(html: string, ctx: IndexHtmlTransformContext) {
         if (!ctx.bundle) return html;
         const entry = Object.values(ctx.bundle).find(
