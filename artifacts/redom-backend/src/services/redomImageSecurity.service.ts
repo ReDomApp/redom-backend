@@ -123,9 +123,15 @@ function deterministicDecision(prompt: string, operation: ImageOperation): Parti
   return { action: "allow", policyCode: "SAFE_TRANSFORMATION", riskLevel: "LOW" };
 }
 
-async function moderatePrompt(prompt: string): Promise<ProviderSignals["openai"]> {
+async function moderatePrompt(prompt: string, imageDataUri?: string): Promise<ProviderSignals["openai"]> {
   try {
-    const result = await openai.moderations.create({ model: "omni-moderation-latest", input: prompt });
+    const input = imageDataUri
+      ? [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: imageDataUri } },
+        ]
+      : prompt;
+    const result = await openai.moderations.create({ model: "omni-moderation-latest", input: input as any });
     const item = result.results?.[0];
     return { flagged: Boolean(item?.flagged), categories: item?.categories as unknown as Record<string, boolean> };
   } catch (error) {
@@ -216,7 +222,7 @@ export async function enforceReDomImageSecurity(
   const operation = options.operation ?? classifyOperation(cleanPrompt, Boolean(options.hasImage));
   const deterministic = deterministicDecision(cleanPrompt, operation);
   const providerSignals: ProviderSignals = {};
-  providerSignals.openai = await moderatePrompt(cleanPrompt);
+  providerSignals.openai = await moderatePrompt(cleanPrompt, options.imageDataUri);
 
   if (providerSignals.openai.flagged) {
     const decision: ImageSecurityDecision = {
