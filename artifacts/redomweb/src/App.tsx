@@ -119,34 +119,24 @@ function Login({go,network,setUser}:{go:(p:Page)=>void;network:NetworkProviderRe
      <span className="web-login-top-spacer" aria-hidden="true"/>
    </header>
    <main className="web-login-main">
-     <div className="web-login-logo"><SvgAsset src={ReDomLogoSvg}/></div>
-     <section className="web-login-intro">
-       <h1>Welcome back</h1>
-       <p>Sign in to your ReDom account.</p>
-     </section>
+     <div className="web-login-logo"><SvgAsset src={ReDomMarkSvg}/></div>
      <section className="web-login-terms" aria-label="Network terms">
-       <span>By proceeding, you agree to </span>
-       <button type="button" className="web-login-provider-terms" disabled={!termsUrl} onClick={()=>termsUrl&&window.open(termsUrl,"_blank","noopener,noreferrer")}>
-         {provider ? provider+"'s Terms" : "ReDom's Terms"}
-       </button>
-       <span> which includes letting Facebook request and receive your phone number. </span>
-       <button type="button" className="web-login-change-settings" onClick={()=>setNetworkWarningOpen(true)}>Change Settings</button>
+       {providerTermsLabel?<><span>By proceeding, you agree to </span><button type="button" className="web-login-link" disabled={!termsUrl} onClick={()=>termsUrl&&window.open(termsUrl,"_blank","noopener,noreferrer")}>{providerTermsLabel}</button><span> which includes letting Facebook request and receive your phone number. </span><button type="button" className="web-login-link" onClick={()=>setNetworkWarningOpen(true)}>Change Settings</button></>:<span>By proceeding, you agree to ReDom's Terms. Change Settings</span>}
      </section>
      <form className="web-login-form" onSubmit={e=>{e.preventDefault();void submit()}} autoComplete="on">
-       <label className="web-login-field-label" htmlFor="web-login-identifier">Email, phone or username</label>
-       <div className="web-login-field">
-         <input id="web-login-identifier" name="username" autoComplete="username" inputMode="email" type="text" value={id} placeholder={maskedIdentifier||""} onChange={e=>{setId(e.target.value);setErr("")}} />
+       <label className="web-login-field">
+         <span>Mobile number or email</span>
+         <input name="username" autoComplete="username" inputMode="email" type="text" value={id} placeholder={maskedIdentifier||""} onChange={e=>{setId(e.target.value);setErr("")}} />
          <SvgAsset src={InfoBlackSvg} className="web-login-info" />
-       </div>
-       <label className="web-login-field-label web-login-password-label" htmlFor="web-login-password">Password</label>
-       <div className="web-login-field web-login-password">
-         <input id="web-login-password" name="password" autoComplete="current-password" type={passwordVisible?"text":"password"} value={pw} onChange={e=>{setPw(e.target.value);setErr("")}} onKeyDown={e=>{if(e.key==="Enter")void submit()}} />
+       </label>
+       <label className="web-login-field web-login-password">
+         <span>Password</span>
+         <input name="password" autoComplete="current-password" type={passwordVisible?"text":"password"} value={pw} onChange={e=>{setPw(e.target.value);setErr("")}} onKeyDown={e=>{if(e.key==="Enter")void submit()}} />
          <button type="button" className="web-login-eye" onClick={()=>setPasswordVisible(v=>!v)} aria-label={passwordVisible?"Hide password":"Show password"}><SvgAsset src={passwordVisible?PasswordVisibleSvg:PasswordHiddenSvg}/></button>
-       </div>
+       </label>
        {err?<div className="web-login-error" role="alert">{err}</div>:null}
-       <button type="submit" className="web-login-primary" disabled={busy}>{busy?"Signing in…":"Sign in"}</button>
+       <button type="submit" className="web-login-primary" disabled={busy}>{busy?"Logging in…":"Log in"}</button>
        <button type="button" className="web-login-forgot" onClick={()=>go("find-account")}>Forgot password?</button>
-       <div className="web-login-or" aria-hidden="true">or</div>
        <button type="button" className="web-login-create" onClick={()=>go("register-welcome")}>Create new account</button>
      </form>
      <div className="web-login-footer"><SvgAsset src={ReDomLogoSvg}/></div>
