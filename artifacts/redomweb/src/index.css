@@ -188,7 +188,7 @@
 .web-login-top-spacer{width:42px;height:42px}
 .web-login-main{width:min(100%,688px);min-height:calc(100vh - 86px);min-height:calc(100dvh - 86px);margin:0 auto;padding:56px 30px calc(24px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column}
 .web-login-logo{height:150px;display:grid;place-items:center;margin-bottom:70px}
-.web-login-logo img{width:116px;height:116px;object-fit:contain}
+.web-login-logo img{width:116px;height:116px;object-fit:contain;border:1.5px solid #B7B7B7;border-radius:50%;padding:15px}.web-login-link:disabled{cursor:default}
 .web-login-terms{border-top:1px solid #CCD0D5;border-bottom:1px solid #CCD0D5;padding:30px 0 29px;font-size:23px;line-height:1.35;font-weight:400;color:#050505}
 .web-login-link{border:0;background:transparent;padding:0;color:#1877F2;font:inherit;font-weight:800;cursor:pointer}
 .web-login-form{display:flex;flex-direction:column;margin-top:15px}
