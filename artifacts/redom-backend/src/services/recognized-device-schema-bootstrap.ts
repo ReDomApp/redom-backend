@@ -26,5 +26,5 @@ export async function ensureRecognizedDeviceSchema() {
     );
     CREATE INDEX IF NOT EXISTS recognized_devices_active_credential_idx ON recognized_devices(credential_hash, revoked_at);
     CREATE INDEX IF NOT EXISTS recognized_device_accounts_device_lookup_idx ON recognized_device_accounts(device_id, active);
-  `);
+  `));
 }
