@@ -47,7 +47,7 @@ function Primary({children,disabled,onClick}:{children:any;disabled?:boolean;onC
 function Progress({step}:{step:number}){return <div className="stepbar">{Array.from({length:6},(_,i)=><i key={i} className={i<=step?"done":""}/>)}</div>}
 
 function formatSecurityScore(value:any){const numeric=Number(value);return Number.isFinite(numeric)?numeric.toFixed(2)+"%":"0.00%";}
-function maskIp(ip:string|null){if(!ip)return "Detecting…";if(ip.includes(":"))return ip.slice(0,8)+"••••••";const parts=ip.split(".");return parts.length===4?parts[0]+"."+parts[1]+".•••••":ip.slice(0,6)+"•••••";}
+function maskIp(ip:unknown){if(typeof ip!=="string"||!ip.trim())return "Detecting…";const value=ip.trim();if(value.includes(":"))return value.slice(0,8)+"••••••";const parts=value.split(".");return parts.length===4?parts[0]+"."+parts[1]+".•••••":value.slice(0,6)+"•••••";}
 function startupTitle(profile:any){return profile?.termsLabel||"ReDom Network Security Check";}
 function startupWarning(profile:any){const s=profile?.security;if(!s)return null;if(s.vpn)return "VPN detected. Your current connection appears to be using a VPN provider.";if(s.datacenter)return "Datacenter connection detected. This connection appears to come from a hosting or cloud network.";if(s.proxy)return "Proxy detected. This connection appears to use a proxy.";if(s.tor)return "Tor detected. Please use your normal Internet connection to continue.";if(s.bot)return "Automated traffic detected. This connection was identified as automated traffic.";if(s.abuser||Number(s.fraudScore||0)>=75)return "High security risk detected. IPAPI assigned this connection a fraud-risk score of "+formatSecurityScore(s.fraudScore)+".";
 return null;}
