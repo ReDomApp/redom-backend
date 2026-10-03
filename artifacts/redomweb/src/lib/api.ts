@@ -1,4 +1,5 @@
-export type Session = { sessionId: string; accessToken: string; refreshToken: string; expiresAt: string };\nexport class WebApiError extends Error { constructor(message:string, readonly status:number, readonly code?:string, readonly details?:unknown){ super(message); this.name="WebApiError"; } }
+export type Session = { sessionId: string; accessToken: string; refreshToken: string; expiresAt: string };
+export class WebApiError extends Error { constructor(message:string, readonly status:number, readonly code?:string, readonly details?:unknown){ super(message); this.name="WebApiError"; } }
 const SESSION_KEY = "redom.web.session";
 const DEFAULT_API = "https://redom-backend.onrender.com/redom-backend";
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API).replace(/\/+$/, "");
