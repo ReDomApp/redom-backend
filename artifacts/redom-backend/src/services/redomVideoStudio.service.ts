@@ -429,18 +429,19 @@ export async function getReDomMovieProject(userId: string, projectId: string) {
 export async function runReDomMovieContinuityCheck(userId: string, projectId: string) {
   const current = await getReDomMovieProject(userId, projectId);
   const warnings: Array<{ sceneId?: string; type: string; message: string }> = [];
-  const hiddenFacts = current.knowledge.filter((k) => k.scope === "author" && k.knowledgeState !== "revealed");
-  const revealMap = new Map(hiddenFacts.map((k) => [k.subjectKey || k.fact, k.revealEpisode || Number.MAX_SAFE_INTEGER]));
+  const hiddenFacts = current.knowledge.filter((k) => k.scope === "author" && k.knowledgeState !== "revealed" && k.fact.trim().length >= 12);
+  const revealMap = hiddenFacts.map((k) => ({ fact: k.fact.trim(), revealEpisode: k.revealEpisode || Number.MAX_SAFE_INTEGER }));
 
   for (const scene of current.scenes) {
     if (scene.durationSeconds < 4 || scene.durationSeconds > 12) warnings.push({ sceneId: scene.id, type: "duration", message: "Scene duration is outside the preferred planning range." });
     const shots = current.shots.filter((shot) => shot.sceneId === scene.id);
     for (const shot of shots) {
       const text = [shot.action, shot.generationPrompt, ...shot.dialogue.map((d) => JSON.stringify(d))].join(" ").toLowerCase();
-      for (const [key, revealEpisode] of revealMap) {
-        if (key && text.includes(String(key).toLowerCase())) {
-          const episode = current.episodes.find((e) => e.id === scene.episodeId)?.episodeNumber || 0;
-          if (episode < revealEpisode) warnings.push({ sceneId: scene.id, type: "knowledge_leak", message: "Shot references author-only story knowledge before its planned reveal: " + key });
+      for (const item of revealMap) {
+        const normalizedFact = item.fact.toLowerCase();
+        const episode = current.episodes.find((e) => e.id === scene.episodeId)?.episodeNumber || 0;
+        if (normalizedFact.length <= 220 && text.includes(normalizedFact) && episode < item.revealEpisode) {
+          warnings.push({ sceneId: scene.id, type: "knowledge_leak", message: "Shot contains author-only story knowledge before its planned reveal." });
         }
       }
     }
