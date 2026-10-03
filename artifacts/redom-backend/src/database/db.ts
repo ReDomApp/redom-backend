@@ -73,7 +73,7 @@ import { publicGroupMembers } from "./publicGroupMembers";
 import { registrationChallenges } from "./registration-challenges.schema";
 import { registrationFlowReservations } from "./registration-flow-reservations.schema";
 import { events, eventResponses, eventSettings } from "./events";
-import { reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch } from "./reDomVideoStudio";
+import { reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch, reDomAiVideoStoryKnowledge, reDomAiVideoStoryEvents, reDomAiVideoStoryArcs, reDomAiVideoRevisions } from "./reDomVideoStudio";
 
 const pool = new Pool({ connectionString: env.database.url });
 pool.on("connect", () => console.log("Connected to Neon PostgreSQL"));
@@ -91,6 +91,6 @@ export const db = drizzle(pool, { schema: {
   shares, stories, storyViewers, feedPreferences, notifications, searchHistory,
   marketplaceCategories, marketplaceListings, marketplaceInteractions, marketplaceReviews,
   marketplaceTransactions, videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
-  comments, publicGroups, publicGroupMembers, registrationChallenges, registrationFlowReservations, events, eventResponses, eventSettings, reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch,
+  comments, publicGroups, publicGroupMembers, registrationChallenges, registrationFlowReservations, events, eventResponses, eventSettings, reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch, reDomAiVideoStoryKnowledge, reDomAiVideoStoryEvents, reDomAiVideoStoryArcs, reDomAiVideoRevisions,
 } });
 export { pool };

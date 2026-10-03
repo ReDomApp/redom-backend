@@ -15,7 +15,7 @@ import { getReDomImageQuota, ReDomImageQuotaError } from "../services/redomImage
 import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
-import { createReDomMovieProject, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
+import { createReDomMovieProject, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
 
 import { r2 } from "../lib/r2";
 
@@ -32,6 +32,7 @@ const fileSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000)
 const feedbackSchema = z.object({ rating: z.enum(["good", "bad"]), reason: z.enum(["Not relevant", "Not accurate", "Too repetitive", "Harmful or offensive", "Something else"]).optional() }).strict();
 const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), operation: z.enum(["generate","cgi"]).optional(), durationSeconds: z.number().int().min(4).max(300).optional(), resolution: z.enum(["720p","1080p"]).optional(), aspectRatio: z.enum(["16:9","9:16","1:1"]).optional() }).strict();
 const movieProjectSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), duration: z.number().int().min(4).max(300).default(300), quality: z.enum(["fast","standard","high","pro"]).default("high"), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), audio: z.boolean().default(true), voice: z.boolean().default(true), title: z.string().trim().max(240).optional() }).strict();
+const movieRevisionSchema = z.object({ instruction: z.string().trim().min(3).max(8_000) }).strict();
 
 router.post("/localize", localizationRateLimit, async (req, res) => {
   const parsed = localizationSchema.safeParse(req.body);
@@ -64,6 +65,13 @@ router.post("/video/projects/:projectId/plan", authMiddleware, async (req, res) 
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try { return res.status(200).json({ success: true, ...(await planReDomMovieProject(req.user.userId, req.params.projectId)) }); }
   catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message: error instanceof Error ? error.message : "Movie planning failed." }); }
+});
+
+router.post("/video/projects/:projectId/revise", authMiddleware, async (req, res) => {
+  const parsed = movieRevisionSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio revision." });
+  try { return res.status(200).json({ success: true, ...(await reviseReDomMovieProject(req.user.userId, req.params.projectId, parsed.data.instruction)) }); }
+  catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, code: (error as { code?: string })?.code, message: error instanceof Error ? error.message : "Movie revision failed." }); }
 });
 
 router.get("/video/projects/:projectId", authMiddleware, async (req, res) => {

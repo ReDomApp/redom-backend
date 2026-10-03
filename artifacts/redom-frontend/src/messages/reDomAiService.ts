@@ -7,7 +7,7 @@ export interface ReDomAiVoiceResult { success: boolean; text: string; model: str
 export interface ReDomAiFileResult { success: boolean; reply: string; model: string; }
 export interface ReDomAiVideoCreate { success: boolean; jobId: string; status: string; model: string; runtime: string; maxDurationSeconds: number; }
 export interface ReDomMovieProjectCreate { success: boolean; projectId: string; state: string; model: string; maxDurationSeconds: number; }
-export interface ReDomMovieProject { success: boolean; project: Record<string, unknown>; entities: Array<Record<string, unknown>>; episodes: Array<Record<string, unknown>>; scenes: Array<Record<string, unknown>>; model: string; }
+export interface ReDomMovieProject { success: boolean; project: Record<string, unknown>; entities: Array<Record<string, unknown>>; episodes: Array<Record<string, unknown>>; scenes: Array<Record<string, unknown>>; shots?: Array<Record<string, unknown>>; knowledge?: Array<Record<string, unknown>>; storyEvents?: Array<Record<string, unknown>>; storyArcs?: Array<Record<string, unknown>>; revisions?: Array<Record<string, unknown>>; research?: Array<Record<string, unknown>>; model: string; }
 
 export type ReDomAiFeedbackReason = "Not relevant" | "Not accurate" | "Too repetitive" | "Harmful or offensive" | "Something else";
 
@@ -24,6 +24,7 @@ export const reDomAiService = {
   createMovieProject(prompt: string, options: { duration?: number; quality?: "fast" | "standard" | "high" | "pro"; style?: string; aspectRatio?: "16:9" | "9:16" | "1:1"; audio?: boolean; voice?: boolean; title?: string } = {}) { return api.post<ReDomMovieProjectCreate>("/ai/video/projects", { prompt, ...options }); },
   planMovieProject(projectId: string) { return api.post<ReDomMovieProject>("/ai/video/projects/" + encodeURIComponent(projectId) + "/plan", {}); },
   getMovieProject(projectId: string) { return api.get<ReDomMovieProject>("/ai/video/projects/" + encodeURIComponent(projectId)); },
+  reviseMovieProject(projectId: string, instruction: string) { return api.post<ReDomMovieProject>("/ai/video/projects/" + encodeURIComponent(projectId) + "/revise", { instruction }); },
   checkMovieContinuity(projectId: string) { return api.post<{ success: boolean; projectId: string; continuityVersion: number; warnings: Array<{ sceneId: string; message: string }> }>("/ai/video/projects/" + encodeURIComponent(projectId) + "/continuity/check", {}); },
   produceMovie(projectId: string) { return api.post<{ success: boolean; projectId: string; status: string; shotCount: number; model: string }>("/ai/video/projects/" + encodeURIComponent(projectId) + "/produce", {}); },
   feedback(rating: "good" | "bad", reason?: ReDomAiFeedbackReason) { return api.post<{ success: boolean }>("/ai/feedback", { rating, ...(reason ? { reason } : {}) }); },
