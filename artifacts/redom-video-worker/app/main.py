@@ -45,6 +45,7 @@ class VideoJob(BaseModel):
     aspectRatio: str = "16:9"
     callbackUrl: str
     callbackToken: str
+    shotKeys: list[str] = []
 
 pipeline = None
 
@@ -180,6 +181,40 @@ def render_project(job: VideoJob, output: Path):
         )
         output.write_bytes(enhanced.read_bytes())
 
+
+def compose_project(job: VideoJob, output: Path):
+    if not job.shotKeys:
+        raise RuntimeError("ReDom composer received no shot assets.")
+    with tempfile.TemporaryDirectory(prefix="redom-compose-") as work:
+        workdir = Path(work)
+        local_segments = []
+        for index, key in enumerate(job.shotKeys, start=1):
+            local = workdir / f"shot-{index:04d}.mp4"
+            s3.download_file(os.environ["R2_BUCKET_NAME"], key, str(local))
+            local_segments.append(local)
+
+        manifest = workdir / "concat.txt"
+        manifest.write_text("".join("file '" + path.as_posix() + "'\n" for path in local_segments), encoding="utf-8")
+        joined = workdir / "joined.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(joined)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
+        width, height = target_size(job.aspectRatio, job.resolution)
+        vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0,format=yuv420p"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(joined), "-vf", vf,
+                "-map", "0:v", "-map", "0:a?",
+                "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
+                "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
+                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+                str(output),
+            ],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
 async def callback(job: VideoJob, status: str, storage_key: str | None = None, error: str | None = None):
     body = {
         "jobId": job.jobId,
@@ -205,7 +240,10 @@ async def process(job: VideoJob):
     await callback(job, "processing")
     with tempfile.TemporaryDirectory(prefix="redom-video-output-") as work:
         output = Path(work) / "final.mp4"
-        await asyncio.to_thread(render_project, job, output)
+        if job.operation == "compose":
+            await asyncio.to_thread(compose_project, job, output)
+        else:
+            await asyncio.to_thread(render_project, job, output)
         key = f"redom-ai/videos/{job.jobId}/final.mp4"
         s3.upload_file(
             str(output),
