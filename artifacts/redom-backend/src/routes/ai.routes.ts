@@ -15,6 +15,8 @@ import { getReDomImageQuota, ReDomImageQuotaError } from "../services/redomImage
 import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
+import { createReDomMovieProject, getReDomMovieProject, planReDomMovieProject, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
+
 import { r2 } from "../lib/r2";
 
 const router = Router();
@@ -29,6 +31,7 @@ const voiceSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000
 const fileSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000), fileName: z.string().trim().min(1).max(160), mimeType: z.string().trim().max(160).default("application/octet-stream"), prompt: z.string().trim().max(4_000).default("Analyze this file and summarize the important information.") }).strict();
 const feedbackSchema = z.object({ rating: z.enum(["good", "bad"]), reason: z.enum(["Not relevant", "Not accurate", "Too repetitive", "Harmful or offensive", "Something else"]).optional() }).strict();
 const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), operation: z.enum(["generate","cgi"]).optional(), durationSeconds: z.number().int().min(4).max(300).optional(), resolution: z.enum(["720p","1080p"]).optional(), aspectRatio: z.enum(["16:9","9:16","1:1"]).optional() }).strict();
+const movieProjectSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), duration: z.number().int().min(4).max(300).default(300), quality: z.enum(["fast","standard","high","pro"]).default("high"), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), audio: z.boolean().default(true), voice: z.boolean().default(true), title: z.string().trim().max(240).optional() }).strict();
 
 router.post("/localize", localizationRateLimit, async (req, res) => {
   const parsed = localizationSchema.safeParse(req.body);
@@ -43,6 +46,42 @@ router.post("/chat", authMiddleware, async (req, res) => {
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid AI chat request." });
   try { const result = await generateReDomAiReply(req.user.userId, parsed.data); return res.status(200).json({ success: true, reply: result.reply, model: result.model }); }
   catch (error) { req.log?.error?.({ err: error }, "ReDom AI chat failed"); return res.status(502).json({ success: false, message: "ReDom AI is temporarily unavailable. Please try again shortly." }); }
+});
+
+router.post("/video/projects", rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
+  const parsed = movieProjectSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio request." });
+  try {
+    const result = await createReDomMovieProject(req.user.userId, { prompt: parsed.data.prompt, durationSeconds: parsed.data.duration, quality: parsed.data.quality, style: parsed.data.style, aspectRatio: parsed.data.aspectRatio, audio: parsed.data.audio, voice: parsed.data.voice, title: parsed.data.title });
+    return res.status(202).json({ success: true, ...result });
+  } catch (error) {
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, code: (error as { code?: string })?.code, message: error instanceof Error ? error.message : "Movie project could not be created." });
+  }
+});
+
+router.post("/video/projects/:projectId/plan", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  try { return res.status(200).json({ success: true, ...(await planReDomMovieProject(req.user.userId, req.params.projectId)) }); }
+  catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message: error instanceof Error ? error.message : "Movie planning failed." }); }
+});
+
+router.get("/video/projects/:projectId", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  try { return res.status(200).json({ success: true, ...(await getReDomMovieProject(req.user.userId, req.params.projectId)) }); }
+  catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 404; return res.status(status).json({ success: false, message: error instanceof Error ? error.message : "Movie project not found." }); }
+});
+
+router.post("/video/projects/:projectId/continuity/check", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  try { return res.status(200).json({ success: true, ...(await runReDomMovieContinuityCheck(req.user.userId, req.params.projectId)) }); }
+  catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message: error instanceof Error ? error.message : "Continuity check failed." }); }
+});
+
+router.post("/video/projects/:projectId/produce", rateLimit({ windowMs: 60_000, max: 2, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  try { return res.status(202).json({ success: true, ...(await startReDomMovieProduction(req.user.userId, req.params.projectId)) }); }
+  catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message: error instanceof Error ? error.message : "Movie production could not start." }); }
 });
 
 router.post("/video", rateLimit({ windowMs: 60_000, max: 3, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
