@@ -1,3 +1,4 @@
+// Web API source intentionally uses real line breaks; keep this module parseable by Vite/esbuild.
 export type Session = { sessionId: string; accessToken: string; refreshToken: string; expiresAt: string };
 export class WebApiError extends Error { constructor(message:string, readonly status:number, readonly code?:string, readonly details?:unknown){ super(message); this.name="WebApiError"; } }
 const SESSION_KEY = "redom.web.session";
