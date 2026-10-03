@@ -2,8 +2,11 @@ import { api } from "../api/client";
 
 export interface ReDomAiTurn { role: "user" | "assistant"; content: string; }
 export interface ReDomAiImageQuota { entitlement: string; used: number; limit: number; remaining: number; resetAt: string; }\nexport interface ReDomAiImageResult { success: boolean; image: string; model: string; quota?: ReDomAiImageQuota; }
+export interface ReDomAiVideoJob { jobId: string; status: "queued" | "processing" | "completed" | "failed" | "blocked"; provider?: string; model?: string; durationSeconds?: number; downloadUrl?: string | null; error?: string | null; }
 export interface ReDomAiVoiceResult { success: boolean; text: string; model: string; }
 export interface ReDomAiFileResult { success: boolean; reply: string; model: string; }
+export interface ReDomAiVideoCreate { success: boolean; jobId: string; status: string; model: string; maxDurationSeconds: number; }
+
 export type ReDomAiFeedbackReason = "Not relevant" | "Not accurate" | "Too repetitive" | "Harmful or offensive" | "Something else";
 
 export const reDomAiService = {

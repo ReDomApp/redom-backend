@@ -1,14 +1,20 @@
+import { createHash } from "node:crypto";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
+import { and, eq, gt } from "drizzle-orm";
 
 import { authMiddleware } from "../middleware/auth.middleware";
 import { db } from "../database/db";
+import { reDomAiVideos } from "../database/reDomAiVideos";
 import { activityLog } from "../database/activityLog";
 import { translateUiTexts } from "../services/aiContent.service";
 import { generateReDomAiReply } from "../services/reDomAiChat.service";
 import { getReDomImageQuota, ReDomImageQuotaError } from "../services/redomImageQuota.service";
 import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
+import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
+import { env } from "../config/env";
 
 const router = Router();
 
@@ -21,6 +27,7 @@ const imageEditSchema = z.object({ imageDataUri: z.string().trim().min(32).max(3
 const voiceSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000) }).strict();
 const fileSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000), fileName: z.string().trim().min(1).max(160), mimeType: z.string().trim().max(160).default("application/octet-stream"), prompt: z.string().trim().max(4_000).default("Analyze this file and summarize the important information.") }).strict();
 const feedbackSchema = z.object({ rating: z.enum(["good", "bad"]), reason: z.enum(["Not relevant", "Not accurate", "Too repetitive", "Harmful or offensive", "Something else"]).optional() }).strict();
+const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), provider: z.enum(["seedance","veo","gemini"]).optional(), durationSeconds: z.number().int().min(4).max(300).optional(), resolution: z.enum(["720p","1080p"]).optional(), aspectRatio: z.enum(["16:9","9:16","1:1"]).optional() }).strict();
 
 router.post("/localize", localizationRateLimit, async (req, res) => {
   const parsed = localizationSchema.safeParse(req.body);
@@ -35,6 +42,59 @@ router.post("/chat", authMiddleware, async (req, res) => {
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid AI chat request." });
   try { const result = await generateReDomAiReply(req.user.userId, parsed.data); return res.status(200).json({ success: true, reply: result.reply, model: result.model }); }
   catch (error) { req.log?.error?.({ err: error }, "ReDom AI chat failed"); return res.status(502).json({ success: false, message: "ReDom AI is temporarily unavailable. Please try again shortly." }); }
+});
+
+router.post("/video", rateLimit({ windowMs: 60_000, max: 3, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
+  const parsed = videoSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom-v2.8—Video request." });
+  try {
+    const result = await createReDomVideoJob(req.user.userId, parsed.data);
+    return res.status(202).json({ success: true, ...result });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "ReDom-v2.8—Video job creation failed");
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, code: (error as { code?: string })?.code, message: error instanceof Error ? error.message : "Video generation is temporarily unavailable." });
+  }
+});
+
+router.get("/video/:jobId", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  try { return res.status(200).json({ success: true, ...(await getReDomVideoJob(req.user.userId, req.params.jobId)) }); }
+  catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 404; return res.status(status).json({ success: false, message: error instanceof Error ? error.message : "Video job not found." }); }
+});
+
+router.post("/video/callback", async (req, res) => {
+  if (req.headers.authorization !== "Bearer " + env.redomVideoEngine.token) return res.status(401).json({ success: false });
+  const jobId = typeof req.body?.jobId === "string" ? req.body.jobId : "";
+  if (!jobId) return res.status(400).json({ success: false });
+  try {
+    if (req.body.status === "completed" && typeof req.body.storageKey === "string") await completeReDomVideoJob(jobId, req.body.storageKey, Number(req.body.durationSeconds ?? 0));
+    else if (req.body.status === "failed") await failReDomVideoJob(jobId, String(req.body.error ?? "Video generation failed."));
+    else return res.status(400).json({ success: false, message: "Invalid callback state." });
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "ReDom-v2.8—Video callback failed");
+    if (req.body.status === "completed") await failReDomVideoJob(jobId, "Video output failed ReDom security validation.").catch(() => undefined);
+    return res.status(502).json({ success: false });
+  }
+});
+
+router.get("/video/:jobId/download", async (req, res) => {
+  const token = typeof req.query.token === "string" ? req.query.token : "";
+  if (!token) return res.status(401).send("Missing download token.");
+  const hash = createHash("sha256").update(token).digest("hex");
+  const rows = await db.select().from(reDomAiVideos).where(and(eq(reDomAiVideos.jobId, req.params.jobId), eq(reDomAiVideos.downloadTokenHash, hash), gt(reDomAiVideos.downloadTokenExpiresAt, new Date()))).limit(1);
+  const row = rows[0];
+  if (!row?.storageKey) return res.status(404).send("Video is unavailable.");
+  try {
+    const object = await r2.send(new GetObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: row.storageKey }));
+    res.status(200);
+    res.setHeader("Content-Type", "video/mp4");
+    if (object.ContentLength) res.setHeader("Content-Length", String(object.ContentLength));
+    res.setHeader("Cache-Control", "private, max-age=900");
+    if (object.Body) object.Body.pipe(res);
+    else res.end();
+  } catch { return res.status(404).send("Video is unavailable."); }
 });
 
 router.get("/image/quota", authMiddleware, async (req, res) => {
