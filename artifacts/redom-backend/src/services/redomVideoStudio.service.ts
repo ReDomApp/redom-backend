@@ -7,7 +7,7 @@ import { env } from "../config/env";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
 import { reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoJobs, reDomAiVideoProjects, reDomAiVideoScenes, reDomAiVideoShots } from "../database/reDomVideoStudio";
 import { reDomAiVideos } from "../database/reDomAiVideos";
-import { enforceReDomVideoPromptSecurity, enforceReDomVideoOutputSecurity } from "./redomVideoSecurity.service";
+import { enforceReDomVideoPromptSecurity } from "./redomVideoSecurity.service";
 import { REDOM_VIDEO_MAX_SECONDS } from "./redomVideoEngine.service";
 
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
@@ -140,21 +140,6 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
 
   if (status !== "completed" || !storageKey) return false;
 
-  if (job.kind === "final_composition") {
-    const project = (await db.select().from(reDomAiVideoProjects).where(eq(reDomAiVideoProjects.id, job.projectId)).limit(1))[0];
-    if (!project) return false;
-    try {
-      const requestId = "movie_output_" + job.jobId;
-      await enforceReDomVideoOutputSecurity(project.userId, requestId, Buffer.from([]));
-    } catch {
-      // The callback route performs the authoritative output scan with the R2 object bytes.
-    }
-    await db.update(reDomAiVideoJobs).set({ status: "completed", outputAssetKey: storageKey, completedAt: new Date() }).where(eq(reDomAiVideoJobs.id, job.id));
-    await db.update(reDomAiVideoProjects).set({ state: "completed", updatedAt: new Date() }).where(eq(reDomAiVideoProjects.id, job.projectId));
-    await db.update(reDomAiVideos).set({ status: "completed", storageKey, completedAt: new Date(), generationMs: Date.now() - project.createdAt.getTime() }).where(eq(reDomAiVideos.jobId, "movie_project_" + project.id));
-    return true;
-  }
-
   await db.update(reDomAiVideoJobs).set({ status: "completed", outputAssetKey: storageKey, completedAt: new Date() }).where(eq(reDomAiVideoJobs.id, job.id));
   if (job.shotId) {
     await db.update(reDomAiVideoShots).set({ status: "completed", outputAssetKey: storageKey }).where(eq(reDomAiVideoShots.id, job.shotId));
@@ -203,4 +188,14 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
   }
 
   return true;
+}
+
+
+export async function getReDomMovieJobContext(jobId: string) {
+  const row = (await db.select({ projectId: reDomAiVideoJobs.projectId, kind: reDomAiVideoJobs.kind, userId: reDomAiVideoProjects.userId })
+    .from(reDomAiVideoJobs)
+    .innerJoin(reDomAiVideoProjects, eq(reDomAiVideoJobs.projectId, reDomAiVideoProjects.id))
+    .where(eq(reDomAiVideoJobs.jobId, jobId))
+    .limit(1))[0];
+  return row || null;
 }
