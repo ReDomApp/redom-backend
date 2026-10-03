@@ -132,6 +132,12 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
   const job = (await db.select().from(reDomAiVideoJobs).where(eq(reDomAiVideoJobs.jobId, jobId)).limit(1))[0];
   if (!job) return false;
 
+  if (status === "processing") {
+    await db.update(reDomAiVideoJobs).set({ status: "processing", startedAt: new Date() }).where(eq(reDomAiVideoJobs.id, job.id));
+    if (job.shotId) await db.update(reDomAiVideoShots).set({ status: "processing" }).where(eq(reDomAiVideoShots.id, job.shotId));
+    return true;
+  }
+
   if (status === "failed" || status === "blocked") {
     await db.update(reDomAiVideoJobs).set({ status, error: error?.slice(0, 1000), completedAt: new Date() }).where(eq(reDomAiVideoJobs.id, job.id));
     await db.update(reDomAiVideoProjects).set({ state: status === "blocked" ? "blocked" : "failed", updatedAt: new Date() }).where(eq(reDomAiVideoProjects.id, job.projectId));
