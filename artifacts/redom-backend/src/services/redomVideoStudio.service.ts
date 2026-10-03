@@ -44,7 +44,7 @@ async function generatePlan(prompt: string, durationSeconds: number, style: stri
     "The visual target is " + style + ", " + quality + " quality, " + aspectRatio + ".",
     "Return JSON with title, bible, entities, episodes and research. Each episode contains scenes. Each scene contains sceneNumber, title, synopsis, durationSeconds, location, characters, action, camera, lighting, motion and directorNotes.",
   ].join("\n");
-  const response = await openai.responses.create({ model: "gpt-5.6-luna", instructions, input: prompt + "\n\nTarget duration: " + durationSeconds + " seconds.", safety_identifier: "redom-movie-planner" });
+  const response = await openai.responses.create({ model: "gpt-5.6-luna", instructions, input: prompt + "\n\nTarget duration: " + durationSeconds + " seconds. When factual research would improve the production, use web search and record only concise source summaries/URLs in the research array.", tools: [{ type: "web_search" } as any], safety_identifier: "redom-movie-planner" });
   return parseJson(response.output_text || "");
 }
 
