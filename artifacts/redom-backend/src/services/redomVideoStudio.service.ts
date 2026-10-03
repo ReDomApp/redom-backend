@@ -6,6 +6,7 @@ import { openai } from "../lib/openai";
 import { env } from "../config/env";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
 import { reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoJobs, reDomAiVideoProjects, reDomAiVideoScenes, reDomAiVideoShots } from "../database/reDomVideoStudio";
+import { reDomAiVideos } from "../database/reDomAiVideos";
 import { enforceReDomVideoPromptSecurity } from "./redomVideoSecurity.service";
 import { REDOM_VIDEO_MAX_SECONDS } from "./redomVideoEngine.service";
 
@@ -120,4 +121,66 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
   }
   await db.update(reDomAiVideoProjects).set({ state: "producing", updatedAt: new Date() }).where(eq(reDomAiVideoProjects.id, projectId));
   return { projectId, status: "processing", shotCount: shots.length, model: MODEL };
+}
+
+export async function registerReDomMovieJobCallback(jobId: string, status: string, storageKey?: string, error?: string) {
+  const job = (await db.select().from(reDomAiVideoJobs).where(eq(reDomAiVideoJobs.jobId, jobId)).limit(1))[0];
+  if (!job) return false;
+
+  if (status === "failed" || status === "blocked") {
+    await db.update(reDomAiVideoJobs).set({ status, error: error?.slice(0, 1000), completedAt: new Date() }).where(eq(reDomAiVideoJobs.id, job.id));
+    await db.update(reDomAiVideoProjects).set({ state: status === "blocked" ? "blocked" : "failed", updatedAt: new Date() }).where(eq(reDomAiVideoProjects.id, job.projectId));
+    return true;
+  }
+
+  if (status !== "completed" || !storageKey) return false;
+
+  await db.update(reDomAiVideoJobs).set({ status: "completed", outputAssetKey: storageKey, completedAt: new Date() }).where(eq(reDomAiVideoJobs.id, job.id));
+  if (job.shotId) {
+    await db.update(reDomAiVideoShots).set({ status: "completed", outputAssetKey: storageKey }).where(eq(reDomAiVideoShots.id, job.shotId));
+  }
+
+  const remaining = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs)
+    .where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.status, "queued")));
+  const processing = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs)
+    .where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.status, "processing")));
+
+  const composerAlreadyQueued = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs)
+    .where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.kind, "final_composition")));
+
+  if (!remaining.length && !processing.length && !composerAlreadyQueued.length) {
+    const completedShots = await db.select({ outputAssetKey: reDomAiVideoJobs.outputAssetKey })
+      .from(reDomAiVideoJobs)
+      .where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.kind, "shot_generation"), eq(reDomAiVideoJobs.status, "completed")));
+    const shotKeys = completedShots.map((row) => row.outputAssetKey).filter((key): key is string => Boolean(key));
+    const project = (await db.select().from(reDomAiVideoProjects).where(eq(reDomAiVideoProjects.id, job.projectId)).limit(1))[0];
+    if (!project || !shotKeys.length) return true;
+
+    const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
+    const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
+    const payload = {
+      jobId: composeJobId,
+      runtime: "redom-v2.8-native",
+      model: MODEL,
+      operation: "compose",
+      prompt: project.title,
+      durationSeconds: project.targetDurationSeconds,
+      resolution: project.quality === "pro" ? "1080p" : "720p",
+      aspectRatio: project.aspectRatio,
+      shotKeys,
+      callbackUrl,
+      callbackToken: env.redomVideoEngine.token,
+    };
+    await db.insert(reDomAiVideoJobs).values({
+      projectId: job.projectId,
+      kind: "final_composition",
+      jobId: composeJobId,
+      status: "queued",
+      priority: 10,
+      payload,
+    });
+    await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
+  }
+
+  return true;
 }
