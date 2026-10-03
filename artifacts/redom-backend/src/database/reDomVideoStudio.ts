@@ -127,3 +127,75 @@ export const reDomAiVideoResearch = pgTable("redom_ai_video_research", {
 }, (table) => ({
   projectCreated: index("redom_ai_video_research_project_created_idx").on(table.projectId, table.createdAt),
 }));
+
+
+export type ReDomStoryKnowledgeScope = "author" | "character" | "audience";
+export type ReDomStoryEventType = "secret" | "foreshadowing" | "reveal" | "conflict" | "turning_point" | "payoff";
+export type ReDomStoryAudienceState = "hidden" | "hinted" | "suspected" | "revealed";
+
+export const reDomAiVideoStoryKnowledge = pgTable("redom_ai_video_story_knowledge", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").notNull().references(() => reDomAiVideoProjects.id, { onDelete: "cascade" }),
+  scope: varchar("scope", { length: 24 }).notNull(),
+  subjectKey: varchar("subject_key", { length: 240 }),
+  fact: text("fact").notNull(),
+  knowledgeState: varchar("knowledge_state", { length: 24 }).notNull().default("known"),
+  revealEpisode: integer("reveal_episode"),
+  revealScene: integer("reveal_scene"),
+  source: varchar("source", { length: 32 }).notNull().default("story_engine"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  projectScope: index("redom_ai_video_story_knowledge_project_scope_idx").on(table.projectId, table.scope),
+  reveal: index("redom_ai_video_story_knowledge_reveal_idx").on(table.projectId, table.revealEpisode, table.revealScene),
+}));
+
+export const reDomAiVideoStoryEvents = pgTable("redom_ai_video_story_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").notNull().references(() => reDomAiVideoProjects.id, { onDelete: "cascade" }),
+  eventType: varchar("event_type", { length: 32 }).notNull(),
+  title: varchar("title", { length: 240 }).notNull(),
+  description: text("description").notNull(),
+  episodeNumber: integer("episode_number"),
+  sceneNumber: integer("scene_number"),
+  audienceState: varchar("audience_state", { length: 24 }).notNull().default("hidden"),
+  planted: boolean("planted").notNull().default(false),
+  payoffEpisode: integer("payoff_episode"),
+  payoffScene: integer("payoff_scene"),
+  relatedEntityIds: jsonb("related_entity_ids").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  projectType: index("redom_ai_video_story_events_project_type_idx").on(table.projectId, table.eventType),
+  payoff: index("redom_ai_video_story_events_payoff_idx").on(table.projectId, table.payoffEpisode, table.payoffScene),
+}));
+
+export const reDomAiVideoStoryArcs = pgTable("redom_ai_video_story_arcs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").notNull().references(() => reDomAiVideoProjects.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 240 }).notNull(),
+  arcType: varchar("arc_type", { length: 48 }).notNull(),
+  objective: text("objective").notNull(),
+  startingState: text("starting_state").notNull(),
+  turningPoints: jsonb("turning_points").$type<unknown[]>().notNull().default([]),
+  resolution: text("resolution"),
+  entityIds: jsonb("entity_ids").$type<string[]>().notNull().default([]),
+  status: varchar("status", { length: 24 }).notNull().default("planned"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  projectName: uniqueIndex("redom_ai_video_story_arcs_project_name_unique").on(table.projectId, table.name),
+}));
+
+export const reDomAiVideoRevisions = pgTable("redom_ai_video_revisions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").notNull().references(() => reDomAiVideoProjects.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  instruction: text("instruction").notNull(),
+  reason: varchar("reason", { length: 48 }).notNull().default("user_revision"),
+  affectedScope: jsonb("affected_scope").$type<string[]>().notNull().default([]),
+  planSnapshot: jsonb("plan_snapshot").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  projectVersion: uniqueIndex("redom_ai_video_revisions_project_version_unique").on(table.projectId, table.version),
+}));
