@@ -112,6 +112,11 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
   const shots = await db.select().from(reDomAiVideoShots).innerJoin(reDomAiVideoScenes, eq(reDomAiVideoShots.sceneId, reDomAiVideoScenes.id)).innerJoin(reDomAiVideoEpisodes, eq(reDomAiVideoScenes.episodeId, reDomAiVideoEpisodes.id)).where(eq(reDomAiVideoEpisodes.projectId, projectId));
   if (!shots.length) throw Object.assign(new Error("The movie has no production shots."), { status: 409 });
   const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
+  const finalJobId = "movie_project_" + projectId;
+  const existingFinal = (await db.select({ id: reDomAiVideos.id }).from(reDomAiVideos).where(eq(reDomAiVideos.jobId, finalJobId)).limit(1))[0];
+  if (!existingFinal) {
+    await db.insert(reDomAiVideos).values({ userId, jobId: finalJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "generate", prompt: project.prompt, targetDurationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, status: "processing", securityRequestId: typeof project.research === "object" && project.research && "securityRequestId" in project.research ? String((project.research as Record<string, unknown>).securityRequestId) : undefined });
+  }
   for (const item of shots) {
     const shot = item.redom_ai_video_shots;
     const jobId = "movie_shot_" + randomUUID().replace(/-/g, "");
