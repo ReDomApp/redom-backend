@@ -15,7 +15,7 @@ import { getReDomImageQuota, ReDomImageQuotaError } from "../services/redomImage
 import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
-import { createReDomMovieProject, getReDomMovieProject, planReDomMovieProject, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
+import { createReDomMovieProject, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
 
 import { r2 } from "../lib/r2";
 
@@ -108,13 +108,33 @@ router.post("/video/callback", async (req, res) => {
   const jobId = typeof req.body?.jobId === "string" ? req.body.jobId : "";
   if (!jobId) return res.status(400).json({ success: false });
   try {
+    const movieContext = await getReDomMovieJobContext(jobId);
+    if (movieContext) {
+      if (req.body.status === "completed" && typeof req.body.storageKey === "string") {
+        if (movieContext.kind === "final_composition") {
+          const object = await r2.send(new GetObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: req.body.storageKey }));
+          if (!object.Body) throw new Error("Final movie output is empty.");
+          const bytes = Buffer.from(await object.Body.transformToByteArray());
+          const { enforceReDomVideoOutputSecurity } = await import("../services/redomVideoSecurity.service");
+          await enforceReDomVideoOutputSecurity(movieContext.userId, "movie_output_" + jobId, bytes);
+        }
+        await registerReDomMovieJobCallback(jobId, "completed", req.body.storageKey, undefined);
+      } else if (req.body.status === "failed" || req.body.status === "blocked") {
+        await registerReDomMovieJobCallback(jobId, req.body.status, undefined, String(req.body.error ?? "Video generation failed."));
+      } else return res.status(400).json({ success: false, message: "Invalid callback state." });
+      return res.status(200).json({ success: true });
+    }
     if (req.body.status === "completed" && typeof req.body.storageKey === "string") await completeReDomVideoJob(jobId, req.body.storageKey, Number(req.body.durationSeconds ?? 0));
     else if (req.body.status === "failed") await failReDomVideoJob(jobId, String(req.body.error ?? "Video generation failed."));
     else return res.status(400).json({ success: false, message: "Invalid callback state." });
     return res.status(200).json({ success: true });
   } catch (error) {
     req.log?.error?.({ err: error }, "ReDom-v2.8—Video callback failed");
-    if (req.body.status === "completed") await failReDomVideoJob(jobId, "Video output failed ReDom security validation.").catch(() => undefined);
+    if (req.body.status === "completed") {
+      const movieContext = await getReDomMovieJobContext(jobId).catch(() => null);
+      if (movieContext) await registerReDomMovieJobCallback(jobId, "failed", undefined, "Video output failed ReDom security validation.").catch(() => undefined);
+      else await failReDomVideoJob(jobId, "Video output failed ReDom security validation.").catch(() => undefined);
+    }
     return res.status(502).json({ success: false });
   }
 });
