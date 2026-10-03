@@ -1,12 +1,12 @@
-import { index, integer, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { users } from "./schema";
 
 export const reDomAiVideos = pgTable("redom_ai_videos", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   jobId: varchar("job_id", { length: 80 }).notNull(),
-  provider: varchar("provider", { length: 32 }).notNull(),
-  model: varchar("model", { length: 120 }).notNull(),
+  runtime: varchar("runtime", { length: 64 }).notNull().default("redom-v2.8-native"),
+  model: varchar("model", { length: 120 }).notNull().default("ReDom-v2.8—Video"),
   operation: varchar("operation", { length: 32 }).notNull().default("generate"),
   prompt: text("prompt").notNull(),
   targetDurationSeconds: integer("target_duration_seconds").notNull(),

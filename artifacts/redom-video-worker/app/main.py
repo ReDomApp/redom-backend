@@ -1,108 +1,254 @@
-import asyncio, json, os, tempfile, subprocess
+import asyncio
+import os
+import subprocess
+import tempfile
 from pathlib import Path
-import httpx, boto3
+
+import boto3
+import httpx
+import torch
 from fastapi import FastAPI, Header, HTTPException
+from PIL import Image
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
-app = FastAPI(title="ReDom-v2.8—Video Worker")
+import wan
+from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, WAN_CONFIGS
+from wan.utils.utils import save_video
+
+MODEL_NAME = os.getenv("REDOM_VIDEO_MODEL_ID", "ReDom-v2.8—Video")
+CHECKPOINT_DIR = os.environ["REDOM_VIDEO_CHECKPOINT_DIR"]
 REDIS_URL = os.environ["REDOM_VIDEO_REDIS_URL"]
 WORKER_TOKEN = os.environ["REDOM_VIDEO_WORKER_TOKEN"]
 QUEUE = os.getenv("REDOM_VIDEO_QUEUE", "redom:video:jobs")
+FPS = 24
+SEGMENT_SECONDS = 5
+
+app = FastAPI(title="ReDom-v2.8—Video Native Worker")
 redis = Redis.from_url(REDIS_URL, decode_responses=True)
-s3 = boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"], aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"], aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"], region_name="auto")
+s3 = boto3.client(
+    "s3",
+    endpoint_url=os.environ["R2_ENDPOINT"],
+    aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+    region_name=os.getenv("R2_REGION", "auto"),
+)
 
 class VideoJob(BaseModel):
     jobId: str
+    runtime: str = "redom-v2.8-native"
+    model: str = MODEL_NAME
+    operation: str = "generate"
     prompt: str = Field(min_length=5, max_length=8000)
-    provider: str = "seedance"
     durationSeconds: int = Field(ge=4, le=300)
     resolution: str = "720p"
     aspectRatio: str = "16:9"
     callbackUrl: str
     callbackToken: str
 
-async def callback(job, status, storageKey=None, error=None):
-    body = {"jobId": job.jobId, "status": status, "storageKey": storageKey, "durationSeconds": job.durationSeconds, "error": error}
+pipeline = None
+
+def target_size(aspect_ratio: str, resolution: str):
+    if resolution == "1080p":
+        return {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080)}[aspect_ratio]
+    return {"16:9": (1280, 704), "9:16": (704, 1280), "1:1": (704, 704)}[aspect_ratio]
+
+def model_size(aspect_ratio: str):
+    # The local TI2V runtime is generated at its stable 720-class working sizes.
+    return {"16:9": (1280, 704), "9:16": (704, 1280), "1:1": (704, 704)}[aspect_ratio]
+
+def load_pipeline():
+    global pipeline
+    if pipeline is None:
+        if not torch.cuda.is_available():
+            raise RuntimeError("A CUDA GPU is required for ReDom-v2.8—Video.")
+        pipeline = wan.WanTI2V(
+            config=WAN_CONFIGS["ti2v-5B"],
+            checkpoint_dir=CHECKPOINT_DIR,
+            device_id=int(os.getenv("LOCAL_RANK", "0")),
+            rank=0,
+            t5_cpu=True,
+            convert_model_dtype=True,
+        )
+    return pipeline
+
+def save_tensor(video, path: Path):
+    save_video(
+        tensor=video[None],
+        save_file=str(path),
+        fps=FPS,
+        nrow=1,
+        normalize=True,
+        value_range=(-1, 1),
+    )
+
+def last_frame(video_path: Path, image_path: Path):
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-sseof", "-0.05", "-i", str(video_path),
+            "-frames:v", "1", "-vf", "scale=704:-2", str(image_path),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return Image.open(image_path).convert("RGB")
+
+def render_project(job: VideoJob, output: Path):
+    pipe = load_pipeline()
+    segments = []
+    reference = None
+    remaining = job.durationSeconds
+    scene_index = 0
+
+    with tempfile.TemporaryDirectory(prefix="redom-video-") as work:
+        workdir = Path(work)
+        while remaining > 0:
+            scene_index += 1
+            seconds = min(SEGMENT_SECONDS, remaining)
+            frames = seconds * FPS + 1
+            prompt = job.prompt.strip()
+            if job.operation == "cgi":
+                prompt += (
+                    "\nCGI production brief: physically based materials, coherent geometry, "
+                    "cinematic camera motion, volumetric lighting, stable object identity, "
+                    "clean edges, realistic shadows and temporal continuity."
+                )
+            prompt += (
+                f"\nReDom scene {scene_index}: preserve the established subject, environment, "
+                "lighting direction, camera language, motion logic and visual continuity. "
+                "Do not introduce identity manipulation, deceptive evidence, or unsafe content."
+            )
+
+            video = pipe.generate(
+                prompt,
+                img=reference,
+                size=model_size(job.aspectRatio),
+                max_area=MAX_AREA_CONFIGS.get("ti2v-5B", 704 * 1280),
+                frame_num=frames,
+                sampling_steps=40,
+                guide_scale=5.0,
+                seed=scene_index * 104729,
+                offload_model=True,
+            )
+            if video is None:
+                raise RuntimeError("Native ReDom video runtime returned no frames.")
+
+            segment = workdir / f"segment-{scene_index:04d}.mp4"
+            save_tensor(video, segment)
+            segments.append(segment)
+            reference = last_frame(segment, workdir / f"frame-{scene_index:04d}.png")
+            remaining -= seconds
+
+        manifest = workdir / "concat.txt"
+        manifest.write_text(
+            "".join(f"file '{path.as_posix()}'\n" for path in segments),
+            encoding="utf-8",
+        )
+
+        working = workdir / "joined.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest),
+                "-c", "copy", str(working),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        width, height = target_size(job.aspectRatio, job.resolution)
+        enhanced = workdir / "final.mp4"
+        vf = (
+            f"scale={width}:{height}:flags=lanczos,"
+            "hqdn3d=1.2:1.2:3:3,"
+            "unsharp=5:5:0.45:5:5:0,"
+            "format=yuv420p"
+        )
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(working), "-vf", vf,
+                "-map", "0:v", "-map", "0:a?",
+                "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
+                "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
+                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+                str(enhanced),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        output.write_bytes(enhanced.read_bytes())
+
+async def callback(job: VideoJob, status: str, storage_key: str | None = None, error: str | None = None):
+    body = {
+        "jobId": job.jobId,
+        "status": status,
+        "storageKey": storage_key,
+        "durationSeconds": job.durationSeconds,
+        "error": error,
+    }
     async with httpx.AsyncClient(timeout=30) as client:
-        await client.post(job.callbackUrl, json=body, headers={"Authorization": "Bearer " + job.callbackToken})
+        response = await client.post(
+            job.callbackUrl,
+            json=body,
+            headers={"Authorization": "Bearer " + job.callbackToken},
+        )
+        response.raise_for_status()
 
-async def provider_clip(job, prompt, seconds):
-    if job.provider == "seedance":
-        base = os.getenv("SEEDANCE_BASE_URL", "https://seedancev2.ai").rstrip("/")
-        key = os.environ["SEEDANCE_API_KEY"]
-        async with httpx.AsyncClient(timeout=180) as client:
-            r = await client.post(base + "/api/v1/video/generate", headers={"Authorization": "Bearer " + key, "Idempotency-Key": os.urandom(16).hex()}, json={"model": "seedance/seedance-2.5", "scene": "text-to-video", "prompt": prompt, "duration": seconds, "resolution": job.resolution, "aspect_ratio": job.aspectRatio, "generate_audio": True, "watermark": False, "output_format": "mp4"})
-            r.raise_for_status(); task = r.json().get("task", {})
-            for _ in range(120):
-                if task.get("status") == "success":
-                    url = task.get("video_url") or ((task.get("video_urls") or [None])[0])
-                    if not url: raise RuntimeError("Seedance returned no video URL.")
-                    v = await client.get(url); v.raise_for_status(); return v.content
-                if task.get("status") in ("failed", "canceled"): raise RuntimeError("Seedance generation failed.")
-                await asyncio.sleep(5)
-                q = await client.post(base + "/api/v1/video/query", headers={"Authorization": "Bearer " + key}, json={"task_id": task.get("id")})
-                q.raise_for_status(); task = q.json().get("task", {})
-        raise TimeoutError("Seedance generation timed out.")
-    if job.provider == "veo":
-        key = os.environ["GEMINI_API_KEY"]
-        async with httpx.AsyncClient(timeout=120) as client:
-            r = await client.post("https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning", headers={"x-goog-api-key": key}, json={"instances": [{"prompt": prompt}], "parameters": {"aspectRatio": job.aspectRatio, "resolution": job.resolution, "durationSeconds": "8"}})
-            r.raise_for_status(); op = r.json()
-            for _ in range(72):
-                if op.get("done"):
-                    if op.get("error"): raise RuntimeError("Veo generation failed.")
-                    uri = op["response"]["generateVideoResponse"]["generatedSamples"][0]["video"]["uri"]
-                    v = await client.get(uri, headers={"x-goog-api-key": key}); v.raise_for_status(); return v.content
-                await asyncio.sleep(5); op = (await client.get("https://generativelanguage.googleapis.com/v1beta/" + op["name"], headers={"x-goog-api-key": key})).json()
-        raise TimeoutError("Veo generation timed out.")
-    if job.provider == "gemini":
-        import base64
-        key = os.environ["GEMINI_API_KEY"]
-        async with httpx.AsyncClient(timeout=180) as client:
-            r = await client.post("https://generativelanguage.googleapis.com/v1beta/interactions", headers={"x-goog-api-key": key}, json={"model": "gemini-omni-1.1-flash", "input": prompt, "generation_config": {"video_config": {"task": "text_to_video", "duration_seconds": str(min(10, seconds))}}})
-            r.raise_for_status(); data = r.json().get("output_video", {}).get("data")
-            if not data: raise RuntimeError("Gemini video generation returned no video.")
-            return base64.b64decode(data)
-    raise ValueError("Unsupported video provider.")
+async def process(job: VideoJob):
+    if job.runtime != "redom-v2.8-native" or job.model != MODEL_NAME:
+        raise ValueError("Unsupported ReDom video runtime.")
+    if job.durationSeconds > 300:
+        raise ValueError("Video duration exceeds the ReDom maximum.")
 
-def compose(clips, output):
-    with tempfile.TemporaryDirectory() as d:
-        paths = []
-        for i, data in enumerate(clips):
-            p = Path(d) / (str(i) + ".mp4"); p.write_bytes(data); paths.append(p)
-        manifest = Path(d) / "concat.txt"
-        manifest.write_text("".join(["file \\"" + p.as_posix() + "\"\n" for p in paths]))
-        subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(output)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-async def process(job):
-    clips = []; remaining = job.durationSeconds; scene = 0
-    while remaining > 0:
-        scene += 1; seconds = min(30 if job.provider == "seedance" else (8 if job.provider == "veo" else 10), remaining)
-        prompt = job.prompt + "\nProduction continuity brief: scene " + str(scene) + ". Keep subjects, environment, lighting, camera language, physics and audio coherent across the project."
-        clips.append(await provider_clip(job, prompt, seconds)); remaining -= seconds
-    with tempfile.TemporaryDirectory() as d:
-        output = Path(d) / "final.mp4"; compose(clips, output)
-        key = "redom-ai/videos/" + job.jobId + "/final.mp4"
-        s3.upload_file(str(output), os.environ["R2_BUCKET_NAME"], key, ExtraArgs={"ContentType": "video/mp4", "CacheControl": "private, max-age=900"})
+    await callback(job, "processing")
+    with tempfile.TemporaryDirectory(prefix="redom-video-output-") as work:
+        output = Path(work) / "final.mp4"
+        await asyncio.to_thread(render_project, job, output)
+        key = f"redom-ai/videos/{job.jobId}/final.mp4"
+        s3.upload_file(
+            str(output),
+            os.environ["R2_BUCKET_NAME"],
+            key,
+            ExtraArgs={"ContentType": "video/mp4", "CacheControl": "private, max-age=900"},
+        )
         return key
 
 async def worker_loop():
     while True:
         item = await redis.brpop(QUEUE, timeout=5)
-        if not item: continue
+        if not item:
+            continue
         job = VideoJob.model_validate_json(item[1])
-        try: await callback(job, "completed", await process(job))
-        except Exception as error: await callback(job, "failed", error=str(error)[:1000])
+        try:
+            key = await process(job)
+            await callback(job, "completed", key)
+        except Exception as error:
+            await callback(job, "failed", error=str(error)[:1000])
 
 @app.on_event("startup")
-async def startup(): asyncio.create_task(worker_loop())
+async def startup():
+    asyncio.create_task(worker_loop())
+
+@app.on_event("shutdown")
+async def shutdown():
+    await redis.close()
 
 @app.get("/health")
-async def health(): return {"ok": True, "model": "ReDom-v2.8—Video", "providers": ["seedance", "veo", "gemini"]}
+async def health():
+    return {
+        "ok": True,
+        "model": MODEL_NAME,
+        "runtime": "redom-v2.8-native",
+        "generation": "local-gpu",
+    }
 
 @app.post("/v1/jobs")
 async def enqueue(job: VideoJob, authorization: str | None = Header(default=None)):
-    if authorization != "Bearer " + WORKER_TOKEN: raise HTTPException(401, "Unauthorized")
+    if authorization != "Bearer " + WORKER_TOKEN:
+        raise HTTPException(401, "Unauthorized")
+    if job.runtime != "redom-v2.8-native" or job.model != MODEL_NAME:
+        raise HTTPException(400, "Unsupported ReDom video runtime.")
     await redis.lpush(QUEUE, job.model_dump_json())
-    return {"accepted": True, "jobId": job.jobId, "status": "queued"}
+    return {"accepted": True, "jobId": job.jobId, "status": "queued", "model": MODEL_NAME}

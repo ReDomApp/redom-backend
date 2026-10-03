@@ -15,6 +15,7 @@ import { getReDomImageQuota, ReDomImageQuotaError } from "../services/redomImage
 import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
+import { r2 } from "../lib/r2";
 
 const router = Router();
 
@@ -27,7 +28,7 @@ const imageEditSchema = z.object({ imageDataUri: z.string().trim().min(32).max(3
 const voiceSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000) }).strict();
 const fileSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000), fileName: z.string().trim().min(1).max(160), mimeType: z.string().trim().max(160).default("application/octet-stream"), prompt: z.string().trim().max(4_000).default("Analyze this file and summarize the important information.") }).strict();
 const feedbackSchema = z.object({ rating: z.enum(["good", "bad"]), reason: z.enum(["Not relevant", "Not accurate", "Too repetitive", "Harmful or offensive", "Something else"]).optional() }).strict();
-const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), provider: z.enum(["seedance","veo","gemini"]).optional(), durationSeconds: z.number().int().min(4).max(300).optional(), resolution: z.enum(["720p","1080p"]).optional(), aspectRatio: z.enum(["16:9","9:16","1:1"]).optional() }).strict();
+const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), operation: z.enum(["generate","cgi"]).optional(), durationSeconds: z.number().int().min(4).max(300).optional(), resolution: z.enum(["720p","1080p"]).optional(), aspectRatio: z.enum(["16:9","9:16","1:1"]).optional() }).strict();
 
 router.post("/localize", localizationRateLimit, async (req, res) => {
   const parsed = localizationSchema.safeParse(req.body);
