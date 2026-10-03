@@ -110,7 +110,9 @@ router.post("/video/callback", async (req, res) => {
   try {
     const movieContext = await getReDomMovieJobContext(jobId);
     if (movieContext) {
-      if (req.body.status === "completed" && typeof req.body.storageKey === "string") {
+      if (req.body.status === "processing") {
+        await registerReDomMovieJobCallback(jobId, "processing");
+      } else if (req.body.status === "completed" && typeof req.body.storageKey === "string") {
         if (movieContext.kind === "final_composition") {
           const object = await r2.send(new GetObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: req.body.storageKey }));
           if (!object.Body) throw new Error("Final movie output is empty.");
