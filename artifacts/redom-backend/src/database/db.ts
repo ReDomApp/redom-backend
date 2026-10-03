@@ -91,6 +91,6 @@ export const db = drizzle(pool, { schema: {
   shares, stories, storyViewers, feedPreferences, notifications, searchHistory,
   marketplaceCategories, marketplaceListings, marketplaceInteractions, marketplaceReviews,
   marketplaceTransactions, videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
-  comments, publicGroups, publicGroupMembers, registrationChallenges, registrationFlowReservations, events, eventResponses, eventSettings, reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch,
+  comments, publicGroups, publicGroupMembers, registrationChallenges, registrationFlowReservations, events, eventResponses, eventSettings, reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch, reDomAiVideoStoryKnowledge, reDomAiVideoStoryEvents, reDomAiVideoStoryArcs, reDomAiVideoRevisions,
 } });
 export { pool };
