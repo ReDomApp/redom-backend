@@ -168,6 +168,7 @@ def render_project(job: VideoJob, output: Path):
         subprocess.run(
             [
                 "ffmpeg", "-y", "-i", str(working), "-vf", vf,
+                "-map", "0:v", "-map", "0:a?",
                 "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
                 "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
