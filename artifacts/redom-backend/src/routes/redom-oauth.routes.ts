@@ -46,6 +46,8 @@ router.get("/request/:requestId", async (req,res) => {
     clientId: row.client_id,
     scope: row.scope,
     resource: row.resource,
+    redirectUri: row.redirect_uri,
+    state: row.state,
     status: row.user_id ? "authenticated" : "login_required",
   });
 });
@@ -53,7 +55,7 @@ router.get("/request/:requestId", async (req,res) => {
 router.post("/request/:requestId/approve", authMiddleware, async (req,res) => {
   try {
     const code = await approveAuthorizationRequest(pool,String(req.params.requestId),req.user!.userId);
-    res.json({ success:true, code });
+    res.json({ success:true, code, redirectUri: (await getAuthorizationRequest(pool,String(req.params.requestId)))?.redirect_uri ?? null, state: (await getAuthorizationRequest(pool,String(req.params.requestId)))?.state ?? null });
   } catch (error) {
     res.status(400).json({ success:false, message:error instanceof Error?error.message:"Unable to approve authorization." });
   }
