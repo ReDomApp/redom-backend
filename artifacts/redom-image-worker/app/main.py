@@ -208,9 +208,9 @@ def generate(pipe, request: GenerateRequest, image: Image.Image | None = None):
 
         if image is None:
             output = pipe(**kwargs).images[0]
-        elif request.mask_data_uri:
+        elif getattr(request, "mask_data_uri", None):
             source = image.resize((request.width, request.height))
-            mask = decode_mask(request.mask_data_uri, request.width, request.height)
+            mask = decode_mask(getattr(request, "mask_data_uri"), request.width, request.height)
             output = pipe(
                 **kwargs,
                 image=source,
