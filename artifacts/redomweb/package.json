@@ -10,14 +10,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^5.0.4",
-    "react": "^19.2.3",
-    "react-dom": "19.2.3"
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
   },
   "devDependencies": {
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "typescript": "~5.9.3",
-    "vite": "^7.3.2"
+    "vite": "catalog:"
   }
 }
