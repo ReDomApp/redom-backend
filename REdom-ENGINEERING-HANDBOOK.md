@@ -577,7 +577,7 @@ Where payment providers are shown, use the actual current provider branding/logo
 
 The established deployment model:
 
-- Web application → Vercel.
+- Web application → Render.
 - Backend → Render.
 - Database → Neon.
 - GitHub → source of truth.
