@@ -219,7 +219,7 @@ export default function ReDomCreativeStudio() {
     if (!p?.dimensions) { setError("Research the requested platform first so ReDom can use its current dimensions."); return; }
     setBusy(true); setError(""); setStatus(`Preparing the image for ${p.name}…`);
     try {
-      const result = await prepareImage(preview, p.dimensions.width, p.dimensions.height, p.maxBytes || (targetKb ? Number(targetKb) * 1024 : undefined));
+      const result = await prepareImage(preview, p.dimensions.width, p.dimensions.height, p.maxBytes || intel?.request.targetBytes || (targetKb ? Number(targetKb) * 1024 : undefined));
       setPreview(URL.createObjectURL(result.blob));
       setFile(new File([result.blob], `redom-${p.name.toLowerCase().replace(/[^a-z0-9]+/g,"-")}.webp`, { type: "image/webp" }));
       downloadBlob(result.blob, `redom-${p.name.toLowerCase().replace(/[^a-z0-9]+/g,"-")}.webp`);
