@@ -47,25 +47,35 @@ async function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: num
 
 async function prepareImage(src: string, width: number, height: number, targetBytes?: number) {
   const image = await loadImage(src);
-  let scale = Math.min(1, Math.max(width / image.naturalWidth, height / image.naturalHeight));
-  if (!Number.isFinite(scale) || scale <= 0) scale = 1;
-  let outWidth = Math.max(1, Math.round(width || image.naturalWidth * scale));
-  let outHeight = Math.max(1, Math.round(height || image.naturalHeight * scale));
+  const targetWidth = Math.max(1, Math.round(width || image.naturalWidth));
+  const targetHeight = Math.max(1, Math.round(height || image.naturalHeight));
   const canvas = document.createElement("canvas");
-  canvas.width = outWidth;
-  canvas.height = outHeight;
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas is unavailable.");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(image, 0, 0, outWidth, outHeight);
 
+  const drawCover = (outWidth: number, outHeight: number) => {
+    const scale = Math.max(outWidth / image.naturalWidth, outHeight / image.naturalHeight);
+    const sourceWidth = outWidth / scale;
+    const sourceHeight = outHeight / scale;
+    const sourceX = Math.max(0, (image.naturalWidth - sourceWidth) / 2);
+    const sourceY = Math.max(0, (image.naturalHeight - sourceHeight) / 2);
+    ctx.clearRect(0, 0, outWidth, outHeight);
+    ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, outWidth, outHeight);
+  };
+
+  let outWidth = targetWidth;
+  let outHeight = targetHeight;
+  drawCover(outWidth, outHeight);
   const type = "image/webp";
   let quality = 0.92;
   let blob = await canvasBlob(canvas, type, quality);
   const limit = targetBytes && targetBytes > 0 ? targetBytes : Infinity;
 
-  for (let attempt = 0; attempt < 14 && blob.size > limit; attempt += 1) {
+  for (let attempt = 0; attempt < 18 && blob.size > limit; attempt += 1) {
     quality -= 0.05;
     if (quality >= 0.35) {
       blob = await canvasBlob(canvas, type, Math.max(0.35, quality));
@@ -74,7 +84,7 @@ async function prepareImage(src: string, width: number, height: number, targetBy
       outHeight = Math.max(180, Math.round(outHeight * 0.88));
       canvas.width = outWidth;
       canvas.height = outHeight;
-      ctx.drawImage(image, 0, 0, outWidth, outHeight);
+      drawCover(outWidth, outHeight);
       quality = 0.78;
       blob = await canvasBlob(canvas, type, quality);
     }
@@ -219,11 +229,12 @@ export default function ReDomCreativeStudio() {
   };
 
   const compress = async (intel: Intelligence | null = analysis) => {
-    if (!preview || !targetKb) { setError("Enter the maximum file size in KB first."); return; }
+    const requestedBytes = intel?.request.targetBytes || (targetKb ? Number(targetKb) * 1024 : 0);
+    if (!preview || !requestedBytes) { setError("Tell ReDom the maximum file size, for example 500 KB."); return; }
     setBusy(true); setError(""); setStatus("Optimizing image size…");
     try {
       const img = await loadImage(preview);
-      const result = await prepareImage(preview, img.naturalWidth, img.naturalHeight, Number(targetKb) * 1024);
+      const result = await prepareImage(preview, img.naturalWidth, img.naturalHeight, requestedBytes);
       setPreview(URL.createObjectURL(result.blob));
       setFile(new File([result.blob], "redom-compressed.webp", { type: "image/webp" }));
       downloadBlob(result.blob, "redom-compressed.webp");
