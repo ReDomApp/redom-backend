@@ -1,7 +1,23 @@
 import { api } from "../api/client";
 
 export interface ReDomAiTurn { role: "user" | "assistant"; content: string; }
-export interface ReDomAiImageQuota { entitlement: string; used: number; limit: number; remaining: number; resetAt: string; }\nexport interface ReDomAiImageResult { success: boolean; image: string; model: string; quota?: ReDomAiImageQuota; }
+export interface ReDomAiImageQuota { entitlement: string; used: number; limit: number; remaining: number; resetAt: string; }\nexport type ReDomAiImageAspectRatio = "1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "3:2" | "2:3" | "4:5" | "5:4" | "21:9";
+export type ReDomAiImageReference = { dataUri: string; strength?: number; role?: "subject" | "character" | "style" | "composition" | "object" };
+export interface ReDomAiImageOutput { storageKey: string; url: string; width: number; height: number; mimeType: string; seed?: string | null; }
+export interface ReDomAiImageResult { success: boolean; image: string; images?: ReDomAiImageOutput[]; model: string; jobId?: string; generationMs?: number; settings?: Record<string, unknown>; quota?: ReDomAiImageQuota; }
+export interface ReDomAiImageOptions {
+  negativePrompt?: string;
+  width?: number;
+  height?: number;
+  aspectRatio?: ReDomAiImageAspectRatio;
+  steps?: number;
+  images?: number;
+  seed?: number;
+  guidanceScale?: number;
+  outputFormat?: "png" | "jpeg" | "webp";
+  referenceImages?: ReDomAiImageReference[];
+  referenceStrength?: number;
+}
 export interface ReDomAiVideoJob { jobId: string; status: "queued" | "processing" | "completed" | "failed" | "blocked"; runtime?: string; model?: string; operation?: "generate" | "cgi"; durationSeconds?: number; downloadUrl?: string | null; error?: string | null; }
 export interface ReDomAiVoiceResult { success: boolean; text: string; model: string; }
 export interface ReDomAiFileResult { success: boolean; reply: string; model: string; }
@@ -15,8 +31,10 @@ export const reDomAiService = {
   chat(message: string, history: ReDomAiTurn[] = [], language?: string, imageDataUri?: string) {
     return api.post<{ success: boolean; reply: string; model: string }>("/ai/chat", { message, history: history.slice(-20), ...(language ? { language } : {}), ...(imageDataUri ? { imageDataUri } : {}) });
   },
-  generateImage(prompt: string) { return api.post<ReDomAiImageResult>("/ai/image", { prompt }); },
-  editImage(imageDataUri: string, prompt: string) { return api.post<ReDomAiImageResult>("/ai/image/edit", { imageDataUri, prompt }); },
+  generateImage(prompt: string, options: ReDomAiImageOptions = {}) { return api.post<ReDomAiImageResult>("/ai/image", { prompt, ...options }); },
+  editImage(imageDataUri: string, prompt: string, options: ReDomAiImageOptions & { strength?: number; maskDataUri?: string } = {}) {
+    return api.post<ReDomAiImageResult>("/ai/image/edit", { imageDataUri, prompt, ...options });
+  },
   transcribeVoice(dataUri: string) { return api.post<ReDomAiVoiceResult>("/ai/voice/transcribe", { dataUri }); },
   analyzeFile(dataUri: string, fileName: string, mimeType: string, prompt = "Analyze this file and summarize the important information.") { return api.post<ReDomAiFileResult>("/ai/file/analyze", { dataUri, fileName, mimeType, prompt }); },
   generateVideo(prompt: string, options: { operation?: "generate" | "cgi"; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1" } = {}) { return api.post<ReDomAiVideoCreate>("/ai/video", { prompt, ...options }); },
