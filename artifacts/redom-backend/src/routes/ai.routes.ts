@@ -13,6 +13,7 @@ import { translateUiTexts } from "../services/aiContent.service";
 import { generateReDomAiReply } from "../services/reDomAiChat.service";
 import { getReDomImageQuota, ReDomImageQuotaError } from "../services/redomImageQuota.service";
 import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
+import { analyzeReDomImageIntelligence } from "../services/redomAiImageIntelligence.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
 import { createReDomMovieProject, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
@@ -44,6 +45,7 @@ const imageSchema = z.object({
   referenceImages: z.array(imageReferenceSchema).max(4).optional(),
   referenceStrength: z.number().min(0).max(1).optional(),
 }).strict();
+const imageIntelligenceSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000), prompt: z.string().trim().max(6_000).default("Understand this image and determine the appropriate workflow."), targetPlatform: z.string().trim().max(120).optional(), targetBytes: z.number().int().min(1).max(100_000_000).optional() }).strict();
 const imageEditSchema = z.object({
   imageDataUri: z.string().trim().min(32).max(35_000_000, "Image data is too large."),
   prompt: z.string().trim().min(1).max(4_000),
@@ -203,6 +205,20 @@ router.get("/video/:jobId/download", async (req, res) => {
 router.get("/image/quota", authMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try { return res.status(200).json({ success: true, quota: await getReDomImageQuota(req.user.userId) }); } catch (error) { req.log?.error?.({ err: error }, "ReDom AI image quota lookup failed"); return res.status(500).json({ success: false, message: "Image quota could not be loaded." }); }
+});
+
+
+router.post("/image/intelligence", imageRateLimit, authMiddleware, async (req, res) => {
+  const parsed = imageIntelligenceSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid image intelligence request." });
+  try {
+    const result = await analyzeReDomImageIntelligence(req.user.userId, parsed.data.dataUri, parsed.data.prompt, parsed.data.targetPlatform, parsed.data.targetBytes);
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "ReDom AI image intelligence failed");
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message: error instanceof Error ? error.message : "ReDom AI image intelligence is temporarily unavailable." });
+  }
 });
 
 router.post("/image", imageRateLimit, authMiddleware, async (req, res) => {
