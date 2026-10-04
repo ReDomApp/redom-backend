@@ -49,7 +49,9 @@ const toolDefinitions = [
 function jsonRpc(id:any,result:any){ return {jsonrpc:"2.0",id,result}; }
 function jsonRpcError(id:any,code:number,message:string,data?:unknown){ return {jsonrpc:"2.0",id,error:{code,message,...(data===undefined?{}:{data})}}; }
 
-function protectedResourceMetadataUrl(): string { return `${mcpBaseUrl().replace(/\/mcp$/,"")}/oauth/.well-known/oauth-protected-resource`; }\n\nfunction bearer(req:any): string | null {
+function protectedResourceMetadataUrl(): string { return `${mcpBaseUrl().replace(/\/mcp$/,"")}/oauth/.well-known/oauth-protected-resource`; }
+
+function bearer(req:any): string | null {
   const value=String(req.headers.authorization??"");
   return value.startsWith("Bearer ") ? value.slice(7).trim() : null;
 }
