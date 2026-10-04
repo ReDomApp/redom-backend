@@ -96,7 +96,8 @@ export async function generatePolicyAwareSupportReply(input: {
   // as authority instead of drafting from memory and appending a policy dump afterward.
   const intent = await detectPolicyIntent(input.message, input.subject ?? input.supportCase.subject, null);
   const document = intent.policy_requested && intent.policy_slug ? getPolicyDocument(intent.policy_slug) : null;
-  const policyText = document ? renderCompletePolicy(document, intent.requested_sections) : null;\n  const completePolicyKnowledge = renderAllSupportPolicies();
+  const policyText = document ? renderCompletePolicy(document, intent.requested_sections) : null;
+  const completePolicyKnowledge = renderAllSupportPolicies();
 
   const base = await generateSupportReply({
     message: input.message,
