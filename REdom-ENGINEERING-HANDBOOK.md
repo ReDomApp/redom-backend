@@ -1500,3 +1500,212 @@ Preserve established behavior. Follow the source code. Follow the current produc
 **Nothing is generic. If the real value can be determined, use the real value. If it cannot be determined, preserve the true unknown state and follow the established secure handling. Never fabricate an identity or silently weaken security.**
 
 If something is ambiguous, inspect the repository and the existing implementation before guessing.
+
+
+# 39. ReDom AI Image Intelligence & Creative Studio
+
+ReDom AI's image experience is an **objective-driven image intelligence and creative workflow**, not a collection of unrelated generic image buttons.
+
+When a user explicitly supplies an image to ReDom AI, the system may analyze that image and act on the user's natural-language objective.
+
+## 39.1 Image understanding
+
+The image intelligence layer should inspect, where technically available:
+
+- objects and subjects;
+- visible text/OCR;
+- logo and brand marks;
+- colors and palette;
+- typography;
+- composition;
+- aspect ratio;
+- dimensions;
+- transparency;
+- background;
+- file format;
+- file size;
+- visual style;
+- layout;
+- approximate intended use.
+
+The system must distinguish **binary facts measured from the file** from visual/AI inferences.
+
+## 39.2 Brand recognition
+
+For a request such as:
+
+> "What brand is this?"
+
+ReDom should use the supplied image's visual clues and current Internet research where appropriate.
+
+A result may contain:
+
+- likely brand;
+- confidence;
+- evidence such as logo geometry, typography, color treatment and matching public imagery.
+
+Do not present a memory-only guess as Internet-verified.
+
+## 39.3 Creative branding
+
+For requests such as:
+
+> "Build my own branding using the colors of this image, but use ReDom as the name."
+
+ReDom should infer:
+
+- reference image;
+- requested characteristics to preserve;
+- new brand identity/name;
+- intended output.
+
+It should create an **original ReDom asset** rather than copying a protected logo, exact trademark or distinctive brand identifier.
+
+If the user requests only a palette or general visual feeling, preserve those requested characteristics while creating new geometry/identity.
+
+## 39.4 Natural-language image editing
+
+The user should not need to know image-processing terminology.
+
+Examples:
+
+- "Change only ReDom to Facebook."
+- "Change only the blue to red."
+- "Remove the text."
+- "Make the background transparent."
+- "Keep everything but change the product name to ReDom."
+- "Make this look more professional."
+
+The intent parser should determine the smallest appropriate edit scope.
+
+For a "change only" request, preserve unrelated:
+
+- background;
+- layout;
+- colors;
+- shapes;
+- shadows;
+- lighting;
+- object positions;
+- other text;
+- other visual elements.
+
+Use the image-editing/inpainting path rather than generating an unrelated fresh image.
+
+## 39.5 Platform-aware preparation
+
+For requests such as:
+
+> "Make this my Facebook cover."
+
+ReDom should research the **current platform requirements** when they are not already authoritative in the product configuration.
+
+Research may include:
+
+- recommended dimensions;
+- aspect ratio;
+- minimum dimensions;
+- maximum file size;
+- supported formats;
+- crop behavior;
+- mobile/desktop safe areas;
+- positioning requirements.
+
+Then ReDom should actually prepare the image:
+
+```
+Uploaded image
+    ↓
+Understand objective
+    ↓
+Research current platform requirements
+    ↓
+Calculate target dimensions
+    ↓
+Crop / resize / preserve composition
+    ↓
+Optimize compression
+    ↓
+Validate
+    ↓
+Downloadable result
+```
+
+The user should not have to supply the raw pixel dimensions unless they specifically want to override the researched platform requirement.
+
+## 39.6 File-size optimization
+
+For:
+
+> "Compress this below 500 KB."
+
+ReDom should:
+
+1. inspect the original;
+2. measure dimensions and format;
+3. determine an appropriate output format;
+4. preserve transparency where required;
+5. iteratively optimize quality;
+6. reduce dimensions only when necessary;
+7. verify the resulting binary size;
+8. repeat until the requested limit is satisfied or report that the constraint cannot be met without further quality loss;
+9. provide the resulting downloadable asset;
+10. explain what changed.
+
+The size requirement is a real binary validation requirement, not merely explanatory text.
+
+## 39.7 PDF export
+
+When a user asks to export an image as PDF, ReDom should create an actual downloadable PDF containing the supplied/processed image rather than merely explaining how the user can create one.
+
+## 39.8 Objective-driven routing
+
+The intended internal workflow is:
+
+```
+Image
+  ↓
+Image Understanding
+  ↓
+Intent / Objective Understanding
+  ↓
++-----------------------------+
+| Identify / Research         |
+| Generate / Brand            |
+| Edit / Inpaint              |
+| Platform Preparation        |
+| Crop / Resize               |
+| Compression                 |
+| PDF Export                  |
+| Validation                  |
++-----------------------------+
+  ↓
+Final downloadable result
+```
+
+The user should be able to express the objective naturally. ReDom chooses the appropriate supported workflow.
+
+## 39.9 Security
+
+Explicit image submission to ReDom AI is user-authorized input to the AI workflow. It must not silently inspect unrelated private message media.
+
+The existing image security service remains authoritative for generation/editing safety. Image processing operations such as compression, crop, resize, rotation and PDF conversion are not inherently fraudulent, but edits to government/financial documents, authenticity-related modifications, identity-photo manipulation and other protected operations remain subject to the existing security policy.
+
+## 39.10 Nothing generic
+
+This capability follows ReDom's permanent **NOTHING IS GENERIC** rule.
+
+Do not fabricate:
+
+- brand identity;
+- platform dimensions;
+- file-size limits;
+- supported formats;
+- colors;
+- image metadata;
+- OCR text;
+- account state;
+- provider identity;
+- research evidence.
+
+When current external information is required, research it. When binary metadata can be measured, measure it. When the user asks for a transformation, actually perform and validate it.
