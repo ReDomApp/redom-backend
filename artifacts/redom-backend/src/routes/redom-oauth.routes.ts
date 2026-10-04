@@ -54,8 +54,10 @@ router.get("/request/:requestId", async (req,res) => {
 
 router.post("/request/:requestId/approve", authMiddleware, async (req,res) => {
   try {
+    const request = await getAuthorizationRequest(pool,String(req.params.requestId));
+    if (!request) return void res.status(400).json({ success:false, message:"OAuth authorization request is expired or invalid." });
     const code = await approveAuthorizationRequest(pool,String(req.params.requestId),req.user!.userId);
-    res.json({ success:true, code, redirectUri: (await getAuthorizationRequest(pool,String(req.params.requestId)))?.redirect_uri ?? null, state: (await getAuthorizationRequest(pool,String(req.params.requestId)))?.state ?? null });
+    res.json({ success:true, code, redirectUri: request.redirect_uri, state: request.state ?? null });
   } catch (error) {
     res.status(400).json({ success:false, message:error instanceof Error?error.message:"Unable to approve authorization." });
   }
