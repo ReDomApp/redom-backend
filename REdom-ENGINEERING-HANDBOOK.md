@@ -100,7 +100,7 @@ This keeps ReDom's memory useful without allowing its memory to become stale aut
 
 ## 3.1 Production relationship
 
-**GitHub → Render → ReDom Production API → Neon PostgreSQL**
+**GitHub → Render (Web + API) → ReDom Production API → Neon PostgreSQL**
 
 - GitHub: source of truth.
 - Render: production backend deployment.
@@ -108,7 +108,7 @@ This keeps ReDom's memory useful without allowing its memory to become stale aut
 - Neon: production PostgreSQL database.
 - Replit: development workspace.
 - Expo Go/development builds: mobile testing/development.
-- Render: ReDom Web deployment.
+- Render: ReDom Web static-site deployment and production backend deployment.
 - The Web application is a separate web implementation; it is not an Expo/React Native web wrapper.
 
 Do **not** substitute Railway for Render in the architecture.
@@ -584,7 +584,7 @@ The established deployment model:
 
 The ReDom Web project is separate from the mobile Expo project.
 
-A Vercel project has been used for ReDom Web, with `wnncompany.com` infrastructure and planned/used subdomains.
+ReDom Web is deployed on Render as a static site, with `wnncompany.com` infrastructure and the production web domain.
 
 Do not accidentally move Web deployment responsibility to Render merely because the backend is on Render.
 
