@@ -1,7 +1,8 @@
 import { api } from "../api/client";
 
 export interface ReDomAiTurn { role: "user" | "assistant"; content: string; }
-export interface ReDomAiImageQuota { entitlement: string; used: number; limit: number; remaining: number; resetAt: string; }\nexport type ReDomAiImageAspectRatio = "1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "3:2" | "2:3" | "4:5" | "5:4" | "21:9";
+export interface ReDomAiImageQuota { entitlement: string; used: number; limit: number; remaining: number; resetAt: string; }
+export type ReDomAiImageAspectRatio = "1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "3:2" | "2:3" | "4:5" | "5:4" | "21:9";
 export type ReDomAiImageReference = { dataUri: string; strength?: number; role?: "subject" | "character" | "style" | "composition" | "object" };
 export interface ReDomAiImageOutput { storageKey: string; url: string; width: number; height: number; mimeType: string; seed?: string | null; }
 export interface ReDomAiImageResult { success: boolean; image: string; images?: ReDomAiImageOutput[]; model: string; jobId?: string; generationMs?: number; settings?: Record<string, unknown>; quota?: ReDomAiImageQuota; }
@@ -28,6 +29,7 @@ export interface ReDomMovieProject { success: boolean; project: Record<string, u
 export type ReDomAiFeedbackReason = "Not relevant" | "Not accurate" | "Too repetitive" | "Harmful or offensive" | "Something else";
 
 export const reDomAiService = {
+  imageIntelligence(dataUri: string, prompt: string, targetPlatform?: string, targetBytes?: number) { return api.post<{ success: boolean; metadata: Record<string, unknown>; request: Record<string, unknown>; analysis: Record<string, unknown>; plan: Record<string, unknown>; platform?: Record<string, unknown> }>("/ai/image/intelligence", { dataUri, prompt, ...(targetPlatform ? { targetPlatform } : {}), ...(targetBytes ? { targetBytes } : {}) }); },
   chat(message: string, history: ReDomAiTurn[] = [], language?: string, imageDataUri?: string) {
     return api.post<{ success: boolean; reply: string; model: string }>("/ai/chat", { message, history: history.slice(-20), ...(language ? { language } : {}), ...(imageDataUri ? { imageDataUri } : {}) });
   },
