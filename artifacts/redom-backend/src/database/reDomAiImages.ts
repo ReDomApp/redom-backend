@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { users } from "./schema";
 
 export const reDomAiImages = pgTable("redom_ai_images", {
@@ -17,6 +17,10 @@ export const reDomAiImages = pgTable("redom_ai_images", {
   status: varchar("status", { length: 24 }).notNull().default("completed"),
   generationMs: integer("generation_ms"),
   error: varchar("error", { length: 1000 }),
+  /** Complete output manifest for multi-image generation and advanced image workflows. */
+  outputs: jsonb("outputs").$type<Array<{ storageKey: string; url: string; width: number; height: number; mimeType: string; seed?: string | null }>>(),
+  /** Engine settings used for deterministic reproduction and future model migrations. */
+  settings: jsonb("settings").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 }, (table) => ({
