@@ -35,7 +35,7 @@ const imageSchema = z.object({
   negativePrompt: z.string().trim().max(2_000).optional(),
   width: z.number().int().min(512).max(2048).optional(),
   height: z.number().int().min(512).max(2048).optional(),
-  aspectRatio: z.enum(["1:1","4:3","3:4","16:9","9:16","3:2","2:3","4:5","5:4","21:9"]),
+  aspectRatio: z.enum(["1:1","4:3","3:4","16:9","9:16","3:2","2:3","4:5","5:4","21:9"]).optional(),
   steps: z.number().int().min(1).max(80).optional(),
   images: z.number().int().min(1).max(4).optional(),
   seed: z.number().int().min(0).max(4_294_967_295).optional(),
