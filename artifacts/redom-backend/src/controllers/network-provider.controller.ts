@@ -55,7 +55,7 @@ export class NetworkProviderController {
 
     if (!ip) {
       const warning = "Unable to determine a usable public IP address from the current client network. The hosting server IP is never used for this check.";
-      res.status(503).json({
+      res.status(200).json({
         success: false,
         code: "NETWORK_IP_UNAVAILABLE",
         networkProvider: null,
