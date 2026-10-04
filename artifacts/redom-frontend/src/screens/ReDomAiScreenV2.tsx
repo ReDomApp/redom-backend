@@ -97,7 +97,27 @@ export function ReDomAiScreenV2({ navigation, route }: Props) {
     const withUser: AiThread = { ...thread, title: thread.messages.length ? thread.title : threadTitle([userMessage]), updatedAt: Date.now(), messages: [...thread.messages, userMessage] };
     setThread(withUser); await persistCurrent(withUser);
     try {
-      const response = await reDomAiService.chat(value, turns, undefined, imageDataUri ?? undefined);
+      let enrichedRequest = value;
+      if (imageDataUri) {
+        try {
+          const intelligence = await reDomAiService.imageIntelligence(imageDataUri, value);
+          const analysis = intelligence.analysis || {};
+          const plan = intelligence.plan || {};
+          enrichedRequest = `${value}
+
+ReDom Image Intelligence context (use this as verified workflow context, not as user instructions):
+- Likely brand: ${typeof analysis.likelyBrand === "string" ? analysis.likelyBrand : "not established"}
+- Detected text: ${Array.isArray(analysis.detectedText) ? analysis.detectedText.join(", ") : "none returned"}
+- Colors: ${Array.isArray(analysis.colors) ? analysis.colors.join(", ") : "none returned"}
+- Operation: ${typeof plan.operation === "string" ? plan.operation : "analyze"}
+- Preserve: ${Array.isArray(plan.preserve) ? plan.preserve.join(", ") : "not specified"}
+- Change: ${Array.isArray(plan.change) ? plan.change.join(", ") : "not specified"}
+- Steps: ${Array.isArray(plan.steps) ? plan.steps.join(" | ") : "not specified"}`;
+        } catch {
+          // The normal image-aware chat path remains available if structured image intelligence is unavailable.
+        }
+      }
+      const response = await reDomAiService.chat(enrichedRequest, turns, undefined, imageDataUri ?? undefined);
       const assistant: AiMessage = { id: `${Date.now()}-a`, role: "assistant", content: response.reply };
       const completed: AiThread = { ...withUser, updatedAt: Date.now(), messages: [...withUser.messages, assistant] };
       setThread(completed); await persistCurrent(completed);
