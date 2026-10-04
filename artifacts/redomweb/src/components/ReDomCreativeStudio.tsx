@@ -144,7 +144,16 @@ export default function ReDomCreativeStudio() {
     setStatus("");
   };
 
-  const analyze = async (overridePrompt?: string) => {
+  const applyWorkflow = async (result: Intelligence) => {
+    const operation = result.plan.operation;
+    if (["compress"].includes(operation)) { await compress(result); return; }
+    if (["platform_prepare"].includes(operation)) { await preparePlatform(result); return; }
+    if (["convert_to_pdf"].includes(operation)) { await pdf(); return; }
+    if (["edit","text_replacement","creative_branding","enhance","upscale"].includes(operation)) { await editImage(result); return; }
+    setStatus("Analysis completed. ReDom did not modify the image because the request was informational.");
+  };
+
+  const analyze = async (overridePrompt?: string, autoApply = false) => {
     if (!preview) { setError("Upload an image first."); return; }
     const request = overridePrompt ?? prompt;
     setBusy(true); setError(""); setStatus("Understanding the image and researching the request…");
@@ -156,22 +165,23 @@ export default function ReDomCreativeStudio() {
       });
       setAnalysis(result);
       setStatus(result.analysis.likelyBrand ? `Image understood. Likely brand: ${result.analysis.likelyBrand}.` : "Image understood and workflow planned.");
+      if (autoApply) await applyWorkflow(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Image intelligence failed.");
       setStatus("");
     } finally { setBusy(false); }
   };
 
-  const editImage = async () => {
+  const editImage = async (intel: Intelligence | null = analysis) => {
     if (!preview) { setError("Upload an image first."); return; }
     setBusy(true); setError(""); setStatus("Applying the requested creative edit…");
     try {
-      const context = analysis ? [
-        `Detected colors: ${analysis.analysis.colors.join(", ")}`,
-        `Detected typography: ${analysis.analysis.typography.join(", ")}`,
-        `Composition: ${analysis.analysis.composition}`,
-        `Preserve: ${analysis.plan.preserve.join(", ")}`,
-        `Change: ${analysis.plan.change.join(", ")}`,
+      const context = intel ? [
+        `Detected colors: ${intel.analysis.colors.join(", ")}`,
+        `Detected typography: ${intel.analysis.typography.join(", ")}`,
+        `Composition: ${intel.analysis.composition}`,
+        `Preserve: ${intel.plan.preserve.join(", ")}`,
+        `Change: ${intel.plan.change.join(", ")}`,
       ].join("\n") : "";
       const response = await api<any>("/ai/image/edit", {
         method: "POST",
@@ -193,9 +203,9 @@ export default function ReDomCreativeStudio() {
     } finally { setBusy(false); }
   };
 
-  const preparePlatform = async () => {
+  const preparePlatform = async (intel: Intelligence | null = analysis) => {
     if (!preview) return;
-    const p = analysis?.platform;
+    const p = intel?.platform;
     if (!p?.dimensions) { setError("Research the requested platform first so ReDom can use its current dimensions."); return; }
     setBusy(true); setError(""); setStatus(`Preparing the image for ${p.name}…`);
     try {
@@ -208,7 +218,7 @@ export default function ReDomCreativeStudio() {
     finally { setBusy(false); }
   };
 
-  const compress = async () => {
+  const compress = async (intel: Intelligence | null = analysis) => {
     if (!preview || !targetKb) { setError("Enter the maximum file size in KB first."); return; }
     setBusy(true); setError(""); setStatus("Optimizing image size…");
     try {
@@ -256,8 +266,8 @@ export default function ReDomCreativeStudio() {
           <label>Maximum size KB (optional)<input value={targetKb} onChange={e => setTargetKb(e.target.value.replace(/[^0-9]/g,""))} placeholder="500"/></label>
         </div>
         <div className="creative-actions">
-          <button className="creative-primary" disabled={busy || !preview} onClick={() => void analyze()}>{busy ? "Working…" : "Understand image"}</button>
-          <button className="creative-secondary" disabled={busy || !preview} onClick={() => void editImage()}>Apply creative edit</button>
+          <button className="creative-primary" disabled={busy || !preview} onClick={() => void analyze(undefined, true)}>{busy ? "Working…" : "Understand & do it"}</button>
+          <button className="creative-secondary" disabled={busy || !preview} onClick={() => void analyze()}>{busy ? "Working…" : "Understand image"}</button>
         </div>
         {status ? <div className="creative-status">{status}</div> : null}
         {error ? <div className="creative-error">{error}</div> : null}
