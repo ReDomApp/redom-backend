@@ -168,3 +168,8 @@ export function renderCompletePolicy(document: ReDomPolicyDocument, requestedSec
   const sections = selected.length ? selected : document.sections;
   return [`Policy: ${document.title}`, document.summary, "", ...sections.map((section) => `${section.heading}\n${section.body}`)].join("\n\n").trim();
 }
+\nexport function renderAllSupportPolicies(): string {
+  return REDOM_SUPPORT_POLICY_DOCUMENTS
+    .map((document) => renderCompletePolicy(document))
+    .join("\n\n---\n\n");
+}
