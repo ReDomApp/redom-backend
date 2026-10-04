@@ -1,6 +1,6 @@
 import { env } from "../../config/env";
 import { generateSupportReply, type SupportAccountContext, type SupportAiResult, type SupportCase, type SupportMessage } from "./support.service";
-import { getPolicyDocument, renderCompletePolicy } from "./policy-assistant.service";
+import { getPolicyDocument, renderAllSupportPolicies, renderCompletePolicy, REDOM_SUPPORT_POLICY_DOCUMENTS } from "./policy-assistant.service";
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"] as const;
@@ -47,7 +47,7 @@ function parseIntent(text: string): { policy_requested: boolean; policy_slug: st
 }
 
 async function detectPolicyIntent(message: string, subject: string | null, baseReply: string | null) {
-  const policyCatalog = ["terms", "privacy", "community", "messaging", "media", "calls", "notifications", "security", "verification", "ai", "regional", "refunds", "support", "link_history", "payments", "subscriptions"];
+  const policyCatalog = REDOM_SUPPORT_POLICY_DOCUMENTS.map((document) => document.slug);
   const input = JSON.stringify({
     task: "Identify whether this ReDom support request asks for an official policy or a policy-derived explanation. Select only a policy from the supplied catalog. Never invent a policy or section.",
     allowed_policy_slugs: policyCatalog,
@@ -96,14 +96,14 @@ export async function generatePolicyAwareSupportReply(input: {
   // as authority instead of drafting from memory and appending a policy dump afterward.
   const intent = await detectPolicyIntent(input.message, input.subject ?? input.supportCase.subject, null);
   const document = intent.policy_requested && intent.policy_slug ? getPolicyDocument(intent.policy_slug) : null;
-  const policyText = document ? renderCompletePolicy(document, intent.requested_sections) : null;
+  const policyText = document ? renderCompletePolicy(document, intent.requested_sections) : null;\n  const completePolicyKnowledge = renderAllSupportPolicies();
 
   const base = await generateSupportReply({
     message: input.message,
     account: input.account,
     supportCase: input.supportCase,
     history: input.history,
-    approvedPolicyContext: policyText,
+    approvedPolicyContext: [completePolicyKnowledge, policyText ? `\n\nAUTHORITATIVE POLICY FOR THIS REQUEST:\n${policyText}` : ""].filter(Boolean).join(""),
     approvedPolicySlug: document?.slug ?? null,
   });
   if (!base.is_safe || !base.support_reply) return base;
