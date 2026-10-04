@@ -108,7 +108,7 @@ This keeps ReDom's memory useful without allowing its memory to become stale aut
 - Neon: production PostgreSQL database.
 - Replit: development workspace.
 - Expo Go/development builds: mobile testing/development.
-- Vercel: ReDom Web deployment.
+- Render: ReDom Web deployment.
 - The Web application is a separate web implementation; it is not an Expo/React Native web wrapper.
 
 Do **not** substitute Railway for Render in the architecture.
