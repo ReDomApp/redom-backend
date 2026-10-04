@@ -179,37 +179,58 @@ export async function listOwnedSupportCases(userId: string, limit = 50): Promise
 export type InboundEventClaim = "claimed" | "processed" | "processing";
 
 export async function claimInboundEvent(svixId: string, emailId: string): Promise<InboundEventClaim> {
-  const inserted = await pool.query(
-    `INSERT INTO support_inbound_events (svix_id, email_id, status, processing_started_at)
-     VALUES ($1, $2, 'processing', now())
-     ON CONFLICT (email_id) DO NOTHING
-     RETURNING status`,
-    [svixId, emailId],
-  );
-  if (inserted.rows[0]) return "claimed";
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Serialize claims for the same provider email ID without depending on a
+    // production-only unique index from an older migration.
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [emailId]);
 
-  const existing = await pool.query(
-    `SELECT status, processing_started_at FROM support_inbound_events WHERE email_id = $1 LIMIT 1`,
-    [emailId],
-  );
-  if (!existing.rows[0]) return "claimed";
-  const status = String(existing.rows[0].status);
-  if (status === "processed") return "processed";
-
-  const stale = !existing.rows[0].processing_started_at
-    || new Date(String(existing.rows[0].processing_started_at)).getTime() <= Date.now() - 10 * 60 * 1000;
-  if (status === "failed" || (status === "processing" && stale)) {
-    const reclaimed = await pool.query(
-      `UPDATE support_inbound_events
-          SET svix_id = $2, status = 'processing', processing_started_at = now(), last_error = NULL
-        WHERE email_id = $1
-          AND (status = 'failed' OR (status = 'processing' AND (processing_started_at IS NULL OR processing_started_at <= now() - interval '10 minutes')))
-        RETURNING status`,
-      [emailId, svixId],
+    const existing = await client.query(
+      `SELECT status, processing_started_at FROM support_inbound_events WHERE email_id = $1 LIMIT 1`,
+      [emailId],
     );
-    if (reclaimed.rows[0]) return "claimed";
+
+    if (!existing.rows[0]) {
+      await client.query(
+        `INSERT INTO support_inbound_events (svix_id, email_id, status, processing_started_at)
+         VALUES ($1, $2, 'processing', now())`,
+        [svixId, emailId],
+      );
+      await client.query("COMMIT");
+      return "claimed";
+    }
+
+    const status = String(existing.rows[0].status);
+    if (status === "processed") {
+      await client.query("COMMIT");
+      return "processed";
+    }
+
+    const stale = !existing.rows[0].processing_started_at
+      || new Date(String(existing.rows[0].processing_started_at)).getTime() <= Date.now() - 10 * 60 * 1000;
+
+    if (status === "failed" || (status === "processing" && stale)) {
+      const reclaimed = await client.query(
+        `UPDATE support_inbound_events
+            SET svix_id = $2, status = 'processing', processing_started_at = now(), last_error = NULL
+          WHERE email_id = $1
+            AND (status = 'failed' OR (status = 'processing' AND (processing_started_at IS NULL OR processing_started_at <= now() - interval '10 minutes')))
+          RETURNING status`,
+        [emailId, svixId],
+      );
+      await client.query("COMMIT");
+      return reclaimed.rows[0] ? "claimed" : "processing";
+    }
+
+    await client.query("COMMIT");
+    return "processing";
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
-  return "processing";
 }
 
 export async function markInboundEvent(svixId: string, emailId: string): Promise<void> {
