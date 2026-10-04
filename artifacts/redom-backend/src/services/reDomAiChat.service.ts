@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { openai } from "../lib/openai";
+import { getReDomPublicAiProductContext } from "./redomPublicAiProductPolicy";
 
 export interface ReDomAiTurn { role: "user" | "assistant"; content: string; }
 export interface ReDomAiChatRequest { message: string; history?: ReDomAiTurn[]; language?: string; imageDataUri?: string; }
@@ -45,7 +46,7 @@ export async function generateReDomAiReply(userId: string, request: ReDomAiChatR
 
   const response = await openai.responses.create({
     model: MODEL,
-    instructions: `${INSTRUCTIONS}\n${languageInstruction}`,
+    instructions: `${INSTRUCTIONS}\n${getReDomPublicAiProductContext()}\n${languageInstruction}`,
     input: [{ role: "user", content: userContent }] as any,
     tools: [{ type: "web_search" } as any],
     safety_identifier: safetyIdentifier(userId),
