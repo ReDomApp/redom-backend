@@ -9,12 +9,12 @@ const AUTH_CODE_TTL_MS = 60 * 1000;
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 
 function baseUrl(): string {
-  return (process.env.REDOM_MCP_BASE_URL ?? `${env.email.webBaseUrl}/api/redom-mcp`).replace(/\/+$/, "");
+  return (process.env.REDOM_MCP_BASE_URL ?? "https://redom-backend.onrender.com/redom-backend/mcp").replace(/\/+$/, "");
 }
 
 export function mcpBaseUrl(): string { return baseUrl(); }
 export function oauthIssuer(): string {
-  return (process.env.REDOM_OAUTH_ISSUER ?? `${env.email.webBaseUrl}/oauth`).replace(/\/+$/, "");
+  return (process.env.REDOM_OAUTH_ISSUER ?? "https://redom-backend.onrender.com/redom-backend/oauth").replace(/\/+$/, "");
 }
 
 export function createPkceChallenge(verifier: string): string {
