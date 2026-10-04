@@ -1,7 +1,7 @@
 import { toFile } from "openai/uploads";
 import { createHash } from "node:crypto";
 import { openai } from "../lib/openai";
-import { editReDomImage, generateReDomImage, REDOM_IMAGE_MODEL } from "./redomImageEngine.service";
+import { editReDomImage, generateReDomImage, REDOM_IMAGE_MODEL, type GenerateOptions } from "./redomImageEngine.service";
 
 const TRANSCRIBE_MODEL = "gpt-4o-transcribe";
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -37,14 +37,14 @@ function shouldTryImageFallback(error: unknown) {
   return details.status === 403 || details.status === 404 || details.code === "model_not_found" || details.code === "unsupported_model";
 }
 
-export async function generateReDomAiImage(userId: string, prompt: string) {
-  const result = await generateReDomImage(userId, { prompt });
-  return { dataUri: result.image, model: REDOM_IMAGE_MODEL, jobId: result.jobId, quota: result.quota };
+export async function generateReDomAiImage(userId: string, prompt: string, options: Omit<GenerateOptions, "prompt"> = {}) {
+  const result = await generateReDomImage(userId, { prompt, ...options });
+  return { dataUri: result.image, images: result.images, model: REDOM_IMAGE_MODEL, jobId: result.jobId, generationMs: result.generationMs, settings: result.settings, quota: result.quota };
 }
 
-export async function editReDomAiImage(userId: string, imageDataUri: string, prompt: string) {
-  const result = await editReDomImage(userId, imageDataUri, prompt);
-  return { dataUri: result.image, model: REDOM_IMAGE_MODEL, jobId: result.jobId };
+export async function editReDomAiImage(userId: string, imageDataUri: string, prompt: string, options: Omit<Parameters<typeof editReDomImage>[3], never> = {}) {
+  const result = await editReDomImage(userId, imageDataUri, prompt, options);
+  return { dataUri: result.image, images: result.images, model: REDOM_IMAGE_MODEL, jobId: result.jobId, generationMs: result.generationMs, settings: result.settings };
 }
 
 export async function transcribeReDomAiVoice(userId: string, dataUri: string) {
