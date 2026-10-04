@@ -15,7 +15,6 @@ import { getReDomImageQuota, ReDomImageQuotaError } from "../services/redomImage
 import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeReDomAiVoice } from "../services/reDomAiMedia.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
-import { ReDomImageAspectRatio } from "../services/redomImageEngine.service";
 import { createReDomMovieProject, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
 
 import { r2 } from "../lib/r2";
