@@ -1,17 +1,27 @@
 # ReDom-1.6RD— Image GPU Worker
 
-This is the ReDom-controlled inference service for the ReDom image-generation subsystem.
+This is the ReDom-controlled inference service for the ReDom image-generation and image-editing subsystem.
 
 ## Runtime
 
 - FastAPI HTTP service
 - NVIDIA CUDA GPU
 - Hugging Face Diffusers runtime
-- Default local model checkpoint: `stabilityai/stable-diffusion-xl-base-1.0`
-- Override with `REDOM_IMAGE_MODEL_ID` or a locally mounted model path.
-- No OpenAI, Google, ByteDance, or other hosted image-generation API is called by this worker.
+- Configurable open-weight model checkpoint
+- Private worker authentication with `REDOM_IMAGE_ENGINE_TOKEN`
+- ReDom backend remains the only public API boundary
 
-The external model checkpoint is an initial implementation detail. The ReDom API uses the stable model identity `ReDom-1.6RD— Image`, so the underlying checkpoint can later be replaced by a ReDom-trained checkpoint without changing the client contract.
+The worker currently defaults to:
+
+`stabilityai/stable-diffusion-xl-base-1.0`
+
+through `REDOM_IMAGE_MODEL_ID`.
+
+The public model identity remains:
+
+`ReDom-1.6RD— Image`
+
+The checkpoint is an internal runtime implementation detail and can be replaced by a ReDom-owned checkpoint without changing the client API.
 
 ## Endpoints
 
@@ -19,8 +29,63 @@ The external model checkpoint is an initial implementation detail. The ReDom API
 - `POST /v1/generate`
 - `POST /v1/edit`
 
-The worker is intentionally private. Put it behind a private network or authenticated gateway and configure `REDOM_IMAGE_ENGINE_TOKEN`.
+## Current capabilities
+
+- Text-to-image
+- Image-to-image editing
+- Masked inpainting
+- Reference-image conditioning through IP-Adapter
+- Multiple reference images
+- Multiple outputs
+- Seeded generation
+- Negative prompts
+- Guidance-scale control
+- Explicit width/height
+- Aspect-ratio control
+- PNG/JPEG/WebP output
+- Capability discovery through `/health`
+
+## Reference-image conditioning
+
+Set:
+
+`REDOM_IMAGE_IP_ADAPTER_ENABLED=true`
+
+The worker loads the configured IP-Adapter and accepts reference images from the ReDom backend. Reference images are supplied as base64 image data and are never fetched from arbitrary remote URLs by the worker.
+
+The adapter settings are configurable:
+
+- `REDOM_IMAGE_IP_ADAPTER_REPO`
+- `REDOM_IMAGE_IP_ADAPTER_SUBFOLDER`
+- `REDOM_IMAGE_IP_ADAPTER_WEIGHT`
+
+## Inpainting
+
+The backend can send a source image plus a mask. White mask regions are replaced and black regions are preserved.
+
+Configure the inpainting checkpoint with:
+
+`REDOM_IMAGE_INPAINT_MODEL_ID`
+
+## Security
+
+The worker is intended to run on a private GPU network. Do not expose it directly to the public internet without an authenticated gateway.
+
+The ReDom backend performs user authorization, quota enforcement, request security classification and generated-output security validation before storing the result.
 
 ## Capability direction
 
-The API contract is intentionally compatible with the capabilities that informed the ReDom design: text-to-image, image-to-image editing, explicit size/aspect controls, multiple outputs, deterministic seeds, and a model-router boundary. Google Nano Banana documents multimodal image generation/editing and 1K/2K/4K output; Seedream documents unified generation/editing and reference-image workflows; Seedance is a video-generation family and is therefore not used as the image inference engine. These capabilities inform the ReDom abstraction rather than creating a dependency on those hosted services.
+The API deliberately has a broader contract than the first SDXL runtime. The next runtime layers should add:
+
+- ControlNet structural controls
+- Dedicated super-resolution
+- Background removal / subject extraction
+- Outpainting
+- Configured LoRA adapters
+- Higher-resolution generation
+- Stronger text rendering
+- ReDom-trained image checkpoints
+
+Current image APIs such as Gemini demonstrate multi-reference workflows, broad aspect-ratio support, high-resolution output and conversational editing. ReDom's API is being designed so these capabilities can be implemented inside its private runtime without exposing or depending on a hosted image-generation API.
+
+Hugging Face Diffusers provides local components such as IP-Adapter, ControlNet and LoRA that fit this architecture.
