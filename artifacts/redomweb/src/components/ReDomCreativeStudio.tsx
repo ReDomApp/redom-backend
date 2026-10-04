@@ -126,7 +126,7 @@ async function makePdf(src: string) {
   text("xref\n0 6\n0000000000 65535 f \n");
   for (let i = 1; i <= 5; i += 1) text(String(offsets[i]).padStart(10, "0") + " 00000 n \n");
   text(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
-  return new Blob(parts, { type: "application/pdf" });
+  return new Blob(parts as unknown as BlobPart[], { type: "application/pdf" });
 }
 
 export default function ReDomCreativeStudio() {
