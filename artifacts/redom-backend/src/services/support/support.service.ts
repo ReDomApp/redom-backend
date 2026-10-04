@@ -4,6 +4,7 @@ import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import { REDOM_SUPPORT_SYSTEM_PROMPT, SUPPORT_JSON_SCHEMA } from "./supportPolicy";
 import { renderSupportInlineLinkTokens } from "./supportWebLinks.service";
+import { getReDomPublicAiProductContext } from "../redomPublicAiProductPolicy";
 
 export type SupportAccountContext = {
   userId: string | null;
@@ -381,6 +382,7 @@ export async function generateSupportReply(input: { message: string; account: Su
     payment_provider_knowledge: PAYMENT_PROVIDER_KNOWLEDGE,
     approvedPolicyContext: input.approvedPolicyContext ?? null,
     approvedPolicySlug: input.approvedPolicySlug ?? null,
+    public_product_knowledge: getReDomPublicAiProductContext(),
     link_token_rules: {
       redom_policy: "Use [[REDOM_POLICY:<approvedPolicySlug>|Label]] only when an approved ReDom policy was used and a link is genuinely useful.",
       redom_help: "Use [[REDOM_HELP:<approved-help-key>|Label]] only for a relevant ReDom help destination.",
