@@ -11,7 +11,22 @@ export const REDOM_IMAGE_MODEL = "ReDom-1.6RD— Image";
 const DEFAULT_WIDTH = 1024;
 const DEFAULT_HEIGHT = 1024;
 const DEFAULT_STEPS = 30;
+const DEFAULT_GUIDANCE = 7.0;
 const MAX_INPUT_BYTES = 25 * 1024 * 1024;
+const MAX_REFERENCES = 4;
+
+export type ReDomImageAspectRatio =
+  | "1:1" | "4:3" | "3:4" | "16:9" | "9:16"
+  | "3:2" | "2:3" | "4:5" | "5:4" | "21:9";
+
+export type ReDomImageOutputFormat = "png" | "jpeg" | "webp";
+export type ReDomImageOperation = "generate" | "edit" | "inpaint" | "variation";
+
+export type ReDomImageReference = {
+  dataUri: string;
+  strength?: number;
+  role?: "subject" | "character" | "style" | "composition" | "object";
+};
 
 type EngineImage = {
   mimeType: string;
@@ -28,13 +43,34 @@ type EngineResponse = {
   images: EngineImage[];
 };
 
-type GenerateOptions = {
+export type GenerateOptions = {
   prompt: string;
+  negativePrompt?: string;
   width?: number;
   height?: number;
+  aspectRatio?: ReDomImageAspectRatio;
   steps?: number;
   images?: number;
   seed?: number;
+  guidanceScale?: number;
+  outputFormat?: ReDomImageOutputFormat;
+  referenceImages?: ReDomImageReference[];
+  referenceStrength?: number;
+};
+
+type EditOptions = {
+  width?: number;
+  height?: number;
+  aspectRatio?: ReDomImageAspectRatio;
+  steps?: number;
+  images?: number;
+  seed?: number;
+  guidanceScale?: number;
+  outputFormat?: ReDomImageOutputFormat;
+  strength?: number;
+  referenceImages?: ReDomImageReference[];
+  referenceStrength?: number;
+  maskDataUri?: string;
 };
 
 function engineConfig() {
@@ -47,11 +83,47 @@ function engineConfig() {
   };
 }
 
+const RATIO_MAP: Record<ReDomImageAspectRatio, [number, number]> = {
+  "1:1": [1, 1], "4:3": [4, 3], "3:4": [3, 4], "16:9": [16, 9], "9:16": [9, 16],
+  "3:2": [3, 2], "2:3": [2, 3], "4:5": [4, 5], "5:4": [5, 4], "21:9": [21, 9],
+};
+
+function dimensionsForAspectRatio(aspectRatio: ReDomImageAspectRatio, base = 1024) {
+  const [rw, rh] = RATIO_MAP[aspectRatio];
+  if (rw >= rh) {
+    const width = Math.round(base / 8) * 8;
+    const height = Math.max(512, Math.round((width * rh / rw) / 8) * 8);
+    return { width, height };
+  }
+  const height = Math.round(base / 8) * 8;
+  const width = Math.max(512, Math.round((height * rw / rh) / 8) * 8);
+  return { width, height };
+}
+
 function validateDimensions(width: number, height: number) {
-  if (width < 512 || width > 1536 || height < 512 || height > 1536) {
-    throw new Error("ReDom-1.6RD— Image supports image dimensions from 512px through 1536px in this release.");
+  const maxDimension = Math.max(512, Number(process.env.REDOM_IMAGE_MAX_DIMENSION || 1536));
+  if (width < 512 || width > maxDimension || height < 512 || height > maxDimension) {
+    throw new Error(`ReDom-1.6RD— Image supports image dimensions from 512px through ${maxDimension}px in this release.`);
   }
   if (width % 8 !== 0 || height % 8 !== 0) throw new Error("Image dimensions must be divisible by 8.");
+}
+
+function validateDataUri(value: string, label: string, maxBytes = MAX_INPUT_BYTES) {
+  const match = /^data:image\/[^;]+;base64,(.+)$/s.exec(value.trim());
+  if (!match) throw new Error(`Invalid ${label}.`);
+  const bytes = Buffer.from(match[1], "base64");
+  if (!bytes.length || bytes.length > maxBytes) throw new Error(`${label} is too large.`);
+  return value.trim();
+}
+
+function normalizeReferenceImages(referenceImages: ReDomImageReference[] | undefined) {
+  const refs = referenceImages ?? [];
+  if (refs.length > MAX_REFERENCES) throw new Error(`ReDom-1.6RD— Image accepts up to ${MAX_REFERENCES} reference images in this runtime.`);
+  return refs.map((reference) => {
+    const dataUri = validateDataUri(reference.dataUri, "reference image");
+    const strength = Math.min(1, Math.max(0, reference.strength ?? 0.75));
+    return { dataUri, strength, role: reference.role ?? "object" };
+  });
 }
 
 async function callEngine(path: string, payload: Record<string, unknown>): Promise<EngineResponse> {
@@ -85,10 +157,12 @@ async function callEngine(path: string, payload: Record<string, unknown>): Promi
 }
 
 async function storeImage(userId: string, jobId: string, image: EngineImage, index: number) {
-  const extension = image.mimeType.includes("jpeg") || image.mimeType.includes("jpg") ? "jpg" : "png";
-  const storageKey = "redom-ai/users/" + userId + "/generations/" + jobId + "/" + index + "." + extension;
+  const extension = image.mimeType.includes("jpeg") || image.mimeType.includes("jpg")
+    ? "jpg"
+    : image.mimeType.includes("webp") ? "webp" : "png";
+  const storageKey = `redom-ai/users/${userId}/generations/${jobId}/${index}.${extension}`;
   const bytes = Buffer.from(image.dataBase64, "base64");
-  if (!bytes.length || bytes.length > 25 * 1024 * 1024) throw new Error("Generated image payload is invalid.");
+  if (!bytes.length || bytes.length > MAX_INPUT_BYTES) throw new Error("Generated image payload is invalid.");
   await r2.send(new PutObjectCommand({
     Bucket: env.cloudflare.r2.bucketName,
     Key: storageKey,
@@ -100,44 +174,124 @@ async function storeImage(userId: string, jobId: string, image: EngineImage, ind
   return { storageKey, url: base + "/" + storageKey };
 }
 
-export async function generateReDomImage(userId: string, options: GenerateOptions) {
-  const prompt = options.prompt.trim();
-  if (!prompt) throw new Error("Image prompt is required.");
+function resolveDimensions(options: { width?: number; height?: number; aspectRatio?: ReDomImageAspectRatio }) {
+  if (options.aspectRatio) return dimensionsForAspectRatio(options.aspectRatio, Math.max(options.width ?? 1024, options.height ?? 1024));
+  return { width: options.width ?? DEFAULT_WIDTH, height: options.height ?? DEFAULT_HEIGHT };
+}
+
+async function runImageOperation(
+  userId: string,
+  operation: ReDomImageOperation,
+  prompt: string,
+  payload: Record<string, unknown>,
+  settings: Record<string, unknown>,
+) {
   const quota = await reserveReDomImageQuota(userId);
   try {
-    const security = await enforceReDomImageSecurity(userId, prompt, { hasImage: false, operation: "generate" });
-    const width = options.width ?? DEFAULT_WIDTH;
-    const height = options.height ?? DEFAULT_HEIGHT;
-    const steps = options.steps ?? DEFAULT_STEPS;
-    const images = options.images ?? 1;
-    validateDimensions(width, height);
-    if (steps < 1 || steps > 60 || images < 1 || images > 4) throw new Error("Invalid ReDom-1.6RD— Image generation settings.");
+    const security = await enforceReDomImageSecurity(userId, prompt, {
+      hasImage: operation !== "generate" || Boolean((payload.reference_images as unknown[])?.length),
+      imageDataUri: typeof payload.image_data_uri === "string" ? payload.image_data_uri : undefined,
+      operation: operation === "variation" ? "edit" : operation,
+    });
 
-    const jobId = "gen_" + randomUUID().replace(/-/g, "");
+    const jobId = `${operation}_${randomUUID().replace(/-/g, "")}`;
     const started = Date.now();
-    const response = await callEngine("/v1/generate", { prompt, width, height, steps, images, seed: options.seed ?? null });
-    const first = response.images[0];
-    const outputDataUri = "data:" + (first.mimeType || "image/png") + ";base64," + first.dataBase64;
-    await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
-    const stored = await storeImage(userId, jobId, first, 0);
+    const response = await callEngine(operation === "generate" ? "/v1/generate" : "/v1/edit", payload);
+
+    const stored = [];
+    for (let index = 0; index < response.images.length; index += 1) {
+      const image = response.images[index];
+      const outputDataUri = "data:" + (image.mimeType || "image/png") + ";base64," + image.dataBase64;
+      await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
+      stored.push({
+        ...(await storeImage(userId, jobId, image, index)),
+        width: image.width,
+        height: image.height,
+        mimeType: image.mimeType || "image/png",
+        seed: image.seed == null ? null : String(image.seed),
+      });
+    }
 
     await db.insert(reDomAiImages).values({
-      userId, jobId, operation: "generate", model: REDOM_IMAGE_MODEL, modelId: response.modelId ?? null, prompt,
-      width: first.width || width, height: first.height || height, steps,
-      seed: first.seed == null ? null : String(first.seed), storageKey: stored.storageKey, status: "completed",
-      generationMs: response.generationMs ?? Date.now() - started, completedAt: new Date(),
+      userId,
+      jobId,
+      operation,
+      model: REDOM_IMAGE_MODEL,
+      modelId: response.modelId ?? null,
+      prompt,
+      width: stored[0]?.width ?? Number(settings.width),
+      height: stored[0]?.height ?? Number(settings.height),
+      steps: Number(settings.steps),
+      seed: stored[0]?.seed ?? null,
+      storageKey: stored[0]?.storageKey ?? null,
+      outputs: stored.map(({ storageKey, url, width, height, mimeType, seed }) => ({ storageKey, url, width, height, mimeType, seed })),
+      settings,
+      status: "completed",
+      generationMs: response.generationMs ?? Date.now() - started,
+      completedAt: new Date(),
     });
+
     await quota.commit();
-    return { image: stored.url, model: REDOM_IMAGE_MODEL, jobId, generationMs: response.generationMs ?? Date.now() - started, quota: await getReDomImageQuota(userId) };
+    return {
+      image: stored[0]?.url,
+      images: stored,
+      model: REDOM_IMAGE_MODEL,
+      jobId,
+      generationMs: response.generationMs ?? Date.now() - started,
+      quota: await getReDomImageQuota(userId),
+      settings,
+    };
   } catch (error) {
     await quota.release().catch(() => undefined);
     throw error;
   }
 }
 
-export async function editReDomImage(userId: string, imageDataUri: string, prompt: string) {
+export async function generateReDomImage(userId: string, options: GenerateOptions) {
+  const prompt = options.prompt.trim();
+  if (!prompt) throw new Error("Image prompt is required.");
+
+  const refs = normalizeReferenceImages(options.referenceImages);
+  const dimensions = resolveDimensions(options);
+  const steps = options.steps ?? DEFAULT_STEPS;
+  const images = options.images ?? 1;
+  const guidanceScale = options.guidanceScale ?? DEFAULT_GUIDANCE;
+  validateDimensions(dimensions.width, dimensions.height);
+  if (steps < 1 || steps > 80 || images < 1 || images > 4) throw new Error("Invalid ReDom-1.6RD— Image generation settings.");
+  if (guidanceScale < 0 || guidanceScale > 20) throw new Error("Invalid guidance scale.");
+
+  return runImageOperation(userId, "generate", prompt, {
+    prompt,
+    negative_prompt: options.negativePrompt?.trim() || null,
+    width: dimensions.width,
+    height: dimensions.height,
+    steps,
+    images,
+    seed: options.seed ?? null,
+    guidance_scale: guidanceScale,
+    output_format: options.outputFormat ?? "png",
+    aspect_ratio: options.aspectRatio ?? null,
+    reference_images: refs,
+    reference_strength: options.referenceStrength ?? refs[0]?.strength ?? 0.75,
+  }, {
+    width: dimensions.width,
+    height: dimensions.height,
+    steps,
+    images,
+    seed: options.seed ?? null,
+    guidanceScale,
+    outputFormat: options.outputFormat ?? "png",
+    aspectRatio: options.aspectRatio ?? null,
+    referenceCount: refs.length,
+    referenceStrength: options.referenceStrength ?? refs[0]?.strength ?? 0.75,
+    negativePrompt: options.negativePrompt?.trim() || null,
+  });
+}
+
+export async function editReDomImage(userId: string, imageDataUri: string, prompt: string, options: EditOptions = {}) {
   const trimmed = prompt.trim();
   if (!trimmed) throw new Error("Image edit prompt is required.");
+
   const source = imageDataUri.trim();
   let sourceDataUri = source;
   if (/^https:\/\//i.test(source)) {
@@ -151,33 +305,51 @@ export async function editReDomImage(userId: string, imageDataUri: string, promp
     if (!mimeType.startsWith("image/")) throw new Error("The selected resource is not an image.");
     sourceDataUri = "data:" + mimeType + ";base64," + bytes.toString("base64");
   } else {
-    const match = /^data:image\/[^;]+;base64,(.+)$/s.exec(source);
-    if (!match) throw new Error("Invalid image input.");
-    const bytes = Buffer.from(match[1], "base64");
-    if (!bytes.length || bytes.length > MAX_INPUT_BYTES) throw new Error("Image is too large.");
+    validateDataUri(source, "image input");
   }
 
-  const quota = await reserveReDomImageQuota(userId);
-  try {
-    const security = await enforceReDomImageSecurity(userId, trimmed, { hasImage: true, imageDataUri: sourceDataUri, operation: "edit" });
-    const jobId = "edit_" + randomUUID().replace(/-/g, "");
-    const started = Date.now();
-    const response = await callEngine("/v1/edit", { prompt: trimmed, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT, steps: DEFAULT_STEPS, images: 1, image_data_uri: sourceDataUri, strength: 0.65 });
-    const first = response.images[0];
-    const outputDataUri = "data:" + (first.mimeType || "image/png") + ";base64," + first.dataBase64;
-    await enforceReDomImageOutputSecurity(userId, security.requestId, outputDataUri, security);
-    const stored = await storeImage(userId, jobId, first, 0);
-
-    await db.insert(reDomAiImages).values({
-      userId, jobId, operation: "edit", model: REDOM_IMAGE_MODEL, modelId: response.modelId ?? null, prompt: trimmed,
-      width: first.width || DEFAULT_WIDTH, height: first.height || DEFAULT_HEIGHT, steps: DEFAULT_STEPS,
-      seed: first.seed == null ? null : String(first.seed), storageKey: stored.storageKey, status: "completed",
-      generationMs: response.generationMs ?? Date.now() - started, completedAt: new Date(),
-    });
-    await quota.commit();
-    return { image: stored.url, model: REDOM_IMAGE_MODEL, jobId, generationMs: response.generationMs ?? Date.now() - started, quota: await getReDomImageQuota(userId) };
-  } catch (error) {
-    await quota.release().catch(() => undefined);
-    throw error;
+  const refs = normalizeReferenceImages(options.referenceImages);
+  const dimensions = resolveDimensions(options);
+  const steps = options.steps ?? DEFAULT_STEPS;
+  const images = options.images ?? 1;
+  const guidanceScale = options.guidanceScale ?? DEFAULT_GUIDANCE;
+  const strength = options.strength ?? 0.65;
+  validateDimensions(dimensions.width, dimensions.height);
+  if (steps < 1 || steps > 80 || images < 1 || images > 4 || strength < 0.05 || strength > 0.95) {
+    throw new Error("Invalid ReDom-1.6RD— Image edit settings.");
   }
+
+  const maskDataUri = options.maskDataUri ? validateDataUri(options.maskDataUri, "mask image") : undefined;
+  const operation: ReDomImageOperation = maskDataUri ? "inpaint" : refs.length ? "variation" : "edit";
+
+  return runImageOperation(userId, operation, trimmed, {
+    prompt: trimmed,
+    negative_prompt: null,
+    width: dimensions.width,
+    height: dimensions.height,
+    steps,
+    images,
+    seed: options.seed ?? null,
+    guidance_scale: guidanceScale,
+    output_format: options.outputFormat ?? "png",
+    aspect_ratio: options.aspectRatio ?? null,
+    image_data_uri: sourceDataUri,
+    mask_data_uri: maskDataUri ?? null,
+    strength,
+    reference_images: refs,
+    reference_strength: options.referenceStrength ?? refs[0]?.strength ?? 0.75,
+  }, {
+    width: dimensions.width,
+    height: dimensions.height,
+    steps,
+    images,
+    seed: options.seed ?? null,
+    guidanceScale,
+    outputFormat: options.outputFormat ?? "png",
+    aspectRatio: options.aspectRatio ?? null,
+    strength,
+    referenceCount: refs.length,
+    referenceStrength: options.referenceStrength ?? refs[0]?.strength ?? 0.75,
+    hasMask: Boolean(maskDataUri),
+  });
 }
