@@ -405,12 +405,53 @@ export async function generateSupportReply(input: { message: string; account: Su
   throw lastError instanceof Error ? lastError : new Error("All Gemini support models are temporarily unavailable.");
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function renderSupportReplyHtml(body: string): string {
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  const rendered: string[] = [];
+  let paragraph: string[] = [];
+
+  const inline = (value: string): string => {
+    let result = escapeHtml(value);
+    result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    result = result.replace(/`([^`]+)`/g, '<code style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">$1</code>');
+    result = result.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, "<em>$1</em>");
+    return result;
+  };
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    rendered.push('<p style="margin:0 0 14px 0;line-height:1.55;">' + inline(paragraph.join(" ")) + "</p>");
+    paragraph = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) { flushParagraph(); continue; }
+    const numbered = line.match(/^(\d+[a-z]?\.)\s+(.+)$/i);
+    const bulleted = line.match(/^([-*])\s+(.+)$/);
+    if (numbered || bulleted) {
+      flushParagraph();
+      const listMarker = numbered?.[1] ?? bulleted?.[1] ?? "";
+      const content = numbered?.[2] ?? bulleted?.[2] ?? "";
+      rendered.push('<div style="margin:0 0 8px 0;line-height:1.55;">' + inline(listMarker) + " " + inline(content) + "</div>");
+      continue;
+    }
+    paragraph.push(line);
+  }
+  flushParagraph();
+  return rendered.join("");
+}
 export function formatCaseReply(caseNumber: string, reply: string): string {
   return `Case Number: ${caseNumber}\n\n${reply.trim()}`;
 }
 
 export async function sendSupportEmail(to: string, subject: string, body: string): Promise<void> {
-  const { error } = await resend.emails.send({ from: env.email.supportFrom, to: [to], subject, text: body });
+  const html = `<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#ffffff;"><div lang="en" dir="ltr">${renderSupportReplyHtml(body)}</div></body></html>`;
+  const { error } = await resend.emails.send({ from: env.email.supportFrom, to: [to], subject, html, text: body });
   if (error) throw new Error(`Support email could not be sent: ${error.message}`);
 }
 
