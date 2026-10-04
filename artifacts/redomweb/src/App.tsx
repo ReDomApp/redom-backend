@@ -71,6 +71,8 @@ const WEB_LANGUAGE_LOCALE_MAP:Record<string,string>={
   "ne":"नेपाली","mr":"मराठी","hi":"हिन्दी","as":"অসমীয়া","bn":"বাংলা","pa":"ਪੰਜਾਬੀ","gu":"ગુજરાતી","or":"ଓଡ଼ିଆ",
   "ta":"தமிழ்","ml":"മലയാളം","si":"සිංහල","th":"ภาษาไทย","my":"မြန်မာ","ka":"ქართული","am":"አማርኛ","kn":"ಕನ್ನಡ"
 };
+const SUPPORTED_LANGUAGES = Array.from(new Set(Object.values(WEB_LANGUAGE_LOCALE_MAP)));
+
 function detectWebLanguage(){
   const preferences=Array.from(new Set([...(navigator.languages||[]),navigator.language].filter(Boolean)));
   for(const raw of preferences){
