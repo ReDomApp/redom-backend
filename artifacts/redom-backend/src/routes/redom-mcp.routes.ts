@@ -57,7 +57,7 @@ function protectedResourceMetadataUrl(): string { return `${mcpBaseUrl().replace
 async function authenticate(req:any,res:any):Promise<AuthContext|null>{
   const token=bearer(req);
   if(!token){
-    res.setHeader("WWW-Authenticate",`Bearer resource_metadata="${protectedResourceMetadataUrl()", scope="${REDOM_MCP_SCOPE}"`);
+    res.setHeader("WWW-Authenticate",`Bearer resource_metadata="${protectedResourceMetadataUrl()}", scope="${REDOM_MCP_SCOPE}"`);
     res.status(401).json({jsonrpc:"2.0",error:{code:-32001,message:"Authentication required."}});
     return null;
   }
