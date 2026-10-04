@@ -11,7 +11,7 @@
 ## Architecture
 - GitHub → Render → ReDom Production API → Neon PostgreSQL.
 - Replit = development workspace.
-- Vercel = ReDom Web deployment.
+- Render = ReDom Web deployment.
 - Expo = mobile development/testing.
 - ReDom Web is a separate TypeScript/React/Vite web implementation; do not import React Native/Expo for parity.
 - Docs/Help are separate web surfaces.
@@ -198,8 +198,7 @@ Never move sensitive validation solely to the client.
 - OneSignal = notifications.
 - MaxMind/IPinfo = historical/current IP intelligence context; verify actual current integration.
 - Namecheap = domain/DNS context.
-- Vercel = web.
-- Render = backend.
+- Render = web and backend production infrastructure.
 
 ## CHANGE-FAST / VERIFY-FIRST — PERMANENT RULE
 ReDom is developed continuously, often daily or weekly. Navigation, screen counts, routes, services, security logic, payment methods, policies, UI, deployments, and implementation patterns can change faster than this document is updated.
