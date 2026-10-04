@@ -14,7 +14,8 @@ import { ensureBugReportSchema } from "./services/bug-report-schema-bootstrap";
 import { ensureStarsSchema } from "./services/stars-schema-bootstrap";
 import { ensureRefundSchema } from "./services/refund-schema-bootstrap";
 import { startRefundReviewCleanup, stopRefundReviewCleanup } from "./services/refund/refund-review.service";
-import { startStarsTrialWorker, stopStarsTrialWorker } from "./services/payments/stripe-stars-trial.service"; import { ensureRedomOAuthSchema } from "./services/redom-oauth-schema.service";
+import { startStarsTrialWorker, stopStarsTrialWorker } from "./services/payments/stripe-stars-trial.service";
+import { ensureRedomOAuthSchema } from "./services/redom-oauth-schema.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
