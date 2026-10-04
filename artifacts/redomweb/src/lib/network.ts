@@ -1,6 +1,8 @@
 export type NetworkSecurity={ip:string|null;connection:string;country:string|null;countryCode:string|null;callingCode:string|null;region:string|null;city:string|null;timezone:string|null;organization:string|null;companyType:string|null;asn:number|null;datacenter:string|null;vpnService:string|null;egressService:string|null;egressProvider:string|null;proxy:boolean;vpn:boolean;tor:boolean;bot:boolean;abuser:boolean;mobile:boolean;satellite:boolean;fraudScore:number};
 export type NetworkProviderResponse={success:boolean;networkProvider:string|null;termsUrl:string|null;termsLabel:string|null;security:NetworkSecurity|null;warning:string|null};
 
+// Browser startup security is resolved by the ReDom backend; never perform a
+// public-IP/provider lookup directly from the login page.
 const BACKEND_TIMEOUT_MS=25_000;
 
 function normalizeSecurity(value:unknown):NetworkSecurity|null{
@@ -22,13 +24,8 @@ function normalizeSecurity(value:unknown):NetworkSecurity|null{
     vpnService:typeof s.vpnService==="string"?s.vpnService:null,
     egressService:typeof s.egressService==="string"?s.egressService:null,
     egressProvider:typeof s.egressProvider==="string"?s.egressProvider:null,
-    proxy:s.proxy===true,
-    vpn:s.vpn===true,
-    tor:s.tor===true,
-    bot:s.bot===true,
-    abuser:s.abuser===true,
-    mobile:s.mobile===true,
-    satellite:s.satellite===true,
+    proxy:s.proxy===true,vpn:s.vpn===true,tor:s.tor===true,bot:s.bot===true,abuser:s.abuser===true,
+    mobile:s.mobile===true,satellite:s.satellite===true,
     fraudScore:Number.isFinite(Number(s.fraudScore))?Number(s.fraudScore):0
   };
 }
@@ -37,9 +34,6 @@ export async function startupNetworkCheck(api:(path:string,options?:RequestInit)
   const controller=new AbortController();
   const timer=window.setTimeout(()=>controller.abort(),BACKEND_TIMEOUT_MS);
   try{
-    // The backend receives the browser request directly and resolves the
-    // trusted client IP at the server boundary. Do not call IPAPI from the
-    // browser: that introduces a CORS/provider dependency into the login gate.
     const result=await api("/auth/network-provider",{signal:controller.signal});
     const security=normalizeSecurity(result?.security);
     if(result?.success&&security){
@@ -53,24 +47,14 @@ export async function startupNetworkCheck(api:(path:string,options?:RequestInit)
       };
     }
     return {
-      success:false,
-      networkProvider:null,
-      termsUrl:null,
-      termsLabel:null,
-      security:null,
-      warning:typeof result?.warning==="string"
-        ?result.warning
-        :typeof result?.message==="string"
-          ?result.message
-          :"ReDom could not complete the network security check."
+      success:false,networkProvider:null,termsUrl:null,termsLabel:null,security:null,
+      warning:typeof result?.warning==="string"?result.warning:
+        typeof result?.message==="string"?result.message:
+        "ReDom could not complete the network security check."
     };
   }catch(error){
     return {
-      success:false,
-      networkProvider:null,
-      termsUrl:null,
-      termsLabel:null,
-      security:null,
+      success:false,networkProvider:null,termsUrl:null,termsLabel:null,security:null,
       warning:error instanceof Error&&error.name==="AbortError"
         ?"The network security check timed out."
         :error instanceof Error&&error.message
