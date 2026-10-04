@@ -28,7 +28,8 @@ async function start(): Promise<void> {
   await ensurePaymentSchema();
   await ensureBugReportSchema();
   await ensureStarsSchema();
-  await ensureRefundSchema();\n  await ensureRedomOAuthSchema(pool);
+  await ensureRefundSchema();
+  await ensureRedomOAuthSchema(pool);
   const server = app.listen(port, host, () => {
     startRegistrationChallengeCleanup();
     startRegistrationFlowReservationCleanup();
