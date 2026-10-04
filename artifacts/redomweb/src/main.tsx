@@ -3,6 +3,7 @@ import type { ErrorInfo, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import "./login-reference.css";
 
 declare global {
   interface Window {
