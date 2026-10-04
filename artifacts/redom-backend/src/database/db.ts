@@ -74,6 +74,7 @@ import { registrationChallenges } from "./registration-challenges.schema";
 import { registrationFlowReservations } from "./registration-flow-reservations.schema";
 import { events, eventResponses, eventSettings } from "./events";
 import { reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch, reDomAiVideoStoryKnowledge, reDomAiVideoStoryEvents, reDomAiVideoStoryArcs, reDomAiVideoRevisions } from "./reDomVideoStudio";
+import { ensureSupportInboundSchema } from "./supportInboundSchemaRepair";
 
 const pool = new Pool({ connectionString: env.database.url });
 pool.on("connect", () => console.log("Connected to Neon PostgreSQL"));
@@ -93,4 +94,4 @@ export const db = drizzle(pool, { schema: {
   marketplaceTransactions, videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
   comments, publicGroups, publicGroupMembers, registrationChallenges, registrationFlowReservations, events, eventResponses, eventSettings, reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch, reDomAiVideoStoryKnowledge, reDomAiVideoStoryEvents, reDomAiVideoStoryArcs, reDomAiVideoRevisions,
 } });
-export { pool };
+await ensureSupportInboundSchema(pool);\n\nexport { pool };
