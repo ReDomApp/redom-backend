@@ -94,4 +94,6 @@ export const db = drizzle(pool, { schema: {
   marketplaceTransactions, videoMetadata, videoCaptions, videoComments, videoQuality, videoViews,
   comments, publicGroups, publicGroupMembers, registrationChallenges, registrationFlowReservations, events, eventResponses, eventSettings, reDomAiVideoProjects, reDomAiVideoEntities, reDomAiVideoEpisodes, reDomAiVideoScenes, reDomAiVideoShots, reDomAiVideoJobs, reDomAiVideoResearch, reDomAiVideoStoryKnowledge, reDomAiVideoStoryEvents, reDomAiVideoStoryArcs, reDomAiVideoRevisions,
 } });
-await ensureSupportInboundSchema(pool);\n\nexport { pool };
+await ensureSupportInboundSchema(pool);
+
+export { pool };
