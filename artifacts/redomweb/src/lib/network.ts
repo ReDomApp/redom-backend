@@ -2,8 +2,6 @@ export type NetworkSecurity={ip:string|null;connection:string;country:string|nul
 export type NetworkProviderResponse={success:boolean;networkProvider:string|null;termsUrl:string|null;termsLabel:string|null;security:NetworkSecurity|null;warning:string|null};
 
 const BACKEND_TIMEOUT_MS=25_000;
-const PUBLIC_IP_TIMEOUT_MS=8_000;
-const PUBLIC_IP_ENDPOINT="https://api.ipapi.is";
 
 function normalizeSecurity(value:unknown):NetworkSecurity|null{
   if(!value||typeof value!=="object")return null;
@@ -30,31 +28,11 @@ function normalizeSecurity(value:unknown):NetworkSecurity|null{
   };
 }
 
-async function getPublicIp():Promise<string>{
-  const controller=new AbortController();
-  const timer=window.setTimeout(()=>controller.abort(),PUBLIC_IP_TIMEOUT_MS);
-  try{
-    const response=await fetch(PUBLIC_IP_ENDPOINT,{method:"GET",headers:{Accept:"application/json"},signal:controller.signal});
-    const payload=await response.json().catch(()=>null) as {ip?:unknown;error?:unknown;error_code?:unknown}|null;
-    if(!response.ok||typeof payload?.ip!=="string"||!payload.ip.trim()){
-      const code=typeof payload?.error_code==="string"?payload.error_code:"IP_LOOKUP_FAILED";
-      throw new Error(`Public IP detection failed (${code}).`);
-    }
-    return payload.ip.trim();
-  }catch(error){
-    if(error instanceof Error&&error.name==="AbortError")throw new Error("Public IP detection timed out.");
-    throw error instanceof Error?error:new Error("Public IP detection failed.");
-  }finally{
-    window.clearTimeout(timer);
-  }
-}
-
-async function backendNetworkCheck(api:(path:string,options?:RequestInit)=>Promise<any>,ip?:string):Promise<NetworkProviderResponse>{
-  const path=ip?`/auth/network-provider?ip=${encodeURIComponent(ip)}`:"/auth/network-provider";
+export async function startupNetworkCheck(api:(path:string,options?:RequestInit)=>Promise<any>):Promise<NetworkProviderResponse>{
   const controller=new AbortController();
   const timer=window.setTimeout(()=>controller.abort(),BACKEND_TIMEOUT_MS);
   try{
-    const result=await api(path,{signal:controller.signal});
+    const result=await api("/auth/network-provider",{signal:controller.signal});
     const security=normalizeSecurity(result?.security);
     if(result?.success&&security){
       return {
@@ -83,23 +61,5 @@ async function backendNetworkCheck(api:(path:string,options?:RequestInit)=>Promi
     };
   }finally{
     window.clearTimeout(timer);
-  }
-}
-
-export async function startupNetworkCheck(api:(path:string,options?:RequestInit)=>Promise<any>):Promise<NetworkProviderResponse>{
-  try{
-    const publicIp=await getPublicIp();
-    return await backendNetworkCheck(api,publicIp);
-  }catch(publicIpError){
-    const fallback=await backendNetworkCheck(api);
-    if(fallback.success&&fallback.security)return fallback;
-    return {
-      ...fallback,
-      warning:fallback.warning||(
-        publicIpError instanceof Error
-          ?publicIpError.message
-          :"Unable to determine the current client network."
-      )
-    };
   }
 }
