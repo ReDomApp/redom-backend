@@ -1,6 +1,7 @@
 import { env } from "../../config/env";
 import { generateSupportReply, type SupportAccountContext, type SupportAiResult, type SupportCase, type SupportMessage } from "./support.service";
 import { getPolicyDocument, renderAllSupportPolicies, renderCompletePolicy, REDOM_SUPPORT_POLICY_DOCUMENTS } from "./policy-assistant.service";
+import { getReDomPublicAiProductContext } from "../redomPublicAiProductPolicy";
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"] as const;
@@ -104,7 +105,11 @@ export async function generatePolicyAwareSupportReply(input: {
     account: input.account,
     supportCase: input.supportCase,
     history: input.history,
-    approvedPolicyContext: [completePolicyKnowledge, policyText ? `\n\nAUTHORITATIVE POLICY FOR THIS REQUEST:\n${policyText}` : ""].filter(Boolean).join(""),
+    approvedPolicyContext: [
+      completePolicyKnowledge,
+      getReDomPublicAiProductContext(),
+      policyText ? `\n\nAUTHORITATIVE POLICY FOR THIS REQUEST:\n${policyText}` : "",
+    ].filter(Boolean).join("\n\n"),
     approvedPolicySlug: document?.slug ?? null,
   });
   if (!base.is_safe || !base.support_reply) return base;
