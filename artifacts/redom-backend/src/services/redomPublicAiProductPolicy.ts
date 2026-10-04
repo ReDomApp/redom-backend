@@ -21,6 +21,21 @@ export type ReDomPublicProduct = {
 
 export const REDOM_PUBLIC_AI_PRODUCTS: ReDomPublicProduct[] = [
   {
+    name: "Ultro—R8.1",
+    category: "video",
+    modelName: "Ultro—R8.1",
+    status: "upcoming",
+    releaseDate: "Coming soon — NEXT advanced upgrade",
+    creatorPurpose: "An upcoming advanced ReDom video engine intended to support longer creator-directed video creation.",
+    capabilities: ["video creation up to 10 minutes", "advanced video creation", "long-form creator storytelling"],
+    rules: [
+      "Treat Ultro—R8.1 as an upcoming product until ReDom officially releases it.",
+      "The announced creator-facing capability is support for video creation up to 10 minutes.",
+      "Do not invent a release date, pricing, benchmarks, availability, or technical implementation details.",
+    ],
+  },
+
+  {
     name: "ReDom Image",
     category: "image",
     modelName: "ReDom-1.6RD— Image",
