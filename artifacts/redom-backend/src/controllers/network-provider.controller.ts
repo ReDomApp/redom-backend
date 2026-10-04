@@ -33,14 +33,20 @@ function isUsablePublicIp(ip: string): boolean {
 }
 
 /**
- * The client discovers its current public IP directly from IPAPI.
- * Never substitute req.ip: behind Vercel/Render that address can belong to
- * the hosting/proxy path rather than the user's actual network.
+ * Web requests reach the API directly, so Express' trusted-proxy configuration
+ * can resolve the browser's client IP with req.ip. Mobile may still provide
+ * its independently discovered public IP as ?ip=..., which remains preferred.
+ *
+ * Never use an arbitrary hosting-server address as the client's network.
  */
 function requestAddress(req: Request): string | undefined {
   const discoveredPublicIp = normalizeIp(req.query.ip);
-  if (!discoveredPublicIp || !isUsablePublicIp(discoveredPublicIp)) return undefined;
-  return discoveredPublicIp;
+  if (discoveredPublicIp && isUsablePublicIp(discoveredPublicIp)) return discoveredPublicIp;
+
+  const trustedClientIp = normalizeIp(req.ip);
+  if (trustedClientIp && isUsablePublicIp(trustedClientIp)) return trustedClientIp;
+
+  return undefined;
 }
 
 export class NetworkProviderController {
@@ -71,6 +77,7 @@ export class NetworkProviderController {
         code: "IPAPI_LOOKUP_FAILED",
         networkProvider: null,
         termsUrl: null,
+        termsLabel: null,
         security: null,
         warning,
         message: warning,
