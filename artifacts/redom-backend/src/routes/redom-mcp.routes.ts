@@ -49,7 +49,7 @@ const toolDefinitions = [
 function jsonRpc(id:any,result:any){ return {jsonrpc:"2.0",id,result}; }
 function jsonRpcError(id:any,code:number,message:string,data?:unknown){ return {jsonrpc:"2.0",id,error:{code,message,...(data===undefined?{}:{data})}}; }
 
-function bearer(req:any): string | null {
+function protectedResourceMetadataUrl(): string { return `${mcpBaseUrl().replace(/\/mcp$/,"")}/oauth/.well-known/oauth-protected-resource`; }\n\nfunction bearer(req:any): string | null {
   const value=String(req.headers.authorization??"");
   return value.startsWith("Bearer ") ? value.slice(7).trim() : null;
 }
@@ -57,7 +57,7 @@ function bearer(req:any): string | null {
 async function authenticate(req:any,res:any):Promise<AuthContext|null>{
   const token=bearer(req);
   if(!token){
-    res.setHeader("WWW-Authenticate",`Bearer resource_metadata="${mcpBaseUrl()}/../oauth/.well-known/oauth-protected-resource", scope="${REDOM_MCP_SCOPE}"`);
+    res.setHeader("WWW-Authenticate",`Bearer resource_metadata="${protectedResourceMetadataUrl()", scope="${REDOM_MCP_SCOPE}"`);
     res.status(401).json({jsonrpc:"2.0",error:{code:-32001,message:"Authentication required."}});
     return null;
   }
