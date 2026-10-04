@@ -8,6 +8,8 @@ import { openai } from "../lib/openai";
 export type ImageOperation =
   | "generate"
   | "edit"
+  | "inpaint"
+  | "variation"
   | "enhance"
   | "upscale"
   | "crop"
