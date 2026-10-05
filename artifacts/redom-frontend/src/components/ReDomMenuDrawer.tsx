@@ -41,6 +41,9 @@ import GamingIcon from "../assets/home-feed/gaming.svg";
 import FundraisersIcon from "../assets/home-feed/fundraisers.svg";
 import ActivityIcon from "../assets/home-feed/activity.svg";
 
+const REDOM_BADGE_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAADwCAYVYb0W";
+const REDOM_VERIFIED_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAADwCAYVYb0W";
+
 type Props = { visible: boolean; onClose: () => void };
 
 const shortcuts = [
@@ -256,7 +259,40 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                 <Text style={styles.sectionTitle}>Upgrades</Text>
                 <Text style={styles.sectionChevron}>{upgradesOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
-              {upgradesOpen ? <View style={styles.subsection}><Text style={[styles.subsectionText, { color: colors.textSecondary }]}>ReDom upgrades and professional features will appear here.</Text></View> : null}
+              {upgradesOpen ? (
+                <View style={styles.upgradeGrid}>
+                  <Pressable
+                    style={styles.upgradeCard}
+                    accessibilityRole="button"
+                    accessibilityLabel="ReDom Badge"
+                    onPress={() => undefined}
+                  >
+                    <View style={styles.upgradeArtwork}>
+                      <Image source={{ uri: REDOM_BADGE_PNG }} style={styles.upgradeBadgeImage} resizeMode="contain" />
+                    </View>
+                    <View style={styles.upgradeCopy}>
+                      <Text style={[styles.upgradeTitle, { color: colors.text }]} numberOfLines={1}>ReDom Badge</Text>
+                      <Text style={[styles.upgradeDescription, { color: colors.textSecondary }]} numberOfLines={3}>Give Your Profile a badge to represent it on ReDom.</Text>
+                    </View>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.upgradeCard}
+                    accessibilityRole="button"
+                    accessibilityLabel="ReDom Verified"
+                    onPress={() => undefined}
+                  >
+                    <View style={styles.upgradeArtwork}>
+                      <Image source={{ uri: REDOM_VERIFIED_PNG }} style={styles.upgradeBadgeImage} resizeMode="contain" />
+                    </View>
+                    <View style={styles.upgradeCopy}>
+                      <Text style={styles.upgradeOfficial}>$ Official</Text>
+                      <Text style={[styles.upgradeTitle, { color: colors.text }]} numberOfLines={1}>ReDom Verified</Text>
+                      <Text style={[styles.upgradeDescription, { color: colors.textSecondary }]} numberOfLines={3}>Build Trust with a ReDom Official Verified Badge.</Text>
+                    </View>
+                  </Pressable>
+                </View>
+              ) : null}
 
               <View style={styles.divider} />
               <Pressable style={styles.sectionHeader} onPress={() => setProductsOpen((v) => !v)}>
@@ -411,6 +447,33 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { flex: 1, color: "#050505", fontSize: 17, fontWeight: "800" },
   sectionChevron: { color: "#050505", fontSize: 21, fontWeight: "700", width: 24, textAlign: "center" },
+  upgradeGrid: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 3,
+    paddingTop: 4,
+    paddingBottom: 14,
+  },
+  upgradeCard: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E4E6EB",
+    overflow: "hidden",
+  },
+  upgradeArtwork: {
+    height: 116,
+    backgroundColor: "#F0F2F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  upgradeBadgeImage: { width: 82, height: 82 },
+  upgradeCopy: { paddingHorizontal: 10, paddingTop: 9, paddingBottom: 12, minHeight: 108 },
+  upgradeOfficial: { fontSize: 10, fontWeight: "800", color: "#65676B", marginBottom: 2 },
+  upgradeTitle: { fontSize: 16, fontWeight: "800", lineHeight: 20 },
+  upgradeDescription: { fontSize: 12.5, lineHeight: 17, marginTop: 3 },
   subsection: { paddingLeft: 42, paddingVertical: 7 },
   subsectionText: { color: "#65676B", fontSize: 12.5, lineHeight: 18 },
   productRow: { minHeight: 50, flexDirection: "row", alignItems: "center", gap: 13, paddingLeft: 4 },
