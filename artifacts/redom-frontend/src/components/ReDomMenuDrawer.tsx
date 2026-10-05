@@ -96,7 +96,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [accounts, setAccounts] = useState<DeviceAccount[]>([]);
 
-  const drawerWidth = Math.min(width * 0.88, 390);
+  const drawerWidth = Math.min(width * 0.88, 602);
   const displayName = useMemo(() => user ? `${user.firstName} ${user.lastName}`.trim() : "Your ReDom profile", [user]);
 
   useEffect(() => {
@@ -180,8 +180,8 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Your shortcuts</Text>
-              <View style={styles.shortcutGrid}>
+              <Text style={[styles.sectionLabel, { color: colors.text }]}>Your shortcuts</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shortcutRail}>
                 {shortcuts.map(({ label, Icon, route }) => (
                   <Pressable
                     key={label}
@@ -190,11 +190,11 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                     accessibilityRole="button"
                     accessibilityLabel={label}
                   >
-                    <Icon width={27} height={27} />
+                    <View style={styles.shortcutMedia}><Icon width={54} height={54} /></View>
                     <Text style={[styles.shortcutText, { color: colors.text }]} numberOfLines={1}>{label}</Text>
                   </Pressable>
                 ))}
-              </View>
+              </ScrollView>
               <Pressable style={styles.seeMore} onPress={() => setMoreOpen((value) => !value)} accessibilityRole="button" accessibilityLabel="See more ReDom destinations">
                 <Text style={styles.seeMoreText}>{moreOpen ? "See less" : "See more"}</Text>
               </Pressable>
@@ -349,37 +349,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  scrollContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 30 },
-  sectionLabel: { color: "#65676B", fontSize: 14, fontWeight: "700", marginBottom: 9 },
-  shortcutGrid: {
+  scrollContent: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 30 },
+  sectionLabel: { fontSize: 16, fontWeight: "800", marginBottom: 10 },
+  shortcutRail: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
+    gap: 10,
+    paddingBottom: 5,
   },
   shortcutCard: {
-    width: "48.5%",
-    minHeight: 62,
-    borderRadius: 12,
-    backgroundColor: "#F0F2F5",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    width: 112,
+    height: 128,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E4E6EB",
+    overflow: "hidden",
+    alignItems: "stretch",
   },
-  shortcutText: { fontSize: 14, fontWeight: "700", flex: 1 },
+  shortcutMedia: {
+    height: 92,
+    width: "100%",
+    backgroundColor: "#F0F2F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shortcutText: {
+    fontSize: 13,
+    fontWeight: "700",
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingTop: 7,
+    paddingBottom: 5,
+  },
   menuRow: {
-    minHeight: 50,
+    minHeight: 58,
     flexDirection: "row",
     alignItems: "center",
     gap: 13,
     paddingHorizontal: 4,
     borderRadius: 10,
   },
-  menuText: { fontSize: 15, fontWeight: "600", flex: 1 },
+  menuText: { fontSize: 16, fontWeight: "600", flex: 1 },
   seeMore: {
-    height: 44,
-    borderRadius: 11,
+    height: 48,
+    borderRadius: 12,
     backgroundColor: "#E4E6EB",
     alignItems: "center",
     justifyContent: "center",
@@ -387,23 +400,23 @@ const styles = StyleSheet.create({
   },
   seeMoreText: { color: "#050505", fontSize: 14, fontWeight: "700" },
   moreList: { marginTop: 3 },
-  divider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: 9 },
+  divider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: 0 },
   sectionHeader: {
-    minHeight: 56,
+    minHeight: 64,
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
     paddingHorizontal: 3,
     borderRadius: 10,
   },
-  sectionTitle: { flex: 1, color: "#050505", fontSize: 16, fontWeight: "700" },
+  sectionTitle: { flex: 1, color: "#050505", fontSize: 17, fontWeight: "800" },
   sectionChevron: { color: "#050505", fontSize: 21, fontWeight: "700", width: 24, textAlign: "center" },
   subsection: { paddingLeft: 42, paddingVertical: 7 },
   subsectionText: { color: "#65676B", fontSize: 12.5, lineHeight: 18 },
   productRow: { minHeight: 50, flexDirection: "row", alignItems: "center", gap: 13, paddingLeft: 4 },
   logoutRow: {
-    height: 48,
-    borderRadius: 11,
+    height: 52,
+    borderRadius: 12,
     backgroundColor: "#E4E6EB",
     alignItems: "center",
     justifyContent: "center",
