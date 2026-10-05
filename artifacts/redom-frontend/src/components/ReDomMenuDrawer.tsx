@@ -181,7 +181,20 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
               <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Your shortcuts</Text>
-              {shortcuts.map(({ label, Icon, route }) => row(label, Icon, route ? () => go(route) : label === "Memories" ? () => Alert.alert("Memories", "Coming Soon") : undefined))}
+              <View style={styles.shortcutGrid}>
+                {shortcuts.map(({ label, Icon, route }) => (
+                  <Pressable
+                    key={label}
+                    style={styles.shortcutCard}
+                    onPress={route ? () => go(route) : label === "Memories" ? () => Alert.alert("Memories", "Coming Soon") : undefined}
+                    accessibilityRole="button"
+                    accessibilityLabel={label}
+                  >
+                    <Icon width={27} height={27} />
+                    <Text style={[styles.shortcutText, { color: colors.text }]} numberOfLines={1}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
               <Pressable style={styles.seeMore} onPress={() => setMoreOpen((value) => !value)} accessibilityRole="button" accessibilityLabel="See more ReDom destinations">
                 <Text style={styles.seeMoreText}>{moreOpen ? "See less" : "See more"}</Text>
               </Pressable>
@@ -202,8 +215,8 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                       accessibilityRole="button"
                       accessibilityLabel={label}
                     >
-                      <Icon width={32} height={32} />
-                      <Text style={styles.menuText}>{label}</Text>
+                      <Icon width={27} height={27} />
+                      <Text style={[styles.menuText, { color: colors.text }]}>{label}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -211,7 +224,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
 
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
               <Pressable style={styles.sectionHeader} onPress={() => setSupportOpen((v) => !v)}>
-                <HelpSupportIcon width={35} height={35} />
+                <HelpSupportIcon width={28} height={28} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Help and support</Text>
                 <Text style={[styles.sectionChevron, { color: colors.text }]}>{supportOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
@@ -219,7 +232,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
 
               <View style={styles.divider} />
               <Pressable style={styles.sectionHeader} onPress={() => setSettingsOpen((v) => !v)}>
-                <SettingsIcon width={35} height={35} />
+                <SettingsIcon width={28} height={28} />
                 <Text style={styles.sectionTitle}>Settings and privacy</Text>
                 <Text style={styles.sectionChevron}>{settingsOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
@@ -239,7 +252,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
 
               <View style={styles.divider} />
               <Pressable style={styles.sectionHeader} onPress={() => setUpgradesOpen((v) => !v)}>
-                <UpgradesIcon width={35} height={35} />
+                <UpgradesIcon width={28} height={28} />
                 <Text style={styles.sectionTitle}>Upgrades</Text>
                 <Text style={styles.sectionChevron}>{upgradesOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
@@ -247,11 +260,11 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
 
               <View style={styles.divider} />
               <Pressable style={styles.sectionHeader} onPress={() => setProductsOpen((v) => !v)}>
-                <AlsoFromReDomIcon width={35} height={35} />
+                <AlsoFromReDomIcon width={28} height={28} />
                 <Text style={styles.sectionTitle}>Also from ReDom</Text>
                 <Text style={styles.sectionChevron}>{productsOpen ? "⌃" : "⌄"}</Text>
               </Pressable>
-              {productsOpen ? <Pressable style={styles.productRow} onPress={() => go("ReDomAI")}><ReDomAiIcon width={32} height={32} /><Text style={styles.menuText}>ReDom AI</Text></Pressable> : null}
+              {productsOpen ? <Pressable style={styles.productRow} onPress={() => go("ReDomAI")}><ReDomAiIcon width={27} height={27} /><Text style={styles.menuText}>ReDom AI</Text></Pressable> : null}
 
               <Pressable style={styles.logoutRow} onPress={() => { close(); setTimeout(() => void logout(), 190); }} accessibilityRole="button" accessibilityLabel="Log out">
                 <Text style={[styles.logoutText, { color: colors.text }]}>Log out</Text>
@@ -299,48 +312,128 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.42)" },
-  drawer: { position: "absolute", left: 0, top: 0, bottom: 0, backgroundColor: "#FFFFFF", elevation: 24, shadowColor: "#000", shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 8, height: 0 } },
-  topSafe: { paddingTop: 34, paddingHorizontal: 18 },
-  accountHeader: { minHeight: 78, borderRadius: 16, borderWidth: 1, borderColor: "#E4E6EB", flexDirection: "row", alignItems: "center", paddingHorizontal: 12, backgroundColor: "#FFFFFF", elevation: 2 },
-  accountIdentity: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
-  avatar: { width: 50, height: 50, borderRadius: 25 },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.44)" },
+  drawer: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "#FFFFFF",
+    elevation: 24,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 8, height: 0 },
+  },
+  topSafe: { paddingTop: 16, paddingHorizontal: 16 },
+  accountHeader: {
+    minHeight: 76,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E4E6EB",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    backgroundColor: "#FFFFFF",
+  },
+  accountIdentity: { flex: 1, flexDirection: "row", alignItems: "center", gap: 11 },
+  avatar: { width: 48, height: 48, borderRadius: 24 },
   accountCopy: { flex: 1 },
-  accountName: { color: "#050505", fontSize: 17, fontWeight: "800" },
+  accountName: { color: "#050505", fontSize: 16, fontWeight: "700" },
   accountUsername: { color: "#65676B", fontSize: 12, marginTop: 2 },
-  accountArrow: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
-  scrollContent: { paddingHorizontal: 18, paddingBottom: 28, paddingTop: 18 },
-  sectionLabel: { color: "#65676B", fontSize: 14, fontWeight: "700", marginBottom: 10 },
-  menuRow: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 13, paddingHorizontal: 2 },
-  menuText: { color: "#050505", fontSize: 16, fontWeight: "600", flex: 1 },
-  seeMore: { height: 46, borderRadius: 12, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center", marginTop: 4 },
-  seeMoreText: { color: "#050505", fontSize: 15, fontWeight: "800" },
-  moreList: { marginTop: 4 },
-  divider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: 12 },
-  sectionHeader: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: 10 },
-  sectionTitle: { flex: 1, color: "#050505", fontSize: 17, fontWeight: "800" },
-  sectionChevron: { color: "#050505", fontSize: 24, fontWeight: "800", width: 26, textAlign: "center" },
-  subsection: { paddingLeft: 46, paddingVertical: 8 },
-  subsectionText: { color: "#65676B", fontSize: 13, lineHeight: 18 },
-  productRow: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 13, paddingLeft: 3 },
-  logoutRow: { height: 52, borderRadius: 12, backgroundColor: "#E4E6EB", alignItems: "center", justifyContent: "center", marginTop: 16 },
-  logoutText: { color: "#050505", fontSize: 16, fontWeight: "800" },
+  accountArrow: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#F0F2F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 30 },
+  sectionLabel: { color: "#65676B", fontSize: 14, fontWeight: "700", marginBottom: 9 },
+  shortcutGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  shortcutCard: {
+    width: "48.5%",
+    minHeight: 62,
+    borderRadius: 12,
+    backgroundColor: "#F0F2F5",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  shortcutText: { fontSize: 14, fontWeight: "700", flex: 1 },
+  menuRow: {
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 13,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+  },
+  menuText: { fontSize: 15, fontWeight: "600", flex: 1 },
+  seeMore: {
+    height: 44,
+    borderRadius: 11,
+    backgroundColor: "#E4E6EB",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  seeMoreText: { color: "#050505", fontSize: 14, fontWeight: "700" },
+  moreList: { marginTop: 3 },
+  divider: { height: 1, backgroundColor: "#E4E6EB", marginVertical: 9 },
+  sectionHeader: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    paddingHorizontal: 3,
+    borderRadius: 10,
+  },
+  sectionTitle: { flex: 1, color: "#050505", fontSize: 16, fontWeight: "700" },
+  sectionChevron: { color: "#050505", fontSize: 21, fontWeight: "700", width: 24, textAlign: "center" },
+  subsection: { paddingLeft: 42, paddingVertical: 7 },
+  subsectionText: { color: "#65676B", fontSize: 12.5, lineHeight: 18 },
+  productRow: { minHeight: 50, flexDirection: "row", alignItems: "center", gap: 13, paddingLeft: 4 },
+  logoutRow: {
+    height: 48,
+    borderRadius: 11,
+    backgroundColor: "#E4E6EB",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+  },
+  logoutText: { color: "#050505", fontSize: 15, fontWeight: "700" },
   accountModalRoot: { flex: 1, justifyContent: "flex-end" },
   accountBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.48)" },
-  accountSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 22, paddingTop: 8, paddingBottom: 26, maxHeight: "78%" },
-  handle: { width: 42, height: 4, borderRadius: 2, backgroundColor: "#CCD0D5", alignSelf: "center", marginBottom: 12 },
+  accountSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 26,
+    maxHeight: "78%",
+  },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#CCD0D5", alignSelf: "center", marginBottom: 12 },
   sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  sheetTitle: { color: "#050505", fontSize: 19, fontWeight: "800" },
+  sheetTitle: { color: "#050505", fontSize: 18, fontWeight: "700" },
   sheetHint: { color: "#65676B", fontSize: 13, lineHeight: 18, marginTop: 4, marginBottom: 12 },
-  accountRow: { minHeight: 70, flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-  accountAvatar: { width: 52, height: 52, borderRadius: 26 },
+  accountRow: { minHeight: 68, flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
+  accountAvatar: { width: 50, height: 50, borderRadius: 25 },
   accountRowCopy: { flex: 1 },
-  accountRowName: { color: "#050505", fontSize: 16, fontWeight: "700" },
+  accountRowName: { color: "#050505", fontSize: 15, fontWeight: "700" },
   accountRowMeta: { color: "#65676B", fontSize: 12, marginTop: 2 },
-  selected: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" },
-  selectedMark: { color: "#FFFFFF", fontSize: 17, fontWeight: "800" },
-  addAccountRow: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-  pageNotice: { padding: 14, marginTop: 12, borderRadius: 12, backgroundColor: "#F0F2F5" },
-  pageNoticeTitle: { color: "#050505", fontSize: 15, fontWeight: "800" },
+  selected: { width: 27, height: 27, borderRadius: 14, backgroundColor: "#1877F2", alignItems: "center", justifyContent: "center" },
+  selectedMark: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
+  addAccountRow: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
+  pageNotice: { padding: 13, marginTop: 11, borderRadius: 11, backgroundColor: "#F0F2F5" },
+  pageNoticeTitle: { color: "#050505", fontSize: 14, fontWeight: "700" },
   pageNoticeText: { color: "#65676B", fontSize: 12, lineHeight: 17, marginTop: 4 },
-});
+});;
