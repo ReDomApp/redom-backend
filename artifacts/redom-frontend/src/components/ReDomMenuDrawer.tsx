@@ -87,7 +87,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
   const { user, logout, switchDeviceAccount, prepareForAccountLogin } = useAuthContext();
   const { width } = useWindowDimensions();
   const { colors } = useTheme();
-  const translateX = useRef(new Animated.Value(-Math.min(width * 0.88, 390))).current;
+  const translateX = useRef(new Animated.Value(-Math.min(width * 0.88, 602))).current;
   const [supportOpen, setSupportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upgradesOpen, setUpgradesOpen] = useState(false);
