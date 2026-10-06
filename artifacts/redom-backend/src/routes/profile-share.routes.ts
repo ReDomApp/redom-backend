@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { pool } from "../database/db";
 import { env } from "../config/env";
+import { decodeProfileShareToken, encodeProfileShareToken } from "../utils/profileShareToken";
 
 const router = Router();
 
@@ -14,6 +15,28 @@ const escapeHtml = (value: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+
+const notFound = (res: Response) =>
+  res.status(404).json({ success: false, message: "Profile not found." });
+
+async function resolveProfile(token: string, username: string) {
+  const profileId = decodeProfileShareToken(token);
+  if (!profileId) return null;
+
+  const result = await pool.query(
+    `SELECT u.id,u.first_name,u.last_name,u.username,u.profile_id,
+            u.profile_share_code,p.profile_photo,p.cover_photo,p.bio,
+            p.profile_visibility,p.verified,p.friend_count,p.follower_count,p.post_count
+     FROM users u
+     LEFT JOIN user_profiles p ON p.user_id=u.id
+     WHERE u.profile_id=$1
+       AND lower(u.username)=lower($2)
+     LIMIT 1`,
+    [profileId, username],
+  );
+
+  return result.rows[0] || null;
+}
 
 router.get("/.well-known/assetlinks.json", (_req: Request, res: Response) => {
   const fingerprints = String(process.env.REDOM_ANDROID_SHA256_CERT_FINGERPRINTS || "")
@@ -38,40 +61,77 @@ router.get("/.well-known/apple-app-site-association", (_req: Request, res: Respo
   const details = teamId
     ? [{
         appIDs: [`${teamId}.com.redom.app`],
-        components: [{ "/": "/profile/username/*" }],
+        components: [{ "/": "/@*" }],
       }]
     : [];
 
   return res.type("application/json").send(JSON.stringify({ applinks: { details } }));
 });
 
-router.get("/profile/username/:shareCode", async (req: Request, res: Response) => {
+/**
+ * Public JSON resolver for the Web client.
+ *
+ * The opaque token is authoritative; username is checked as an additional
+ * consistency guard. The raw profile_id is never returned.
+ */
+router.get("/profile/share/:token", async (req: Request, res: Response) => {
   try {
-    const shareCode = String(req.params.shareCode || "").trim();
-    if (!/^[A-Za-z0-9]{7}$/.test(shareCode)) {
+    const token = String(req.params.token || "").trim();
+    const username = String(req.query.username || "").trim();
+    if (!username) return notFound(res);
+
+    const profile = await resolveProfile(token, username);
+    if (!profile) return notFound(res);
+
+    const shareToken = encodeProfileShareToken(profile.profile_id);
+    return res.json({
+      success: true,
+      profile: {
+        userId: profile.id,
+        firstName: profile.first_name,
+        lastName: profile.last_name,
+        username: profile.username,
+        shareToken,
+        shareUrl: `https://wnncompany.com/@${encodeURIComponent(profile.username)}?_r=1&_t=${shareToken}`,
+        profilePhoto: mediaUrl(profile.profile_photo),
+        coverPhoto: mediaUrl(profile.cover_photo),
+        bio: profile.profile_visibility === "private" ? null : (profile.bio || null),
+        friendCount: profile.friend_count ?? 0,
+        followerCount: profile.follower_count ?? 0,
+        postCount: profile.post_count ?? 0,
+        verified: !!profile.verified,
+      },
+    });
+  } catch (error) {
+    console.error("Profile share resolver failed", error);
+    return res.status(500).json({ success: false, message: "Unable to load this profile." });
+  }
+});
+
+/**
+ * Browser entry point:
+ *   https://wnncompany.com/@username?_r=1&_t=ZS-XXXXXXXXX
+ *
+ * The embedded token resolves the stable profile identity while the
+ * username remains human-readable.
+ */
+router.get("/@:username", async (req: Request, res: Response) => {
+  try {
+    const username = String(req.params.username || "").trim();
+    const token = String(req.query._t || "").trim();
+    const profile = await resolveProfile(token, username);
+
+    if (!profile) {
       return res.status(404).type("html").send("<!doctype html><html><body><h1>Profile not found</h1></body></html>");
     }
 
-    const result = await pool.query(
-      `SELECT u.first_name,u.last_name,u.username,u.profile_share_code,p.profile_photo
-       FROM users u
-       LEFT JOIN user_profiles p ON p.user_id=u.id
-       WHERE u.profile_share_code=$1
-       LIMIT 1`,
-      [shareCode],
-    );
-
-    if (!result.rows.length) {
-      return res.status(404).type("html").send("<!doctype html><html><body><h1>Profile not found</h1></body></html>");
-    }
-
-    const profile = result.rows[0];
-    const name = `${profile.first_name} ${profile.last_name}`.trim();
-    const url = `https://redom.app/profile/username/${profile.profile_share_code}`;
+    const shareToken = encodeProfileShareToken(profile.profile_id);
+    const url = `https://wnncompany.com/@${encodeURIComponent(profile.username)}?_r=1&_t=${shareToken}`;
     const image = mediaUrl(profile.profile_photo);
+    const name = `${profile.first_name} ${profile.last_name}`.trim();
     const title = `${name} on ReDom`;
     const description = profile.username ? `@${profile.username} on ReDom` : `View ${name}'s profile on ReDom`;
-    const appUrl = `redom://profile/username/${profile.profile_share_code}`;
+    const appUrl = `redom://@${encodeURIComponent(profile.username)}?_r=1&_t=${shareToken}`;
 
     return res.status(200).type("html").send(`<!doctype html>
 <html lang="en">
