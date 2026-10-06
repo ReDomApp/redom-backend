@@ -9,7 +9,7 @@ import { StripeProviderCompat } from "./services/stripeNative";
 import { useEffect, useState } from "react";
 import { ordersPaymentsService } from "./services/ordersPaymentsService";
 
-const linking={prefixes:["redom://","https://redom.app"],config:{screens:{Profile:"profile/username/:userId",HomeFeed:"home",Search:"search",Notifications:"notifications",Messages:"messages",Chat:"messages/:conversationId",CallLinkJoin:"call-link/:token",GroupInvite:"group-invite/:token",Settings:"settings",Policy:"policy/:slug"}}};
+const linking={prefixes:["redom://","https://wnncompany.com"],config:{screens:{Profile:"@:username",HomeFeed:"home",Search:"search",Notifications:"notifications",Messages:"messages",Chat:"messages/:conversationId",CallLinkJoin:"call-link/:token",GroupInvite:"group-invite/:token",Settings:"settings",Policy:"policy/:slug"}}};
 
 function AppShell(){
   const {isDark,colors}=useTheme();
