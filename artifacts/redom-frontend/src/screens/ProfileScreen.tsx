@@ -80,11 +80,12 @@ export function ProfileScreen({ navigation, route }: Props) {
   const [promptIndex, setPromptIndex] = useState(0);
   const [visitorPreview, setVisitorPreview] = useState(false);
   const requestedUserId = route.params?._t || route.params?.shareToken || route.params?.shareCode || route.params?.userId;
+  const requestedShareUsername = route.params?.username;
 
   const refreshProfile = useCallback(async () => {
     setRefreshing(true); setLoading(true);
     try {
-      const result = await profileService.getProfile(requestedUserId);
+      const result = await profileService.getProfile(requestedUserId, requestedShareUsername);
       setProfile(result.profile); setPromptIndex((current) => (current + 1) % PROFILE_PROMPTS.length);
     } catch { Alert.alert("Profile", "Unable to load this profile right now."); }
     finally { setLoading(false); setRefreshing(false); }
