@@ -79,7 +79,7 @@ export function ProfileScreen({ navigation, route }: Props) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [promptIndex, setPromptIndex] = useState(0);
   const [visitorPreview, setVisitorPreview] = useState(false);
-  const requestedUserId = route.params?.userId;
+  const requestedUserId = route.params?._t || route.params?.shareToken || route.params?.shareCode || route.params?.userId;
 
   const refreshProfile = useCallback(async () => {
     setRefreshing(true); setLoading(true);
