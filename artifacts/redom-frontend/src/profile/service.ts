@@ -2,7 +2,7 @@ import { api } from "../api/client";
 import { env } from "../config/env";
 
 export type ProfileFriend = { userId:string; firstName:string; lastName:string; username:string; profilePhoto:string|null };
-export type ProfileSuggestion = { userId:string; firstName:string; lastName:string; username:string; publicId:string; profileId:string; profilePhoto:string|null; currentCity:string|null; friendCount:number };
+export type ProfileSuggestion = { userId:string; firstName:string; lastName:string; username:string; publicId:string; profileId:string|null; profilePhoto:string|null; currentCity:string|null; friendCount:number };
 export type ProfileData = {
   userId:string; firstName:string; lastName:string; username:string; publicId:string; profileId:string|null;
   shareCode:string; shareToken?:string; shareUrl:string;
