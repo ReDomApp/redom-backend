@@ -10,7 +10,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.redom.app",
       "associatedDomains": [
-        "applinks:redom.app"
+        "applinks:wnncompany.com"
       ],
       "bitcode": false,
       "infoPlist": {
@@ -45,8 +45,8 @@
           "data": [
             {
               "scheme": "https",
-              "host": "redom.app",
-              "pathPrefix": "/profile/username/"
+              "host": "wnncompany.com",
+              "pathPrefix": "/@"
             }
           ]
         }
