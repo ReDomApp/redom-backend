@@ -100,6 +100,12 @@ router.get("/profile/share/:token", async (req: Request, res: Response) => {
         followerCount: profile.follower_count ?? 0,
         postCount: profile.post_count ?? 0,
         verified: !!profile.verified,
+        isOwner: false,
+        friends: [],
+        reels: [],
+        photos: [],
+        posts: [],
+        suggestions: [],
       },
     });
   } catch (error) {
