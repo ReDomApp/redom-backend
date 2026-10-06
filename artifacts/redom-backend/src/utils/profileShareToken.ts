@@ -12,7 +12,7 @@
 const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const PREFIX = "ZS-";
 const PROFILE_ID_PATTERN = /^234[1-9][0-9]{11}$/;
-const TOKEN_PATTERN = /^ZS-[0-9A-Za-z]{9}$/;
+const TOKEN_PATTERN = /^ZS-[0-9A-Za-z]{11}$/;
 
 export function encodeProfileShareToken(profileId: string): string {
   const normalized = String(profileId || "").trim();
@@ -20,14 +20,16 @@ export function encodeProfileShareToken(profileId: string): string {
     throw new Error("Invalid ReDom profile ID.");
   }
 
-  let value = BigInt(normalized);
+  const profileValue = BigInt(normalized);
+  // Reserve two base62 characters for a deterministic integrity suffix.
+  let value = profileValue * 3844n + (profileValue % 3844n);
   let encoded = "";
   while (value > 0n) {
     encoded = ALPHABET[Number(value % 62n)] + encoded;
     value /= 62n;
   }
 
-  encoded = encoded.padStart(9, "0");
+  encoded = encoded.padStart(11, "0");
   return PREFIX + encoded;
 }
 
@@ -43,7 +45,10 @@ export function decodeProfileShareToken(token: string): string | null {
     value = value * 62n + BigInt(index);
   }
 
-  const profileId = value.toString();
+  const profileValue = value / 3844n;
+  const checksum = value % 3844n;
+  if (profileValue % 3844n !== checksum) return null;
+  const profileId = profileValue.toString();
   return PROFILE_ID_PATTERN.test(profileId) ? profileId : null;
 }
 
