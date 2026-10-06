@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { pool } from "../database/db";
+import { decodeProfileShareToken, encodeProfileShareToken } from "../utils/profileShareToken";
 
 const router = Router();
 
@@ -36,7 +37,8 @@ async function getProfile(req: Request, res: Response) {
   try {
     const viewerId = req.user!.userId;
     const viewerProfileId = req.user!.profileId;
-    const requestedId = req.params.userId || viewerId;
+    const rawRequestedId = req.params.userId || viewerId;
+    const requestedId = decodeProfileShareToken(rawRequestedId) || rawRequestedId;
 
     const profileResult = await pool.query(
       `SELECT
@@ -119,8 +121,8 @@ async function getProfile(req: Request, res: Response) {
           username: profile.username,
           publicId: profile.public_id,
           profileId: null,
-          shareCode: profile.profile_share_code,
-          shareUrl: `https://redom.app/profile/username/${profile.profile_share_code}`,
+          shareCode: encodeProfileShareToken(profile.profile_id),
+          shareUrl: `https://wnncompany.com/@${encodeURIComponent(profile.username)}?_r=1&_t=${encodeProfileShareToken(profile.profile_id)}`,
           profilePhoto: mediaUrl(req, profile.profile_photo),
           coverPhoto: mediaUrl(req, profile.cover_photo),
           friendCount: profile.friend_count ?? 0,
@@ -211,8 +213,8 @@ async function getProfile(req: Request, res: Response) {
       username: profile.username,
       publicId: profile.public_id,
       profileId: profile.profile_id,
-      shareCode: profile.profile_share_code,
-      shareUrl: `https://redom.app/profile/username/${profile.profile_share_code}`,
+      shareCode: encodeProfileShareToken(profile.profile_id),
+      shareUrl: `https://wnncompany.com/@${encodeURIComponent(profile.username)}?_r=1&_t=${encodeProfileShareToken(profile.profile_id)}`,
       profilePhoto: mediaUrl(req, profile.profile_photo),
       coverPhoto: mediaUrl(req, profile.cover_photo),
       friendCount: profile.friend_count ?? friends.rowCount ?? 0,
