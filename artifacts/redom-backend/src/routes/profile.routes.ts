@@ -187,7 +187,7 @@ async function getProfile(req: Request, res: Response) {
         [profile.id],
       ),
       pool.query(
-        `SELECT u.id,u.first_name,u.last_name,u.username,u.public_id,u.profile_id,
+        `SELECT u.id,u.first_name,u.last_name,u.username,u.public_id,
          p.profile_photo,p.current_city,p.friend_count
          FROM users u
          LEFT JOIN user_profiles p ON p.user_id=u.id
@@ -212,7 +212,7 @@ async function getProfile(req: Request, res: Response) {
       lastName: profile.last_name,
       username: profile.username,
       publicId: profile.public_id,
-      profileId: profile.profile_id,
+      profileId: null,
       shareCode: encodeProfileShareToken(profile.profile_id),
       shareUrl: `https://wnncompany.com/@${encodeURIComponent(profile.username)}?_r=1&_t=${encodeProfileShareToken(profile.profile_id)}`,
       profilePhoto: mediaUrl(req, profile.profile_photo),
