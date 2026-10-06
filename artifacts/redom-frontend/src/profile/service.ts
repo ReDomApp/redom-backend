@@ -36,7 +36,11 @@ function normalize(profile: ProfileData): ProfileData {
 }
 
 export const profileService = {
-  async getProfile(userId?:string) {
+  async getProfile(userId?:string, shareUsername?:string) {
+    if (userId?.startsWith("ZS-") && shareUsername) {
+      const result = await api.get<{success:boolean;profile:ProfileData}>(`/profile/share/${encodeURIComponent(userId)}?username=${encodeURIComponent(shareUsername)}`);
+      return { ...result, profile: normalize(result.profile) };
+    }
     const suffix = userId ? `/${encodeURIComponent(userId)}` : "";
     const result = await api.get<{success:boolean;profile:ProfileData}>(`/profile${suffix}`);
     return { ...result, profile: normalize(result.profile) };
