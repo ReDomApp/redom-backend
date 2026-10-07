@@ -2,8 +2,6 @@ import { Pool } from "pg";
 import type { NormalizedMessage } from "./types.js";
 import { deliverDirect } from "./smtp.js";
 
-const { Pool } = pg;
-
 type QueueConfig = Parameters<typeof deliverDirect>[1] & {
   databaseUrl: string;
   retryLimit: number;
