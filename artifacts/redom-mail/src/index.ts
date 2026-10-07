@@ -30,7 +30,7 @@ const queue = new MailQueue({
 
 function authenticate(req: express.Request): boolean {
   if (!apiKey) return false;
-  const supplied = req.header("authorization")?.replace(/^Bearer\\s+/i, "");
+  const supplied = req.header("authorization")?.replace(/^Bearer\s+/i, "");
   return supplied === apiKey;
 }
 
