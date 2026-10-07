@@ -77,7 +77,8 @@ app.post("/v1/emails",async(req,res)=>{
     const saved=await store.saveMessage(message,"outbound",scheduledAt?"scheduled":"queued",attachments,idempotencyKey,scheduledAt);
     if(saved.created){
       await store.enqueue(message.id,scheduledAt??new Date());
-      await emitEvent(pool,message.id,"email.queued",{email_id:message.id,to:message.recipients.map(x=>x.email)});
+      if(scheduledAt) await emitEvent(pool,message.id,"email.scheduled",{email_id:message.id,scheduled_at:scheduledAt.toISOString()});
+      await emitEvent(pool,message.id,"email.sent",{email_id:message.id,to:message.recipients.map(x=>x.email)});
     }
     res.status(saved.created?202:200).json({id:saved.message.id,object:"email",status:saved.message.status});
   }catch(error){res.status(400).json({error:{code:"invalid_request",message:error instanceof Error?error.message:"Invalid request"}});}
