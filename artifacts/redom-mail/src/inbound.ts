@@ -83,11 +83,11 @@ export function startInboundSmtp(pool: Pool, hostname: string, port: number, dom
       try {
         const parsed=decodeMime(data);
         const from={email:mailFrom || parsed.headers["from"] || "unknown@invalid"};
-        const message=normalizeMessage({
+        const message=await normalizeMessage({
           from,
           to: recipients,
           subject: parsed.headers["subject"] ?? "",
-          text: parsed.text,
+          text: parsed.text ?? (parsed.html ? undefined : " "),
           html: parsed.html,
           headers: parsed.headers,
         });
