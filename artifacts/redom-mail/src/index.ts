@@ -13,12 +13,18 @@ const apiKey = process.env.MAIL_API_KEY;
 const fromDomain = (process.env.SMTP_FROM_DOMAIN ?? "wnncompany.com").toLowerCase();
 const requireDkim = process.env.REQUIRE_DKIM !== "false";
 const dkimPrivateKeyPath = process.env.DKIM_PRIVATE_KEY_PATH;
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
+
 const queue = new MailQueue({
   host: process.env.SMTP_HOSTNAME ?? "mail.wnncompany.com",
   heloName: process.env.SMTP_HELO_NAME ?? "mail.wnncompany.com",
   connectTimeoutMs: Number(process.env.SMTP_CONNECT_TIMEOUT_MS ?? 15000),
   commandTimeoutMs: Number(process.env.SMTP_COMMAND_TIMEOUT_MS ?? 15000),
   maxMessageBytes: Number(process.env.SMTP_MAX_MESSAGE_BYTES ?? 10485760),
+  databaseUrl,
+  retryLimit: Number(process.env.SMTP_RETRY_LIMIT ?? 4),
+  retryBaseMs: Number(process.env.SMTP_RETRY_BASE_MS ?? 5000),
   dkim: dkimPrivateKeyPath ? { domain: fromDomain, selector: process.env.DKIM_SELECTOR ?? "mail2026", privateKeyPath: dkimPrivateKeyPath } : undefined,
 });
 
@@ -56,7 +62,7 @@ app.post("/v1/emails", (req, res) => {
       res.status(403).json({ error: { code: "sender_not_allowed", message: "Sender must use @" + fromDomain } });
       return;
     }
-    queue.enqueue(message);
+    void queue.enqueue(message);
     logger.info({ id: message.id, recipients: message.recipients.length }, "email queued");
     res.status(202).json({
       id: message.id,
@@ -69,6 +75,10 @@ app.post("/v1/emails", (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  logger.info({ port }, "ReDom Mail API listening");
-});
+(async () => {
+  await queue.init();
+  queue.start();
+  app.listen(port, () => {
+    logger.info({ port }, "ReDom Mail API listening");
+  });
+})();
