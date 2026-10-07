@@ -1,6 +1,6 @@
 import type { MailAddress } from "./types.js";
 
-const EMAIL_RE = /^[^\\s@<>]+@[^\\s@<>]+$/;
+const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+$/;
 
 export function parseAddress(value: string | MailAddress): MailAddress {
   if (typeof value !== "string") {
@@ -10,7 +10,7 @@ export function parseAddress(value: string | MailAddress): MailAddress {
   }
 
   const input = value.trim();
-  const match = input.match(/^(?:"?([^"]*)"?)?\\s*<([^>]+)>$/);
+  const match = input.match(/^(?:"?([^"]*)"?)?\s*<([^>]+)>$/);
   const email = (match?.[2] ?? input).trim().toLowerCase();
   const name = match?.[2] ? (match[1] ?? "").trim() : undefined;
   if (!EMAIL_RE.test(email)) throw new Error("Invalid email address");
