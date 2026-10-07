@@ -280,7 +280,7 @@ export function ReDomMenuDrawer({ visible, onClose }: Props) {
                     style={styles.upgradeCard}
                     accessibilityRole="button"
                     accessibilityLabel="ReDom Verified"
-                    onPress={() => undefined}
+                    onPress={() => go("ReDomVerified")}
                   >
                     <View style={styles.upgradeArtwork}>
                       <Image source={{ uri: REDOM_VERIFIED_PNG }} style={styles.upgradeBadgeImage} resizeMode="contain" />
