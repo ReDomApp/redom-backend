@@ -10,6 +10,7 @@ type SmtpConfig = {
   connectTimeoutMs: number;
   commandTimeoutMs: number;
   maxMessageBytes: number;
+  attachments?: Array<{ filename:string; contentType:string; contentDisposition?:string; contentId?:string; content:Buffer }>;
   dkim?: { domain: string; selector: string; privateKeyPath: string };
 };
 
@@ -69,7 +70,7 @@ export async function deliverDirect(
   message: NormalizedMessage,
   config: SmtpConfig,
 ): Promise<{ retryable: boolean; response: string }> {
-  const unsigned = renderMessage(message);
+  const unsigned = renderMessage(message, config.attachments ?? []);
   const raw = config.dkim ? signDkim(unsigned, config.dkim) + "\r\n" + unsigned : unsigned;
   if (Buffer.byteLength(raw, "utf8") > config.maxMessageBytes) {
     return { retryable: false, response: "Message exceeds configured size limit" };
