@@ -4,7 +4,7 @@ import { formatAddress, listAddresses, parseAddress } from "./address.js";
 import { messageId, smtpMessageId } from "./ids.js";
 
 function foldHeader(name: string, value: string): string {
-  const safe = value.replace(/[\\r\\n]+/g, " ").trim();
+  const safe = value.replace(/[\r\n]+/g, " ").trim();
   return `${name}: ${safe}`;
 }
 
