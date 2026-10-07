@@ -15,7 +15,7 @@ import UnavailableIcon from "../assets/verification/unavailable.svg";
 import ProfilePlaceholder from "../assets/home-feed/profile-placeholder.svg";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ReDomVerified">;
-type PlanKey = "standard" | "plus" | "recognized";
+type PlanKey = "standard" | "plus" | "pro";
 type Person = { userId:string; firstName:string; lastName:string; username:string; profilePhoto:string|null; verified:boolean };
 type Plan = { key:PlanKey; name:string; baseUsdMonthly:number|null; localCurrency:string; localAmount:number|null; localPrice:string; trialAvailable:boolean; reelsPerMonth:number|null };
 type ResponseData = { success:boolean; countryCode:string; currency:string; plans:Plan[]; socialProof:Person[] };
@@ -24,7 +24,7 @@ const BLUE="#1877F2", TEXT="#050505", MUTED="#65676B", BORDER="#E4E6EB", SOFT="#
 const SUPPORT:Record<PlanKey,string[]> = {
   standard:["Chat or email with agents"],
   plus:["Chat or email with agents","Get issues resolved more quickly","Request a call from an agent"],
-  recognized:["Chat or email with agents","Get issues resolved more quickly","Request a call from an agent","Active case monitoring"],
+  pro:["Chat or email with agents","Get issues resolved more quickly","Request a call from an agent","Active case monitoring"],
 };
 
 const nameOf=(p:Person|{firstName:string;lastName:string})=>`${p.firstName} ${p.lastName}`.trim();
@@ -55,7 +55,7 @@ function PlanCard({ plan, selected, height }: { plan:Plan; selected:boolean; hei
   const featured=plan.key!=="standard";
   const themes=plan.key!=="standard";
   const reels=plan.key!=="standard";
-  const allowance=plan.key==="plus"?4:plan.key==="recognized"?6:null;
+  const allowance=plan.key==="plus"?4:plan.key==="pro"?6:null;
   return <View accessible accessibilityRole="button" accessibilityLabel={`ReDom Verified ${plan.name} plan${selected?", selected":""}`} accessibilityState={{selected}} style={[s.card,selected&&s.selectedCard,{height}]}>
     <ScrollView nestedScrollEnabled directionalLockEnabled showsVerticalScrollIndicator={false} style={s.cardScroll} contentContainerStyle={s.cardContent}>
       <Text style={s.planTitle}>{plan.name}</Text>
