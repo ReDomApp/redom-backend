@@ -66,6 +66,17 @@ export async function ensureSchema(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS redom_mail_events_message_idx
       ON redom_mail_events (message_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS redom_mail_tracking (
+      token TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL REFERENCES redom_mail_messages(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('open','click')),
+      target_url TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ,
+      seen_count INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS redom_mail_tracking_message_idx ON redom_mail_tracking (message_id, kind);
+
     CREATE TABLE IF NOT EXISTS redom_mail_webhooks (
       id TEXT PRIMARY KEY,
       endpoint TEXT NOT NULL,
