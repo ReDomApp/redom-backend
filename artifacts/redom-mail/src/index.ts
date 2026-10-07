@@ -166,6 +166,7 @@ app.get("/v1/received/:id",async(req,res)=>{
   if(!requireAuth(req,res))return;
   const m=await store.getMessage(req.params.id);if(!m||m.direction!=="inbound")return res.status(404).json({error:{code:"not_found"}});
   res.json({data:m});
+  return undefined;
 });
 
 function cryptoRandom(size:number):Buffer{return randomBytes(size);}
