@@ -43,14 +43,14 @@ router.get("/verified-plans", authMiddleware, async (req, res) => {
          FROM payment_plans
         WHERE active = true
           AND (
-            plan_key IN ('redom_verified_recognized','verified_recognized','recognized','redom_recognized')
-            OR lower(name) IN ('redom recognized','recognized','redom verified recognized')
+            plan_key IN ('redom_verified_pro','verified_pro','pro','redom_pro')
+            OR lower(name) IN ('redom pro','pro','redom verified pro')
           )
         ORDER BY updated_at DESC
         LIMIT 1`,
     );
 
-    const recognizedUsd = configuredRecognized.rows[0]?.amount_minor != null
+    const proUsd = configuredRecognized.rows[0]?.amount_minor != null
       && String(configuredRecognized.rows[0]?.currency || "").toUpperCase() === "USD"
       ? Number(configuredRecognized.rows[0].amount_minor) / 100
       : 109;
@@ -102,7 +102,7 @@ router.get("/verified-plans", authMiddleware, async (req, res) => {
     const plans = [
       { key:"standard", name:"Standard", baseUsdMonthly:5, localAmount:Math.round(5*rate*100)/100, reelsPerMonth:null },
       { key:"plus", name:"Plus", baseUsdMonthly:18, localAmount:Math.round(18*rate*100)/100, reelsPerMonth:4 },
-      { key:"recognized", name:"ReDom Recognized", baseUsdMonthly:recognizedUsd, localAmount:Math.round(recognizedUsd*rate*100)/100, reelsPerMonth:6 },
+      { key:"pro", name:"ReDom Pro", baseUsdMonthly:proUsd, localAmount:Math.round(proUsd*rate*100)/100, reelsPerMonth:6 },
     ].map(plan => ({
       ...plan,
       localCurrency: currency,
