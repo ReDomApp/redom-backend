@@ -47,7 +47,7 @@ export async function normalizeMessage(input: SendEmailRequest): Promise<Normali
   return {
     id: messageId(), from, recipients: to, cc, bcc, replyTo,
     subject: input.subject, text: input.text, html: input.html,
-    headers: { ...(input.headers ?? {}), "Message-ID": smtpMessageId(messageId()), "Date": new Date().toUTCString() },
+    headers: { ...(input.headers ?? {}), "Message-ID": smtpMessageId(id), "Date": new Date().toUTCString() },
     tags: input.tags,
     createdAt: new Date().toISOString(), attempt: 0,
   };
