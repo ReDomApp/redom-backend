@@ -38,7 +38,7 @@ router.get("/verified-plans", authMiddleware, async (req, res) => {
     const currency = pricedCountry?.currency || configuredCurrency || "USD";
     const rate = pricedCountry?.rate && pricedCountry.rate > 0 ? pricedCountry.rate : 1;
 
-    const configuredRecognized = await pool.query(
+    const configuredPro = await pool.query(
       `SELECT amount_minor, currency
          FROM payment_plans
         WHERE active = true
@@ -50,9 +50,9 @@ router.get("/verified-plans", authMiddleware, async (req, res) => {
         LIMIT 1`,
     );
 
-    const proUsd = configuredRecognized.rows[0]?.amount_minor != null
-      && String(configuredRecognized.rows[0]?.currency || "").toUpperCase() === "USD"
-      ? Number(configuredRecognized.rows[0].amount_minor) / 100
+    const proUsd = configuredPro.rows[0]?.amount_minor != null
+      && String(configuredPro.rows[0]?.currency || "").toUpperCase() === "USD"
+      ? Number(configuredPro.rows[0].amount_minor) / 100
       : 109;
 
     const trialResult = await pool.query(
