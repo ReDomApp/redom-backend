@@ -104,7 +104,7 @@ export class MailQueue {
             const delay = this.config.retryBaseMs * Math.pow(2, message.attempt - 1);
             await this.pool.query(
               `UPDATE redom_mail_queue
-               SET status = 'queued', available_at = NOW() + ($2 || ' milliseconds')::interval,
+               SET status = 'queued', available_at = NOW() + ($2 * INTERVAL '1 millisecond'),
                    last_error = $3
                WHERE id = $1`,
               [message.id, delay, result.response],
