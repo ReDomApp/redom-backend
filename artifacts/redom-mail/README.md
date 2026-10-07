@@ -123,3 +123,76 @@ Future control-plane work can add templates, event webhooks, bounce ingestion, c
 
 ## Deployment
 The API can run on existing ReDom infrastructure. The SMTP worker should use a dedicated VM/VPS with a stable public IPv4 and provider-controlled PTR. Neon can provide the PostgreSQL database already used by ReDom.
+
+
+## Current API capabilities
+
+### Outbound
+- `POST /v1/emails` with text/HTML, CC/BCC, Reply-To, custom headers, tags and attachments.
+- Base64, local-file and HTTPS URL attachments.
+- `Idempotency-Key` support.
+- `POST /v1/emails/batch` for up to 100 messages.
+- Scheduled delivery through the durable PostgreSQL job queue.
+- `GET /v1/emails`, `GET /v1/emails/:id`, and attachment retrieval.
+- Lifecycle events for sent, scheduled, delivered, delayed/retried, bounced and failed messages.
+
+Resend documents the same core capabilities including attachments, scheduling, batches and idempotency. Resend specifically does not allow attachments on scheduled messages; this implementation can enforce that restriction before production if exact API compatibility is required. citeturn1search0turn1search11
+
+### Inbound
+The SMTP worker accepts mail addressed to `@wnncompany.com`, parses MIME text/HTML and attachments, stores the message and attachment bytes in PostgreSQL, and emits `email.received`.
+
+Use:
+
+- `GET /v1/received`
+- `GET /v1/received/:id`
+- `GET /v1/emails/:id/attachments`
+- `GET /v1/attachments/:id`
+
+Resend's inbound system likewise persists received mail, exposes received-message and attachment access, and sends an `email.received` webhook. citeturn0search0turn0search2
+
+### Webhooks
+- Create/list/disable webhook endpoints.
+- HMAC-signed webhook payloads.
+- Durable webhook delivery queue.
+- Exponential retry.
+- Manual replay.
+- Event persistence.
+
+The implementation is designed around the same reliability model Resend documents for webhook retries and manual replays. citeturn1search4
+
+## Receiving mail in production
+
+Receiving is **not enabled merely by deploying the API**.
+
+For `support@wnncompany.com`, `no-reply@wnncompany.com`, etc.:
+
+1. Give the SMTP worker a stable public IP.
+2. Point `mail.wnncompany.com` to that IP.
+3. Configure the IP's PTR/reverse DNS to `mail.wnncompany.com`.
+4. Publish an MX record for `wnncompany.com` pointing to `mail.wnncompany.com`.
+5. Allow inbound TCP/25 through the VPS/firewall/load-balancer path.
+6. Run the inbound SMTP role with `INBOUND_SMTP_ENABLED=true`.
+7. Set `INBOUND_SMTP_PORT=25` when the process itself owns port 25, or keep 2525 and forward TCP/25 to it.
+8. Test from an external mailbox before considering inbound production-ready.
+
+Example MX:
+
+~~~text
+wnncompany.com. MX 10 mail.wnncompany.com.
+~~~
+
+Do not publish the MX until the receiving host is actually reachable.
+
+## Important production boundary
+
+GitHub CI proves that the ReDom Mail code type-checks and builds. It cannot prove external SMTP delivery or inbound reception because those require a real public IP, DNS, PTR, firewall rules, DKIM private key and live recipient MX servers.
+
+Therefore:
+
+**Code readiness: READY**
+
+**Real-world send readiness: requires SMTP host + public IP/PTR + SPF/DKIM/DMARC + port 25 egress**
+
+**Real-world receive readiness: requires MX + public IP/PTR + port 25 ingress + inbound worker**
+
+Do not mark the service as fully live until those infrastructure checks pass.
