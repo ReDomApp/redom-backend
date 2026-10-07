@@ -73,6 +73,7 @@ app.post("/v1/emails",async(req,res)=>{
     if(!message.from.email.endsWith("@"+fromDomain)){res.status(403).json({error:{code:"sender_not_allowed",message:"Sender must use @"+fromDomain}});return;}
     const idempotencyKey=req.header("idempotency-key")??undefined;
     const scheduledAt=parseScheduled(input.scheduledAt);
+    if(scheduledAt && (input.attachments?.length ?? 0)) throw new Error("Scheduled emails cannot contain attachments");
     const attachments=await loadAttachments(input);
     const saved=await store.saveMessage(message,"outbound",scheduledAt?"scheduled":"queued",attachments,idempotencyKey,scheduledAt);
     if(saved.created){
@@ -89,12 +90,14 @@ app.post("/v1/emails/batch",async(req,res)=>{
   try{
     const emails=Array.isArray(req.body?.emails)?req.body.emails:[]; if(!emails.length||emails.length>100)throw new Error("emails must contain 1-100 messages");
     const out=[];
-    for(const input of emails as SendEmailRequest[]){
+    const batchKey=req.header("idempotency-key")??undefined;
+    for(const [index,input] of (emails as SendEmailRequest[]).entries()){
       const message=await normalizeMessage(input);
       if(!message.from.email.endsWith("@"+fromDomain))throw new Error("Sender must use @"+fromDomain);
       const attachments=await loadAttachments(input);
       const scheduledAt=parseScheduled(input.scheduledAt);
-      const saved=await store.saveMessage(message,"outbound",scheduledAt?"scheduled":"queued",attachments,undefined,scheduledAt);
+      if(scheduledAt) throw new Error("Batch emails cannot be scheduled");
+      const saved=await store.saveMessage(message,"outbound","queued",attachments,batchKey ? batchKey + ":" + index : undefined);
       if(saved.created)await store.enqueue(message.id,scheduledAt??new Date());
       out.push({id:saved.message.id,status:saved.message.status});
     }
