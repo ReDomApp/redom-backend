@@ -92,6 +92,10 @@ openssl rsa -in wnncompany-dkim.pem -pubout -outform PEM -out wnncompany-dkim-pu
 
 Store the private key as a deployment secret/file. Do not commit it to GitHub.
 
+## Environment inventory
+
+See [`MAIL_ENVIRONMENT.md`](./MAIL_ENVIRONMENT.md) for the current ReDom Mail environment, credential requirements, DNS/SMTP infrastructure checklist, and production activation order. Real secret values are intentionally not committed to GitHub.
+
 ## Environment
 ~~~text
 DATABASE_URL=...
