@@ -109,6 +109,7 @@ app.get("/v1/emails/:id",async(req,res)=>{
   if(!requireAuth(req,res))return;
   const m=await store.getMessage(req.params.id); if(!m){res.status(404).json({error:{code:"not_found"}});return;}
   res.json({data:m});
+  return undefined;
 });
 app.get("/v1/emails/:id/attachments",async(req,res)=>{
   if(!requireAuth(req,res))return;
@@ -118,6 +119,7 @@ app.get("/v1/attachments/:id",async(req,res)=>{
   if(!requireAuth(req,res))return;
   const a=await store.getAttachment(req.params.id); if(!a){res.status(404).end();return;}
   res.setHeader("Content-Type",a.contentType);res.setHeader("Content-Disposition",'attachment; filename="'+a.filename.replace(/"/g,"'")+'"');res.send(a.content);
+  return undefined;
 });
 
 app.post("/v1/webhooks",async(req,res)=>{
@@ -128,6 +130,7 @@ app.post("/v1/webhooks",async(req,res)=>{
   const id="wh_"+Date.now().toString(36)+"_"+cryptoRandom(6).toString("hex");
   await pool.query("INSERT INTO redom_mail_webhooks (id,endpoint,signing_secret,events) VALUES ($1,$2,$3,$4)",[id,endpoint,secret,JSON.stringify(events)]);
   res.status(201).json({id,endpoint,events,signing_secret:secret});
+  return undefined;
 });
 
 
@@ -136,11 +139,13 @@ app.get("/v1/webhooks",async(req,res)=>{
   if(!requireAuth(req,res))return;
   const r=await pool.query("SELECT id,endpoint,events,enabled,created_at FROM redom_mail_webhooks ORDER BY created_at DESC");
   res.json({data:r.rows});
+  return undefined;
 });
 app.delete("/v1/webhooks/:id",async(req,res)=>{
   if(!requireAuth(req,res))return;
   await pool.query("UPDATE redom_mail_webhooks SET enabled=false WHERE id=$1",[req.params.id]);
   res.status(204).end();
+  return undefined;
 });
 app.post("/v1/webhooks/:id/replay",async(req,res)=>{
   if(!requireAuth(req,res))return;
@@ -150,10 +155,12 @@ app.post("/v1/webhooks/:id/replay",async(req,res)=>{
   );
   if(!r.rowCount)return res.status(404).json({error:{code:"event_not_found"}});
   res.status(202).json({id:r.rows[0].id,status:"pending"});
+  return undefined;
 });
 app.get("/v1/received",async(req,res)=>{
   if(!requireAuth(req,res))return;
   res.json({data:await store.listMessages(Number(req.query.limit??50),"inbound")});
+  return undefined;
 });
 app.get("/v1/received/:id",async(req,res)=>{
   if(!requireAuth(req,res))return;
