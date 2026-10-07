@@ -44,8 +44,9 @@ export async function normalizeMessage(input: SendEmailRequest): Promise<Normali
   if (![...to, ...cc, ...bcc].length) throw new Error("At least one recipient is required");
   if (!input.text && !input.html) throw new Error("Either text or html is required");
   if (input.subject.length > 998) throw new Error("Subject is too long");
+  const id = messageId();
   return {
-    id: messageId(), from, recipients: to, cc, bcc, replyTo,
+    id, from, recipients: to, cc, bcc, replyTo,
     subject: input.subject, text: input.text, html: input.html,
     headers: { ...(input.headers ?? {}), "Message-ID": smtpMessageId(id), "Date": new Date().toUTCString() },
     tags: input.tags,
