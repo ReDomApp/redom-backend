@@ -45,7 +45,7 @@ export async function ensureSchema(pool: Pool): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
-    CREATE TABLE IF NOT EXISTS redom_mail_queue (
+    CREATE TABLE IF NOT EXISTS redom_mail_jobs (
       id TEXT PRIMARY KEY,
       message_id TEXT NOT NULL REFERENCES redom_mail_messages(id) ON DELETE CASCADE,
       available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -53,8 +53,8 @@ export async function ensureSchema(pool: Pool): Promise<void> {
       locked_at TIMESTAMPTZ,
       last_error TEXT
     );
-    CREATE INDEX IF NOT EXISTS redom_mail_queue_ready_idx
-      ON redom_mail_queue (available_at, attempts);
+    CREATE INDEX IF NOT EXISTS redom_mail_jobs_ready_idx
+      ON redom_mail_jobs (available_at, attempts);
 
     CREATE TABLE IF NOT EXISTS redom_mail_events (
       id TEXT PRIMARY KEY,
