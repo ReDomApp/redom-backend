@@ -30,7 +30,7 @@ function readReply(socket: net.Socket | tls.TLSSocket, timeoutMs: number): Promi
       buffer = lines.pop() ?? "";
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        if (/^\\d{3} /.test(line)) {
+        if (/^\d{3} /.test(line)) {
           cleanup();
           resolve({
             code: Number(line.slice(0, 3)),
