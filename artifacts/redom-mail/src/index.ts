@@ -1,4 +1,5 @@
 import express from "express";
+import { randomBytes } from "node:crypto";
 import pino from "pino";
 import { Pool } from "pg";
 import { ensureSchema } from "./schema.js";
@@ -139,7 +140,7 @@ app.get("/v1/received/:id",async(req,res)=>{
   res.json({data:m});
 });
 
-function cryptoRandom(size:number):Buffer{return require("node:crypto").randomBytes(size);}
+function cryptoRandom(size:number):Buffer{return randomBytes(size);}
 
 (async()=>{
   await ensureSchema(pool);
