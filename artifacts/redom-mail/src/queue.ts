@@ -2,8 +2,9 @@ import { Pool } from "pg";
 import { deliverDirect } from "./smtp.js";
 import { MailStore } from "./store.js";
 import { emitEvent } from "./webhooks.js";
+import { decorateHtml } from "./tracking.js";
 
-type Config = Parameters<typeof deliverDirect>[1] & { retryLimit:number; retryBaseMs:number };
+type Config = Parameters<typeof deliverDirect>[1] & { retryLimit:number; retryBaseMs:number; trackingBaseUrl?:string };
 
 export class MailQueue {
   private running=false;
@@ -48,13 +49,14 @@ export class MailQueue {
       while(true){
         const claimed=await this.claim();if(!claimed)break;
         const {message,attempts}=claimed;
+        const trackedMessage = this.config.trackingBaseUrl ? await decorateHtml(this.pool,message,this.config.trackingBaseUrl) : message;
         try{
           const attachments=await this.store.listAttachments(message.id);
           const full=await Promise.all(attachments.map(async(a:any)=>{
             const x=await this.store.getAttachment(a.id);
             return x?{...x,contentDisposition:a.content_disposition,contentId:a.content_id}:null;
           }));
-          const result=await deliverDirect(message,{...this.config,attachments:full.filter(Boolean) as any});
+          const result=await deliverDirect(trackedMessage,{...this.config,attachments:full.filter(Boolean) as any});
           if(!result.retryable && result.response.startsWith("250")){
             await this.store.updateStatus(message.id,"delivered");
             await emitEvent(this.pool,message.id,"email.delivered",{email_id:message.id,to:message.recipients.map((x:any)=>x.email)});
