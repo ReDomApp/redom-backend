@@ -60,7 +60,13 @@ function PlanCard({ plan, selected, height }: { plan:Plan; selected:boolean; hei
     <ScrollView nestedScrollEnabled directionalLockEnabled showsVerticalScrollIndicator={false} style={s.cardScroll} contentContainerStyle={s.cardContent}>
       <Text style={s.planTitle}>{plan.name}</Text>
       <Text style={s.price}>{plan.localPrice}</Text>
-      <View style={s.trialRow}><InfoIcon width={20} height={20}/><Text style={s.trialText}>Trial benefit.</Text><Text style={s.link}>Learn more</Text></View>
+      <View style={s.trialRow}>
+        <InfoIcon width={20} height={20}/>
+        <Text style={s.trialText}>{plan.trialAvailable ? "Trial benefit." : "Trial benefit unavailable."}</Text>
+        <Pressable accessibilityRole="link" accessibilityLabel="Learn more about trial benefit" onPress={()=>undefined} hitSlop={8}>
+          <Text style={s.link}>Learn more</Text>
+        </Pressable>
+      </View>
       {plan.key==="standard"?<View style={s.pill}><Text style={s.pillText}>Recommended</Text></View>:null}
       <View style={s.verifiedBenefit}><VerifiedBadgeBlack width={30} height={30}/><Text style={s.verifiedBenefitText}>Verified badge</Text></View>
 
