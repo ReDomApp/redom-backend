@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { pool } from "../database/db";
-import { getStripeStarsCountry } from "../services/payments/stripe-country.service";
+import { getStripeStarsCountries } from "../services/payments/stripe-country.service";
 
 const router = Router();
 
@@ -11,17 +11,32 @@ router.get("/verified-plans", authMiddleware, async (req, res) => {
   if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
 
   try {
-    const countryResult = await pool.query(
-      `SELECT country FROM login_history
-       WHERE user_id = $1 AND country IS NOT NULL
-       ORDER BY login_time DESC
-       LIMIT 1`,
-      [userId],
-    );
-    const countryCode = String(countryResult.rows[0]?.country || "US").toUpperCase();
-    const country = await getStripeStarsCountry(countryCode);
-    const currency = country?.currency || "USD";
-    const rate = country?.rate && country.rate > 0 ? country.rate : 1;
+    const [countryResult, settingsResult, supportedCountries] = await Promise.all([
+      pool.query(
+        `SELECT country FROM login_history
+         WHERE user_id = $1 AND country IS NOT NULL
+         ORDER BY login_time DESC
+         LIMIT 1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT currency FROM payment_settings WHERE user_id = $1 LIMIT 1`,
+        [userId],
+      ),
+      getStripeStarsCountries(),
+    ]);
+    const detectedCountry = String(countryResult.rows[0]?.country || "").trim();
+    const configuredCurrency = String(settingsResult.rows[0]?.currency || "").toUpperCase();
+    const country = supportedCountries.find(item =>
+      item.isoCode === detectedCountry.toUpperCase()
+      || item.name.toLowerCase() === detectedCountry.toLowerCase()
+    ) || null;
+    const pricedCountry = configuredCurrency
+      ? supportedCountries.find(item => item.currency === configuredCurrency) || country
+      : country;
+    const countryCode = pricedCountry?.isoCode || "US";
+    const currency = pricedCountry?.currency || configuredCurrency || "USD";
+    const rate = pricedCountry?.rate && pricedCountry.rate > 0 ? pricedCountry.rate : 1;
 
     const configuredRecognized = await pool.query(
       `SELECT amount_minor, currency
