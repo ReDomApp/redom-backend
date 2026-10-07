@@ -27,17 +27,17 @@ const SUPPORT:Record<PlanKey,string[]> = {
   recognized:["Chat or email with agents","Get issues resolved more quickly","Request a call from an agent","Active case monitoring"],
 };
 
-const nameOf=(p:Person|{firstName:string;lastName:string})=>\`\${p.firstName} \${p.lastName}\`.trim();
+const nameOf=(p:Person|{firstName:string;lastName:string})=>`${p.firstName} ${p.lastName}`.trim();
 
 function socialCopy(people:Person[]) {
   const verified=people.filter(p=>p.verified).slice(0,3);
   if(verified.length){
     const names=verified.map(nameOf);
-    const label=names.length===1?names[0]:names.length===2?\`\${names[0]} and \${names[1]}\`:\`\${names[0]}, \${names[1]} and \${names[2]}\`;
-    return { people:verified, text:\`\${label} already have a verified badge.\`, empty:false };
+    const label=names.length===1?names[0]:names.length===2?`${names[0]} and ${names[1]}`:`${names[0]}, ${names[1]} and ${names[2]}`;
+    return { people:verified, text:`${label} already have a verified badge.`, empty:false };
   }
   const photo=people.find(p=>!!p.profilePhoto);
-  if(photo) return { people:[photo], text:\`\${nameOf(photo)} already has a profile photo.\`, empty:false };
+  if(photo) return { people:[photo], text:`${nameOf(photo)} already has a profile photo.`, empty:false };
   return { people:[], text:"Be the first to Verify your account officially with ReDom amongst your friends & followers", empty:true };
 }
 
@@ -56,7 +56,7 @@ function PlanCard({ plan, selected, height }: { plan:Plan; selected:boolean; hei
   const themes=plan.key!=="standard";
   const reels=plan.key!=="standard";
   const allowance=plan.key==="plus"?4:plan.key==="recognized"?6:null;
-  return <View accessible accessibilityRole="button" accessibilityLabel={\`ReDom Verified \${plan.name} plan\${selected?", selected":""}\`} accessibilityState={{selected}} style={[s.card,selected&&s.selectedCard,{height}]}>
+  return <View accessible accessibilityRole="button" accessibilityLabel={`ReDom Verified ${plan.name} plan${selected?", selected":""}`} accessibilityState={{selected}} style={[s.card,selected&&s.selectedCard,{height}]}>
     <ScrollView nestedScrollEnabled directionalLockEnabled showsVerticalScrollIndicator={false} style={s.cardScroll} contentContainerStyle={s.cardContent}>
       <Text style={s.planTitle}>{plan.name}</Text>
       <Text style={s.price}>{plan.localPrice}</Text>
@@ -67,7 +67,7 @@ function PlanCard({ plan, selected, height }: { plan:Plan; selected:boolean; hei
       <Text style={s.category}>Maximize discovery</Text>
       <Benefit included label="Search optimization"/>
       <Benefit included={featured} label="Featured profile"/>
-      <Benefit included={reels} label="Add links to Reels" supporting={allowance?\`\${allowance} per month\`:undefined}/>
+      <Benefit included={reels} label="Add links to Reels" supporting={allowance?`${allowance} per month`:undefined}/>
 
       <Text style={s.category}>Drive engagement</Text>
       <Benefit included label="Upgraded profile links"/>
@@ -76,9 +76,9 @@ function PlanCard({ plan, selected, height }: { plan:Plan; selected:boolean; hei
 
       <Text style={s.category}>Protect your brand</Text>
       <Benefit included label="Impersonation protection"/>
-      <Benefit included label="Enhanced support" supporting={SUPPORT[plan.key].join("\\n")}/>
+      <Benefit included label="Enhanced support" supporting={SUPPORT[plan.key].join("\n")}/>
 
-      <Pressable accessibilityRole="button" accessibilityLabel={\`See \${plan.name} benefit details\`} style={s.details} onPress={()=>undefined}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`See ${plan.name} benefit details`} style={s.details} onPress={()=>undefined}>
         <Text style={s.detailsText}>See benefit details</Text>
       </Pressable>
     </ScrollView>
@@ -125,7 +125,7 @@ export function ReDomVerifiedScreen({navigation}:Props){
     </View>
 
     <ScrollView style={s.page} showsVerticalScrollIndicator={false} nestedScrollEnabled contentContainerStyle={{paddingBottom:insets.bottom+112}}>
-      <Text style={s.headline}>Unlock exclusive benefits{"\\n"}just for you</Text>
+      <Text style={s.headline}>Unlock exclusive benefits{"\n"}just for you</Text>
 
       <View style={s.identity}>
         <View style={s.avatarWrap}>{user?.profilePhoto?<Image source={{uri:user.profilePhoto}} style={s.avatar}/>:<ProfilePlaceholder width={116} height={116}/>}</View>
@@ -154,12 +154,12 @@ export function ReDomVerifiedScreen({navigation}:Props){
         </ScrollView>
       }
 
-      {!loading?<View style={s.dots}>{(data?.plans??[]).map((plan,index)=><Pressable key={plan.key} onPress={()=>selectPlan(index)} accessibilityRole="button" accessibilityLabel={\`Select ReDom Verified \${plan.name} plan\`}><View style={[s.dot,index===selectedIndex&&s.dotActive]}/></Pressable>)}</View>:null}
+      {!loading?<View style={s.dots}>{(data?.plans??[]).map((plan,index)=><Pressable key={plan.key} onPress={()=>selectPlan(index)} accessibilityRole="button" accessibilityLabel={`Select ReDom Verified ${plan.name} plan`}><View style={[s.dot,index===selectedIndex&&s.dotActive]}/></Pressable>)}</View>:null}
     </ScrollView>
 
     <View style={[s.bottom,{paddingBottom:Math.max(12,insets.bottom+8)]}>
       <Text style={s.eligibility}>ReDom Verified is available for eligible profiles.</Text>
-      <Pressable onPress={unlock} disabled={!selectedPlan} accessibilityRole="button" accessibilityLabel={selectedPlan?\`Unlock \${selectedPlan.name} benefits\`:"Unlock benefits"} style={[s.cta,!selectedPlan&&{opacity:.6}]}>
+      <Pressable onPress={unlock} disabled={!selectedPlan} accessibilityRole="button" accessibilityLabel={selectedPlan?`Unlock ${selectedPlan.name} benefits`:"Unlock benefits"} style={[s.cta,!selectedPlan&&{opacity:.6}]}>
         <Text style={s.ctaText}>Unlock benefits</Text>
       </Pressable>
     </View>
