@@ -34,6 +34,7 @@ const queue=new MailQueue(pool,{
   maxMessageBytes:Number(process.env.SMTP_MAX_MESSAGE_BYTES??26214400),
   retryLimit:Number(process.env.SMTP_RETRY_LIMIT??8),
   retryBaseMs:Number(process.env.SMTP_RETRY_BASE_MS??5000),
+  trackingBaseUrl:process.env.TRACKING_BASE_URL,
   dkim:dkimPrivateKeyPath?{domain:fromDomain,selector:process.env.DKIM_SELECTOR??"mail2026",privateKeyPath:dkimPrivateKeyPath}:undefined
 });
 
@@ -119,6 +120,19 @@ app.get("/v1/emails/:id/attachments",async(req,res)=>{
   if(!requireAuth(req,res))return;
   res.json({data:await store.listAttachments(req.params.id)});
 });
+app.get("/t/o/:token",async(req,res)=>{
+  const r=await pool.query("UPDATE redom_mail_tracking SET seen_count=seen_count+1,last_seen_at=NOW() WHERE token=$1 AND kind='open' RETURNING message_id",[req.params.token]);
+  if(r.rowCount) await emitEvent(pool,r.rows[0].message_id,"email.opened",{email_id:r.rows[0].message_id});
+  const pixel=Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==","base64");
+  res.setHeader("Content-Type","image/gif");res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");res.send(pixel);return undefined;
+});
+app.get("/t/c/:token",async(req,res)=>{
+  const r=await pool.query("UPDATE redom_mail_tracking SET seen_count=seen_count+1,last_seen_at=NOW() WHERE token=$1 AND kind='click' RETURNING message_id,target_url",[req.params.token]);
+  if(!r.rowCount)return res.status(404).end();
+  await emitEvent(pool,r.rows[0].message_id,"email.clicked",{email_id:r.rows[0].message_id});
+  res.redirect(r.rows[0].target_url);return undefined;
+});
+
 app.get("/v1/attachments/:id",async(req,res)=>{
   if(!requireAuth(req,res))return;
   const a=await store.getAttachment(req.params.id); if(!a){res.status(404).end();return;}
