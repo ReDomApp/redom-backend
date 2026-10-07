@@ -118,10 +118,6 @@ export function ReDomVerifiedScreen({navigation}:Props){
     const x=Number(event.nativeEvent.contentOffset?.x??0);
     setSelectedIndex(Math.max(0,Math.min(2,Math.round(x/snap))));
   };
-  const selectPlan=(index:number)=>{
-    railRef.current?.scrollTo({x:index*snap,animated:true});
-    setSelectedIndex(index);
-  };
   const unlock=()=>{ /* checkout/verification handoff is intentionally deferred to the next workflow */ void selectedPlan; };
 
   return <View style={s.root}>
@@ -160,7 +156,6 @@ export function ReDomVerifiedScreen({navigation}:Props){
         </ScrollView>
       }
 
-      {!loading?<View style={s.dots}>{(data?.plans??[]).map((plan,index)=><Pressable key={plan.key} onPress={()=>selectPlan(index)} accessibilityRole="button" accessibilityLabel={`Select ReDom Verified ${plan.name} plan`}><View style={[s.dot,index===selectedIndex&&s.dotActive]}/></Pressable>)}</View>:null}
     </ScrollView>
 
     <View style={[s.bottom,{paddingBottom:Math.max(12,insets.bottom+8)]}>
@@ -211,9 +206,6 @@ const s=StyleSheet.create({
   supporting:{fontSize:15,lineHeight:20,color:GREEN,marginTop:1},
   details:{alignSelf:"flex-start",marginTop:18,paddingVertical:8},
   detailsText:{fontSize:16,fontWeight:"700",color:BLUE},
-  dots:{flexDirection:"row",justifyContent:"center",alignItems:"center",gap:7,paddingVertical:12},
-  dot:{width:6,height:6,borderRadius:3,backgroundColor:"#CCD0D5"},
-  dotActive:{width:18,backgroundColor:BLUE},
   bottom:{position:"absolute",left:0,right:0,bottom:0,backgroundColor:"#FFF",borderTopWidth:1,borderTopColor:SOFT,paddingHorizontal:18,paddingTop:12},
   eligibility:{fontSize:14.5,lineHeight:20,color:MUTED,textAlign:"center",marginBottom:10},
   cta:{height:56,borderRadius:30,backgroundColor:BLUE,alignItems:"center",justifyContent:"center"},
