@@ -134,7 +134,7 @@ The API can run on existing ReDom infrastructure. The SMTP worker should use a d
 - `POST /v1/emails/batch` for up to 100 messages.
 - Scheduled delivery through the durable PostgreSQL job queue.
 - `GET /v1/emails`, `GET /v1/emails/:id`, and attachment retrieval.
-- Lifecycle events for sent, scheduled, delivered, delayed/retried, bounced and failed messages.
+- Lifecycle events for sent, scheduled, delivered, delayed/retried, bounced, failed, opened and clicked messages.\n- Optional HTML open-pixel and click-through tracking through `TRACKING_BASE_URL`.
 
 Resend documents the same core capabilities including attachments, scheduling, batches and idempotency. Resend specifically does not allow attachments on scheduled messages; this implementation can enforce that restriction before production if exact API compatibility is required. citeturn1search0turn1search11
 
