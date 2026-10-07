@@ -151,7 +151,7 @@ app.post("/v1/webhooks/:id/replay",async(req,res)=>{
   if(!r.rowCount)return res.status(404).json({error:{code:"event_not_found"}});
   res.status(202).json({id:r.rows[0].id,status:"pending"});
 });
-\napp.get("/v1/received",async(req,res)=>{
+app.get("/v1/received",async(req,res)=>{
   if(!requireAuth(req,res))return;
   res.json({data:await store.listMessages(Number(req.query.limit??50),"inbound")});
 });
