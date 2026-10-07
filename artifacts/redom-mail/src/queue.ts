@@ -54,7 +54,7 @@ export class MailQueue {
             return x?{...x,contentDisposition:a.content_disposition,contentId:a.content_id}:null;
           }));
           const result=await deliverDirect(message,{...this.config,attachments:full.filter(Boolean) as any});
-          if(result.ok){
+          if(!result.retryable && result.response.startsWith("250")){
             await this.store.updateStatus(message.id,"delivered");
             await emitEvent(this.pool,message.id,"email.delivered",{email_id:message.id,to:message.recipients.map((x:any)=>x.email)});
           }else if(result.retryable){
