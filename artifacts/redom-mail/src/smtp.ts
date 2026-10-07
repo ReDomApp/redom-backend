@@ -77,7 +77,7 @@ export async function deliverDirect(
   }
 
   const domainGroups = new Map<string, string[]>();
-  for (const recipient of message.recipients) {
+  for (const recipient of [...message.recipients, ...(message.cc ?? []), ...(message.bcc ?? [])]) {
     const domain = recipient.email.split("@")[1].toLowerCase();
     const group = domainGroups.get(domain) ?? [];
     group.push(recipient.email);
