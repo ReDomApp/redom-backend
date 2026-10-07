@@ -34,6 +34,7 @@ export class MailQueue {
       return;
     }
     await this.store.updateStatus(messageId,"queued",error);
+    await emitEvent(this.pool,messageId,"email.delivery_delayed",{email_id:messageId,error,attempt:attempts});
     await this.pool.query(
       "INSERT INTO redom_mail_jobs (id,message_id,available_at,attempts,last_error) VALUES ($1,$2,$3,$4,$5)",
       ["job_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2),messageId,new Date(Date.now()+this.config.retryBaseMs*Math.pow(2,attempts-1)),attempts,error],
