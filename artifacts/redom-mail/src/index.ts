@@ -14,6 +14,7 @@ const fromDomain = (process.env.SMTP_FROM_DOMAIN ?? "wnncompany.com").toLowerCas
 const requireDkim = process.env.REQUIRE_DKIM !== "false";
 const dkimPrivateKeyPath = process.env.DKIM_PRIVATE_KEY_PATH;
 const databaseUrl = process.env.DATABASE_URL;
+const role = process.env.MAIL_ROLE ?? "all";
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 const queue = new MailQueue({
@@ -77,7 +78,7 @@ app.post("/v1/emails", (req, res) => {
 
 (async () => {
   await queue.init();
-  queue.start();
+  if (role !== "api") queue.start();
   app.listen(port, () => {
     logger.info({ port }, "ReDom Mail API listening");
   });
