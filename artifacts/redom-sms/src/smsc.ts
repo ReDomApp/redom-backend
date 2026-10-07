@@ -88,7 +88,7 @@ export class SmppTransport implements SmsTransport {
   }
 
   private decodePayload(data:Buffer,coding:number):string{
-    if(coding===8)return data.toString("utf16be");
+    if(coding===8){const b=Buffer.from(data);for(let i=0;i+1<b.length;i+=2){const x=b[i];b[i]=b[i+1];b[i+1]=x}return b.toString("utf16le");}
     return data.toString("utf8");
   }
 
