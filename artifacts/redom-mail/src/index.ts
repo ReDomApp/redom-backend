@@ -130,7 +130,28 @@ app.post("/v1/webhooks",async(req,res)=>{
   res.status(201).json({id,endpoint,events,signing_secret:secret});
 });
 
-app.get("/v1/received",async(req,res)=>{
+
+
+app.get("/v1/webhooks",async(req,res)=>{
+  if(!requireAuth(req,res))return;
+  const r=await pool.query("SELECT id,endpoint,events,enabled,created_at FROM redom_mail_webhooks ORDER BY created_at DESC");
+  res.json({data:r.rows});
+});
+app.delete("/v1/webhooks/:id",async(req,res)=>{
+  if(!requireAuth(req,res))return;
+  await pool.query("UPDATE redom_mail_webhooks SET enabled=false WHERE id=$1",[req.params.id]);
+  res.status(204).end();
+});
+app.post("/v1/webhooks/:id/replay",async(req,res)=>{
+  if(!requireAuth(req,res))return;
+  const r=await pool.query(
+    "INSERT INTO redom_mail_webhook_deliveries (id,webhook_id,event_id) SELECT $1,$2,id FROM redom_mail_events WHERE id=$3 RETURNING id",
+    [cryptoRandom(12).toString("hex"),req.params.id,String(req.body?.event_id??"")],
+  );
+  if(!r.rowCount)return res.status(404).json({error:{code:"event_not_found"}});
+  res.status(202).json({id:r.rows[0].id,status:"pending"});
+});
+\napp.get("/v1/received",async(req,res)=>{
   if(!requireAuth(req,res))return;
   res.json({data:await store.listMessages(Number(req.query.limit??50),"inbound")});
 });
