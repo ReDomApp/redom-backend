@@ -40,13 +40,13 @@ export class MailStore {
 
     const result = await this.pool.query(
       `INSERT INTO redom_mail_messages
-       (id,direction,status,from_address,to_addresses,cc_addresses,bcc_addresses,subject,text_body,html_body,headers,message_id,idempotency_key,scheduled_at)
+       (id,direction,status,from_address,to_addresses,cc_addresses,bcc_addresses,reply_to,subject,text_body,html_body,headers,message_id,idempotency_key,scheduled_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [
         message.id, direction, status, message.from.email,
-        JSON.stringify(message.recipients.map((x) => x.email)), "[]", "[]",
-        message.subject, message.text ?? null, message.html ?? null,
+        JSON.stringify(message.recipients.map((x) => x.email)), JSON.stringify((message.cc ?? []).map((x) => x.email)), JSON.stringify((message.bcc ?? []).map((x) => x.email)),
+        JSON.stringify(message.replyTo ?? []), message.subject, message.text ?? null, message.html ?? null,
         JSON.stringify(message.headers), message.headers["Message-ID"] ?? null,
         idempotencyKey ?? null, scheduledAt ?? null,
       ],
