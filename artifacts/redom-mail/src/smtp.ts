@@ -2,6 +2,7 @@ import net from "node:net";
 import tls from "node:tls";
 import type { NormalizedMessage } from "./types.js";
 import { renderMessage } from "./message.js";
+import { signDkim } from "./dkim.js";
 
 type SmtpConfig = {
   host: string;
@@ -9,6 +10,7 @@ type SmtpConfig = {
   connectTimeoutMs: number;
   commandTimeoutMs: number;
   maxMessageBytes: number;
+  dkim?: { domain: string; selector: string; privateKeyPath: string };
 };
 
 type Reply = { code: number; lines: string[] };
@@ -67,7 +69,8 @@ export async function deliverDirect(
   message: NormalizedMessage,
   config: SmtpConfig,
 ): Promise<{ retryable: boolean; response: string }> {
-  const raw = renderMessage(message);
+  const unsigned = renderMessage(message);
+  const raw = config.dkim ? signDkim(unsigned, config.dkim) + "\r\n" + unsigned : unsigned;
   if (Buffer.byteLength(raw, "utf8") > config.maxMessageBytes) {
     return { retryable: false, response: "Message exceeds configured size limit" };
   }
