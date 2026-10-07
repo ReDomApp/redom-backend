@@ -51,5 +51,5 @@ export async function ensureSchema(pool:Pool):Promise<void>{
  CREATE TABLE IF NOT EXISTS redom_sms_rate_limits(
   bucket TEXT PRIMARY KEY,count INTEGER NOT NULL DEFAULT 0,window_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
  );
- `);
+ ALTER TABLE redom_sms_webhook_events ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW();\n ALTER TABLE redom_sms_webhook_events ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ;\n `);
 }
