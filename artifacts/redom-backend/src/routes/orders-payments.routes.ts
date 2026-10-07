@@ -2,8 +2,118 @@ import { Router } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { pool } from "../database/db";
+import { getStripeStarsCountry } from "../services/payments/stripe-country.service";
 
 const router = Router();
+
+router.get("/verified-plans", authMiddleware, async (req, res) => {
+  const userId = req.user?.userId;
+  if (!userId) return res.status(401).json({ success: false, message: "Authentication required." });
+
+  try {
+    const countryResult = await pool.query(
+      `SELECT country FROM login_history
+       WHERE user_id = $1 AND country IS NOT NULL
+       ORDER BY login_time DESC
+       LIMIT 1`,
+      [userId],
+    );
+    const countryCode = String(countryResult.rows[0]?.country || "US").toUpperCase();
+    const country = await getStripeStarsCountry(countryCode);
+    const currency = country?.currency || "USD";
+    const rate = country?.rate && country.rate > 0 ? country.rate : 1;
+
+    const configuredRecognized = await pool.query(
+      `SELECT amount_minor, currency
+         FROM payment_plans
+        WHERE active = true
+          AND (
+            plan_key IN ('redom_verified_recognized','verified_recognized','recognized','redom_recognized')
+            OR lower(name) IN ('redom recognized','recognized','redom verified recognized')
+          )
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+    );
+
+    const recognizedUsd = configuredRecognized.rows[0]?.amount_minor != null
+      && String(configuredRecognized.rows[0]?.currency || "").toUpperCase() === "USD"
+      ? Number(configuredRecognized.rows[0].amount_minor) / 100
+      : 109;
+
+    const trialResult = await pool.query(
+      `SELECT 1
+         FROM verification_subscriptions
+        WHERE user_id = $1
+          AND subscription_status IN ('active','pending')
+        LIMIT 1`,
+      [userId],
+    );
+    const trialAvailable = trialResult.rowCount === 0;
+
+    const connections = await pool.query(
+      `WITH connection_ids AS (
+         SELECT friend_user_id AS id FROM friends WHERE user_id = $1 AND friendship_status = 'active'
+         UNION
+         SELECT user_id AS id FROM friends WHERE friend_user_id = $1 AND friendship_status = 'active'
+         UNION
+         SELECT follower_id AS id FROM followers WHERE user_id = $1
+         UNION
+         SELECT user_id AS id FROM followers WHERE follower_id = $1
+         UNION
+         SELECT following_id AS id FROM following WHERE user_id = $1
+         UNION
+         SELECT user_id AS id FROM following WHERE following_id = $1
+       )
+       SELECT u.id,u.first_name,u.last_name,u.username,p.profile_photo,p.verified
+         FROM connection_ids c
+         JOIN users u ON u.id = c.id
+         LEFT JOIN user_profiles p ON p.user_id = u.id
+        WHERE u.account_status = 'active'
+          AND (p.profile_photo IS NOT NULL OR COALESCE(p.verified,false) = true)
+        ORDER BY COALESCE(p.verified,false) DESC,
+                 (p.profile_photo IS NOT NULL) DESC,
+                 u.first_name ASC,u.last_name ASC
+        LIMIT 8`,
+      [userId],
+    );
+
+    const localPrice = (usd:number) => {
+      const local = Math.round(usd * rate * 100) / 100;
+      if (currency === "USD") return "From $" + (Number.isInteger(usd) ? usd.toFixed(0) : usd.toFixed(2)) + "/month per profile";
+      const decimals = ["JPY","KRW","VND"].includes(currency) ? 0 : 2;
+      return "From " + currency + local.toLocaleString("en-US",{minimumFractionDigits:decimals,maximumFractionDigits:decimals}) + "/month per profile";
+    };
+
+    const plans = [
+      { key:"standard", name:"Standard", baseUsdMonthly:5, localAmount:Math.round(5*rate*100)/100, reelsPerMonth:null },
+      { key:"plus", name:"Plus", baseUsdMonthly:18, localAmount:Math.round(18*rate*100)/100, reelsPerMonth:4 },
+      { key:"recognized", name:"ReDom Recognized", baseUsdMonthly:recognizedUsd, localAmount:Math.round(recognizedUsd*rate*100)/100, reelsPerMonth:6 },
+    ].map(plan => ({
+      ...plan,
+      localCurrency: currency,
+      localPrice: localPrice(plan.baseUsdMonthly),
+      trialAvailable,
+    }));
+
+    return res.json({
+      success: true,
+      countryCode,
+      currency,
+      plans,
+      socialProof: connections.rows.map(row => ({
+        userId:String(row.id),
+        firstName:String(row.first_name || ""),
+        lastName:String(row.last_name || ""),
+        username:String(row.username || ""),
+        profilePhoto:row.profile_photo ? String(row.profile_photo) : null,
+        verified:Boolean(row.verified),
+      })),
+    });
+  } catch (error) {
+    console.error("Verified plans request failed", error);
+    return res.status(500).json({ success:false, message:"Unable to load ReDom Verified plans right now." });
+  }
+});
 
 router.get("/overview", authMiddleware, async (req, res) => {
   const userId = req.user?.userId;
