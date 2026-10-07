@@ -13,9 +13,9 @@ export class MailQueue {
   start():void { void this.drain(); setInterval(()=>void this.drain(),1000); }
   private async claim():Promise<any|null>{
     const r=await this.pool.query(`
-      DELETE FROM redom_mail_queue
+      DELETE FROM redom_mail_jobs
       WHERE id IN (
-        SELECT id FROM redom_mail_queue
+        SELECT id FROM redom_mail_jobs
         WHERE available_at <= NOW()
         ORDER BY available_at
         FOR UPDATE SKIP LOCKED LIMIT 1
