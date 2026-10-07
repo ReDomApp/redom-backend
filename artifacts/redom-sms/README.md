@@ -39,3 +39,16 @@ pnpm --filter @workspace/redom-sms start
 ```
 
 The service starts without an SMSC connection when `SMSC_ENABLED=false`; messages remain queued rather than being falsely reported as delivered.
+
+
+## Transmission layer
+
+ReDom SMS now has a carrier-agnostic transmission layer in `src/transmission.ts` with direct SMPP route management. It supports a primary route from the `SMSC_*` environment variables or multiple carrier routes through `SMPP_ROUTES_JSON`, including destination country matching, priority ordering, connection reuse, reconnect-on-failure, and route failover.
+
+The transport implements SMPP bind, submit_sm, enquire_link, unbind, delivery receipts, inbound MO handling, GSM-7/UCS-2 payloads, concatenated SMS UDH, and provider message IDs.
+
+### What is still outside the codebase
+
+The transmission software cannot create carrier connectivity by itself. Before ReDom can send to real mobile subscribers, ReDom must obtain a legitimate SMSC/carrier interconnection and configure the issued SMPP credentials, permitted source addresses, TON/NPI values, throughput/window limits, DLR behavior, and inbound/MO permissions. Country-specific sender registration, A2P rules, short-code/long-code allocation, opt-out requirements, and any required telecom authorization also remain external provisioning steps.
+
+No Twilio/Vonage/etc. API is required by this architecture; the carrier/SMSC relationship is the network boundary.
