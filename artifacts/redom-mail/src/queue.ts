@@ -1,4 +1,4 @@
-import pg from "pg";
+import { Pool } from "pg";
 import type { NormalizedMessage } from "./types.js";
 import { deliverDirect } from "./smtp.js";
 
@@ -11,7 +11,7 @@ type QueueConfig = Parameters<typeof deliverDirect>[1] & {
 };
 
 export class MailQueue {
-  private readonly pool: pg.Pool;
+  private readonly pool: Pool;
   private running = false;
 
   constructor(private readonly config: QueueConfig) {
