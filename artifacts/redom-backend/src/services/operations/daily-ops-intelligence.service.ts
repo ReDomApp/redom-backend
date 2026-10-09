@@ -829,7 +829,7 @@ const alertBuckets = new Set<string>();
 async function criticalAlertTick(): Promise<void> {
   const hourBucket = Math.floor(Date.now() / 3_600_000);
   try {
-    const [incidents, failures] = await Promise.all([
+    const [incidents, failures, fraudSignals] = await Promise.all([
       pool.query(`SELECT incident_key,title,subsystem,severity,status,description,last_seen_at
         FROM redom_ops_incidents
         WHERE severity IN ('critical','high') AND status IN ('open','investigating')
@@ -837,6 +837,16 @@ async function criticalAlertTick(): Promise<void> {
         ORDER BY CASE severity WHEN 'critical' THEN 0 ELSE 1 END,last_seen_at DESC LIMIT 10`),
       pool.query(`SELECT count(*)::int AS failures FROM redom_ops_email_events
         WHERE event_type IN ('failed','bounced','rejected') AND occurred_at >= now() - interval '15 minutes'`),
+      pool.query(`SELECT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,''))) AS sender,
+          count(*)::int AS matching_messages,
+          bool_or(m.body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment))') AS security_signal,
+          bool_or(m.body ~* '(fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|not my transaction|different account|change.*receipt)') AS payment_signal
+        FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
+        WHERE m.sender_type='user' AND m.created_at >= now() - interval '15 minutes'
+          AND COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,'')) IS NOT NULL
+          AND (m.body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment)|not my transaction|different account|change.*receipt)'
+            OR (sc.category='refund_payment' AND m.body ~* '(fake|bypass|without verification|change.*receipt)'))
+        GROUP BY 1 ORDER BY count(*) DESC LIMIT 10`),
     ]);
     const incidentRows = incidents.rows as Array<Record<string, unknown>>;
     const failureCount = num(failures.rows[0]?.failures);
@@ -852,6 +862,18 @@ async function criticalAlertTick(): Promise<void> {
       detail: failureCount + " email failures, bounces, or rejections were recorded in the last 15 minutes.",
       severity: failureCount >= 10 ? "critical" : "high",
     });
+    for (const row of fraudSignals.rows as Array<Record<string, unknown>>) {
+      const sender = String(row.sender ?? "");
+      const securitySignal = Boolean(row.security_signal);
+      const paymentSignal = Boolean(row.payment_signal);
+      const risk = securitySignal && paymentSignal || num(row.matching_messages) >= 4 ? "high" : "low";
+      alerts.push({
+        key: "fraud-risk:" + createHash("sha256").update(sender.toLowerCase()).digest("hex").slice(0, 24),
+        title: "Potential fraudulent activity flagged — " + risk.toUpperCase() + " RISK",
+        detail: "Sender: " + sender + ". Risk level: " + risk.toUpperCase() + ". Matching messages in the last 15 minutes: " + num(row.matching_messages) + ". Signals: " + [securitySignal ? "credential/security bypass language" : null, paymentSignal ? "payment/refund integrity language" : null].filter(Boolean).join("; ") + ". This is an automated review lead, not a finding of fraud. Manually review the source case and evidence; do not automatically suspend or deny service.",
+        severity: risk === "high" ? "high" : "low",
+      });
+    }
     for (const alert of alerts) {
       const bucketKey = alert.key + ":" + hourBucket;
       if (alertBuckets.has(bucketKey)) continue;
