@@ -46,8 +46,24 @@ class VideoJob(BaseModel):
     callbackUrl: str
     callbackToken: str
     shotKeys: list[str] = []
+    format: str = Field(default="video", pattern="^(video|movie|cartoon)$")
+    watermark: bool = True
 
 pipeline = None
+
+def watermark_label(format_name: str) -> str:
+    return {"movie": "ReDom Movie Studio", "cartoon": "ReDom Cartoon", "video": "ReDom Videos"}.get(format_name, "ReDom Videos")
+
+def watermark_filter(format_name: str, enabled: bool = True) -> str:
+    if not enabled:
+        return "format=yuv420p"
+    label = watermark_label(format_name)
+    font = os.getenv("REDOM_VIDEO_WATERMARK_FONT", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    # A persistent, unobtrusive brand mark in the far-right upper corner.
+    escaped = label.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+    return (f"drawtext=fontfile='{font}':text='{escaped}':x=w-tw-24:y=24:"
+            "fontsize=22:fontcolor=white@0.92:borderw=2:bordercolor=black@0.65:"
+            "box=1:boxcolor=black@0.28:boxborderw=10,format=yuv420p")
 
 def target_size(aspect_ratio: str, resolution: str):
     if resolution == "1080p":
@@ -164,7 +180,7 @@ def render_project(job: VideoJob, output: Path):
             f"scale={width}:{height}:flags=lanczos,"
             "hqdn3d=1.2:1.2:3:3,"
             "unsharp=5:5:0.45:5:5:0,"
-            "format=yuv420p"
+            watermark_filter(job.format, job.watermark)
         )
         subprocess.run(
             [
@@ -202,7 +218,7 @@ def compose_project(job: VideoJob, output: Path):
         )
 
         width, height = target_size(job.aspectRatio, job.resolution)
-        vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0,format=yuv420p"
+        vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
         subprocess.run(
             [
                 "ffmpeg", "-y", "-i", str(joined), "-vf", vf,
@@ -221,6 +237,7 @@ async def callback(job: VideoJob, status: str, storage_key: str | None = None, e
         "status": status,
         "storageKey": storage_key,
         "durationSeconds": job.durationSeconds,
+        "format": job.format,
         "error": error,
     }
     async with httpx.AsyncClient(timeout=30) as client:
@@ -236,6 +253,8 @@ async def process(job: VideoJob):
         raise ValueError("Unsupported ReDom video runtime.")
     if job.durationSeconds > 300:
         raise ValueError("Video duration exceeds the ReDom maximum.")
+    if job.format not in {"video", "movie", "cartoon"}:
+        raise ValueError("Unsupported ReDom video format.")
 
     await callback(job, "processing")
     with tempfile.TemporaryDirectory(prefix="redom-video-output-") as work:
