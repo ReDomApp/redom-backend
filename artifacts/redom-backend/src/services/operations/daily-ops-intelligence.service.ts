@@ -129,7 +129,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const prevStart = new Date(now.getTime() - 172800000);
   const yearStart = new Date(now.getTime() - 365 * 86400000);
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const monthSeriesStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+  // The exact rolling year can touch 13 calendar-month buckets; edge buckets are partial.
+  const monthSeriesStart = new Date(Date.UTC(yearStart.getUTCFullYear(), yearStart.getUTCMonth(), 1));
   const monthSeriesEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
   const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, geography, supportMonthly, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
@@ -178,7 +179,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       CASE WHEN COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0)>0
         THEN round(100.0*COALESCE(stats.delivered,0)/(stats.delivered+stats.failed+stats.bounced+stats.rejected),2) ELSE NULL END AS delivery_rate_pct,
       CASE WHEN COALESCE(stats.attempts,0)>0 THEN round(100.0*(COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0))/stats.attempts,2) ELSE NULL END AS outcome_coverage_pct
-    FROM months LEFT JOIN stats USING(month_start) ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd]),
+    FROM months LEFT JOIN stats USING(month_start) ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd,yearStart,now]),
     pool.query("SELECT min(occurred_at) AS first_at FROM redom_ops_email_events"),
     pool.query(`SELECT
       count(*) FILTER (WHERE created_at >= $1)::int AS created,
@@ -455,7 +456,8 @@ function makePdf(pages: string[][]): Buffer {
 
 function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: string; generatedAt: string; payloadHash: string; signature: string | null; keyId: string | null }): string[][] {
   const currentMonth = m.periodEnd.slice(0, 7);
-  const completeMonths = m.email.monthlyTrend.filter((row) => row.month < currentMonth);
+  const rollingWindowFirstMonth = m.email.rolling365Start.slice(0, 7);
+  const completeMonths = m.email.monthlyTrend.filter((row) => row.month < currentMonth && row.month > rollingWindowFirstMonth);
   const latestComplete = completeMonths[completeMonths.length - 1];
   const previousComplete = completeMonths[completeMonths.length - 2];
   const improvementSummary = latestComplete && previousComplete && latestComplete.deliveryRatePct !== null && previousComplete.deliveryRatePct !== null
@@ -487,8 +489,9 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "Bounced: " + emailMetric(m.email.last365d.bounced, m) + " | Duplicate suppression: " + emailMetric(m.email.last365d.duplicateSuppressed, m),
     "Email ledger coverage: " + (m.email.ledgerCoverageStart ?? "No events recorded"),
     "",
-    "MONTH-BY-MONTH EMAIL DELIVERY — LAST 12 CALENDAR MONTHS",
-    "Delivery rate = delivered / (delivered + failed + bounced + rejected); unknown outcomes are excluded.",
+    "MONTH-BY-MONTH EMAIL DELIVERY — EXACT ROLLING 365-DAY WINDOW",
+    "Window: " + m.email.rolling365Start + " through " + m.email.rolling365End + ". First/current month buckets may be partial; pre-window events are excluded.",
+    "Delivery rate = delivered / (delivered + failed + bounced + rejected); unknown outcomes are excluded. Outcome coverage is shown separately.",
     ...m.email.monthlyTrend.map((row) => row.month + ": attempts " + row.attempts + ", delivered " + row.delivered + ", failed " + row.failed + ", bounced " + row.bounced + ", rejected " + row.rejected + ", delivery rate " + (row.deliveryRatePct === null ? "N/A" : row.deliveryRatePct + "%") + ", outcome coverage " + (row.outcomeCoveragePct === null ? "N/A" : row.outcomeCoveragePct + "%")),
     "",
     "LIMITS AND CAPACITY",
