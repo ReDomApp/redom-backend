@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import subprocess
 import tempfile
@@ -194,7 +195,7 @@ def render_project(job: VideoJob, output: Path):
                 size=model_size(job.aspectRatio),
                 max_area=MAX_AREA_CONFIGS.get("ti2v-5B", 704 * 1280),
                 frame_num=frames,
-                sampling_steps=40,
+                sampling_steps={"fast": 24, "standard": 32, "high": 40, "pro": 50}.get(job.quality, 40),
                 guide_scale=5.0,
                 seed=scene_index * 104729,
                 offload_model=True,
@@ -236,6 +237,29 @@ def render_project(job: VideoJob, output: Path):
         encode_final(working, enhanced, vf, job.watermark, job.captionText)
         output.write_bytes(enhanced.read_bytes())
 
+
+def validate_final_video(path: Path, job: VideoJob):
+    if not path.exists() or path.stat().st_size < 4096:
+        raise RuntimeError("Final video output is missing or unexpectedly small.")
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-show_entries", "stream=codec_type,codec_name,width,height",
+         "-of", "json", str(path)],
+        check=True, capture_output=True, text=True,
+    )
+    metadata = json.loads(result.stdout)
+    streams = metadata.get("streams", [])
+    video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    if not video or video.get("codec_name") != "h264":
+        raise RuntimeError("Final video failed codec validation.")
+    expected_width, expected_height = target_size(job.aspectRatio, job.resolution)
+    if video.get("width") != expected_width or video.get("height") != expected_height:
+        raise RuntimeError("Final video dimensions do not match the requested output.")
+    duration = float(metadata.get("format", {}).get("duration", 0))
+    if duration < max(1, job.durationSeconds - 2) or duration > job.durationSeconds + 8:
+        raise RuntimeError("Final video duration failed validation.")
+    if job.watermark and (not Path("/app/assets/redom-logo.png").is_file()):
+        raise RuntimeError("Required ReDom watermark logo is missing.")
 
 def compose_project(job: VideoJob, output: Path):
     if not job.shotKeys:
@@ -292,6 +316,7 @@ async def process(job: VideoJob):
             await asyncio.to_thread(compose_project, job, output)
         else:
             await asyncio.to_thread(render_project, job, output)
+        await asyncio.to_thread(validate_final_video, output, job)
         key = f"redom-ai/videos/{job.jobId}/final.mp4"
         s3.upload_file(
             str(output),
