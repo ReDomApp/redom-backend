@@ -35,7 +35,17 @@ s3 = boto3.client(
     region_name=os.getenv("R2_REGION", "auto"),
 )
 
-class AudioTrack(BaseModel):\n    assetKey: str\n    startSeconds: float = 0\n    volume: float = 1.0\n    characterName: str | None = None\n    voiceId: str | None = None\n    durationSeconds: float | None = None\n    alignment: dict | None = None\n    kind: str | None = None\n\nclass VideoJob(BaseModel):
+class AudioTrack(BaseModel):
+    assetKey: str
+    startSeconds: float = 0
+    volume: float = 1.0
+    characterName: str | None = None
+    voiceId: str | None = None
+    durationSeconds: float | None = None
+    alignment: dict | None = None
+    kind: str | None = None
+
+class VideoJob(BaseModel):
     jobId: str
     runtime: str = "redom-v2.8-native"
     model: str = MODEL_NAME
