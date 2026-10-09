@@ -204,7 +204,11 @@ router.get("/video/:jobId", authMiddleware, async (req, res) => {
 });
 
 router.post("/video/callback", async (req, res) => {
-  if (req.headers.authorization !== "Bearer " + env.redomVideoEngine.token) return res.status(401).json({ success: false });
+  const suppliedAuthorization = req.headers.authorization;
+  const acceptedCallbackTokens = [env.redomVideoEngine.token, env.redomCartoonEngine.token, env.redomStudioEngine.token]
+    .filter((token): token is string => Boolean(token))
+    .map((token) => "Bearer " + token);
+  if (!suppliedAuthorization || !acceptedCallbackTokens.includes(suppliedAuthorization)) return res.status(401).json({ success: false });
   const jobId = typeof req.body?.jobId === "string" ? req.body.jobId : "";
   if (!jobId) return res.status(400).json({ success: false });
   try {
