@@ -47,6 +47,7 @@ class VideoJob(BaseModel):
     callbackToken: str
     shotKeys: list[str] = []
     referenceAssetKey: str | None = None
+    cleanupReferenceAsset: bool = True
     format: str = Field(default="video", pattern="^(video|movie|cartoon)$")
     watermark: bool = True
 
@@ -301,7 +302,7 @@ async def worker_loop():
         except Exception as error:
             await callback(job, "failed", error=str(error)[:1000])
         finally:
-            if job.referenceAssetKey and job.referenceAssetKey.startswith("redom-ai/video-references/") and ".." not in job.referenceAssetKey:
+            if job.cleanupReferenceAsset and job.referenceAssetKey and job.referenceAssetKey.startswith("redom-ai/video-references/") and ".." not in job.referenceAssetKey:
                 try:
                     await asyncio.to_thread(s3.delete_object, Bucket=os.environ["R2_BUCKET_NAME"], Key=job.referenceAssetKey)
                 except Exception:
