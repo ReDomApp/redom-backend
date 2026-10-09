@@ -175,15 +175,60 @@ function parseJson(text: string): MoviePlan {
   return parsed;
 }
 
+function enforceMovieEpisodePlan(plan: MoviePlan, durationSeconds: number, requestedEpisodeCount?: number): MoviePlan {
+  const episodes = plan.episodes.slice(0, 24);
+  if (episodes.length < 4) {
+    throw new Error("Movie Director must plan at least four episodes before production can proceed.");
+  }
+  if (requestedEpisodeCount !== undefined && episodes.length < requestedEpisodeCount) {
+    throw new Error("Movie Director returned fewer episodes than the requested production plan.");
+  }
+  if (episodes.some((episode) => !Array.isArray(episode.scenes) || episode.scenes.length === 0)) {
+    throw new Error("Every planned movie episode must contain at least one scene.");
+  }
+
+  // Preserve the Director's relative episode pacing while making the episode
+  // runtimes add up to the single approved whole-movie runtime exactly.
+  const weights = episodes.map((episode) =>
+    Number.isFinite(episode.targetDurationSeconds) && episode.targetDurationSeconds > 0
+      ? episode.targetDurationSeconds
+      : 1,
+  );
+  const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+  let allocated = 0;
+  const normalizedEpisodes = episodes.map((episode, index) => {
+    const remainingEpisodes = episodes.length - index - 1;
+    const proposed = index === episodes.length - 1
+      ? durationSeconds - allocated
+      : Math.max(4, Math.round(durationSeconds * weights[index] / weightTotal));
+    const remainingMinimum = remainingEpisodes * 4;
+    const runtime = Math.min(proposed, durationSeconds - allocated - remainingMinimum);
+    allocated += runtime;
+    return { ...episode, episodeNumber: index + 1, targetDurationSeconds: runtime };
+  });
+  if (allocated !== durationSeconds || normalizedEpisodes.some((episode) => episode.targetDurationSeconds < 4)) {
+    throw new Error("Movie Director could not allocate the requested whole-movie runtime across episodes.");
+  }
+  return {
+    ...plan,
+    episodeCount: normalizedEpisodes.length,
+    estimatedRuntimeSeconds: durationSeconds,
+    episodes: normalizedEpisodes,
+  };
+}
+
 function plannerInstructions(durationSeconds: number, style: string, quality: string, aspectRatio: string, requestedEpisodeCount?: number) {
-  const episodeTarget = requestedEpisodeCount ?? (durationSeconds >= 180 ? Math.min(12, Math.max(4, Math.ceil(durationSeconds / 45))) : Math.min(10, Math.max(3, Math.ceil(durationSeconds / 30))));
+  const episodeTarget = requestedEpisodeCount === undefined
+    ? Math.min(24, Math.max(4, Math.ceil(durationSeconds / (20 * 60))))
+    : Math.min(24, Math.max(4, requestedEpisodeCount));
   return [
     "You are the ReDom Creative Director, Showrunner, Screenwriter, World Builder and Director's Planner for ReDom-v2.8—Video.",
     "The user's prompt is a STORY SEED, not a finished screenplay. Expand it into an original, coherent, genre-faithful production while preserving the user's explicit intent.",
     "UNIFIED CREATIVE INTELLIGENCE: coordinate Movie Intelligence and Cartoon Intelligence under one ReDom Video planner. Choose the rendering path from the requested medium; use Movie Studio as the shared showrunner/editor for either cinematic or animated output.",
     "CREATIVE RECOMMENDATIONS AND MEMORY: combine the current creator prompt with authorized ReDom project memory, including approved character identities, continuity, language/dialect, genre preferences, and accepted or rejected directions. Use public web research to study relevant short-form creative patterns and trends discussed by credible public sources about Facebook, TikTok and related platforms. Never imply access to private feeds, private messages, personal recommendation signals or non-public platform data.",
     "Research must include source URLs when available and separate verified facts from interpretation. Do not claim a live trend or ranking without evidence; if research results are unavailable, use the creator prompt and authorized project memory without inventing trend facts. Synthesize original hooks, visual beats, pacing, camera/edit rhythm, sound direction and endings instead of copying another creator's video or exact shot sequence.",
-    "FORMAT-SPECIFIC PROJECT LIMITS: ReDom-v2.8—Video standalone exports remain capped at 59 seconds. Cartoon—R8.0 complete animated projects may target up to 3,600 seconds (60 minutes). Studio—Ultron 8.0R complete movie projects may target up to 7,200 seconds (120 minutes). Never ask one diffusion call to render an entire episode or movie: split the story into short 4-10 second shots, then compose validated shot assets in order. Keep the total approved shot budget within the requested runtime.",
+    "FORMAT-SPECIFIC PROJECT LIMITS: ReDom-v2.8—Video standalone exports remain capped at 59 seconds. Cartoon—R8.0 complete animated projects may target up to 3,600 seconds (60 minutes). Studio—Ultron 8.0R complete movie projects may target up to 7,200 seconds (120 minutes). Never ask one diffusion call to render an entire episode or movie: split the story into short 4-10 second shots, then compose validated shot assets in order. The entire movie project, across every episode, must fit within the requested total runtime.", 
+    "WHOLE-MOVIE EPISODIC STRUCTURE: every full Studio movie must be divided into at least four episodes (never fewer), with additional episodes when the story structure benefits. Treat the requested duration as the TOTAL runtime across all episodes, not the runtime of each episode. Allocate an explicit targetDurationSeconds to every episode; all episode runtimes must add up exactly to the whole-movie target and no episode may be treated as a separate extra allowance. For a 120-minute movie, plan at least four episodes; use six or more when story pacing warrants it. Preserve story continuity, cliffhangers/payoffs and character state between episodes.",
     ...(style.toLowerCase().includes("cartoon") || style.toLowerCase().includes("anime") || style.toLowerCase().includes("animation") ? [
       "CARTOON—R8.0 ANIMATION DIRECTOR: treat every shot as authored animation, not live-action footage with a cartoon filter. Choose and consistently maintain the requested animation language: 2D hand-drawn, 3D stylized feature animation, anime, cel-shaded, stop-motion-inspired, painterly, or a deliberate hybrid. If the creator names a reference anime or studio, research its public high-level visual grammar (linework, shape language, palette, effects, timing, composition and mood), cite useful source URLs in research, and translate those traits into an original visual direction. Do not reproduce protected characters, exact frames, costumes, logos, scripts or scene sequences without rights context.",
       "ANIMATED CHARACTER PERFORMANCE: define a reusable model sheet for every recurring human, animal and creature: silhouette, proportions, face/eye design, markings, fur/feathers/scales, palette, wardrobe, accessories, rig constraints, expression range, signature poses, gait, emotional tells and scale relative to other characters. Repeat identity anchors in every relevant shot prompt; do not redesign a character between shots.",
@@ -205,7 +250,7 @@ function plannerInstructions(durationSeconds: number, style: string, quality: st
     "RESEARCH AND ADAPTATION: when the user names a movie, book, franchise, historical event, or real-world subject, use web search to research reliable high-level facts and cite source URLs in research. Clearly separate verified facts from invented story choices. For copyrighted fictional works, do not reproduce scripts, dialogue, scene-by-scene plots, or protected character expression; create a meaningfully original adaptation using high-level themes and a transformed setting, cast, names, relationships, designs, and plot. Respect user-provided rights/licensing context without assuming it.",
     "TRAILER-READY STORYTELLING: include a strong hook in the first seconds, readable character introductions, escalating visual beats, an emotional or musical turn, and a memorable final reveal without spoiling the ending. Include trailerBeats and a trailerPrompt suitable for a separate 15-25 second preview generation.",
     "SOUND AND MUSIC DIRECTION: plan an original score with scene-level cues for warmth, romance, wonder, tension, action, grief and resolution as appropriate. Include soundtrackDirection, soundscape, dialogueDirection, narrationDirection, and optional original song/lyric concepts. Never claim that audio or singing has been rendered unless the audio pipeline actually generated it.",
-    "Create exactly " + episodeTarget + " episodes for the requested project structure. Use enough scenes and shots to cover the target runtime; use 8-24 scenes per episode for long-form projects where needed, with 1-3 shots per scene. Keep total planned duration at or below " + durationSeconds + " seconds.",
+    "Plan at least " + episodeTarget + " episodes (minimum four, maximum 24). The target is the whole-project duration of " + durationSeconds + " seconds shared across all episodes, not a per-episode duration. Assign each episode a targetDurationSeconds and make their sum equal exactly " + durationSeconds + " seconds. Use enough scenes and 4-10 second shots to cover each episode's allocated runtime, with continuity between episodes. Do not plan or render the full movie as one generation call.",
     "Visual target: " + style + "; quality: " + quality + "; aspect ratio: " + aspectRatio + ".",
     "Return JSON only with: title, genre, format, estimatedRuntimeSeconds, episodeCount, bible, entities, knowledge, storyEvents, storyArcs, episodes, research, trailerBeats, trailerPrompt, soundtrackDirection, soundscape, dialogueDirection, narrationDirection, songConcepts.",
     "bible MUST include: logline, premise, themes, tone, audienceContract, worldRules, powerSystem, timelineRules, visualIdentity, storyQuestion, endingIntent, and characterArcs.",
@@ -227,7 +272,8 @@ async function generatePlan(seed: string, durationSeconds: number, style: string
     tools: [{ type: "web_search" } as any],
     safety_identifier: "redom-movie-planner",
   });
-  return parseJson(response.output_text || "");
+  const parsed = parseJson(response.output_text || "");
+  return enforceMovieEpisodePlan(parsed, durationSeconds, requestedEpisodeCount);
 }
 
 async function clearPlanChildren(projectId: string) {
@@ -313,7 +359,7 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
     });
   }
 
-  for (const episode of plan.episodes.slice(0, 12)) {
+  for (const episode of plan.episodes.slice(0, 24)) {
     const [episodeRow] = await db.insert(reDomAiVideoEpisodes).values({
       projectId,
       episodeNumber: episode.episodeNumber,
@@ -575,7 +621,7 @@ export async function planReDomMovieProject(userId: string, projectId: string) {
   if (!project) throw Object.assign(new Error("Movie project not found."), { status: 404 });
   if (!["planning", "draft"].includes(project.state)) throw Object.assign(new Error("This movie is not available for planning."), { status: 409 });
 
-  const plan = await generatePlan(project.prompt, project.targetDurationSeconds, project.style, project.quality, project.aspectRatio, "", typeof project.research?.requestedEpisodeCount === "number" ? Math.max(1, Math.min(12, Math.floor(project.research.requestedEpisodeCount))) : undefined);
+  const plan = await generatePlan(project.prompt, project.targetDurationSeconds, project.style, project.quality, project.aspectRatio, "", typeof project.research?.requestedEpisodeCount === "number" ? Math.max(4, Math.min(24, Math.floor(project.research.requestedEpisodeCount))) : undefined);
   await persistPlan(projectId, project, plan);
   return getReDomMovieProject(userId, projectId);
 }
