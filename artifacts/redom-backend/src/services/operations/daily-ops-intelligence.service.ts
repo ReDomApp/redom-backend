@@ -117,6 +117,7 @@ type Metrics = {
   email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null; monthlyTrend: Array<{ month: string; attempts: number; accepted: number; delivered: number; failed: number; bounced: number; rejected: number; deliveryRatePct: number | null; outcomeCoveragePct: number | null }> };
   support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidatedOrRecycled: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSenders30d: Array<{ email: string; messages: number; cases: number }>; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
   fraud: { reviewedSignals: Array<{ email: string; risk: string; score: number; indicators: string[]; caseNumbers: string[]; count: number }>; signalCount30d: number; warning: string };
+  geography: { topCountries: Array<{ country: string; signups: number }>; topCities: Array<{ city: string; country: string; signups: number }>; source: string };
   incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number; resolved365d: number; created365d: number };
   dataCoverage: Record<string, string>;
   forecast: { expectedEmailAttempts24h: number; expectedSupportCases24h: number; notes: string[] };
@@ -131,7 +132,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const monthSeriesStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
   const monthSeriesEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
+  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, geography, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
     pool.query(`SELECT
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
@@ -239,6 +240,16 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       JOIN support_cases c ON c.id=e.case_id
       WHERE c.created_at >= $1 AND e.occurred_at >= $1
       GROUP BY c.case_number ORDER BY count(*) FILTER (WHERE e.event_type='attempted') DESC, c.case_number LIMIT 20`, [start]),
+    pool.query(`WITH locations AS (
+      SELECT COALESCE(NULLIF(memory->'networkSecurity'->>'country',''),NULLIF(ip_country_code,''),NULLIF(phone_lookup_country_code,''),'Unknown') AS country,
+        COALESCE(NULLIF(memory->'networkSecurity'->>'city',''),'Unknown') AS city
+      FROM registration_flow_reservations
+      WHERE created_at >= $1 AND status IN ('completed','active','blocked')
+    )
+    SELECT 'country' AS kind,country AS label,'' AS country,count(*)::int AS count FROM locations GROUP BY country
+    UNION ALL
+    SELECT 'city' AS kind,city AS label,country,count(*)::int AS count FROM locations WHERE city <> 'Unknown' GROUP BY city,country
+    ORDER BY count DESC LIMIT 30`, [yearStart]),
     pool.query(`SELECT id, incident_key, title, subsystem, severity, status, description, root_cause, resolution,
       verification_evidence, first_seen_at, last_seen_at, resolved_at, verified_at
       FROM redom_ops_incidents WHERE status NOT IN ('closed','resolved') ORDER BY
@@ -294,6 +305,11 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       }),
       signalCount30d: num(fraudCount.rows[0]?.senders),
       warning: "These are heuristic review signals, not findings of fraud. Human security review is required. Do not automatically suspend, block, deny refunds, or alter an account based on this report.",
+    },
+    geography: {
+      topCountries: geography.rows.filter((row: Record<string, unknown>) => row.kind === "country").slice(0,10).map((row: Record<string, unknown>) => ({ country: String(row.label), signups: num(row.count) })),
+      topCities: geography.rows.filter((row: Record<string, unknown>) => row.kind === "city").slice(0,10).map((row: Record<string, unknown>) => ({ city: String(row.label), country: String(row.country), signups: num(row.count) })),
+      source: "Aggregated registration_flow_reservations network/location metadata from the last 365 days. Counts are registrations/reservations, not proof of a user's current physical location; IP-derived locations can be inaccurate.",
     },
     incidents: {
       open: openIncidents, resolved24h: num(resolvedIncidents.rows[0]?.resolved), criticalOpen: openIncidents.filter(i => i.severity === "critical").length,
