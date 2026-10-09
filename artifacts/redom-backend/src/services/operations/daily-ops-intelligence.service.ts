@@ -359,8 +359,6 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       caseExpirationAndRecycling: "The support_cases schema records invalidation fields but has no distinct expiration timestamp or recycling history. Expired/recycled counts cannot be asserted from current data.",
       caseFailureStatus: "The support_cases status constraint contains awaiting_support, awaiting_user, and closed only; there is no failed-case status. Failed email deliveries and failed tracked incidents are reported separately.",
       applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
-      supportCasePriority: "The support_cases schema does not expose a severity/priority field. Critical counts refer only to explicitly tracked operations incidents; support cases are not automatically classified as critical.",
-      caseExpirationAndRecycling: "The support_cases schema records invalidation fields but has no distinct expiration timestamp or recycling history. Expired/recycled counts cannot be asserted from current data.",
       providerDeliveryEvents: "Only events ingested into the ReDom operations email ledger are counted.",
       limits: DAILY_LIMIT || MONTHLY_LIMIT ? "Only configured REDOM_EMAIL_DAILY_LIMIT / REDOM_EMAIL_MONTHLY_LIMIT values are shown." : "Provider quotas are not yet connected; no quota value is assumed.",
     },
