@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt } from "node:crypto";
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
 
@@ -120,4 +120,81 @@ export async function revokeSupportEmailGrantsForCase(caseId: string): Promise<v
      WHERE case_id=$1 AND status='active'`,
     [caseId],
   );
+}
+
+export async function issueSupportEmailChallenge(grantId: string): Promise<{ code: string; recipientEmail: string } | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const grant = await client.query(
+      `SELECT recipient_email FROM support_email_access_grants
+       WHERE id=$1 AND status='active' AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+       FOR UPDATE`,
+      [grantId],
+    );
+    if (!grant.rows[0]) { await client.query("ROLLBACK"); return null; }
+    await client.query(
+      "UPDATE support_email_access_challenges SET consumed_at=COALESCE(consumed_at,now()) WHERE grant_id=$1 AND consumed_at IS NULL",
+      [grantId],
+    );
+    const code = randomInt(100000, 1000000).toString();
+    await client.query(
+      `INSERT INTO support_email_access_challenges(grant_id,code_hash,expires_at)
+       VALUES($1,$2,now() + interval '10 minutes')`,
+      [grantId, hashSupportAccessToken(code)],
+    );
+    await client.query("COMMIT");
+    return { code, recipientEmail: String(grant.rows[0].recipient_email) };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
+}
+
+export async function verifyAndConsumeSupportEmailChallenge(input: {
+  grantId: string;
+  code: string;
+}): Promise<{ caseId: string; recipientEmail: string; purpose: string } | null> {
+  if (!/^\\d{6}$/.test(input.code)) return null;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const grant = await client.query(
+      `SELECT id, case_id, recipient_email, purpose FROM support_email_access_grants
+       WHERE id=$1 AND status='active' AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+       FOR UPDATE`,
+      [input.grantId],
+    );
+    if (!grant.rows[0]) { await client.query("ROLLBACK"); return null; }
+    const challenge = await client.query(
+      `SELECT id, code_hash, attempts FROM support_email_access_challenges
+       WHERE grant_id=$1 AND consumed_at IS NULL AND expires_at > now()
+       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+      [input.grantId],
+    );
+    if (!challenge.rows[0] || Number(challenge.rows[0].attempts) >= 5) { await client.query("ROLLBACK"); return null; }
+    const matches = hashSupportAccessToken(input.code) === String(challenge.rows[0].code_hash).trim();
+    if (!matches) {
+      await client.query("UPDATE support_email_access_challenges SET attempts=attempts+1 WHERE id=$1", [challenge.rows[0].id]);
+      await client.query("COMMIT");
+      return null;
+    }
+    await client.query("UPDATE support_email_access_challenges SET consumed_at=now() WHERE id=$1", [challenge.rows[0].id]);
+    const consumed = await client.query(
+      `UPDATE support_email_access_grants SET status='consumed', consumed_at=now()
+       WHERE id=$1 AND status='active' AND consumed_at IS NULL AND expires_at > now()
+       RETURNING id`,
+      [input.grantId],
+    );
+    if (consumed.rowCount !== 1) { await client.query("ROLLBACK"); return null; }
+    await client.query("COMMIT");
+    return {
+      caseId: String(grant.rows[0].case_id),
+      recipientEmail: String(grant.rows[0].recipient_email),
+      purpose: String(grant.rows[0].purpose),
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
 }
