@@ -423,20 +423,30 @@ function buildAnalysisPrompt(metrics: Metrics): string {
 }
 
 async function analyzeWithGemini(metrics: Metrics): Promise<Record<string, any>> {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(env.gemini.apiKey)}`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: buildAnalysisPrompt(metrics) }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
-    signal: AbortSignal.timeout(45000),
-  });
-  if (!response.ok) throw new Error(`Gemini analysis failed with HTTP ${response.status}`);
-  const payload = await response.json() as any;
-  const text = payload?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim();
-  if (!text) throw new Error("Gemini returned no structured analysis.");
-  const parsed = JSON.parse(text);
-  if (!["healthy", "degraded", "critical", "unknown"].includes(parsed.status) || typeof parsed.executiveSummary !== "string" || !Array.isArray(parsed.findings) || !Array.isArray(parsed.nextActions)) {
-    throw new Error("Gemini analysis failed schema validation.");
+  const models = [...new Set([GEMINI_MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"])];
+  let lastUnavailableStatus: number | null = null;
+  for (const model of models) {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": env.gemini.apiKey },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: buildAnalysisPrompt(metrics) }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
+      signal: AbortSignal.timeout(45000),
+    });
+    if (response.status === 404 && model !== models[models.length - 1]) {
+      lastUnavailableStatus = response.status;
+      continue;
+    }
+    if (!response.ok) throw new Error(`Gemini analysis failed with HTTP ${response.status} for configured/fallback model.`);
+    const payload = await response.json() as any;
+    const text = payload?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim();
+    if (!text) throw new Error("Gemini returned no structured analysis.");
+    const parsed = JSON.parse(text);
+    if (!["healthy", "degraded", "critical", "unknown"].includes(parsed.status) || typeof parsed.executiveSummary !== "string" || !Array.isArray(parsed.findings) || !Array.isArray(parsed.nextActions)) {
+      throw new Error("Gemini analysis failed schema validation.");
+    }
+    return parsed;
   }
-  return parsed;
+  throw new Error(`Gemini analysis unavailable: all configured/fallback models returned HTTP ${lastUnavailableStatus ?? 404}.`);
 }
 
 function pdfEscape(text: string): string {
