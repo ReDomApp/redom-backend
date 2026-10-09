@@ -35,7 +35,7 @@ s3 = boto3.client(
     region_name=os.getenv("R2_REGION", "auto"),
 )
 
-class VideoJob(BaseModel):
+class AudioTrack(BaseModel):\n    assetKey: str\n    startSeconds: float = 0\n    volume: float = 1.0\n    characterName: str | None = None\n    voiceId: str | None = None\n    durationSeconds: float | None = None\n    alignment: dict | None = None\n    kind: str | None = None\n\nclass VideoJob(BaseModel):
     jobId: str
     runtime: str = "redom-v2.8-native"
     model: str = MODEL_NAME
@@ -119,6 +119,86 @@ def last_frame(video_path: Path, image_path: Path):
     )
     return Image.open(image_path).convert("RGB")
 
+
+def _download_audio_assets(tracks: list[AudioTrack], workdir: Path) -> list[tuple[AudioTrack, Path]]:
+    downloaded = []
+    for index, track in enumerate(tracks, start=1):
+        if not track.assetKey.startswith("redom-ai/movie-audio/") or ".." in track.assetKey:
+            raise ValueError("Invalid ReDom movie audio asset key.")
+        local = workdir / f"audio-{index:04d}.mp3"
+        s3.download_file(os.environ["R2_BUCKET_NAME"], track.assetKey, str(local))
+        if not local.is_file() or local.stat().st_size < 256:
+            raise RuntimeError("Movie audio asset is missing or empty.")
+        downloaded.append((track, local))
+    return downloaded
+
+def mix_audio_tracks(video_path: Path, output_path: Path, tracks: list[AudioTrack], duration_seconds: int, keep_video_audio: bool) -> None:
+    with tempfile.TemporaryDirectory(prefix="redom-audio-mix-") as work:
+        workdir = Path(work)
+        downloaded = _download_audio_assets(tracks, workdir)
+        command = ["ffmpeg", "-y", "-i", str(video_path)]
+        for _, path in downloaded:
+            command += ["-i", str(path)]
+        has_audio_inputs = bool(downloaded) or keep_video_audio
+        if not has_audio_inputs:
+            command += ["-f", "lavfi", "-t", str(duration_seconds), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+        filters = []
+        labels = []
+        if keep_video_audio:
+            filters.append("[0:a]volume=1.0[baseaudio]")
+            labels.append("[baseaudio]")
+        input_index = 1
+        for index, (track, _) in enumerate(downloaded):
+            delay_ms = max(0, int(float(track.startSeconds) * 1000))
+            volume = max(0.0, min(2.0, float(track.volume)))
+            label = f"track{index}"
+            filters.append(f"[{input_index}:a]adelay={delay_ms}|{delay_ms},volume={volume},apad,atrim=0:{duration_seconds}[{label}]")
+            labels.append(f"[{label}]")
+            input_index += 1
+        if not labels:
+            filters.append(f"[{input_index}:a]atrim=0:{duration_seconds}[silence]")
+            labels.append("[silence]")
+        if len(labels) == 1:
+            filters.append(labels[0] + f"atrim=0:{duration_seconds},asetpts=PTS-STARTPTS[aout]")
+        else:
+            filters.append("".join(labels) + f"amix=inputs={len(labels)}:duration=longest:dropout_transition=2:normalize=0,atrim=0:{duration_seconds},asetpts=PTS-STARTPTS[aout]")
+        command += [
+            "-filter_complex", ";".join(filters),
+            "-map", "0:v", "-map", "[aout]",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+            "-t", str(duration_seconds), "-movflags", "+faststart", str(output_path),
+        ]
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def apply_lip_sync(video_path: Path, voice_audio_path: Path, output_path: Path, job: VideoJob) -> None:
+    endpoint = os.getenv("REDOM_LIPSYNC_URL", "").rstrip("/")
+    token = os.getenv("REDOM_LIPSYNC_TOKEN", "")
+    if not endpoint or not token:
+        raise RuntimeError("Lip-sync is required for dialogue shots but REDOM_LIPSYNC_URL and REDOM_LIPSYNC_TOKEN are not configured.")
+    speaker_segments = [
+        {"characterName": track.characterName, "voiceId": track.voiceId, "startSeconds": track.startSeconds,
+         "durationSeconds": track.durationSeconds, "alignment": track.alignment}
+        for track in job.audioTracks
+    ]
+    with httpx.Client(timeout=httpx.Timeout(600, connect=30)) as client:
+        with video_path.open("rb") as video_file, voice_audio_path.open("rb") as audio_file:
+            response = client.post(
+                endpoint + "/v1/lipsync",
+                headers={"Authorization": "Bearer " + token},
+                files={"video": ("shot.mp4", video_file, "video/mp4"), "audio": ("dialogue.wav", audio_file, "audio/wav")},
+                data={"speaker_segments": json.dumps(speaker_segments), "format": job.format, "language_code": job.languageCode or ""},
+            )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Configured ReDom lip-sync service rejected the shot ({response.status_code}): {response.text[:300]}")
+    if not response.content or len(response.content) < 4096:
+        raise RuntimeError("ReDom lip-sync service returned an invalid video.")
+    output_path.write_bytes(response.content)
+
+def extract_voice_audio(video_path: Path, output_path: Path) -> None:
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(video_path), "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(output_path)],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
 
 def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool, caption_text: str | None = None, format_name: str = "video"):
     command = ["ffmpeg", "-y", "-i", str(input_path)]
