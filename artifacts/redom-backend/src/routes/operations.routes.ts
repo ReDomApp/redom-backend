@@ -118,7 +118,7 @@ router.get("/reports", requireAdmin, async (_req, res) => {
 
 router.get("/reports/:reportKey/verify", requireAdmin, async (req, res) => {
   const reportKey = String(req.params.reportKey ?? "");
-  if (!/^daily-ops-\\d{1,12}$/.test(reportKey)) return res.status(400).json({ success: false, message: "Invalid report key." });
+  if (!/^daily-ops-\d{1,12}$/.test(reportKey)) return res.status(400).json({ success: false, message: "Invalid report key." });
   try {
     const result = await pool.query(`SELECT report_key,generated_at,pdf_base64,pdf_sha256,metrics,analysis,
       report_signature,signature_payload_hash,signature_key_id FROM redom_ops_report_runs WHERE report_key=$1 LIMIT 1`, [reportKey]);
@@ -148,7 +148,7 @@ router.get("/reports/:reportKey/verify", requireAdmin, async (req, res) => {
 
 router.get("/reports/:reportKey", requireAdmin, async (req, res) => {
   const reportKey = String(req.params.reportKey ?? "");
-  if (!/^daily-ops-\\d{1,12}$/.test(reportKey)) return res.status(400).json({ success: false, message: "Invalid report key." });
+  if (!/^daily-ops-\d{1,12}$/.test(reportKey)) return res.status(400).json({ success: false, message: "Invalid report key." });
   try {
     const result = await pool.query(`SELECT report_key,period_start,period_end,timezone,status,delivery_status,
       metrics,analysis,data_coverage,pdf_sha256,report_signature,signature_payload_hash,signature_key_id,
