@@ -14,7 +14,8 @@ The worker starts with the backend, checks its persistent report schedule every 
 | `REDOM_OPS_REPORT_SIGNING_KEY` | Secret used to HMAC-sign canonical report metrics/analysis | Not configured; reports are marked UNSIGNED |
 | `REDOM_EMAIL_DAILY_LIMIT` | Verified/configured internal daily limit, if applicable | Unknown |
 | `REDOM_EMAIL_MONTHLY_LIMIT` | Verified/configured internal monthly limit, if applicable | Unknown |
-| `RESEND_WEBHOOK_SECRET` | Existing inbound-support webhook signing secret | Keep unchanged for the existing `email.received` webhook |\n| `REDOM_OPS_RESEND_WEBHOOK_SECRET` | Dedicated signing secret for the operations delivery-event webhook | Set from the new Resend webhook at `/ops/email/webhook` |
+| `RESEND_WEBHOOK_SECRET` | Existing inbound-support webhook signing secret | Keep unchanged for the existing `email.received` webhook |
+| `REDOM_OPS_RESEND_WEBHOOK_SECRET` | Dedicated signing secret for the operations delivery-event webhook | Set from the new Resend webhook at `/ops/email/webhook` |
 
 Do not set an internal limit to imitate a provider quota. Configure the actual limits only after confirming them in the provider dashboard or official account configuration. Store all secrets in Render/Replit environment configuration, never in Git.
 
