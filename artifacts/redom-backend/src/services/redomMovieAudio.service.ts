@@ -143,3 +143,30 @@ export async function createReDomMovieMusicAsset(input: MusicInput): Promise<Aud
   });
   return { key, durationSeconds, provider: "elevenlabs", model: env.redomMovieAudio.musicModel };
 }
+
+export async function listReDomMovieVoices() {
+  const apiKey = requireAudioProvider();
+  const response = await fetch("https://api.elevenlabs.io/v2/voices?page_size=100", {
+    headers: { "xi-api-key": apiKey, accept: "application/json" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    throw Object.assign(new Error("ReDom Voices could not list available voices (" + response.status + ")."), {
+      status: response.status === 429 ? 429 : 502,
+      code: "MOVIE_VOICE_LIST_FAILED",
+    });
+  }
+  const payload = await response.json() as { voices?: Array<Record<string, unknown>>; has_more?: boolean; next_page_token?: string };
+  return {
+    voices: (payload.voices || []).map((voice) => ({
+      voiceId: typeof voice.voice_id === "string" ? voice.voice_id : "",
+      name: typeof voice.name === "string" ? voice.name : "Unnamed voice",
+      category: typeof voice.category === "string" ? voice.category : undefined,
+      description: typeof voice.description === "string" ? voice.description : undefined,
+      labels: voice.labels && typeof voice.labels === "object" ? voice.labels : {},
+      previewUrl: typeof voice.preview_url === "string" ? voice.preview_url : undefined,
+    })).filter((voice) => voice.voiceId),
+    hasMore: payload.has_more === true,
+    nextPageToken: typeof payload.next_page_token === "string" ? payload.next_page_token : undefined,
+  };
+}
