@@ -369,7 +369,7 @@ export async function createReDomMovieTrailerPreview(userId: string, input: { pr
       "Trailer should be a teaser, not the whole story: hook immediately, introduce distinct character silhouettes, escalate stakes, include one emotional beat, and end on a strong question. Avoid legible text in generated frames; titles can be composited separately.",
       "Propose a coherent season/episode outline and respect the requested episode count. Music direction must describe an original score and any optional song concept; do not claim audio has been rendered.",
       "Keep the trailer prompt visual, scene-specific and feasible for a short text-to-video generation. No copyrighted song lyrics or imitation of a living artist's voice."
-    ].join("\\n"),
+    ].join("\n"),
     input: JSON.stringify({
       creatorPrompt: input.prompt,
       format: input.format,
@@ -615,7 +615,7 @@ async function generateOriginalSongLyrics(projectTitle: string, concept: string,
       "Use a clear verse and chorus, short lines, memorable emotional imagery, and a natural vocal rhythm.",
       "Do not imitate a named singer, copy existing lyrics, or refer to copyrighted songs.",
       "Return only the lyrics, with section labels such as [Verse 1] and [Chorus].",
-    ].join("\\n"),
+    ].join("\n"),
     input: JSON.stringify({ projectTitle, concept, language: languageName, characters }),
     safety_identifier: "redom-movie-original-song-lyrics",
   });
@@ -719,7 +719,7 @@ async function prepareReDomMovieAudio(userId: string, project: typeof reDomAiVid
         dialogueShotCount: [...shotTracks.values()].filter((tracks) => tracks.length > 0).length,
         generatedDialogueClipCount: [...shotTracks.values()].reduce((total, tracks) => total + tracks.length, 0),
         singingEnabled: research.singingEnabled !== false,
-        lipSyncStatus: "requires_configured_redom_lipsync_service",
+        lipSyncStatus: "pending_sync_lipsync_worker",
       },
     },
     updatedAt: new Date(),
