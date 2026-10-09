@@ -3,6 +3,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 import boto3
 import httpx
@@ -35,6 +36,9 @@ s3 = boto3.client(
 )
 
 class VideoJob(BaseModel):
+    # First-class creation modes share the native renderer and retain distinct creative briefs.
+    contentType: Literal["video", "movie", "cartoon"] = "video"
+    watermarkEnabled: bool = True
     jobId: str
     runtime: str = "redom-v2.8-native"
     model: str = MODEL_NAME
@@ -109,6 +113,12 @@ def render_project(job: VideoJob, output: Path):
             seconds = min(SEGMENT_SECONDS, remaining)
             frames = seconds * FPS + 1
             prompt = job.prompt.strip()
+            if job.contentType == "movie":
+                prompt += "\\nReDom Movie Studio: naturalistic emotional performances, subtle micro-expressions, motivated blocking, lens-aware depth of field, coherent shot/reverse-shot, motivated lighting, and strict wardrobe/prop/character continuity."
+            elif job.contentType == "cartoon":
+                prompt += "\\nReDom Cartoon: polished original animation, expressive acting, consistent character proportions and silhouettes, readable staging, purposeful camera angles, coherent motion arcs, appealing color design, and genre-appropriate timing."
+            else:
+                prompt += "\\nReDom Videos: concise short-form storytelling, immediate visual hook, clear scene beats, deliberate camera movement, stable subject continuity, and a clean ending."
             if job.operation == "cgi":
                 prompt += (
                     "\nCGI production brief: physically based materials, coherent geometry, "
@@ -182,6 +192,41 @@ def render_project(job: VideoJob, output: Path):
         output.write_bytes(enhanced.read_bytes())
 
 
+def apply_brand_watermark(source: Path, output: Path, job: VideoJob, workdir: Path):
+    """Burn a visible ReDom brand mark into every frame before publishing an asset."""
+    labels = {"video": "ReDom Videos", "movie": "ReDom Movie Studio", "cartoon": "ReDom Cartoon"}
+    label = labels[job.contentType]
+    canvas = Image.new("RGBA", (620, 92), (0, 0, 0, 0))
+    from PIL import ImageDraw, ImageFont
+    draw = ImageDraw.Draw(canvas)
+    font_path = os.getenv("REDOM_WATERMARK_FONT_PATH")
+    try:
+        font = ImageFont.truetype(font_path, 29) if font_path else ImageFont.load_default()
+    except (OSError, TypeError):
+        font = ImageFont.load_default()
+    draw.rounded_rectangle((2, 2, 618, 90), radius=18, fill=(8, 18, 36, 170), outline=(255, 255, 255, 125), width=2)
+    logo_path = os.getenv("REDOM_BRAND_LOGO_PATH")
+    text_x = 22
+    if logo_path and Path(logo_path).is_file():
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+            logo.thumbnail((58, 58))
+            canvas.alpha_composite(logo, (16, (92 - logo.height) // 2))
+            text_x = 86
+        except OSError:
+            pass
+    draw.text((text_x, 28), label, font=font, fill=(255, 255, 255, 245), stroke_width=1, stroke_fill=(0, 0, 0, 170))
+    watermark = workdir / "redom-watermark.png"
+    canvas.save(watermark)
+    subprocess.run([
+        "ffmpeg", "-y", "-i", str(source), "-i", str(watermark),
+        "-filter_complex", "[0:v][1:v]overlay=W-w-28:H-h-28:format=auto,format=yuv420p",
+        "-map", "0:a?", "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
+        "-crf", os.getenv("REDOM_VIDEO_CRF", "18"), "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart", str(output),
+    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def compose_project(job: VideoJob, output: Path):
     if not job.shotKeys:
         raise RuntimeError("ReDom composer received no shot assets.")
@@ -234,6 +279,8 @@ async def callback(job: VideoJob, status: str, storage_key: str | None = None, e
 async def process(job: VideoJob):
     if job.runtime != "redom-v2.8-native" or job.model != MODEL_NAME:
         raise ValueError("Unsupported ReDom video runtime.")
+    if job.contentType not in {"video", "movie", "cartoon"}:
+        raise ValueError("Unsupported ReDom creation mode.")
     if job.durationSeconds > 300:
         raise ValueError("Video duration exceeds the ReDom maximum.")
 
@@ -244,7 +291,11 @@ async def process(job: VideoJob):
             await asyncio.to_thread(compose_project, job, output)
         else:
             await asyncio.to_thread(render_project, job, output)
-        key = f"redom-ai/videos/{job.jobId}/final.mp4"
+        # Apply disclosure after composition so all exported frames retain the mark.
+        branded = Path(work) / "branded-final.mp4"
+        await asyncio.to_thread(apply_brand_watermark, output, branded, job, Path(work))
+        output = branded
+        key = f"redom-ai/{job.contentType}s/{job.jobId}/final.mp4"
         s3.upload_file(
             str(output),
             os.environ["R2_BUCKET_NAME"],
@@ -288,5 +339,7 @@ async def enqueue(job: VideoJob, authorization: str | None = Header(default=None
         raise HTTPException(401, "Unauthorized")
     if job.runtime != "redom-v2.8-native" or job.model != MODEL_NAME:
         raise HTTPException(400, "Unsupported ReDom video runtime.")
+    if job.contentType not in {"video", "movie", "cartoon"}:
+        raise HTTPException(400, "Unsupported ReDom creation mode.")
     await redis.lpush(QUEUE, job.model_dump_json())
     return {"accepted": True, "jobId": job.jobId, "status": "queued", "model": MODEL_NAME}
