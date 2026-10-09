@@ -275,7 +275,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   return {
     generatedAt: iso(now), periodStart: iso(start), periodEnd: iso(now), timezone: REPORT_TIMEZONE,
     email: {
-      current24h: { attempts, accepted: num(e.accepted), delivered, failed, bounced: num(e.bounced), rejected: num(e.rejected), deferred: num(e.deferred), duplicateSuppressed: num(e.duplicatesuppressed), duplicateDelivery: num(e.duplicatedelivery) },
+      rolling365Start: iso(yearStart), rolling365End: iso(now),
+      current24h: { uniqueEmails: num(e.uniqueemails), attempts, accepted: num(e.accepted), delivered, failed, bounced: num(e.bounced), rejected: num(e.rejected), deferred: num(e.deferred), duplicateSuppressed: num(e.duplicatesuppressed), duplicateDelivery: num(e.duplicatedelivery) },
       previous24h: { attempts: previousAttempts, delivered: num(e.previousdelivered), failed: num(e.previousfailed) },
       changePct: { attempts: pct(attempts, previousAttempts), delivered: pct(delivered, num(e.previousdelivered)), failed: pct(failed, num(e.previousfailed)) },
       last365d: { uniqueEmails: num(y.uniqueemails), sendAttempts: num(y.attempts), delivered: num(y.delivered), failed: num(y.failed), bounced: num(y.bounced), duplicateSuppressed: num(y.duplicatesuppressed) },
@@ -331,6 +332,13 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     },
     system: { database: database.rows[0]?.ok ? "reachable" : "unknown", collectedAt: iso(new Date()) },
   };
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  const obj = value as Record<string, unknown>;
+  return "{" + Object.keys(obj).sort().map((key) => JSON.stringify(key) + ":" + canonicalJson(obj[key])).join(",") + "}";
 }
 
 function redactSensitiveText(value: string): string {
@@ -444,7 +452,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "",
     "EMAIL OPERATIONS — LAST 24 HOURS",
     "Unique emails: " + emailMetric(m.email.current24h.uniqueEmails, m) + " | Send attempts/retries: " + emailMetric(m.email.current24h.attempts, m) + " | Accepted: " + emailMetric(m.email.current24h.accepted, m) + " | Delivered events: " + emailMetric(m.email.current24h.delivered, m),
-    "24-hour delivery rate (delivered / known terminal outcomes): " + formatPct(rate(m.email.current24h.delivered, m.email.current24h.failed + m.email.current24h.bounced + m.email.current24h.rejected)),
+    "24-hour delivery rate (delivered / known terminal outcomes): " + formatPct(rate(m.email.current24h.delivered, m.email.current24h.delivered + m.email.current24h.failed + m.email.current24h.bounced + m.email.current24h.rejected)),
     "Failed: " + emailMetric(m.email.current24h.failed, m) + " | Bounced: " + emailMetric(m.email.current24h.bounced, m) + " | Rejected: " + emailMetric(m.email.current24h.rejected, m),
     "Deferred: " + emailMetric(m.email.current24h.deferred, m) + " | Duplicate sends suppressed: " + emailMetric(m.email.current24h.duplicateSuppressed, m) + " | Duplicate deliveries: " + emailMetric(m.email.current24h.duplicateDelivery, m),
     "Previous 24h attempts: " + emailMetric(m.email.previous24h.attempts, m) + " | Change: " + formatPct(m.email.changePct.attempts),
@@ -631,7 +639,7 @@ async function generateReport(now: Date): Promise<void> {
       logger.error({ error: error instanceof Error ? error.message : String(error) }, "Gemini daily operations analysis unavailable");
       analysis = { status: "unknown", executiveSummary: "Gemini analysis unavailable. The attached report contains collected metrics and data-coverage limitations; no AI conclusions are asserted.", keyChanges: [], findings: [], resolvedIssues: [], pendingRisks: ["AI analysis unavailable; inspect backend/provider health and retry the report."], nextActions: [{ priority: "high", action: "Restore or verify Gemini reporting integration", rationale: "Automated analysis did not complete", verification: "A subsequent report contains schema-valid Gemini analysis." }], forecastCommentary: "Forecasts are simple weighted estimates.", limitations: ["Gemini analysis failed; see service logs."] };
     }
-    const payloadHash = createHash("sha256").update(JSON.stringify({ metrics, analysis })).digest("hex");
+    const payloadHash = createHash("sha256").update(canonicalJson({ metrics, analysis })).digest("hex");
     const signedAt = iso(now);
     const signature = REPORT_SIGNING_KEY ? createHmac("sha256", REPORT_SIGNING_KEY).update(reportKey + "|" + signedAt + "|" + payloadHash).digest("hex") : null;
     const keyId = REPORT_SIGNING_KEY ? createHash("sha256").update(REPORT_SIGNING_KEY).digest("hex").slice(0, 12) : null;
