@@ -16,7 +16,7 @@ import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeR
 import { analyzeReDomImageIntelligence } from "../services/redomAiImageIntelligence.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
-import { approveReDomMovieTrailerAndCreateProject, createReDomMovieProject, createReDomMovieTrailerPreview, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
+import { approveReDomMovieTrailerAndCreateProject, createReDomMovieProject, createReDomMovieTrailerPreview, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";\nimport { listReDomMovieVoices } from "../services/redomMovieAudio.service";
 
 import { r2 } from "../lib/r2";
 
@@ -179,6 +179,20 @@ router.post("/video", rateLimit({ windowMs: 60_000, max: 3, standardHeaders: tru
     req.log?.error?.({ err: error }, "ReDom-v2.8—Video job creation failed");
     const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
     return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, code: (error as { code?: string })?.code, message: error instanceof Error ? error.message : "Video generation is temporarily unavailable." });
+  }
+});
+
+router.get("/video/voices", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  try {
+    const result = await listReDomMovieVoices();
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false, code: (error as { code?: string })?.code,
+      message: error instanceof Error ? error.message : "ReDom Voices could not load voice profiles.",
+    });
   }
 });
 
