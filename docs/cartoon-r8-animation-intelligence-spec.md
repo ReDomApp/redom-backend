@@ -47,3 +47,27 @@ For animated projects, Studio—Ultron 8.0R is responsible for final assembly: e
 
 ## Evidence required for release
 For every acceptance test retain the prompt and settings, model/checkpoint identifier and provenance, runtime version, seed where supported, job IDs, logs, output artifact, automated metrics, human review rubric and pass/fail decision. Run the actual GPU endpoint; prompt-string unit tests and successful compilation do not count as rendered animation acceptance evidence. Release gates include endpoint health, checkpoint checksum/provenance, successful short renders, output security validation, timing/language checks, and continuity review.
+
+
+## Unified ReDom Video Intelligence and 00:59 ceiling
+
+ReDom Video coordinates Movie Intelligence and Cartoon Intelligence in one creative workflow. Every delivered video, whether live-action-style movie, animation, anime, animal cartoon or mixed-format short, must be no longer than 59 seconds (00:59). Enforce this in API request validation, Studio project planning, worker schema validation, compose payloads, final media probing and backend completion validation. Do not silently trim a planned 60+ second story after generation; reject or re-plan the project to fit the ceiling. The 59-second rule applies to the final composed export as well as direct generation.
+
+### Shared creative recommendation and memory
+- Combine the creator's current prompt and reference assets with authorized ReDom project memory: recurring characters, preferred language/dialect, genre, prior approved style briefs, continuity decisions and previously accepted/rejected creative directions.
+- Use public, accessible internet sources to research current high-level creative trends and craft techniques across short-video platforms such as Facebook and TikTok, plus film/anime/art references when relevant. Treat this as research for inspiration and context, not access to private feeds, private messages, private recommendation signals or non-public platform data.
+- Keep source URL, retrieval timestamp, factual finding, creative interpretation and rights/usage notes distinct. Never present a trend inference as a verified platform ranking without evidence.
+- Recommend concepts by jointly considering prompt intent, project memory, selected audience/genre, platform aspect ratio, trend evidence, production feasibility, language/cultural context and novelty. Recommendations must not override the creator's instructions.
+- Synthesize original story hooks, visual beats, character actions, camera/edit rhythm, sound/dialogue direction and a memorable ending. Do not copy another creator's video, exact shot sequence, protected characters, dialogue, music, logos or signature designs.
+- If internet research is unavailable, continue from prompt and authorized ReDom memory and disclose that current trend research was not performed. Do not invent live trends.
+- Provide multilingual output direction for the creator's requested language, locale/dialect, register, emotion, pacing, captions and pronunciation. Do not claim spoken audio or accurate lip-sync unless the configured audio pipeline produced and validated it.
+
+### Shared Movie Studio / Cartoon workflow
+1. Creative planning combines the creator prompt, authorized ReDom memory and researched public creative signals.
+2. Movie Studio acts as showrunner/editor: concept recommendation, hook, beat sheet, shot plan, camera, pacing, language/audio plan and final assembly.
+3. For cinematic live-action-style output, Movie Intelligence directs the Video/Studio rendering path.
+4. For animation, Cartoon—R8.0 renders the approved human/animal/creature shots with stable model sheets, acting, motion and medium-specific art direction.
+5. Studio finishes either format while preserving the approved story, identity, visual medium, language and audio timing.
+6. A final duration gate verifies the exported file is at most 59 seconds before it can be marked complete.
+
+This shared workflow does not mean one checkpoint automatically contains both animation and movie capability. The appropriate model endpoint, compatible checkpoint, credentials and GPU runtime must be deployed and acceptance-tested independently.
