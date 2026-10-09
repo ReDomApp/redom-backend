@@ -38,6 +38,11 @@ export async function prepareReDomVideoLanguage(prompt: string, format: "video" 
       "Return JSON only: {\"languageName\": string, \"languageCode\": string, \"caption\": string, \"generationDirection\": string}.",
       "caption must be a concise, engaging post caption for the resulting video, written in the detected prompt language, not a translation of these instructions. Avoid hashtags unless natural for the language.",
       "generationDirection must instruct the video model to preserve the detected language for any visible text, dialogue direction and story details; do not fabricate audio or claim speech was generated if it was not.",
+      ...(format === "cartoon" ? [
+        "CARTOON—R8.0: create an authored animated shot, not live-action footage with a filter. Preserve a consistent human, animal or creature model sheet, silhouette, face, proportions, markings, costume, palette and scale across frames. Use the requested original animation language (2D, stylized 3D, anime, cel-shaded, painterly or hybrid) and coherent character acting, readable posing, anticipation, arcs, weight, contact, overlap/follow-through, expression timing and genre-appropriate exaggeration.",
+        "Keep the animated environment spatially coherent and alive through layered backgrounds, parallax, weather, particles and motivated lighting. Avoid anatomy drift, morphing, extra limbs, flicker, texture crawl, foot sliding and inconsistent eye-lines. Maintain the creator's chosen language, dialect, pronunciation, vocal delivery and subtitles when those assets are supported by the runtime.",
+        "If a named anime or studio is referenced, use web-grounded high-level style analysis to create an original direction; do not duplicate protected characters, exact frames, costumes, logos, dialogue or scene sequences without rights context."
+      ] : []),
       "Do not translate proper names unless the language convention requires it."
     ].join("\n"),
     input: "Format: " + format + "\nCreator prompt:\n" + prompt,
