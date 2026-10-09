@@ -185,7 +185,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     pool.query(`SELECT
       count(*) FILTER (WHERE created_at >= $1)::int AS created,
       count(*) FILTER (WHERE created_at >= $2 AND created_at < $1)::int AS previousCreated,
-      count(*) FILTER (WHERE status <> 'closed')::int AS open,
+      count(*) FILTER (WHERE status <> 'closed' AND NOT EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.case_id=support_cases.id AND rr.case_invalidated_at IS NOT NULL))::int AS open,
       count(*) FILTER (WHERE status = 'awaiting_support')::int AS awaitingSupport,
       count(*) FILTER (WHERE status = 'awaiting_user')::int AS awaitingUser,
       count(*) FILTER (WHERE status = 'closed')::int AS closed
