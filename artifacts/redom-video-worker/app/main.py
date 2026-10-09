@@ -178,7 +178,12 @@ def mix_audio_tracks(video_path: Path, output_path: Path, tracks: list[AudioTrac
         workdir = Path(work)
         downloaded = _download_audio_assets(tracks, workdir)
         command = ["ffmpeg", "-y", "-i", str(video_path)]
-        for _, path in downloaded:
+        for track, path in downloaded:
+            # A generated score asset is at most five minutes; loop that original
+            # score bed to cover long-form exports instead of silently leaving
+            # the remainder of a feature-length movie without music.
+            if track.kind == "score":
+                command += ["-stream_loop", "-1"]
             command += ["-i", str(path)]
         has_audio_inputs = bool(downloaded) or keep_video_audio
         if not has_audio_inputs:
