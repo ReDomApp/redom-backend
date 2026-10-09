@@ -211,25 +211,49 @@ function pdfEscape(text: string): string {
 }
 function makePdf(pages: string[][]): Buffer {
   const objects: string[] = ["<< /Type /Catalog /Pages 2 0 R >>", ""];
-  const pageContents: string[] = [];
-  for (const lines of pages) {
-    const contentParts = ["BT", "/F1 10 Tf", "48 790 Td", "14 TL"];
-    for (const line of lines) contentParts.push("(" + pdfEscape(line) + ") Tj", "T*");
-    contentParts.push("ET");
-    pageContents.push(contentParts.join("\n"));
+  const streams: string[] = [];
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+    const lines = pages[pageIndex] ?? [];
+    const parts = [
+      "q 0.09 0.47 0.95 rg 0 766 612 76 re f Q",
+      "BT /F2 17 Tf 1 1 1 rg 48 808 Td (ReDom) Tj ET",
+      "BT /F1 9 Tf 1 1 1 rg 48 788 Td (DAILY OPERATIONS INTELLIGENCE  |  CONFIDENTIAL) Tj ET",
+      "q 0.94 0.95 0.97 rg 0 0 612 34 re f Q",
+      "BT /F1 8 Tf 0.40 0.42 0.45 rg 48 14 Td (ReDom Platforms  |  Operational metrics and evidence) Tj ET",
+      "BT /F1 8 Tf 0.40 0.42 0.45 rg 530 14 Td (" + (pageIndex + 1) + " / " + pages.length + ") Tj ET",
+    ];
+    let y = 744;
+    for (const rawLine of lines) {
+      const line = String(rawLine ?? "").slice(0, 150);
+      if (line === "ReDom | DAILY OPERATIONS INTELLIGENCE") continue;
+      if (!line) { y -= 5; continue; }
+      const heading = line.length <= 42 && line === line.toUpperCase() && /[A-Z]/.test(line);
+      if (heading) {
+        y -= 3;
+        parts.push("BT /F2 10 Tf 0.09 0.47 0.95 rg 48 " + y + " Td (" + pdfEscape(line) + ") Tj ET");
+        y -= 16;
+      } else {
+        parts.push("BT /F1 8 Tf 0.12 0.13 0.15 rg 48 " + y + " Td (" + pdfEscape(line) + ") Tj ET");
+        y -= 12;
+      }
+      if (y < 48) break;
+    }
+    streams.push(parts.join("\n"));
   }
   const contentIds: number[] = [];
-  for (const stream of pageContents) {
+  for (const stream of streams) {
     contentIds.push(objects.length + 1);
     objects.push("<< /Length " + Buffer.byteLength(stream, "ascii") + " >>\nstream\n" + stream + "\nendstream");
   }
   const pageStartId = objects.length + 1;
   const pageIds = pages.map((_, index) => pageStartId + index);
-  const fontId = pageStartId + pages.length;
+  const regularFontId = pageStartId + pages.length;
+  const boldFontId = regularFontId + 1;
   for (let index = 0; index < pages.length; index++) {
-    objects.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 " + fontId + " 0 R >> >> /Contents " + contentIds[index] + " 0 R >>");
+    objects.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 " + regularFontId + " 0 R /F2 " + boldFontId + " 0 R >> >> /Contents " + contentIds[index] + " 0 R >>");
   }
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
   objects[1] = "<< /Type /Pages /Kids [" + pageIds.map(id => id + " 0 R").join(" ") + "] /Count " + pageIds.length + " >>";
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
@@ -240,6 +264,7 @@ function makePdf(pages: string[][]): Buffer {
   pdf += "trailer\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF";
   return Buffer.from(pdf, "ascii");
 }
+
 function reportPages(m: Metrics, a: Record<string, any>): string[][] {
   const lines = [
     "ReDom | DAILY OPERATIONS INTELLIGENCE",
