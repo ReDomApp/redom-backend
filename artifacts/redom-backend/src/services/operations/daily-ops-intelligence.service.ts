@@ -447,9 +447,16 @@ async function analyzeWithGemini(metrics: Metrics): Promise<Record<string, any>>
     const payload = await response.json() as any;
     const responseText = payload?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim();
     if (!responseText) throw new Error("Gemini returned no structured analysis.");
-    const parsed = JSON.parse(responseText);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(responseText);
+    } catch {
+      failures.push(`${model}: response was not valid JSON`);
+      continue;
+    }
     if (!["healthy", "degraded", "critical", "unknown"].includes(parsed.status) || typeof parsed.executiveSummary !== "string" || !Array.isArray(parsed.findings) || !Array.isArray(parsed.nextActions)) {
-      throw new Error("Gemini analysis failed schema validation.");
+      failures.push(`${model}: response failed the required analysis schema`);
+      continue;
     }
     return parsed;
   }
