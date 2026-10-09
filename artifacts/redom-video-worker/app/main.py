@@ -53,7 +53,7 @@ class VideoJob(BaseModel):
 pipeline = None
 
 def watermark_label(format_name: str) -> str:
-    return {"movie": "ReDom Movie Studio", "cartoon": "ReDom Cartoon", "video": "ReDom Videos"}.get(format_name, "ReDom Videos")
+    return {"movie": "ReDom Movie Studio | AI-generated", "cartoon": "ReDom Cartoon | AI-generated", "video": "ReDom Videos | AI-generated"}.get(format_name, "ReDom Videos | AI-generated")
 
 def watermark_filter(format_name: str, enabled: bool = True) -> str:
     if not enabled:
