@@ -1,4 +1,5 @@
-import { randomInt } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
+import { recordOpsEmailEvent } from "../operations/daily-ops-intelligence.service";
 import { Resend } from "resend";
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
@@ -451,8 +452,14 @@ export function formatCaseReply(caseNumber: string, reply: string): string {
 
 export async function sendSupportEmail(to: string, subject: string, body: string): Promise<void> {
   const html = `<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#ffffff;"><div lang="en" dir="ltr">${renderSupportReplyHtml(body)}</div></body></html>`;
-  const { error } = await resend.emails.send({ from: env.email.supportFrom, to: [to], subject, html, text: body });
-  if (error) throw new Error(`Support email could not be sent: ${error.message}`);
+  const logicalEmailId = createHash("sha256").update(to.toLowerCase() + "|" + subject + "|" + body).digest("hex");
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "attempted", recipient: to }).catch(() => undefined);
+  const { data, error } = await resend.emails.send({ from: env.email.supportFrom, to: [to], subject, html, text: body });
+  if (error) {
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "failed", recipient: to, metadata: { error: error.message } }).catch(() => undefined);
+    throw new Error(`Support email could not be sent: ${error.message}`);
+  }
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "accepted", recipient: to, providerMessageId: data?.id ?? null }).catch(() => undefined);
 }
 
 export async function sendSupportReminder(to: string, caseNumber: string): Promise<void> {

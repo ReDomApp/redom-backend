@@ -1,4 +1,6 @@
 import { Resend } from "resend";
+import { createHash } from "node:crypto";
+import { recordOpsEmailEvent } from "../operations/daily-ops-intelligence.service";
 import { env } from "../../config/env";
 
 const resend = new Resend(env.email.resend.apiKey);
@@ -171,12 +173,19 @@ ${!isPaid ? `<div style="margin-top:18px;padding:14px 16px;background:#F0F2F5;bo
     "© ReDom Platforms, Inc.",
   ].join("\n");
 
-  const { error } = await resend.emails.send({
+  const subject = (isPaid ? "Payment received — ReDom " : "Payment failed — ReDom ") + input.planName;
+  const logicalEmailId = createHash("sha256").update(input.to.toLowerCase() + "|" + subject + "|" + text).digest("hex");
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "payments", eventType: "attempted", recipient: input.to }).catch(() => undefined);
+  const { data, error } = await resend.emails.send({
     from: env.email.paymentFrom,
     to: [input.to],
-    subject: (isPaid ? "Payment received — ReDom " : "Payment failed — ReDom ") + input.planName,
+    subject,
     text,
     html,
   });
-  if (error) throw new Error(`Email could not be sent: ${error.message}`);
+  if (error) {
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "payments", eventType: "failed", recipient: input.to, metadata: { error: error.message } }).catch(() => undefined);
+    throw new Error(`Email could not be sent: ${error.message}`);
+  }
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "payments", eventType: "accepted", recipient: input.to, providerMessageId: data?.id ?? null }).catch(() => undefined);
 }

@@ -1,6 +1,8 @@
 import { Resend } from "resend";
 import { createHash } from "node:crypto";
+import { recordOpsEmailEvent } from "../operations/daily-ops-intelligence.service";
 import { env } from "../../config/env";
+import { pool } from "../../database/db";
 import { isAllowedSupportEmailUrl, buildSupportEmailActions, renderSupportInlineLinkTokens } from "./supportWebLinks.service";
 import { getAccountContextByEmail } from "./support.service";
 
@@ -163,7 +165,11 @@ export async function sendGeneratedSupportEmail(input: {
     }
   });
   const html = await generateSupportEmailHtml({ ...input, actions });
-  const { error } = await resend.emails.send({
+  const logicalEmailId = createHash("sha256").update(input.idempotencyKey ?? (input.to.toLowerCase() + "|" + input.subject + "|" + input.caseNumber)).digest("hex");
+  const caseResult = await pool.query("SELECT id FROM support_cases WHERE case_number=$1 LIMIT 1", [input.caseNumber]).catch(() => ({ rows: [] as Array<{ id: string }> }));
+  const caseId = caseResult.rows[0]?.id ? String(caseResult.rows[0].id) : null;
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "attempted", recipient: input.to, caseId }).catch(() => undefined);
+  const { data, error } = await resend.emails.send({
     from: env.email.supportFrom,
     to: [input.to],
     subject: input.subject,
@@ -177,7 +183,11 @@ export async function sendGeneratedSupportEmail(input: {
       } : {}),
     },
   }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
-  if (error) throw new Error(`Support email could not be sent: ${error.message}`);
+  if (error) {
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "failed", recipient: input.to, caseId, metadata: { error: error.message } }).catch(() => undefined);
+    throw new Error(`Support email could not be sent: ${error.message}`);
+  }
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "accepted", recipient: input.to, caseId, providerMessageId: data?.id ?? null }).catch(() => undefined);
 }
 
 
@@ -212,8 +222,16 @@ export async function sendRefundCaseEmail(input: {
     const row = (label:string,value?:string|null) => value ? '<tr><td style="padding:12px 0;border-bottom:1px solid #dadde1;font:12px/18px Arial;color:#65676b;">'+safe(label)+'</td><td align="right" style="padding:12px 0;border-bottom:1px solid #dadde1;font:700 14px/20px Arial;color:#1c1e21;word-break:break-word;">'+safe(value)+'</td></tr>' : "";
     const html = '<!doctype html><html><body style="margin:0;padding:24px;background:#f0f2f5;font-family:Arial,sans-serif;color:#1c1e21;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;background:#fff;border:1px solid #dadde1;"><tr><td style="padding:22px 26px;border-bottom:1px solid #dadde1;"><strong style="font-size:24px;color:#1877f2;">ReDom</strong><span style="float:right;font-size:11px;font-weight:700;color:#65676b;letter-spacing:.7px;">REFUND SERVICES</span></td></tr><tr><td style="padding:30px 26px 12px;"><div style="font-size:11px;font-weight:700;color:#65676b;letter-spacing:1px;">FINAL REFUND DECISION</div><div style="font-size:27px;font-weight:800;margin-top:7px;">'+safe(input.status)+'</div><div style="display:inline-block;margin-top:12px;padding:7px 12px;background:'+statusBg+';color:'+statusColor+';font-size:12px;font-weight:800;">TERMINAL</div></td></tr><tr><td style="padding:18px 26px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">'+row("Case Number",input.caseNumber)+row("ReDom Transaction ID",input.transactionNumber)+row("Amount",input.amount&&input.currency?input.amount+" "+input.currency:null)+row("Currency",input.currency)+row("Refund destination",input.target)+row("Refund ID",input.refundId)+row("Decision reason",input.reason)+'</table></td></tr><tr><td style="padding:0 26px 22px;"><div style="padding:15px;background:#fff8e1;border:1px solid #f1d48a;font:12px/19px Arial;color:#65676b;"><strong style="color:#1c1e21;">Security warning</strong><br>'+renderInlineFormatting(input.securityWarning)+'</div>${renderActionButtons(refundActions)}</td></tr><tr><td style="padding:18px 26px;background:#f7f8fa;border-top:1px solid #dadde1;font:11px/17px Arial;color:#65676b;">This is a final ReDom refund transaction notice. No reply is required for this terminal notification. © ReDom</td></tr></table></td></tr></table></body></html>';
     const text = "ReDom Refund Services\n\nFINAL REFUND DECISION\n\nStatus: "+input.status+"\nCase Number: "+input.caseNumber+"\nTransaction ID: "+input.transactionNumber+"\nAmount: "+(input.amount&&input.currency?input.amount+" "+input.currency:"")+"\nRefund destination: "+(input.target??"")+"\nRefund ID: "+(input.refundId??"")+"\nReason: "+input.reason+"\n\n"+input.securityWarning;
-    const { error } = await resend.emails.send({from: input.from ?? env.email.supportFrom,to:[input.to],subject:"ReDom Refund — "+input.status+" — "+input.transactionNumber,text,html},{idempotencyKey});
-    if(error) throw new Error("Refund terminal email could not be sent: "+error.message);
+    const logicalEmailId = createHash("sha256").update(idempotencyKey).digest("hex");
+    const caseLookup = await pool.query("SELECT id FROM support_cases WHERE case_number=$1 LIMIT 1", [input.caseNumber]).catch(() => ({ rows: [] as Array<{ id: string }> }));
+    const caseId = caseLookup.rows[0]?.id ? String(caseLookup.rows[0].id) : null;
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "refund", eventType: "attempted", recipient: input.to, caseId }).catch(() => undefined);
+    const { data, error } = await resend.emails.send({from: input.from ?? env.email.supportFrom,to:[input.to],subject:"ReDom Refund — "+input.status+" — "+input.transactionNumber,text,html},{idempotencyKey});
+    if(error) {
+      await recordOpsEmailEvent({ logicalEmailId, subsystem: "refund", eventType: "failed", recipient: input.to, caseId, metadata: { error: error.message } }).catch(() => undefined);
+      throw new Error("Refund terminal email could not be sent: "+error.message);
+    }
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "refund", eventType: "accepted", recipient: input.to, caseId, providerMessageId: data?.id ?? null }).catch(() => undefined);
     return;
   }
   const tone = /completed|successful|processed/i.test(input.status)
@@ -266,6 +284,14 @@ export async function sendRefundCaseEmail(input: {
 </table></td></tr></table></body></html>`;
 
   const text = "ReDom Refund Case\n\nCase: " + input.caseNumber + "\nTransaction: " + input.transactionNumber + "\nStatus: " + input.status + "\nReason: " + input.reason + (input.nextStep ? "\nNext step: " + input.nextStep : "") + "\n\n" + input.securityWarning;
-  const { error } = await resend.emails.send({ from: input.from ?? env.email.supportFrom, to: [input.to], subject: "ReDom Refunds — " + input.status + " — " + input.transactionNumber, text, html }, { idempotencyKey });
-  if (error) throw new Error("Refund case email could not be sent: " + error.message);
+  const logicalEmailId = createHash("sha256").update(idempotencyKey).digest("hex");
+  const caseLookup = await pool.query("SELECT id FROM support_cases WHERE case_number=$1 LIMIT 1", [input.caseNumber]).catch(() => ({ rows: [] as Array<{ id: string }> }));
+  const caseId = caseLookup.rows[0]?.id ? String(caseLookup.rows[0].id) : null;
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "refund", eventType: "attempted", recipient: input.to, caseId }).catch(() => undefined);
+  const { data, error } = await resend.emails.send({ from: input.from ?? env.email.supportFrom, to: [input.to], subject: "ReDom Refunds — " + input.status + " — " + input.transactionNumber, text, html }, { idempotencyKey });
+  if (error) {
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "refund", eventType: "failed", recipient: input.to, caseId, metadata: { error: error.message } }).catch(() => undefined);
+    throw new Error("Refund case email could not be sent: " + error.message);
+  }
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "refund", eventType: "accepted", recipient: input.to, caseId, providerMessageId: data?.id ?? null }).catch(() => undefined);
 }

@@ -16,6 +16,7 @@ import { ensureRefundSchema } from "./services/refund-schema-bootstrap";
 import { startRefundReviewCleanup, stopRefundReviewCleanup } from "./services/refund/refund-review.service";
 import { startStarsTrialWorker, stopStarsTrialWorker } from "./services/payments/stripe-stars-trial.service";
 import { ensureRedomOAuthSchema } from "./services/redom-oauth-schema.service";
+import { ensureOpsIntelligenceSchema, startDailyOpsIntelligence, stopDailyOpsIntelligence } from "./services/operations/daily-ops-intelligence.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -30,6 +31,7 @@ async function start(): Promise<void> {
   await ensureStarsSchema();
   await ensureRefundSchema();
   await ensureRedomOAuthSchema(pool);
+  await ensureOpsIntelligenceSchema();
   const server = app.listen(port, host, () => {
     startRegistrationChallengeCleanup();
     startRegistrationFlowReservationCleanup();
@@ -37,6 +39,7 @@ async function start(): Promise<void> {
     startSupportCaseCleanup();
     startRefundReviewCleanup();
     startStarsTrialWorker();
+    startDailyOpsIntelligence();
     logger.info({ host, port }, "Server listening");
   });
 
@@ -53,6 +56,7 @@ async function start(): Promise<void> {
     stopSupportCaseCleanup();
     stopRefundReviewCleanup();
     stopStarsTrialWorker();
+    stopDailyOpsIntelligence();
     server.close(async (error) => {
       if (error) { logger.error({ error: serializeError(error) }, "Error closing HTTP server"); process.exitCode = 1; }
       try { await pool.end(); } catch (poolError) { logger.error({ error: serializeError(poolError) }, "Error closing database pool"); process.exitCode = 1; }

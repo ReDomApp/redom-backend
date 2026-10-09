@@ -1,4 +1,6 @@
 import { resend } from "../../lib/resend";
+import { createHash } from "node:crypto";
+import { recordOpsEmailEvent } from "../operations/daily-ops-intelligence.service";
 import { checkIP } from "../../lib/ipapi";
 import { db } from "../../database/db";
 import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
@@ -20,13 +22,19 @@ export class EmailService {
     const email = this.validate(params.email);
     const subject = this.getSubject(params.purpose);
     const expiresAtText = params.expiresAt.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+    const logicalEmailId = createHash("sha256").update(email.toLowerCase() + "|" + params.purpose + "|" + params.expiresAt.toISOString()).digest("hex");
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "attempted", recipient: email }).catch(() => undefined);
     const result = await resend.emails.send({
       from: this.sender,
       to: email,
       subject,
       html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h2>${params.firstName ? `Hello ${this.escapeHtml(params.firstName)},` : "Hello,"}</h2><p>Your ReDom verification code is:</p><div style="font-size:40px;font-weight:bold;letter-spacing:10px;text-align:center;margin:30px 0">${this.escapeHtml(params.code)}</div><p>This code expires at <strong>${this.escapeHtml(expiresAtText)}</strong>.</p><p>Never share this code with anyone.</p><p>If you did not request this, you can safely ignore this message.</p></div>`,
     });
-    if (result.error) throw new Error(`Resend failed to deliver the verification email: ${result.error.message}`);
+    if (result.error) {
+      await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "failed", recipient: email, metadata: { error: result.error.message } }).catch(() => undefined);
+      throw new Error(`Resend failed to deliver the verification email: ${result.error.message}`);
+    }
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "accepted", recipient: email, providerMessageId: result.data?.id ?? null }).catch(() => undefined);
     return { provider: "resend", providerReference: result.data?.id };
   }
 
@@ -62,13 +70,19 @@ export class EmailService {
     const mapLink = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(String(latitude))}&mlon=${encodeURIComponent(String(longitude))}#map=12/${encodeURIComponent(String(latitude))}/${encodeURIComponent(String(longitude))}`;
     const profileSvg = this.buildProfilePlaceholder(firstName, lastName);
     const subject = "Your ReDom registration was successful";
+    const logicalEmailId = createHash("sha256").update("registration-confirmation|" + flowId).digest("hex");
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "attempted", recipient: email }).catch(() => undefined);
     const result = await resend.emails.send({
       from: this.sender,
       to: email,
       subject,
       html: `<!doctype html><html><body style="margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div style="text-align:center;margin-bottom:24px">${profileSvg}<h2 style="margin:18px 0 6px">Dear ${this.escapeHtml(firstName)} ${this.escapeHtml(lastName)},</h2><p style="margin:0;color:#667085">Your ReDom registration has been successfully verified.</p></div><p>You have registered successfully to ReDom on <strong>${this.escapeHtml(registeredText)}</strong>.</p><p>Here are some extra details about this recent registration:</p><div style="border:1px solid #e4e7ec;border-radius:12px;overflow:hidden;margin:20px 0"><iframe title="Approximate registration location" src="${mapUrl}" width="100%" height="280" frameborder="0" style="border:0;display:block"></iframe><div style="padding:14px 16px;background:#fafbfc"><strong>Location:</strong> ${this.escapeHtml(location.city)}, ${this.escapeHtml(location.country)} (shown as approximate)<br><strong>Device:</strong> ${this.escapeHtml(device)}<br><strong>IP:</strong> ${this.escapeHtml(flowIp)}<br><strong>Time:</strong> ${this.escapeHtml(registeredText)}<br><strong>Timezone:</strong> ${this.escapeHtml(timezone)}</div></div><p style="font-size:13px"><a href="${mapLink}" style="color:#1877f2">View the approximate location on the map</a></p><p>If this was you, you can disregard this message.</p><p>If that wasn't you, we strongly advise that you change your password as soon as possible and notify us by replying to this email.</p><p>If you experience any problems kindly contact us at <a href="mailto:support@redomapp.com">support@redomapp.com</a> or send us a WhatsApp message at +234 701 486 5940.</p><p style="margin-top:28px">ReDom Platforms, Inc.</p></div></div></body></html>`,
     });
-    if (result.error) throw new Error(`Resend failed to deliver the registration confirmation email: ${result.error.message}`);
+    if (result.error) {
+      await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "failed", recipient: email, metadata: { error: result.error.message } }).catch(() => undefined);
+      throw new Error(`Resend failed to deliver the registration confirmation email: ${result.error.message}`);
+    }
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "accepted", recipient: email, providerMessageId: result.data?.id ?? null }).catch(() => undefined);
     return { provider: "resend", providerReference: result.data?.id };
   }
 
@@ -93,6 +107,8 @@ export class EmailService {
     const flowText = params.flowIds.length ? params.flowIds.join(", ") : "No active Flow ID remained";
     const device = params.userAgent ? this.parseDevice(params.userAgent) : "Device information unavailable";
     const subject = "Your ReDom pending registration was invalidated";
+    const logicalEmailId = createHash("sha256").update("registration-invalidation|" + params.flowIds.slice().sort().join(",") + "|" + params.invalidatedAt.toISOString()).digest("hex");
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "attempted", recipient: email }).catch(() => undefined);
 
     const result = await resend.emails.send({
       from: this.sender,
@@ -100,7 +116,11 @@ export class EmailService {
       subject,
       html: `<!doctype html><html><body style="margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div style="text-align:center;margin-bottom:24px"><div style="font-size:46px;font-weight:800;color:#1877f2">R</div><h2 style="margin:12px 0 6px">Dear ${this.escapeHtml(firstName)} ${this.escapeHtml(lastName)},</h2><p style="margin:0;color:#667085">Your pending ReDom registration has been invalidated.</p></div><p>Your pending registration was successfully invalidated after the verification code was confirmed. Because the registration had not been verified, the associated pending account and registration data were deleted so you can start a new registration.</p><h3 style="margin-top:26px">Invalidation details</h3><div style="border:1px solid #e4e7ec;border-radius:12px;padding:16px;background:#fafbfc"><strong>Email:</strong> ${this.escapeHtml(email)}<br><strong>Phone:</strong> ${this.escapeHtml(params.phone || "Not provided")}<br><strong>Registration Flow ID(s):</strong> ${this.escapeHtml(flowText)}<br><strong>Location:</strong> ${this.escapeHtml(locationText)} (shown as approximate)<br><strong>Device:</strong> ${this.escapeHtml(device)}<br><strong>IP:</strong> ${this.escapeHtml(params.requestIp)}<br><strong>Time:</strong> ${this.escapeHtml(invalidatedText)}<br><strong>Timezone:</strong> ${this.escapeHtml(timezone || "Timezone unavailable")}${coordinates ? `<br><strong>Approximate coordinates:</strong> ${this.escapeHtml(coordinates)}` : ""}</div><p style="margin-top:24px">The deleted registration was unverified. This invalidation does not affect any separately verified ReDom account.</p><p>If you did not request this action, please contact us immediately at <a href="mailto:support@redomapp.com">support@redomapp.com</a> or send us a WhatsApp message at +234 701 486 5940.</p><p>You may now create a new ReDom account.</p><p style="margin-top:28px">Kind Regards,<br>ReDom Platforms, Inc.</p></div></div></body></html>`,
     });
-    if (result.error) throw new Error(`Resend failed to deliver the pending registration invalidation email: ${result.error.message}`);
+    if (result.error) {
+      await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "failed", recipient: email, metadata: { error: result.error.message } }).catch(() => undefined);
+      throw new Error(`Resend failed to deliver the pending registration invalidation email: ${result.error.message}`);
+    }
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "accepted", recipient: email, providerMessageId: result.data?.id ?? null }).catch(() => undefined);
     return { provider: "resend", providerReference: result.data?.id };
   }
 
