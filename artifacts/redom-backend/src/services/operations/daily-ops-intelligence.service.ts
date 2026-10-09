@@ -800,8 +800,10 @@ async function schedulerTick(): Promise<void> {
   if (inProcess) return;
   inProcess = true;
   try {
-    const latest = await pool.query("SELECT status, period_end FROM redom_ops_report_runs WHERE status='sent' ORDER BY period_end DESC LIMIT 1");
-    const due = !latest.rows[0] || Date.now() - new Date(latest.rows[0].period_end).getTime() >= 86400000;
+    const latest = await pool.query("SELECT report_key, period_end FROM redom_ops_report_runs WHERE status='sent' ORDER BY period_end DESC LIMIT 1");
+    const latestKey = String(latest.rows[0]?.report_key ?? "");
+    const revisionUpgradeDue = Boolean(latest.rows[0]) && !latestKey.endsWith("-v2");
+    const due = !latest.rows[0] || revisionUpgradeDue || Date.now() - new Date(latest.rows[0].period_end).getTime() >= 86400000;
     if (due) await generateReport(new Date());
   } catch (error) {
     logger.error({ error: error instanceof Error ? error.message : String(error) }, "Daily operations scheduler tick failed");
