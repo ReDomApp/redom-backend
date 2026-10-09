@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import boto3
@@ -35,6 +36,16 @@ s3 = boto3.client(
     region_name=os.getenv("R2_REGION", "auto"),
 )
 
+class AudioTrack(BaseModel):
+    assetKey: str
+    startSeconds: float = 0
+    volume: float = 1.0
+    characterName: str | None = None
+    voiceId: str | None = None
+    durationSeconds: float | None = None
+    alignment: dict | None = None
+    kind: str | None = None
+
 class VideoJob(BaseModel):
     jobId: str
     runtime: str = "redom-v2.8-native"
@@ -56,6 +67,10 @@ class VideoJob(BaseModel):
     quality: str = "high"
     format: str = Field(default="video", pattern="^(video|movie|cartoon)$")
     watermark: bool = True
+    audioEnabled: bool = False
+    audioTracks: list[AudioTrack] = Field(default_factory=list)
+    musicTracks: list[AudioTrack] = Field(default_factory=list)
+    lipSyncEnabled: bool = False
 
 pipeline = None
 
@@ -119,6 +134,125 @@ def last_frame(video_path: Path, image_path: Path):
     )
     return Image.open(image_path).convert("RGB")
 
+
+def _download_audio_assets(tracks: list[AudioTrack], workdir: Path) -> list[tuple[AudioTrack, Path]]:
+    downloaded = []
+    for index, track in enumerate(tracks, start=1):
+        if not track.assetKey.startswith("redom-ai/movie-audio/") or ".." in track.assetKey:
+            raise ValueError("Invalid ReDom movie audio asset key.")
+        local = workdir / f"audio-{index:04d}.mp3"
+        s3.download_file(os.environ["R2_BUCKET_NAME"], track.assetKey, str(local))
+        if not local.is_file() or local.stat().st_size < 256:
+            raise RuntimeError("Movie audio asset is missing or empty.")
+        downloaded.append((track, local))
+    return downloaded
+
+def mix_audio_tracks(video_path: Path, output_path: Path, tracks: list[AudioTrack], duration_seconds: int, keep_video_audio: bool) -> None:
+    with tempfile.TemporaryDirectory(prefix="redom-audio-mix-") as work:
+        workdir = Path(work)
+        downloaded = _download_audio_assets(tracks, workdir)
+        command = ["ffmpeg", "-y", "-i", str(video_path)]
+        for _, path in downloaded:
+            command += ["-i", str(path)]
+        has_audio_inputs = bool(downloaded) or keep_video_audio
+        if not has_audio_inputs:
+            command += ["-f", "lavfi", "-t", str(duration_seconds), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+        filters = []
+        labels = []
+        if keep_video_audio:
+            filters.append("[0:a]volume=1.0[baseaudio]")
+            labels.append("[baseaudio]")
+        input_index = 1
+        for index, (track, _) in enumerate(downloaded):
+            delay_ms = max(0, int(float(track.startSeconds) * 1000))
+            volume = max(0.0, min(2.0, float(track.volume)))
+            label = f"track{index}"
+            filters.append(f"[{input_index}:a]adelay={delay_ms}|{delay_ms},volume={volume},apad,atrim=0:{duration_seconds}[{label}]")
+            labels.append(f"[{label}]")
+            input_index += 1
+        if not labels:
+            filters.append(f"[{input_index}:a]atrim=0:{duration_seconds}[silence]")
+            labels.append("[silence]")
+        if len(labels) == 1:
+            filters.append(labels[0] + f"atrim=0:{duration_seconds},asetpts=PTS-STARTPTS[aout]")
+        else:
+            filters.append("".join(labels) + f"amix=inputs={len(labels)}:duration=longest:dropout_transition=2:normalize=0,atrim=0:{duration_seconds},asetpts=PTS-STARTPTS[aout]")
+        command += [
+            "-filter_complex", ";".join(filters),
+            "-map", "0:v", "-map", "[aout]",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+            "-t", str(duration_seconds), "-movflags", "+faststart", str(output_path),
+        ]
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def apply_lip_sync(video_path: Path, voice_audio_path: Path, output_path: Path, job: VideoJob) -> None:
+    api_key = os.getenv("SYNC_API_KEY", "")
+    model = os.getenv("REDOM_LIPSYNC_MODEL", "lipsync-2-pro")
+    if not api_key:
+        raise RuntimeError("Lip-sync is required for dialogue shots but SYNC_API_KEY is not configured.")
+    bucket = os.environ["R2_BUCKET_NAME"]
+    temp_prefix = f"redom-ai/movie-audio/lipsync/{job.jobId}"
+    video_key = temp_prefix + "/input.mp4"
+    audio_key = temp_prefix + "/dialogue.wav"
+    s3.upload_file(str(video_path), bucket, video_key, ExtraArgs={"ContentType": "video/mp4", "CacheControl": "private, max-age=900"})
+    s3.upload_file(str(voice_audio_path), bucket, audio_key, ExtraArgs={"ContentType": "audio/wav", "CacheControl": "private, max-age=900"})
+    try:
+        video_url = s3.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": video_key}, ExpiresIn=3600)
+        audio_url = s3.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": audio_key}, ExpiresIn=3600)
+        headers = {"x-api-key": api_key, "content-type": "application/json"}
+        with httpx.Client(timeout=httpx.Timeout(30, connect=15)) as client:
+            response = client.post(
+                "https://api.sync.so/v2/generate",
+                headers=headers,
+                json={
+                    "model": model,
+                    "input": [{"type": "video", "url": video_url}, {"type": "audio", "url": audio_url}],
+                    "options": {"sync_mode": "cut_off"},
+                    "outputFileName": "redom-" + job.jobId[:80],
+                },
+            )
+            response.raise_for_status()
+            created = response.json()
+            generation_id = created.get("id")
+            if not isinstance(generation_id, str) or not generation_id:
+                raise RuntimeError("Lip-sync provider returned no generation ID.")
+            generation = created
+            for _ in range(90):
+                status = str(generation.get("status", "")).upper()
+                if status == "COMPLETED":
+                    break
+                if status in {"FAILED", "REJECTED"}:
+                    raise RuntimeError("Lip-sync generation " + status.lower() + ": " + str(generation.get("error", "no provider details"))[:500])
+                time.sleep(5)
+                poll = client.get("https://api.sync.so/v2/generate/" + generation_id, headers={"x-api-key": api_key})
+                poll.raise_for_status()
+                generation = poll.json()
+            else:
+                raise RuntimeError("Lip-sync generation timed out after 7.5 minutes.")
+            download_url = str(generation.get("outputUrl") or "").strip()
+            if not download_url:
+                download_response = client.get("https://api.sync.so/v2/generations/" + generation_id + "/download", headers={"x-api-key": api_key})
+                download_response.raise_for_status()
+                download_url = download_response.text.strip().strip('"')
+            if not download_url.startswith("https://"):
+                raise RuntimeError("Lip-sync provider returned an invalid output URL.")
+            result = client.get(download_url, timeout=httpx.Timeout(300, connect=30))
+            result.raise_for_status()
+            if len(result.content) < 4096:
+                raise RuntimeError("Lip-sync provider returned an invalid video.")
+            output_path.write_bytes(result.content)
+    finally:
+        try:
+            s3.delete_object(Bucket=bucket, Key=video_key)
+            s3.delete_object(Bucket=bucket, Key=audio_key)
+        except Exception:
+            pass
+
+def extract_voice_audio(video_path: Path, output_path: Path) -> None:
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(video_path), "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(output_path)],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
 
 def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool, caption_text: str | None = None, format_name: str = "video"):
     command = ["ffmpeg", "-y", "-i", str(input_path)]
@@ -231,6 +365,23 @@ def render_project(job: VideoJob, output: Path):
             stderr=subprocess.DEVNULL,
         )
 
+        if job.audioEnabled:
+            all_audio_tracks = job.audioTracks + job.musicTracks
+            if job.audioTracks and job.lipSyncEnabled:
+                voice_mix = workdir / "voice-mix.mp4"
+                mix_audio_tracks(working, voice_mix, job.audioTracks, job.durationSeconds, keep_video_audio=False)
+                voice_wav = workdir / "voice-only.wav"
+                extract_voice_audio(voice_mix, voice_wav)
+                synced = workdir / "lip-synced.mp4"
+                apply_lip_sync(working, voice_wav, synced, job)
+                mixed = workdir / "dialogue-and-score-mixed.mp4"
+                mix_audio_tracks(synced, mixed, all_audio_tracks, job.durationSeconds, keep_video_audio=False)
+                working = mixed
+            else:
+                mixed = workdir / "audio-mixed.mp4"
+                mix_audio_tracks(working, mixed, all_audio_tracks, job.durationSeconds, keep_video_audio=False)
+                working = mixed
+
         width, height = target_size(job.aspectRatio, job.resolution)
         enhanced = workdir / "final.mp4"
         vf = (
@@ -255,6 +406,9 @@ def validate_final_video(path: Path, job: VideoJob):
     metadata = json.loads(result.stdout)
     streams = metadata.get("streams", [])
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
+    if job.audioEnabled and (not audio or audio.get("codec_name") != "aac"):
+        raise RuntimeError("Final video is missing the required AAC soundtrack/dialogue stream.")
     if not video or video.get("codec_name") != "h264":
         raise RuntimeError("Final video failed codec validation.")
     expected_width, expected_height = target_size(job.aspectRatio, job.resolution)
@@ -284,6 +438,11 @@ def compose_project(job: VideoJob, output: Path):
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(joined)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+
+        if job.audioEnabled:
+            mixed = workdir / "score-mixed.mp4"
+            mix_audio_tracks(joined, mixed, job.musicTracks, job.durationSeconds, keep_video_audio=True)
+            joined = mixed
 
         width, height = target_size(job.aspectRatio, job.resolution)
         vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)

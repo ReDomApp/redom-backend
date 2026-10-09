@@ -16,7 +16,8 @@ import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeR
 import { analyzeReDomImageIntelligence } from "../services/redomAiImageIntelligence.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
-import { createReDomMovieProject, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
+import { approveReDomMovieTrailerAndCreateProject, createReDomMovieProject, createReDomMovieTrailerPreview, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
+import { listReDomMovieVoices } from "../services/redomMovieAudio.service";
 
 import { r2 } from "../lib/r2";
 
@@ -66,8 +67,10 @@ const voiceSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000
 const fileSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000), fileName: z.string().trim().min(1).max(160), mimeType: z.string().trim().max(160).default("application/octet-stream"), prompt: z.string().trim().max(4_000).default("Analyze this file and summarize the important information.") }).strict();
 const feedbackSchema = z.object({ rating: z.enum(["good", "bad"]), reason: z.enum(["Not relevant", "Not accurate", "Too repetitive", "Harmful or offensive", "Something else"]).optional() }).strict();
 const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), referenceImageDataUri: z.string().trim().min(32).max(20_000_000).optional(), operation: z.enum(["generate","cgi"]).optional(), format: z.enum(["video","movie","cartoon"]).default("video"), watermark: z.boolean().default(true), durationSeconds: z.number().int().min(4).max(300).optional(), resolution: z.enum(["720p","1080p"]).optional(), aspectRatio: z.enum(["16:9","9:16","1:1"]).optional() }).strict();
-const movieProjectSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), referenceImageDataUri: z.string().trim().min(32).max(20_000_000).optional(), format: z.enum(["movie","cartoon"]).default("movie"), duration: z.number().int().min(4).max(300).default(300), quality: z.enum(["fast","standard","high","pro"]).default("high"), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), audio: z.boolean().default(true), voice: z.boolean().default(true), title: z.string().trim().max(240).optional() }).strict();
+const movieProjectSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), referenceImageDataUri: z.string().trim().min(32).max(20_000_000).optional(), format: z.enum(["movie","cartoon"]).default("movie"), duration: z.number().int().min(4).max(300).default(300), episodeCount: z.number().int().min(1).max(12).optional(), quality: z.enum(["fast","standard","high","pro"]).default("high"), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), audio: z.boolean().default(true), voice: z.boolean().default(true), singingEnabled: z.boolean().default(true), soundtrackStyle: z.string().trim().min(2).max(160).optional(), singingVoiceStyle: z.string().trim().min(2).max(160).optional(), voiceAssignments: z.record(z.string(), z.string().trim().min(1).max(100)).optional(), title: z.string().trim().max(240).optional() }).strict();
+const movieTrailerPreviewSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), format: z.enum(["movie","cartoon"]).default("movie"), duration: z.number().int().min(15).max(25).default(20), episodeCount: z.number().int().min(1).max(12).default(6), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), soundtrackStyle: z.string().trim().min(2).max(160).optional(), language: z.string().trim().min(2).max(64).optional() }).strict();
 const movieRevisionSchema = z.object({ instruction: z.string().trim().min(3).max(8_000) }).strict();
+const movieTrailerApprovalSchema = movieProjectSchema.extend({ trailerJobId: z.string().trim().min(8).max(100) });
 
 router.post("/localize", localizationRateLimit, async (req, res) => {
   const parsed = localizationSchema.safeParse(req.body);
@@ -84,11 +87,51 @@ router.post("/chat", authMiddleware, async (req, res) => {
   catch (error) { req.log?.error?.({ err: error }, "ReDom AI chat failed"); return res.status(502).json({ success: false, message: "ReDom AI is temporarily unavailable. Please try again shortly." }); }
 });
 
+router.post("/video/trailer-preview", rateLimit({ windowMs: 60_000, max: 3, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
+  const parsed = movieTrailerPreviewSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio trailer preview request.", issues: parsed.success ? undefined : parsed.error.flatten() });
+  try {
+    const result = await createReDomMovieTrailerPreview(req.user.userId, {
+      prompt: parsed.data.prompt, format: parsed.data.format, durationSeconds: parsed.data.duration,
+      episodeCount: parsed.data.episodeCount, style: parsed.data.style, aspectRatio: parsed.data.aspectRatio,
+      soundtrackStyle: parsed.data.soundtrackStyle, language: parsed.data.language,
+    });
+    return res.status(202).json({ success: true, ...result });
+  } catch (error) {
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false, code: (error as { code?: string })?.code,
+      message: error instanceof Error ? error.message : "Trailer preview could not be created.",
+    });
+  }
+});
+
+router.post("/video/trailer-preview/approve", rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
+  const parsed = movieTrailerApprovalSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio trailer approval request.", issues: parsed.success ? undefined : parsed.error.flatten() });
+  try {
+    const { trailerJobId, ...projectInput } = parsed.data;
+    const result = await approveReDomMovieTrailerAndCreateProject(req.user.userId, trailerJobId, {
+      prompt: projectInput.prompt, referenceImageDataUri: projectInput.referenceImageDataUri, durationSeconds: projectInput.duration,
+      episodeCount: projectInput.episodeCount, quality: projectInput.quality, style: projectInput.style, format: projectInput.format,
+      aspectRatio: projectInput.aspectRatio, audio: projectInput.audio, voice: projectInput.voice,
+      singingEnabled: projectInput.singingEnabled, soundtrackStyle: projectInput.soundtrackStyle, singingVoiceStyle: projectInput.singingVoiceStyle, voiceAssignments: projectInput.voiceAssignments, title: projectInput.title,
+    });
+    return res.status(202).json({ success: true, ...result });
+  } catch (error) {
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false, code: (error as { code?: string })?.code,
+      message: error instanceof Error ? error.message : "Approved trailer could not be converted into a project.",
+    });
+  }
+});
+
 router.post("/video/projects", rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
   const parsed = movieProjectSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio request." });
   try {
-    const result = await createReDomMovieProject(req.user.userId, { prompt: parsed.data.prompt, referenceImageDataUri: parsed.data.referenceImageDataUri, durationSeconds: parsed.data.duration, quality: parsed.data.quality, style: parsed.data.style, format: parsed.data.format, aspectRatio: parsed.data.aspectRatio, audio: parsed.data.audio, voice: parsed.data.voice, title: parsed.data.title });
+    const result = await createReDomMovieProject(req.user.userId, { prompt: parsed.data.prompt, referenceImageDataUri: parsed.data.referenceImageDataUri, durationSeconds: parsed.data.duration, episodeCount: parsed.data.episodeCount, quality: parsed.data.quality, style: parsed.data.style, format: parsed.data.format, aspectRatio: parsed.data.aspectRatio, audio: parsed.data.audio, voice: parsed.data.voice, singingEnabled: parsed.data.singingEnabled, soundtrackStyle: parsed.data.soundtrackStyle, singingVoiceStyle: parsed.data.singingVoiceStyle, voiceAssignments: parsed.data.voiceAssignments, title: parsed.data.title });
     return res.status(202).json({ success: true, ...result });
   } catch (error) {
     const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
@@ -137,6 +180,20 @@ router.post("/video", rateLimit({ windowMs: 60_000, max: 3, standardHeaders: tru
     req.log?.error?.({ err: error }, "ReDom-v2.8—Video job creation failed");
     const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
     return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, code: (error as { code?: string })?.code, message: error instanceof Error ? error.message : "Video generation is temporarily unavailable." });
+  }
+});
+
+router.get("/video/voices", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  try {
+    const result = await listReDomMovieVoices();
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false, code: (error as { code?: string })?.code,
+      message: error instanceof Error ? error.message : "ReDom Voices could not load voice profiles.",
+    });
   }
 });
 

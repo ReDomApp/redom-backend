@@ -78,3 +78,34 @@ Security is enforced by the existing ReDom AI security event architecture before
 The worker itself rejects runtime/model mismatches and cannot enqueue a job unless the API supplies the ReDom-native runtime identity. The backend validates the completed MP4 before delivery.
 
 Do not add a fallback to a hosted video-generation API. If the private GPU runtime is unavailable, the correct behavior is to fail the job and return temporary unavailability.
+
+
+## Movie audio, singing and lip sync
+
+Movie production now generates separate audio assets before the shot queue starts, then mixes those assets into each shot and the final composition.
+
+### Backend (Render) environment
+
+- `ELEVENLABS_API_KEY`: required to generate speech and original music.
+- `REDOM_DEFAULT_VOICE_ID`: optional fallback voice ID. Prefer per-character `voiceAssignments` supplied to the Movie Studio project request.
+- `REDOM_MOVIE_VOICE_MODEL`: optional; defaults to `eleven_multilingual_v2`.
+- `REDOM_MOVIE_MUSIC_MODEL`: optional; defaults to `music_v2_5`.
+
+The authenticated `GET /ai/video/voices` endpoint returns available voice profiles. Set `voiceAssignments` as a map from character name to the selected voice ID. The planner should use each speaker's name and short dialogue text in the shot plan.
+
+### GPU worker environment
+
+- `SYNC_API_KEY`: required for shots containing dialogue when lip-sync is enabled.
+- `REDOM_LIPSYNC_MODEL`: optional; defaults to `lipsync-2-pro`.
+
+For lip sync, the worker uploads a short-lived source video and voice-only WAV to private R2 storage, supplies expiring signed URLs to Sync Labs, polls the generation, downloads the result, and deletes the temporary inputs. Dialogue is then mixed with the generated music and AAC-encoded into the final video. Keep the API key only in the worker's secret environment; never pass it from a client.
+
+### Audio behavior and limitations
+
+- Instrumental score is generated for the project; up to two planned song concepts can be generated with original lyrics and sung vocals.
+- Spoken dialogue uses assigned ElevenLabs voice IDs and character-level timing metadata.
+- The music-generation model can produce a singer with a requested vocal style, but its singer is not guaranteed to be the same identity as the character's spoken TTS voice. A dedicated, licensed singing-voice identity model would be required for exact singing/speaking identity continuity.
+- Lip-sync is run per shot that contains dialogue. Keep close-up dialogue shots focused on one speaking character for best results; multi-character staging still requires visual QA.
+- Music and lip-sync calls are paid external services and must be budgeted. The current worker does not claim Hollywood-grade quality without real rendered test scenes and review.
+- If dialogue is present and `SYNC_API_KEY` is missing, the shot fails explicitly rather than silently returning a falsely marked lip-synced result.
+- The video-generation worker still requires a provisioned CUDA GPU and mounted Wan2.2 checkpoint. A successful code build alone does not establish production readiness.

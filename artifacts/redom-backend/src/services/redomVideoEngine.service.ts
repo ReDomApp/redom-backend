@@ -59,7 +59,7 @@ export async function prepareReDomVideoLanguage(prompt: string, format: "video" 
 
 export async function createReDomVideoJob(
   userId: string,
-  input: { prompt: string; referenceImageDataUri?: string; languageName?: string; languageCode?: string; caption?: string; generationDirection?: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi"; format?: "video" | "movie" | "cartoon"; watermark?: boolean },
+  input: { prompt: string; referenceImageDataUri?: string; languageName?: string; languageCode?: string; caption?: string; generationDirection?: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi"; format?: "video" | "movie" | "cartoon"; watermark?: boolean; audioEnabled?: boolean; audioTracks?: Array<Record<string, unknown>>; musicTracks?: Array<Record<string, unknown>>; lipSyncEnabled?: boolean },
 ) {
   await requirePaidVideoEntitlement(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
@@ -112,6 +112,10 @@ export async function createReDomVideoJob(
       operation,
       format,
       watermark,
+      audioEnabled: input.audioEnabled === true,
+      audioTracks: input.audioTracks || [],
+      musicTracks: input.musicTracks || [],
+      lipSyncEnabled: input.lipSyncEnabled === true,
       languageName: language.languageName,
       languageCode: language.languageCode,
       captionText: language.caption,

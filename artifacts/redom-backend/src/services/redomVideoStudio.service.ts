@@ -15,7 +15,8 @@ import {
 } from "../database/reDomVideoStudio";
 import { reDomAiVideos } from "../database/reDomAiVideos";
 import { enforceReDomVideoPromptSecurity } from "./redomVideoSecurity.service";
-import { REDOM_VIDEO_MAX_SECONDS, prepareReDomVideoLanguage } from "./redomVideoEngine.service";
+import { REDOM_VIDEO_MAX_SECONDS, createReDomVideoJob, prepareReDomVideoLanguage } from "./redomVideoEngine.service";
+import { createReDomMovieMusicAsset, createReDomMovieSpeechAsset } from "./redomMovieAudio.service";
 
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
 const MODEL = "ReDom-v2.8—Video";
@@ -102,6 +103,13 @@ type MoviePlan = {
   storyArcs?: StoryArc[];
   episodes: PlanEpisode[];
   research?: Array<{ sourceType: string; title: string; url?: string; summary: string; claims?: string[]; rightsBasis?: string }>;
+  trailerBeats?: Array<Record<string, unknown>>;
+  trailerPrompt?: string;
+  soundtrackDirection?: string;
+  soundscape?: Record<string, unknown> | string;
+  dialogueDirection?: Record<string, unknown> | string;
+  narrationDirection?: string;
+  songConcepts?: Array<Record<string, unknown> | string>;
 };
 
 function safeDuration(value: number) {
@@ -130,8 +138,8 @@ function parseJson(text: string): MoviePlan {
   return parsed;
 }
 
-function plannerInstructions(durationSeconds: number, style: string, quality: string, aspectRatio: string) {
-  const episodeTarget = durationSeconds >= 180 ? Math.min(12, Math.max(4, Math.ceil(durationSeconds / 45))) : Math.min(10, Math.max(3, Math.ceil(durationSeconds / 30)));
+function plannerInstructions(durationSeconds: number, style: string, quality: string, aspectRatio: string, requestedEpisodeCount?: number) {
+  const episodeTarget = requestedEpisodeCount ?? (durationSeconds >= 180 ? Math.min(12, Math.max(4, Math.ceil(durationSeconds / 45))) : Math.min(10, Math.max(3, Math.ceil(durationSeconds / 30))));
   return [
     "You are the ReDom Creative Director, Showrunner, Screenwriter, World Builder and Director's Planner for ReDom-v2.8—Video.",
     "The user's prompt is a STORY SEED, not a finished screenplay. Expand it into an original, coherent, cinematic story while preserving the user's explicit intent.",
@@ -144,20 +152,22 @@ function plannerInstructions(durationSeconds: number, style: string, quality: st
     "WORLD LOGIC: establish rules and enforce them. Power escalation must have causes and consequences.",
     "LANGUAGE: honor the language or languages explicitly requested by the creator. Write dialogue, pronunciation notes, and subtitle text in the requested language; do not silently switch to English. Keep each character's voice and speaking style consistent.",
     "USER CONTROL: structure the result so a later revision such as 'reveal Ethan in episode 9', 'make the villain stronger', or 'give Ethan three forms' can be applied without losing continuity.",
-    "RESEARCH: use web search only when factual/reference research improves the story. Research is separate from movie memory. Do not reproduce copyrighted passages or existing fictional works; use factual, public-domain, licensed or user-provided material as appropriate.",
-    "Create approximately " + episodeTarget + " episodes for this runtime. Use 3-12 scenes per episode as needed and enough shots to make the visual edit coherent. Keep the total planned duration at or below " + durationSeconds + " seconds.",
+    "RESEARCH AND ADAPTATION: when the user names a movie, book, franchise, historical event, or real-world subject, use web search to research reliable high-level facts and cite source URLs in research. Clearly separate verified facts from invented story choices. For copyrighted fictional works, do not reproduce scripts, dialogue, scene-by-scene plots, or protected character expression; create a meaningfully original adaptation using high-level themes and a transformed setting, cast, names, relationships, designs, and plot. Respect user-provided rights/licensing context without assuming it.",
+    "TRAILER-READY STORYTELLING: include a strong hook in the first seconds, readable character introductions, escalating visual beats, an emotional or musical turn, and a memorable final reveal without spoiling the ending. Include trailerBeats and a trailerPrompt suitable for a separate 15-25 second preview generation.",
+    "SOUND AND MUSIC DIRECTION: plan an original score with scene-level cues for warmth, romance, wonder, tension, action, grief and resolution as appropriate. Include soundtrackDirection, soundscape, dialogueDirection, narrationDirection, and optional original song/lyric concepts. Never claim that audio or singing has been rendered unless the audio pipeline actually generated it.",
+    "Create exactly " + episodeTarget + " episodes for the requested project structure. Use 3-12 scenes per episode as needed and enough shots to make the visual edit coherent. Keep total planned duration at or below " + durationSeconds + " seconds.",
     "Visual target: " + style + "; quality: " + quality + "; aspect ratio: " + aspectRatio + ".",
-    "Return JSON only with: title, genre, format, estimatedRuntimeSeconds, episodeCount, bible, entities, knowledge, storyEvents, storyArcs, episodes, research.",
+    "Return JSON only with: title, genre, format, estimatedRuntimeSeconds, episodeCount, bible, entities, knowledge, storyEvents, storyArcs, episodes, research, trailerBeats, trailerPrompt, soundtrackDirection, soundscape, dialogueDirection, narrationDirection, songConcepts.",
     "bible MUST include: logline, premise, themes, tone, audienceContract, worldRules, powerSystem, timelineRules, visualIdentity, storyQuestion, endingIntent, and characterArcs.",
     "knowledge entries MUST include scope (author|character|audience), subjectKey, fact, knowledgeState, and revealEpisode/revealScene where relevant.",
     "storyEvents MUST model secrets, foreshadowing, reveals, conflicts, turning points and payoffs. Include planted=true for planted clues and payoffEpisode/payoffScene when a clue pays off.",
     "storyArcs MUST include name, arcType, objective, startingState, turningPoints, resolution and entityNames.",
-    "Each scene MUST include location, characters, action, directorNotes and 1-3 shots. Each shot MUST include shotNumber, durationSeconds, action, camera, lighting, motion, dialogue and sound.",
+    "Each scene MUST include location, characters, action, directorNotes and 1-3 shots. Each shot MUST include shotNumber, durationSeconds, action, camera, lighting, motion, dialogue and sound. Dialogue entries must include speaker (matching a named character), text, emotion, delivery, and optional startSeconds; keep spoken words short enough to fit the shot duration. Prefer one speaking character per shot when close-up lip sync is needed.",
   ].join("\n");
 }
 
-async function generatePlan(seed: string, durationSeconds: number, style: string, quality: string, aspectRatio: string, revisionContext = ""): Promise<MoviePlan> {
-  const instructions = plannerInstructions(durationSeconds, style, quality, aspectRatio);
+async function generatePlan(seed: string, durationSeconds: number, style: string, quality: string, aspectRatio: string, revisionContext = "", requestedEpisodeCount?: number): Promise<MoviePlan> {
+  const instructions = plannerInstructions(durationSeconds, style, quality, aspectRatio, requestedEpisodeCount);
   const input = seed + (revisionContext ? "\n\nCURRENT PROJECT STATE AND USER REVISION:\n" + revisionContext : "") +
     "\n\nTarget duration: " + durationSeconds + " seconds.";
   const response = await openai.responses.create({
@@ -338,15 +348,139 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
       estimatedRuntimeSeconds: plan.estimatedRuntimeSeconds || project.targetDurationSeconds,
       episodeCount: plan.episodeCount || plan.episodes.length,
     },
-    research: { ...(project.research || {}), entries: plan.research || [], plannedBy: MODEL },
+    research: { ...(project.research || {}), entries: plan.research || [], plannedBy: MODEL, trailerBeats: plan.trailerBeats || [], soundtrackDirection: plan.soundtrackDirection || project.research?.soundtrackStyle || "Original cinematic score", soundscape: plan.soundscape || {}, dialogueDirection: plan.dialogueDirection || {}, narrationDirection: plan.narrationDirection || "", songConcepts: plan.songConcepts || [], audioRenderingStatus: "planned_not_rendered" },
     state: "ready",
     continuityVersion: project.continuityVersion + 1,
     updatedAt: new Date(),
   }).where(eq(reDomAiVideoProjects.id, projectId));
 }
 
-export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon" }) {
+export async function createReDomMovieTrailerPreview(userId: string, input: { prompt: string; format: "movie" | "cartoon"; durationSeconds?: number; episodeCount?: number; style?: string; aspectRatio?: "16:9" | "9:16" | "1:1"; soundtrackStyle?: string; language?: string }) {
   await requirePaid(userId);
+  if (!env.redomVideoEngine.url || !env.redomVideoEngine.token) {
+    throw Object.assign(new Error("The native GPU video worker is not configured, so ReDom cannot render a trailer yet."), { status: 503, code: "MOVIE_VIDEO_WORKER_NOT_CONFIGURED" });
+  }
+  if (!env.redomMovieAudio.elevenLabsApiKey) {
+    throw Object.assign(new Error("ReDom Movie Audio is not configured. Set ELEVENLABS_API_KEY to generate trailer music."), { status: 503, code: "MOVIE_AUDIO_PROVIDER_NOT_CONFIGURED" });
+  }
+  const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
+  const previewDuration = Math.max(15, Math.min(25, Math.floor(input.durationSeconds ?? 20)));
+  const episodeCount = Math.max(1, Math.min(12, Math.floor(input.episodeCount ?? 6)));
+  const response = await openai.responses.create({
+    model: "gpt-5.6-luna",
+    instructions: [
+      "You are the ReDom Movie Studio research producer, showrunner, trailer editor and music supervisor.",
+      "Research named source material with web_search when useful. Return JSON only with title, logline, adaptationApproach, research, characters, episodeOptions, trailerBeats, trailerPrompt, soundtrackDirection, narrationDirection, narrationText, songConcepts, language.",
+      "Use reliable high-level facts and include source URLs in research. Separate verified facts from creative invention.",
+      "When adapting copyrighted fiction, do not copy scripts, dialogue, or scene-by-scene plots. Propose a meaningfully original transformation with new names, character designs, relationships, setting and events, unless the user provides rights context. Do not imply official affiliation.",
+      "Trailer should be a teaser, not the whole story: hook immediately, introduce distinct character silhouettes, escalate stakes, include one emotional beat, and end on a strong question. Avoid legible text in generated frames; titles can be composited separately.",
+      "Propose a coherent season/episode outline and respect the requested episode count. Music direction must describe an original score and any optional song concept; do not claim audio has been rendered.",
+      "Keep the trailer prompt visual, scene-specific and feasible for a short text-to-video generation. No copyrighted song lyrics or imitation of a living artist's voice."
+    ].join("\n"),
+    input: JSON.stringify({
+      creatorPrompt: input.prompt,
+      format: input.format,
+      visualStyle: input.style || (input.format === "cartoon" ? "cinematic animation" : "cinematic"),
+      aspectRatio: input.aspectRatio || "16:9",
+      plannedEpisodeCount: episodeCount,
+      trailerDurationSeconds: previewDuration,
+      soundtrackPreference: input.soundtrackStyle || "original cinematic score",
+      requestedLanguage: input.language || "detect from creator prompt"
+    }),
+    tools: [{ type: "web_search" } as any],
+    safety_identifier: "redom-movie-trailer-proposal",
+  });
+  let proposal: Record<string, any>;
+  try {
+    const output = response.output_text || "";
+    const first = output.indexOf("{");
+    const last = output.lastIndexOf("}");
+    if (first < 0 || last <= first) throw new Error("missing JSON");
+    proposal = JSON.parse(output.slice(first, last + 1));
+  } catch {
+    throw Object.assign(new Error("ReDom could not prepare the trailer proposal."), { code: "MOVIE_TRAILER_PROPOSAL_FAILED", status: 502 });
+  }
+  if (typeof proposal.title !== "string" || typeof proposal.logline !== "string" || typeof proposal.trailerPrompt !== "string" || proposal.trailerPrompt.length < 20) {
+    throw Object.assign(new Error("ReDom returned an incomplete trailer proposal."), { code: "MOVIE_TRAILER_PROPOSAL_INCOMPLETE", status: 502 });
+  }
+  const language = await prepareReDomVideoLanguage(input.prompt, input.format);
+  const previewProjectId = "trailer-preview-" + randomUUID();
+  const score = await createReDomMovieMusicAsset({
+    userId,
+    projectId: previewProjectId,
+    trackName: "trailer-score",
+    durationSeconds: previewDuration,
+    instrumental: true,
+    prompt: "Original trailer score for " + String(proposal.title) + ". " + String(proposal.soundtrackDirection || input.soundtrackStyle || "Beautiful cinematic music with an emotional hook, rising wonder, a brief tender moment and a powerful final sting.").slice(0, 1800) + " Do not imitate any existing film score or known composer.",
+  });
+  let narrationTrack: Record<string, unknown> | undefined;
+  if (typeof proposal.narrationText === "string" && proposal.narrationText.trim() && env.redomMovieAudio.defaultVoiceId) {
+    const narration = await createReDomMovieSpeechAsset({
+      userId, projectId: previewProjectId, shotId: "trailer-narration", lineIndex: 1,
+      text: proposal.narrationText.trim().slice(0, 1200), voiceId: env.redomMovieAudio.defaultVoiceId,
+      languageCode: typeof proposal.language === "string" ? proposal.language : language.languageCode,
+    });
+    narrationTrack = { assetKey: narration.key, startSeconds: 0, volume: 1, characterName: "Trailer Narrator", voiceId: narration.voiceId, durationSeconds: narration.durationSeconds };
+  }
+  const trailer = await createReDomVideoJob(userId, {
+    prompt: proposal.trailerPrompt.slice(0, 8000),
+    durationSeconds: previewDuration,
+    resolution: "720p",
+    aspectRatio: input.aspectRatio || "16:9",
+    format: input.format,
+    watermark: true,
+    audioEnabled: true,
+    audioTracks: narrationTrack ? [narrationTrack] : [],
+    musicTracks: [{ assetKey: score.key, startSeconds: 0, volume: 0.45, kind: "trailer-score" }],
+    lipSyncEnabled: false,
+    languageName: language.languageName,
+    languageCode: language.languageCode,
+    caption: language.caption,
+    generationDirection: language.generationDirection,
+  });
+  return {
+    previewOnly: true,
+    projectCreated: false,
+    trailerJobId: trailer.jobId,
+    trailerStatus: trailer.status,
+    model: MODEL,
+    proposal: {
+      title: String(proposal.title).slice(0, 240),
+      logline: String(proposal.logline).slice(0, 1200),
+      adaptationApproach: proposal.adaptationApproach,
+      research: Array.isArray(proposal.research) ? proposal.research.slice(0, 20) : [],
+      characters: Array.isArray(proposal.characters) ? proposal.characters.slice(0, 40) : [],
+      episodeOptions: Array.isArray(proposal.episodeOptions) ? proposal.episodeOptions.slice(0, 12) : [],
+      episodeCount,
+      trailerBeats: Array.isArray(proposal.trailerBeats) ? proposal.trailerBeats.slice(0, 12) : [],
+      soundtrackDirection: proposal.soundtrackDirection || input.soundtrackStyle || "Original cinematic score",
+      narrationDirection: proposal.narrationDirection || "Optional trailer narration",
+      narrationText: typeof proposal.narrationText === "string" ? proposal.narrationText.slice(0, 1200) : undefined,
+      songConcepts: Array.isArray(proposal.songConcepts) ? proposal.songConcepts.slice(0, 8) : [],
+      language: proposal.language || language.languageName,
+      audioRenderingStatus: narrationTrack ? "original_score_and_narration_generated" : "original_score_generated_narration_not_configured",
+    },
+    maxDurationSeconds: REDOM_VIDEO_MAX_SECONDS,
+  };
+}
+
+export async function approveReDomMovieTrailerAndCreateProject(userId: string, trailerJobId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; episodeCount?: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon"; soundtrackStyle?: string; singingVoiceStyle?: string; voiceAssignments?: Record<string, string>; singingEnabled?: boolean }) {
+  await requirePaid(userId);
+  const trailer = (await db.select({ jobId: reDomAiVideos.jobId, status: reDomAiVideos.status, userId: reDomAiVideos.userId })
+    .from(reDomAiVideos)
+    .where(and(eq(reDomAiVideos.jobId, trailerJobId), eq(reDomAiVideos.userId, userId)))
+    .limit(1))[0];
+  if (!trailer) throw Object.assign(new Error("Trailer preview not found for this account."), { status: 404, code: "MOVIE_TRAILER_NOT_FOUND" });
+  if (trailer.status !== "completed") throw Object.assign(new Error("The trailer must finish successfully before the movie project can be created."), { status: 409, code: "MOVIE_TRAILER_NOT_READY" });
+  const project = await createReDomMovieProject(userId, { ...input, approvedTrailerJobId: trailerJobId });
+  return { ...project, approvedTrailerJobId: trailerJobId, approvalRequired: false };
+}
+
+export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; episodeCount?: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon"; soundtrackStyle?: string; singingVoiceStyle?: string; voiceAssignments?: Record<string, string>; singingEnabled?: boolean; approvedTrailerJobId?: string }) {
+  await requirePaid(userId);
+  if (!input.approvedTrailerJobId) {
+    throw Object.assign(new Error("Create and approve a completed trailer preview before adding this movie to the project list."), { status: 409, code: "MOVIE_TRAILER_APPROVAL_REQUIRED" });
+  }
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const format = input.format || "movie";
   const language = await prepareReDomVideoLanguage(input.prompt, format === "cartoon" ? "cartoon" : "movie");
@@ -367,14 +501,14 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     audioEnabled: input.audio !== false,
     voiceEnabled: input.voice !== false,
     state: "planning",
-    research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption },
+    research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption, requestedEpisodeCount: input.episodeCount, soundtrackStyle: input.soundtrackStyle, singingVoiceStyle: input.singingVoiceStyle, voiceAssignments: input.voiceAssignments || {}, singingEnabled: input.singingEnabled !== false, approvedTrailerJobId: input.approvedTrailerJobId },
   }).returning();
   if (!project) throw new Error("Could not create ReDom movie project.");
   if (referenceMatch && referenceBytes) {
     const extension = referenceMatch[1] === "jpeg" ? "jpg" : referenceMatch[1];
     const referenceAssetKey = `redom-ai/video-references/${userId}/movie-project-${project.id}/reference.${extension}`;
     await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey, Body: referenceBytes, ContentType: "image/" + referenceMatch[1], CacheControl: "private, max-age=900" }));
-    await db.update(reDomAiVideoProjects).set({ research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption, referenceAssetKey } }).where(eq(reDomAiVideoProjects.id, project.id));
+    await db.update(reDomAiVideoProjects).set({ research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption, requestedEpisodeCount: input.episodeCount, soundtrackStyle: input.soundtrackStyle, singingVoiceStyle: input.singingVoiceStyle, voiceAssignments: input.voiceAssignments || {}, singingEnabled: input.singingEnabled !== false, approvedTrailerJobId: input.approvedTrailerJobId, referenceAssetKey } }).where(eq(reDomAiVideoProjects.id, project.id));
   }
   return { projectId: project.id, state: project.state, model: MODEL, maxDurationSeconds: REDOM_VIDEO_MAX_SECONDS };
 }
@@ -385,7 +519,7 @@ export async function planReDomMovieProject(userId: string, projectId: string) {
   if (!project) throw Object.assign(new Error("Movie project not found."), { status: 404 });
   if (!["planning", "draft"].includes(project.state)) throw Object.assign(new Error("This movie is not available for planning."), { status: 409 });
 
-  const plan = await generatePlan(project.prompt, project.targetDurationSeconds, project.style, project.quality, project.aspectRatio);
+  const plan = await generatePlan(project.prompt, project.targetDurationSeconds, project.style, project.quality, project.aspectRatio, "", typeof project.research?.requestedEpisodeCount === "number" ? Math.max(1, Math.min(12, Math.floor(project.research.requestedEpisodeCount))) : undefined);
   await persistPlan(projectId, project, plan);
   return getReDomMovieProject(userId, projectId);
 }
@@ -484,6 +618,127 @@ export async function runReDomMovieContinuityCheck(userId: string, projectId: st
   return { projectId, continuityVersion: nextVersion, blockingWarnings: warnings.filter((w) => w.type === "knowledge_leak"), warnings };
 }
 
+async function generateOriginalSongLyrics(projectTitle: string, concept: string, languageName: string, characters: string[]) {
+  const response = await openai.responses.create({
+    model: "gpt-5.6-luna",
+    instructions: [
+      "Write original, singable lyrics for a fictional movie character song.",
+      "Use a clear verse and chorus, short lines, memorable emotional imagery, and a natural vocal rhythm.",
+      "Do not imitate a named singer, copy existing lyrics, or refer to copyrighted songs.",
+      "Return only the lyrics, with section labels such as [Verse 1] and [Chorus].",
+    ].join("\n"),
+    input: JSON.stringify({ projectTitle, concept, language: languageName, characters }),
+    safety_identifier: "redom-movie-original-song-lyrics",
+  });
+  const lyrics = (response.output_text || "").trim();
+  if (lyrics.length < 40) throw Object.assign(new Error("ReDom could not prepare original song lyrics."), { status: 502, code: "MOVIE_SONG_LYRICS_FAILED" });
+  return lyrics.slice(0, 3000);
+}
+
+async function prepareReDomMovieAudio(userId: string, project: typeof reDomAiVideoProjects.$inferSelect, shotRows: Array<{ redom_ai_video_shots: typeof reDomAiVideoShots.$inferSelect }>) {
+  const shotTracks = new Map<string, Array<Record<string, unknown>>>();
+  if (!project.audioEnabled) return { shotTracks, musicTracks: [] as Array<Record<string, unknown>>, audioStatus: "disabled" };
+  const research = (project.research || {}) as Record<string, any>;
+  const score = await createReDomMovieMusicAsset({
+    userId,
+    projectId: project.id,
+    trackName: "original-score",
+    durationSeconds: project.targetDurationSeconds,
+    instrumental: true,
+    prompt: [
+      "Original feature-film score for " + project.title + ".",
+      String(research.soundtrackDirection || research.soundtrackStyle || "A beautiful, emotionally rich cinematic orchestral score."),
+      "Shape a coherent musical journey with warm themes, wonder, romance, suspense, action and a satisfying emotional resolution where the story calls for them.",
+      "Use original melodies and motifs, dynamic orchestration, clear scene transitions, tasteful silence, and professional film-score mixing.",
+      "Avoid imitating existing movie soundtracks, known composers, or recognizable melodies.",
+    ].join(" "),
+  });
+  const musicTracks: Array<Record<string, unknown>> = [{ assetKey: score.key, startSeconds: 0, volume: 0.24, kind: "score" }];
+  const songConcepts = research.singingEnabled !== false && Array.isArray(research.songConcepts)
+    ? research.songConcepts.slice(0, 2)
+    : [];
+  let songIndex = 0;
+  for (const rawConcept of songConcepts) {
+    songIndex += 1;
+    const concept = typeof rawConcept === "string" ? rawConcept : JSON.stringify(rawConcept);
+    const details = rawConcept && typeof rawConcept === "object" ? rawConcept as Record<string, unknown> : {};
+    const lyrics = typeof details.lyrics === "string" && details.lyrics.trim()
+      ? details.lyrics.trim().slice(0, 3000)
+      : await generateOriginalSongLyrics(project.title, concept, String(research.languageName || "the story's primary language"), typeof details.singerCharacter === "string" ? [details.singerCharacter] : Array.isArray(details.characters) ? details.characters.filter((name): name is string => typeof name === "string").slice(0, 8) : []);
+    const songDuration = Math.max(15, Math.min(60, Number(details.durationSeconds) || 40));
+    const song = await createReDomMovieMusicAsset({
+      userId,
+      projectId: project.id,
+      trackName: "character-song-" + songIndex,
+      durationSeconds: songDuration,
+      instrumental: false,
+      lyrics,
+      vocalStyle: String(details.vocalStyle || research.singingVoiceStyle || "expressive, warm musical-theatre lead vocal with clear diction"),
+      prompt: "Original character song for " + project.title + ". Story purpose: " + concept + ". Use a distinct, expressive lead vocal and memorable original melody.",
+    });
+    const requestedStart = Number(details.startSeconds);
+    musicTracks.push({
+      assetKey: song.key,
+      startSeconds: Number.isFinite(requestedStart) ? Math.max(0, Math.min(project.targetDurationSeconds - 1, requestedStart)) : Math.max(0, Math.min(project.targetDurationSeconds - songDuration, 20 + (songIndex - 1) * 70)),
+      volume: 0.9,
+      kind: "song",
+      singerCharacter: typeof details.singerCharacter === "string" ? details.singerCharacter : undefined,
+      singerIdentityNote: "Music-model vocal style is not guaranteed to match a character's spoken voice.",
+    });
+  }
+
+  const voiceAssignments = research.voiceAssignments && typeof research.voiceAssignments === "object" ? research.voiceAssignments as Record<string, unknown> : {};
+  const resolveVoice = (character: string) => {
+    const match = Object.entries(voiceAssignments).find(([name]) => name.trim().toLowerCase() === character.trim().toLowerCase());
+    const assigned = match && typeof match[1] === "string" ? match[1].trim() : "";
+    return assigned || env.redomMovieAudio.defaultVoiceId;
+  };
+  if (project.voiceEnabled) {
+    for (const item of shotRows) {
+      const shot = item.redom_ai_video_shots;
+      const lines = Array.isArray(shot.dialogue) ? shot.dialogue as Array<Record<string, unknown>> : [];
+      const tracks: Array<Record<string, unknown>> = [];
+      let cursor = 0;
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const text = [line.text, line.line, line.dialogue].find((value) => typeof value === "string" && value.trim()) as string | undefined;
+        if (!text) continue;
+        const character = String(line.speaker || line.character || line.characterName || "Narrator").trim().slice(0, 120);
+        const voiceId = resolveVoice(character);
+        if (!voiceId) throw Object.assign(new Error("Assign a ReDom Voices voice ID to character '" + character + "' or set REDOM_DEFAULT_VOICE_ID before production."), { status: 503, code: "MOVIE_CHARACTER_VOICE_NOT_ASSIGNED" });
+        const clip = await createReDomMovieSpeechAsset({
+          userId, projectId: project.id, shotId: shot.id, lineIndex: index + 1,
+          text, voiceId, languageCode: typeof research.languageCode === "string" ? research.languageCode : undefined,
+          previousText: index > 0 ? String(lines[index - 1].text || lines[index - 1].line || "") : undefined,
+          nextText: index + 1 < lines.length ? String(lines[index + 1].text || lines[index + 1].line || "") : undefined,
+        });
+        const requestedStart = Number(line.startSeconds);
+        const startSeconds = Number.isFinite(requestedStart) ? Math.max(0, requestedStart) : cursor;
+        tracks.push({ assetKey: clip.key, startSeconds, characterName: character, voiceId, durationSeconds: clip.durationSeconds, alignment: clip.alignment });
+        cursor = startSeconds + clip.durationSeconds;
+      }
+      shotTracks.set(shot.id, tracks);
+    }
+  }
+  await db.update(reDomAiVideoProjects).set({
+    research: {
+      ...research,
+      musicTracks,
+      audioProduction: {
+        provider: "elevenlabs",
+        status: "assets_generated",
+        generatedAt: new Date().toISOString(),
+        dialogueShotCount: [...shotTracks.values()].filter((tracks) => tracks.length > 0).length,
+        generatedDialogueClipCount: [...shotTracks.values()].reduce((total, tracks) => total + tracks.length, 0),
+        singingEnabled: research.singingEnabled !== false,
+        lipSyncStatus: "pending_sync_lipsync_worker",
+      },
+    },
+    updatedAt: new Date(),
+  }).where(eq(reDomAiVideoProjects.id, project.id));
+  return { shotTracks, musicTracks, audioStatus: "assets_generated" };
+}
+
 export async function startReDomMovieProduction(userId: string, projectId: string) {
   await requirePaid(userId);
   const project = (await db.select().from(reDomAiVideoProjects).where(and(eq(reDomAiVideoProjects.id, projectId), eq(reDomAiVideoProjects.userId, userId))).limit(1))[0];
@@ -499,6 +754,8 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
     .where(eq(reDomAiVideoEpisodes.projectId, projectId))
     .orderBy(asc(reDomAiVideoEpisodes.episodeNumber), asc(reDomAiVideoScenes.sceneNumber), asc(reDomAiVideoShots.shotNumber));
   if (!shots.length) throw Object.assign(new Error("The movie has no planned shots."), { status: 409 });
+
+  const audioPlan = await prepareReDomMovieAudio(userId, project, shots);
 
   const existing = await db.select({ id: reDomAiVideos.id }).from(reDomAiVideos).where(eq(reDomAiVideos.jobId, "movie_project_" + projectId)).limit(1);
   if (!existing.length) {
@@ -517,7 +774,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
     });
   }
 
-  const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
+  const callbackUrl = env.redomBackendUrl.replace(/\/$/, "") + "/ai/video/callback";
   const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
   for (const item of shots) {
     const shot = item.redom_ai_video_shots;
@@ -540,6 +797,9 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       aspectRatio: project.aspectRatio,
       callbackUrl,
       callbackToken: env.redomVideoEngine.token,
+      audioEnabled: project.audioEnabled,
+      audioTracks: audioPlan.shotTracks.get(shot.id) || [],
+      lipSyncEnabled: Boolean((audioPlan.shotTracks.get(shot.id) || []).length),
     };
     await db.insert(reDomAiVideoJobs).values({ projectId, shotId: shot.id, jobId, kind: "shot_generation", status: "queued", priority: 100, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
@@ -591,8 +851,8 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     if (!project || !shotKeys.length) return true;
     const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
-    const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
-    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
+    const callbackUrl = env.redomBackendUrl.replace(/\/$/, "") + "/ai/video/callback";
+    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, audioEnabled: project.audioEnabled, musicTracks: Array.isArray(project.research?.musicTracks) ? project.research.musicTracks : [], lipSyncEnabled: false, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
   }
