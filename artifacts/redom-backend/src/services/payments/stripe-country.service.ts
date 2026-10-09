@@ -73,6 +73,7 @@ export async function getStripeStarsCountries():Promise<StripeCountry[]>{
    name:display.of(iso)||iso,
    isoCode:iso,
    currency,
+   supportedCurrencies,
    rate:Number.isFinite(rate)&&rate>0?rate:0,
    cardSupported:true,
    successRate:observed?.rate??null,
