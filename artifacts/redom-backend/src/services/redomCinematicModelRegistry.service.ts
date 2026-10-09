@@ -1,9 +1,9 @@
 /**
- * Explicit registry for ReDom's three cinematic products.
+ * Registry for ReDom's three cinematic products.
  *
- * A configured URL is not proof that a runtime is healthy or that its checkpoint
- * can render production-quality media. Health is deliberately reported as
- * configured/unconfigured until a runtime health probe has succeeded.
+ * Runtime identifiers intentionally match the isolated endpoint profiles used
+ * by the video job dispatcher. Configured means configured, not healthy or
+ * quality-validated; real GPU acceptance tests remain a separate release gate.
  */
 export const REDOM_MODELS = {
   "ReDom-v2.8—Video": {
@@ -13,7 +13,7 @@ export const REDOM_MODELS = {
     runtimeId: "redom-v2.8-native",
     runtimeUrlEnv: "REDOM_VIDEO_ENGINE_URL",
     checkpointEnv: "REDOM_VIDEO_CHECKPOINT_DIR",
-    operations: ["text-to-video", "image-to-video", "compose"],
+    operations: ["generate", "cgi", "text-to-video", "image-to-video", "compose"],
     formats: ["video"],
     maxSingleJobSeconds: 300,
     statusEnv: "REDOM_VIDEO_RUNTIME_ENABLED",
@@ -22,10 +22,10 @@ export const REDOM_MODELS = {
     modelId: "Cartoon—R8.0",
     version: process.env.REDOM_CARTOON_MODEL_VERSION ?? "8.0",
     product: "cartoon",
-    runtimeId: "redom-cartoon-native",
+    runtimeId: "redom-cartoon-r8-native",
     runtimeUrlEnv: "REDOM_CARTOON_ENGINE_URL",
     checkpointEnv: "REDOM_CARTOON_CHECKPOINT_DIR",
-    operations: ["text-to-animation", "image-to-animation", "compose"],
+    operations: ["generate", "cgi", "text-to-animation", "image-to-animation", "compose"],
     formats: ["cartoon"],
     maxSingleJobSeconds: 300,
     statusEnv: "REDOM_CARTOON_RUNTIME_ENABLED",
@@ -34,11 +34,11 @@ export const REDOM_MODELS = {
     modelId: "Studio—Ultron 8.0R",
     version: process.env.REDOM_STUDIO_MODEL_VERSION ?? "8.0R",
     product: "studio",
-    runtimeId: "redom-studio-orchestrator",
+    runtimeId: "redom-studio-ultron-8r-native",
     runtimeUrlEnv: "REDOM_STUDIO_ENGINE_URL",
     checkpointEnv: "REDOM_STUDIO_CHECKPOINT_DIR",
-    operations: ["plan", "research", "storyboard", "produce", "revise", "compose"],
-    formats: ["movie", "episode", "series", "trailer", "documentary"],
+    operations: ["plan", "research", "storyboard", "produce", "revise", "compose", "generate"],
+    formats: ["movie", "cartoon", "episode", "series", "trailer", "documentary"],
     maxSingleJobSeconds: null,
     statusEnv: "REDOM_STUDIO_RUNTIME_ENABLED",
   },
@@ -83,7 +83,6 @@ export function resolveReDomModelRuntime(modelId: string, requestedRuntime?: str
     checkpointProvisionedAtWorker: Boolean(checkpointPath),
     enabled,
     readiness: configured ? "configured_unprobed" as const : "not_configured" as const,
-    // Do not silently route to another model if this runtime is unavailable.
     dispatchable: configured,
   };
 }
