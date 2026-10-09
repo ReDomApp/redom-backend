@@ -231,11 +231,15 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       bool_or(body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment))') AS credential_or_bypass,
       bool_or(body ~* '(fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|not my transaction|different account|change.*receipt)') AS payment_integrity
     FROM candidate GROUP BY email HAVING count(*) >= 1 ORDER BY count(*) DESC LIMIT 25`, [thirtyDaysAgo]),
-    pool.query(`SELECT count(DISTINCT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,''))))::int AS senders,
-      count(*)::int AS messages FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
-      WHERE m.sender_type='user' AND m.created_at >= $1 AND
+    pool.query(`SELECT
+      count(DISTINCT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,'')))) FILTER (WHERE m.created_at >= $1)::int AS current_senders,
+      count(*) FILTER (WHERE m.created_at >= $1)::int AS current_messages,
+      count(DISTINCT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,'')))) FILTER (WHERE m.created_at >= $2 AND m.created_at < $1)::int AS previous_senders,
+      count(*) FILTER (WHERE m.created_at >= $2 AND m.created_at < $1)::int AS previous_messages
+      FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
+      WHERE m.sender_type='user' AND m.created_at >= $2 AND
       (m.body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment)|refund.{0,20}(without|bypass|verification))'
-        OR sc.category='refund_payment' AND m.body ~* '(not my transaction|different account|fake|bypass|without verification|change.*receipt)')`, [thirtyDaysAgo]),
+        OR sc.category='refund_payment' AND m.body ~* '(not my transaction|different account|fake|bypass|without verification|change.*receipt)')`, [thirtyDaysAgo,new Date(now.getTime()-60*86400000)])
     pool.query(`SELECT c.case_number,
       count(*) FILTER (WHERE e.event_type='attempted')::int AS attempts,
       count(*) FILTER (WHERE e.event_type='accepted')::int AS accepted,
