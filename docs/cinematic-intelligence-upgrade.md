@@ -1,4 +1,4 @@
-# ReDom Cinematic Intelligence: implementation and readiness record
+# ReDom Shared Generative Intelligence: implementation and readiness record
 
 ## Existing implementation reviewed
 
@@ -77,4 +77,4 @@ A release is not production-ready until the acceptance suite in the engineering 
 
 ## Current status
 
-This is an incremental architecture change, not completion of the full cinematic upgrade. The three registry entries are present, but Cartoon and Studio runtimes are not proven operational by this change; end-to-end job dispatch, database migration, GPU benchmarks, multilingual rendering tests, and deployment validation remain outstanding. Do not market the three products as independent production-ready models until those gates pass.
+This is an incremental architecture change, not completion of the full cross-genre generation upgrade. The three registry entries are present, but Cartoon and Studio runtimes are not proven operational by this change; end-to-end job dispatch, database migration, GPU benchmarks, multilingual rendering tests, and deployment validation remain outstanding. Do not market the three products as independent production-ready models until those gates pass.
