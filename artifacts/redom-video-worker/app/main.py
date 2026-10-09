@@ -366,23 +366,21 @@ def render_project(job: VideoJob, output: Path):
         )
 
         if job.audioEnabled:
-            if job.audioTracks:
+            all_audio_tracks = job.audioTracks + job.musicTracks
+            if job.audioTracks and job.lipSyncEnabled:
                 voice_mix = workdir / "voice-mix.mp4"
                 mix_audio_tracks(working, voice_mix, job.audioTracks, job.durationSeconds, keep_video_audio=False)
-                if job.lipSyncEnabled:
-                    voice_wav = workdir / "voice-only.wav"
-                    extract_voice_audio(voice_mix, voice_wav)
-                    synced = workdir / "lip-synced.mp4"
-                    apply_lip_sync(working, voice_wav, synced, job)
-                    mixed = workdir / "dialogue-mixed.mp4"
-                    mix_audio_tracks(synced, mixed, job.audioTracks, job.durationSeconds, keep_video_audio=False)
-                    working = mixed
-                else:
-                    working = voice_mix
+                voice_wav = workdir / "voice-only.wav"
+                extract_voice_audio(voice_mix, voice_wav)
+                synced = workdir / "lip-synced.mp4"
+                apply_lip_sync(working, voice_wav, synced, job)
+                mixed = workdir / "dialogue-and-score-mixed.mp4"
+                mix_audio_tracks(synced, mixed, all_audio_tracks, job.durationSeconds, keep_video_audio=False)
+                working = mixed
             else:
-                silent = workdir / "silent-audio.mp4"
-                mix_audio_tracks(working, silent, [], job.durationSeconds, keep_video_audio=False)
-                working = silent
+                mixed = workdir / "audio-mixed.mp4"
+                mix_audio_tracks(working, mixed, all_audio_tracks, job.durationSeconds, keep_video_audio=False)
+                working = mixed
 
         width, height = target_size(job.aspectRatio, job.resolution)
         enhanced = workdir / "final.mp4"
