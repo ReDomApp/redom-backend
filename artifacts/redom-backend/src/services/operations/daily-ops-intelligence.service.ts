@@ -74,7 +74,7 @@ export async function recordOpsEmailEvent(input: {
 type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
   email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null };
-  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null };
+  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number };
   incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number };
   dataCoverage: Record<string, string>;
   forecast: { expectedEmailAttempts24h: number; expectedSupportCases24h: number; notes: string[] };
@@ -86,7 +86,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const prevStart = new Date(now.getTime() - 172800000);
   const yearStart = new Date(now.getTime() - 365 * 86400000);
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const [email, annual, firstEvent, support, messages, incidents, resolvedIncidents, database] = await Promise.all([
+  const [email, annual, firstEvent, support, messages, caseEmails, incidents, resolvedIncidents, database] = await Promise.all([
     pool.query(`SELECT
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
@@ -122,6 +122,12 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE created_at >= $1)::int AS currentMessages,
       count(*) FILTER (WHERE created_at >= $2 AND created_at < $1)::int AS previousMessages
       FROM support_case_messages WHERE created_at >= $2`, [start, prevStart]),
+    pool.query(`SELECT
+      count(*) FILTER (WHERE e.event_type='attempted')::int AS attempts,
+      count(*) FILTER (WHERE e.event_type IN ('attempted','accepted','delivered','failed','bounced','rejected','deferred'))::int AS events
+      FROM redom_ops_email_events e
+      JOIN support_cases c ON c.id=e.case_id
+      WHERE c.created_at >= $1 AND e.occurred_at >= $1`, [start]),
     pool.query(`SELECT id, incident_key, title, subsystem, severity, status, description, root_cause, resolution,
       verification_evidence, first_seen_at, last_seen_at, resolved_at, verified_at
       FROM redom_ops_incidents WHERE status NOT IN ('closed','resolved') ORDER BY
@@ -261,7 +267,7 @@ function reportPages(m: Metrics, a: Record<string, any>): string[][] {
     "SUPPORT OPERATIONS",
     "Cases created: " + moneyless(m.support.created24h) + " | Previous 24h: " + moneyless(m.support.createdPrevious24h) + " | Change: " + formatPct(m.support.changePct),
     "Open: " + moneyless(m.support.open) + " | Awaiting support: " + moneyless(m.support.awaitingSupport) + " | Awaiting user: " + moneyless(m.support.awaitingUser) + " | Closed: " + moneyless(m.support.closed),
-    "Support messages: " + moneyless(m.support.messages24h) + " (not equal to outbound emails).",
+    "Support messages: " + moneyless(m.support.messages24h) + " (not equal to outbound emails).",\n    "Email events linked to cases created in this window: " + moneyless(m.support.emailsConsumedByNewCases24h) + " (attempts: " + moneyless(m.support.caseLinkedEmailAttempts24h) + ").",
     "",
     "INCIDENTS AND RISKS",
     "Open tracked incidents: " + m.incidents.open.length + " | Critical open: " + m.incidents.criticalOpen,
