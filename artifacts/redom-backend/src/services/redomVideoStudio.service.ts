@@ -340,7 +340,7 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
   }).where(eq(reDomAiVideoProjects.id, projectId));
 }
 
-export async function createReDomMovieProject(userId: string, input: { prompt: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string }) {
+export async function createReDomMovieProject(userId: string, input: { prompt: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon" }) {
   await requirePaid(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const durationSeconds = safeDuration(input.durationSeconds);
@@ -348,9 +348,10 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     userId,
     title: input.title?.trim().slice(0, 240) || "Untitled ReDom Movie",
     prompt: input.prompt.trim(),
+    format: input.format || "movie",
     targetDurationSeconds: durationSeconds,
     quality: input.quality || "high",
-    style: input.style || "cinematic",
+    style: input.format === "cartoon" ? "cartoon animation, " + (input.style || "cinematic") : (input.style || "cinematic"),
     aspectRatio: input.aspectRatio || "16:9",
     audioEnabled: input.audio !== false,
     voiceEnabled: input.voice !== false,
@@ -509,6 +510,8 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       runtime: "redom-v2.8-native",
       model: MODEL,
       operation: "generate",
+      format: project.format === "cartoon" ? "cartoon" : "movie",
+      watermark: true,
       prompt: shot.generationPrompt,
       durationSeconds: shot.durationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
@@ -553,7 +556,7 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     if (!project || !shotKeys.length) return true;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
     const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
-    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
+    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
   }
