@@ -509,6 +509,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       prompt: project.prompt,
       targetDurationSeconds: project.targetDurationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
+      quality: project.quality,
       aspectRatio: project.aspectRatio,
       runtime: "redom-v2.8-native",
       model: MODEL,
@@ -534,7 +535,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       cleanupReferenceAsset: false,
       languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined,
       languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined,
-      generationDirection: "Preserve the language detected from the creator prompt throughout visual text and story details.",
+      generationDirection: "Use " + String(project.research?.languageName || "the language detected from the creator prompt") + " for visible text and story details; preserve consistent character names and dialogue direction.",
       prompt: shot.generationPrompt,
       durationSeconds: shot.durationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
@@ -593,7 +594,7 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
     const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
-    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
+    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
   }
