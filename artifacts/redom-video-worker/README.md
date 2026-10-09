@@ -132,7 +132,7 @@ The same worker image supports isolated deployment profiles through environment 
 |---|---|---|---|---|
 | Video | `ReDom-v2.8—Video` | `redom-v2.8-native` | `video` | `/models/redom-v2.8-video` |
 | Cartoon | `Cartoon—R8.0` | `redom-cartoon-r8-native` | `cartoon` | `/models/cartoon-r8` |
-| Studio | `Studio—Ultron 8.0R` | `redom-studio-ultron-8r-native` | `movie` | `/models/ultron-8r` |
+| Studio | `Studio—Ultron 8.0R` | `redom-studio-ultron-8r-native` | `movie,cartoon` | `/models/ultron-8r` |
 
 For each endpoint, set the generic worker environment variables `REDOM_VIDEO_MODEL_ID`, `REDOM_VIDEO_RUNTIME_ID`, `REDOM_VIDEO_ALLOWED_FORMATS`, `REDOM_VIDEO_CHECKPOINT_DIR`, `REDOM_VIDEO_WORKER_TOKEN`, `REDOM_VIDEO_REDIS_URL`, and `REDOM_VIDEO_QUEUE` to that endpoint's profile. Set the R2 variables on each endpoint as well. Use a unique bearer token and queue per endpoint. The endpoint's bearer token must match its corresponding backend token.
 
@@ -143,4 +143,4 @@ Backend environment mapping:
 
 The configured checkpoint directory must contain the correct compatible checkpoint files before the worker is marked ready. The code does not synthesize or train weights. The currently checked-in runtime uses the Wan2.2 TI2V-5B implementation, so each mounted checkpoint must be compatible with that runtime. These endpoint profiles isolate routing and operational resources; they do not, by themselves, prove that three separately trained model weights exist. Do not describe a model as a separately trained proprietary model until its checkpoint provenance and quality have been verified.
 
-The Studio endpoint receives individual movie shots and final-composition jobs from the backend's existing Movie Studio planner. It must use the Studio token for worker authorization and callbacks, and its own Redis URL/queue. The worker must have access to the same R2 bucket where project audio and shot assets are stored.
+The Studio endpoint receives live-action movie shots and all final-composition jobs from the backend's existing Movie Studio planner. Cartoon episode shots are sent to Cartoon—R8.0; final assembly for either movie or cartoon projects runs on Studio—Ultron 8.0R. It must use the Studio token for worker authorization and callbacks, and its own Redis URL/queue. The worker must have access to the same R2 bucket where project audio and shot assets are stored.
