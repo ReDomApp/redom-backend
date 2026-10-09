@@ -31,7 +31,7 @@ The email ledger begins recording when each send path is instrumented and signed
 
 Support message counts are not email counts. Case-linked email-consumption metrics only include email events attributed to cases. Delivery status remains "accepted" until a signed provider delivery event confirms delivery; provider acceptance alone is not inbox delivery.
 
-Application logs, Sentry issue feeds, deployment events, latency, and infrastructure resource metrics are not yet connected to a queryable reporting API. The incident register therefore only knows about failures explicitly recorded by the current backend integrations; it must not be interpreted as a complete platform-wide incident feed. The report explicitly states this rather than claiming those systems are healthy. The forecast is a low-confidence weighted estimate until adequate historical data has accumulated.
+Application logs, Sentry issue feeds, deployment events, latency, and infrastructure resource metrics are not yet connected to a queryable reporting API. Unhandled Express API exceptions are also persisted as high-severity incidents, then surfaced by the five-minute alert watcher. The incident register therefore still does not capture every handled error or constitute a complete platform-wide incident feed. The report explicitly states this rather than claiming those systems are healthy. The forecast is a low-confidence weighted estimate until adequate historical data has accumulated.
 
 ## Operational verification checklist
 
