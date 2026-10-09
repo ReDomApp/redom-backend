@@ -53,6 +53,7 @@ class VideoJob(BaseModel):
     languageCode: str | None = None
     captionText: str | None = None
     generationDirection: str | None = None
+    quality: str = "high"
     format: str = Field(default="video", pattern="^(video|movie|cartoon)$")
     watermark: bool = True
 
