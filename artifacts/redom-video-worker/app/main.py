@@ -125,6 +125,15 @@ def render_project(job: VideoJob, output: Path):
             seconds = min(SEGMENT_SECONDS, remaining)
             frames = seconds * FPS + 1
             prompt = job.prompt.strip()
+            if job.format == "cartoon":
+                prompt += ("\\nAnimation direction: polished high-end animated film, expressive character acting, "
+                           "deliberate animation timing, stable model sheets, consistent proportions, "
+                           "appealing silhouettes, clean materials, intentional color design and readable staging. "
+                           "Do not drift into live-action photorealism unless explicitly requested.")
+            elif job.format == "movie":
+                prompt += ("\\nFeature-film direction: motivated camera movement, intentional shot composition, "
+                           "naturalistic performance, believable lighting, cinematic depth, consistent wardrobe "
+                           "and screen direction, emotionally legible facial acting and coherent scene geography.")
             if job.operation == "cgi":
                 prompt += (
                     "\nCGI production brief: physically based materials, coherent geometry, "
