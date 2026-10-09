@@ -537,7 +537,7 @@ async def health():
 async def enqueue(job: VideoJob, authorization: str | None = Header(default=None)):
     if authorization != "Bearer " + WORKER_TOKEN:
         raise HTTPException(401, "Unauthorized")
-    if job.runtime != "redom-v2.8-native" or job.model != MODEL_NAME:
+    if job.runtime != RUNTIME_NAME or job.model != MODEL_NAME:
         raise HTTPException(400, "Unsupported ReDom video runtime.")
     await redis.lpush(QUEUE, job.model_dump_json())
     return {"accepted": True, "jobId": job.jobId, "status": "queued", "model": MODEL_NAME}
