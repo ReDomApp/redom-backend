@@ -153,8 +153,8 @@ router.post("/payment-problem", authMiddleware, async (req, res) => {
       const safe = (value: string) => value.replace(/[&<>"]/g, (ch) => ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : "&quot;");
       const html = "<!doctype html><html><body style=\"font-family:Arial,sans-serif;color:#1c1e21\"><h2>ReDom Pay payment method problem</h2><p><strong>Case:</strong> "+safe(caseRecord.caseNumber)+"</p><p><strong>Payment method:</strong> "+safe(String(row.provider||"stripe"))+" / "+safe(String(row.brand||"card"))+"-****"+safe(String(row.last4||""))+"</p><p><strong>Country:</strong> "+safe(String(row.country_code||"not recorded"))+"</p><p><strong>Status:</strong> "+safe(String(row.status||"unknown"))+"</p><p><strong>Problem:</strong> "+safe(parsed.data.description).replace(/\\n/g,"<br>")+"</p><p><strong>Security:</strong> No raw PAN or CVC/CVV included.</p></body></html>";
       const { error } = await resend.emails.send({
-        from: env.email.supportFrom,
-        to: [env.email.supportFrom],
+        from: env.email.supportFrom || env.email.securityFrom,
+        to: [env.email.supportFrom || env.email.securityFrom],
         replyTo: connectedEmail,
         subject: "ReDom Pay Payment Method Problem — Case " + caseRecord.caseNumber,
         text: supportBody,
