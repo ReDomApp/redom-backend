@@ -435,7 +435,7 @@ def validate_final_video(path: Path, job: VideoJob):
     if video.get("width") != expected_width or video.get("height") != expected_height:
         raise RuntimeError("Final video dimensions do not match the requested output.")
     duration = float(metadata.get("format", {}).get("duration", 0))
-    if duration < max(1, job.durationSeconds - 2) or duration > job.durationSeconds + 8:
+    if duration < max(1, job.durationSeconds - 2) or duration > min(REDOM_VIDEO_MAX_SECONDS, job.durationSeconds + 1):
         raise RuntimeError("Final video duration failed validation.")
     if job.watermark and (not Path("/app/assets/redom-logo.png").is_file()):
         raise RuntimeError("Required ReDom watermark logo is missing.")
@@ -455,7 +455,7 @@ def compose_project(job: VideoJob, output: Path):
         manifest.write_text("".join("file '" + path.as_posix() + "'\n" for path in local_segments), encoding="utf-8")
         joined = workdir / "joined.mp4"
         subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(joined)],
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-t", str(job.durationSeconds), "-c", "copy", str(joined)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
 
