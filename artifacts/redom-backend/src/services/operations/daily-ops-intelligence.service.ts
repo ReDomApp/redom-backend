@@ -134,7 +134,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
   const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, geography, supportMonthly, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
     pool.query(`SELECT
-      count(DISTINCT logical_email_id) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS uniqueEmails,\n      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
+      count(DISTINCT logical_email_id) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS uniqueEmails,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='delivered')::int AS delivered,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='failed')::int AS failed,
@@ -476,7 +477,8 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "Annual incident register: " + m.incidents.created365d + " recorded, " + m.incidents.resolved365d + " resolved/closed in rolling 365 days; " + m.incidents.criticalOpen + " tracked critical incidents currently open.",
     "",
     "EMAIL OPERATIONS — ROLLING 365 DAYS",
-    "Rolling window: " + m.email.rolling365Start + " through " + m.email.rolling365End,\n    "Unique emails attempted: " + emailMetric(m.email.last365d.uniqueEmails, m) + " | Send attempts/retries: " + emailMetric(m.email.last365d.sendAttempts, m) + " | Delivered events: " + emailMetric(m.email.last365d.delivered, m) + " | Failed: " + emailMetric(m.email.last365d.failed, m),
+    "Rolling window: " + m.email.rolling365Start + " through " + m.email.rolling365End,
+    "Unique emails attempted: " + emailMetric(m.email.last365d.uniqueEmails, m) + " | Send attempts/retries: " + emailMetric(m.email.last365d.sendAttempts, m) + " | Delivered events: " + emailMetric(m.email.last365d.delivered, m) + " | Failed: " + emailMetric(m.email.last365d.failed, m),
     "Bounced: " + emailMetric(m.email.last365d.bounced, m) + " | Duplicate suppression: " + emailMetric(m.email.last365d.duplicateSuppressed, m),
     "Email ledger coverage: " + (m.email.ledgerCoverageStart ?? "No events recorded"),
     "",
