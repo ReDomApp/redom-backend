@@ -60,6 +60,20 @@ export async function ensureOpsIntelligenceSchema(): Promise<void> {
     CONSTRAINT redom_ops_delivery_status_check CHECK (delivery_status IN ('pending','accepted','delivered','failed','unknown'))
   )`);
   await pool.query("CREATE INDEX IF NOT EXISTS redom_ops_report_runs_period_idx ON redom_ops_report_runs(period_end DESC)");
+  await pool.query("ALTER TABLE redom_ops_report_runs ADD COLUMN IF NOT EXISTS report_signature text");
+  await pool.query("ALTER TABLE redom_ops_report_runs ADD COLUMN IF NOT EXISTS signature_payload_hash text");
+  await pool.query("ALTER TABLE redom_ops_report_runs ADD COLUMN IF NOT EXISTS signature_key_id text");
+  await pool.query(`CREATE TABLE IF NOT EXISTS redom_ops_admin_audit (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(), action varchar(80) NOT NULL,
+    report_key text, outcome varchar(24) NOT NULL DEFAULT 'success',
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS redom_ops_admin_audit_time_idx ON redom_ops_admin_audit(created_at DESC)");
+}
+
+export async function recordOpsAdminAudit(action: string, reportKey: string | null, outcome = "success"): Promise<void> {
+  await pool.query("INSERT INTO redom_ops_admin_audit (action,report_key,outcome) VALUES ($1,$2,$3)",
+    [action.slice(0,80), reportKey?.slice(0,180) ?? null, outcome.slice(0,24)]);
 }
 
 export async function recordOpsEmailEvent(input: {
