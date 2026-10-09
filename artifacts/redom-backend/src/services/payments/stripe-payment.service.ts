@@ -4,7 +4,7 @@ import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import { sendPaymentEmailForReference } from "./payment.service";
 import { finalizeStarsTrialSetup, markStarsTrialSetupAbandoned } from "./stripe-stars-trial.service";
-import { getStripeCardMethodForUser } from "./stripe-saved-payment.service";
+import { getStripeCardMethodForUser, finalizeStripeCardSetup, finalizeStripeCardSetupCheckout } from "./stripe-saved-payment.service";
 
 const API = "https://api.stripe.com/v1";
 const APP_CALLBACK = "redom://payment/callback";
