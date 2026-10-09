@@ -22,6 +22,19 @@ MODEL_NAME = os.getenv("REDOM_VIDEO_MODEL_ID", "ReDom-v2.8—Video")
 RUNTIME_NAME = os.getenv("REDOM_VIDEO_RUNTIME_ID", "redom-v2.8-native")
 ALLOWED_FORMATS = {value.strip() for value in os.getenv("REDOM_VIDEO_ALLOWED_FORMATS", "video").split(",") if value.strip()}
 CHECKPOINT_DIR = os.environ["REDOM_VIDEO_CHECKPOINT_DIR"]
+MODEL_PROFILES = {
+    "ReDom-v2.8—Video": ("redom-v2.8-native", {"video"}),
+    "Cartoon—R8.0": ("redom-cartoon-r8-native", {"cartoon"}),
+    "Studio—Ultron 8.0R": ("redom-studio-ultron-8r-native", {"movie", "cartoon"}),
+}
+if MODEL_NAME not in MODEL_PROFILES:
+    raise RuntimeError("Unknown ReDom model profile: " + MODEL_NAME)
+_EXPECTED_RUNTIME, _EXPECTED_FORMATS = MODEL_PROFILES[MODEL_NAME]
+if RUNTIME_NAME != _EXPECTED_RUNTIME:
+    raise RuntimeError(f"Model/runtime configuration mismatch for {MODEL_NAME}: expected {_EXPECTED_RUNTIME}, received {RUNTIME_NAME}")
+if not ALLOWED_FORMATS or not ALLOWED_FORMATS.issubset(_EXPECTED_FORMATS):
+    raise RuntimeError(f"Invalid formats for {MODEL_NAME}; allowed profile formats are {sorted(_EXPECTED_FORMATS)}")
+WAN_CONFIG_NAME = os.getenv("REDOM_VIDEO_WAN_CONFIG", "ti2v-5B")
 REDIS_URL = os.environ["REDOM_VIDEO_REDIS_URL"]
 WORKER_TOKEN = os.environ["REDOM_VIDEO_WORKER_TOKEN"]
 QUEUE = os.getenv("REDOM_VIDEO_QUEUE", "redom:video:jobs")
@@ -104,8 +117,13 @@ def load_pipeline():
     if pipeline is None:
         if not torch.cuda.is_available():
             raise RuntimeError("A CUDA GPU is required for ReDom-v2.8—Video.")
+        checkpoint = Path(CHECKPOINT_DIR)
+        if not checkpoint.is_dir() or not any(checkpoint.iterdir()):
+            raise RuntimeError(f"Model checkpoint directory is missing or empty: {CHECKPOINT_DIR}")
+        if WAN_CONFIG_NAME not in WAN_CONFIGS:
+            raise RuntimeError(f"Unsupported Wan model configuration: {WAN_CONFIG_NAME}")
         pipeline = wan.WanTI2V(
-            config=WAN_CONFIGS["ti2v-5B"],
+            config=WAN_CONFIGS[WAN_CONFIG_NAME],
             checkpoint_dir=CHECKPOINT_DIR,
             device_id=int(os.getenv("LOCAL_RANK", "0")),
             rank=0,
@@ -310,10 +328,20 @@ def render_project(job: VideoJob, output: Path):
             if job.generationDirection:
                 prompt += "\nLanguage and caption direction: " + job.generationDirection
             if job.format == "cartoon":
-                prompt += ("\nAnimation direction: polished high-end animated film, expressive character acting, "
-                           "deliberate animation timing, stable model sheets, consistent proportions, "
-                           "appealing silhouettes, clean materials, intentional color design and readable staging. "
-                           "Do not drift into live-action photorealism unless explicitly requested.")
+                prompt += (
+                    "\\nCARTOON—R8.0 ANIMATION PIPELINE: authored animation, not live-action with a filter. "
+                    "Preserve model-sheet identity, silhouette, face and eye design, palette, body proportions, "
+                    "wardrobe, markings, accessories, age impression and scale across every segment. "
+                    "Stage readable poses with anticipation, clear action beats, coherent motion arcs, weight, contact, "
+                    "foot/paw planting, overlap and follow-through, secondary action, expression holds and genre-appropriate "
+                    "exaggeration. Keep anatomy stable: no morphing, extra limbs, face drift, texture crawl, flicker or sliding feet. "
+                    "Maintain shot geography, eye-lines, lighting direction and screen direction. Animate foreground, midground "
+                    "and background at distinct restrained rates to create depth; preserve the requested animation medium and palette. "
+                    "For animals, honor species-specific gait, joints, balance, fur/feather/scale pattern and muzzle/beak shape. "
+                    "For anime, use expressive original designs, controlled impact frames and stylized effects only where genre-appropriate. "
+                    "Do not invent dialogue audio; preserve language, dialect and voice direction for the separate audio pipeline. "
+                    "Avoid redesigning or photorealizing the established character."
+                )
             elif job.format == "movie":
                 prompt += ("\nFeature-film direction: motivated camera movement, intentional shot composition, "
                            "naturalistic performance, believable lighting, cinematic depth, consistent wardrobe "
@@ -526,11 +554,20 @@ async def runpod_health_check():
 
 @app.get("/health")
 async def health():
+    checkpoint = Path(CHECKPOINT_DIR)
+    checkpoint_ready = checkpoint.is_dir() and any(checkpoint.iterdir())
+    gpu_ready = torch.cuda.is_available()
     return {
-        "ok": True,
+        "ok": checkpoint_ready and gpu_ready,
         "model": MODEL_NAME,
         "runtime": RUNTIME_NAME,
+        "allowedFormats": sorted(ALLOWED_FORMATS),
+        "wanConfig": WAN_CONFIG_NAME,
+        "checkpointReady": checkpoint_ready,
+        "gpuReady": gpu_ready,
+        "pipelineLoaded": pipeline is not None,
         "generation": "local-gpu",
+        "readiness": "ready" if checkpoint_ready and gpu_ready else "not_ready",
     }
 
 @app.post("/v1/jobs")
