@@ -62,7 +62,7 @@ def watermark_filter(format_name: str, enabled: bool = True) -> str:
     font = os.getenv("REDOM_VIDEO_WATERMARK_FONT", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     # A persistent, unobtrusive brand mark in the far-right upper corner.
     escaped = label.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-    return (f"drawtext=fontfile='{font}':text='{escaped}':x=w-tw-24:y=24:"
+    return (f"drawtext=fontfile='{font}':text='{escaped}':x=w-tw-88:y=24:"
             "fontsize=22:fontcolor=white@0.92:borderw=2:bordercolor=black@0.65:"
             "box=1:boxcolor=black@0.28:boxborderw=10,format=yuv420p")
 
@@ -111,6 +111,28 @@ def last_frame(video_path: Path, image_path: Path):
         stderr=subprocess.DEVNULL,
     )
     return Image.open(image_path).convert("RGB")
+
+
+def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool):
+    command = ["ffmpeg", "-y", "-i", str(input_path)]
+    if watermark:
+        logo_path = Path("/app/assets/redom-logo.png")
+        command += [
+            "-loop", "1", "-i", str(logo_path),
+            "-filter_complex",
+            f"[0:v]{vf}[base];[1:v]scale=44:44[logo];[base][logo]overlay=x=W-w-18:y=18:shortest=1[v]",
+            "-map", "[v]",
+        ]
+    else:
+        command += ["-vf", vf, "-map", "0:v"]
+    command += [
+        "-map", "0:a?",
+        "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
+        "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
+        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+        str(output_path),
+    ]
+    subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def render_project(job: VideoJob, output: Path):
     pipe = load_pipeline()
@@ -199,19 +221,7 @@ def render_project(job: VideoJob, output: Path):
             "unsharp=5:5:0.45:5:5:0,"
             watermark_filter(job.format, job.watermark)
         )
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", str(working), "-vf", vf,
-                "-map", "0:v", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
-                "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
-                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
-                str(enhanced),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        encode_final(working, enhanced, vf, job.watermark)
         output.write_bytes(enhanced.read_bytes())
 
 
@@ -236,17 +246,7 @@ def compose_project(job: VideoJob, output: Path):
 
         width, height = target_size(job.aspectRatio, job.resolution)
         vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", str(joined), "-vf", vf,
-                "-map", "0:v", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
-                "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
-                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
-                str(output),
-            ],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        encode_final(joined, output, vf, job.watermark)
 
 async def callback(job: VideoJob, status: str, storage_key: str | None = None, error: str | None = None):
     body = {
