@@ -27,15 +27,15 @@ The local TI2V runtime supports text-to-video and image-conditioned video genera
 ## Project duration
 
 - Minimum: 4 seconds
-- Maximum: 300 seconds (5 minutes)
+- Maximum: 59 seconds (00:59), enforced by the backend and GPU worker
 - Scene segments: 5 seconds by default
 - Final output is composited and enhanced by the ReDom worker.
 
-Five minutes is a **maximum project duration**, not a guaranteed generation-time SLA.
+The 59-second limit is a hard output-duration ceiling, not a guaranteed generation-time SLA. Movie and Cartoon use the same cap; Movie Studio may direct either format but cannot export a longer video.
 
 ## Creator formats and references
 
-The native worker accepts three format modes: `video` (short-form scenes), `movie` (cinematic production), and `cartoon` (animation-directed generation). An optional private R2 reference-image key conditions the first generated segment; each following segment uses the previous segment final frame to preserve continuity. Reference assets are removed after the worker finishes or fails the job.
+The native worker accepts three format modes: `video` (short-form scenes), `movie` (cinematic production), and `cartoon` (animation-directed generation). Every generated/exported video is limited to 59 seconds maximum. Movie Intelligence and Cartoon Intelligence are coordinated capabilities, not competing formats: Movie Studio can plan/direct either format, while Cartoon—R8.0 renders animated shots. An optional private R2 reference-image key conditions the first generated segment; each following segment uses the previous segment final frame to preserve continuity. Reference assets are removed after the worker finishes or fails the job.
 
 Every final encode applies the official ReDom logo beside a persistent far-right brand watermark: `ReDom Videos | AI-generated`, `ReDom Movie Studio | AI-generated`, or `ReDom Cartoon | AI-generated`. The worker image converts the approved ReDom SVG to PNG and installs DejaVu fonts for FFmpeg drawtext. Branding is applied after joining segments so it remains consistent across the finished output.
 
