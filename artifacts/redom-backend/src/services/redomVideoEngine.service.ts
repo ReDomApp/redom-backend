@@ -39,8 +39,8 @@ export async function prepareReDomVideoLanguage(prompt: string, format: "video" 
       "caption must be a concise, engaging post caption for the resulting video, written in the detected prompt language, not a translation of these instructions. Avoid hashtags unless natural for the language.",
       "generationDirection must instruct the video model to preserve the detected language for any visible text, dialogue direction and story details; do not fabricate audio or claim speech was generated if it was not.",
       "Do not translate proper names unless the language convention requires it."
-    ].join("\\n"),
-    input: "Format: " + format + "\\nCreator prompt:\\n" + prompt,
+    ].join("\n"),
+    input: "Format: " + format + "\nCreator prompt:\n" + prompt,
     safety_identifier: "redom-video-language",
   });
   let parsed: { languageName?: string; languageCode?: string; caption?: string; generationDirection?: string };
