@@ -78,6 +78,11 @@ router.post("/email/webhook", async (req, res) => {
       idempotencyKey: "resend-webhook:" + id,
       metadata: { providerEventType: eventType, webhookId: id, createdAt: event?.created_at ?? null },
     });
+    if (mapped === "delivered") {
+      await pool.query("UPDATE redom_ops_report_runs SET delivery_status='delivered',delivered_at=now(),updated_at=now() WHERE provider_message_id=$1", [messageId]);
+    } else if (mapped === "bounced" || mapped === "rejected" || mapped === "failed" || mapped === "complained") {
+      await pool.query("UPDATE redom_ops_report_runs SET delivery_status='failed',updated_at=now() WHERE provider_message_id=$1", [messageId]);
+    }
     return res.status(200).json({ received: true });
   } catch {
     return res.status(500).json({ success: false, message: "Unable to persist delivery event." });
