@@ -493,9 +493,9 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "SUPPORT OPERATIONS",
     "Cases created: " + moneyless(m.support.created24h) + " | Previous 24h: " + moneyless(m.support.createdPrevious24h) + " | Change: " + formatPct(m.support.changePct),
     "Created in rolling 365 days: " + moneyless(m.support.created365d) + " | Closed in rolling 365 days: " + moneyless(m.support.closed365d),
-    "Case numbers created in this report window: " + (m.support.createdCaseNumbers24h.join(", ") || "None recorded"),
-    "Active case numbers (first 100): " + (m.support.activeCaseNumbers.join(", ") || "None"),
-    "Invalidated/marked-invalid case numbers (first 100; not necessarily recycled): " + (m.support.invalidCaseNumbers.join(", ") || "None"),
+    ...wrap("Case numbers created in this report window: " + (m.support.createdCaseNumbers24h.join(", ") || "None recorded"), 88),
+    ...wrap("Active case numbers (first 100): " + (m.support.activeCaseNumbers.join(", ") || "None"), 88),
+    ...wrap("Invalidated/marked-invalid case numbers (first 100; not necessarily recycled): " + (m.support.invalidCaseNumbers.join(", ") || "None"), 88),
     "Invalidated or marked-invalid cases total: " + moneyless(m.support.invalidatedOrRecycled),
     "Most repeated contacts in the past 30 days (repeat contact is not proof of abuse):",
     ...m.support.repeatContactSenders30d.slice(0,10).map((r) => r.email + ": " + r.messages + " user messages across " + r.cases + " cases"),
@@ -510,7 +510,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "Top registration cities, last 365 days (aggregate; not current physical location):",
     ...m.geography.topCities.map((g) => g.city + ", " + g.country + ": " + g.signups),
     "Heuristic suspicious-support signals (manual review only): " + m.fraud.signalCount30d + " distinct senders. " + m.fraud.warning,
-    ...m.fraud.reviewedSignals.slice(0,12).map((r) => r.email + " | score " + r.score + "/100 (" + r.risk + ") | " + r.indicators.join("; ") + " | cases " + r.caseNumbers.join(", ")),
+    ...m.fraud.reviewedSignals.slice(0,12).flatMap((r) => wrap(r.email + " | score " + r.score + "/100 (" + r.risk + ") | " + r.indicators.join("; ") + " | cases " + r.caseNumbers.join(", "), 88)),
     "Open: " + moneyless(m.support.open) + " | Awaiting support: " + moneyless(m.support.awaitingSupport) + " | Awaiting user: " + moneyless(m.support.awaitingUser) + " | Closed: " + moneyless(m.support.closed),
     "Support messages: " + moneyless(m.support.messages24h) + " (not equal to outbound emails).",
     "Email events linked to cases created in this window: " + moneyless(m.support.emailsConsumedByNewCases24h) + " (attempts: " + moneyless(m.support.caseLinkedEmailAttempts24h) + ").",
@@ -551,7 +551,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "Generated at " + m.generatedAt + ". Metrics are evidence-based; unavailable telemetry is not treated as healthy.",
   ];
   const chunks: string[][] = [];
-  for (let i = 0; i < lines.length; i += 48) chunks.push(lines.slice(i, i + 48));
+  for (let i = 0; i < lines.length; i += 32) chunks.push(lines.slice(i, i + 32));
   chunks.push([
     "OFFICIAL REDOM OPERATIONS REPORT",
     "AUTOMATED ADMINISTRATIVE RECORD — CONFIDENTIAL",
