@@ -43,6 +43,8 @@ QUEUE = os.getenv("REDOM_VIDEO_QUEUE", "redom:video:jobs")
 FPS = 24
 SEGMENT_SECONDS = 5
 REDOM_VIDEO_MAX_SECONDS = 59
+REDOM_CARTOON_MAX_SECONDS = 60 * 60
+REDOM_MOVIE_STUDIO_MAX_SECONDS = 120 * 60
 
 app = FastAPI(title="ReDom-v2.8—Video Native Worker")
 redis = Redis.from_url(REDIS_URL, decode_responses=True)
@@ -70,7 +72,7 @@ class VideoJob(BaseModel):
     model: str = MODEL_NAME
     operation: str = "generate"
     prompt: str = Field(min_length=5, max_length=8000)
-    durationSeconds: int = Field(ge=4, le=REDOM_VIDEO_MAX_SECONDS)
+    durationSeconds: int = Field(ge=4, le=REDOM_MOVIE_STUDIO_MAX_SECONDS)
     resolution: str = "720p"
     aspectRatio: str = "16:9"
     callbackUrl: str
@@ -435,8 +437,13 @@ def validate_final_video(path: Path, job: VideoJob):
     if video.get("width") != expected_width or video.get("height") != expected_height:
         raise RuntimeError("Final video dimensions do not match the requested output.")
     duration = float(metadata.get("format", {}).get("duration", 0))
-    if duration < max(1, job.durationSeconds - 2) or duration > min(REDOM_VIDEO_MAX_SECONDS, job.durationSeconds + 1):
-        raise RuntimeError("Final video duration failed validation.")
+    max_duration = (
+        REDOM_MOVIE_STUDIO_MAX_SECONDS if job.format == "movie"
+        else REDOM_CARTOON_MAX_SECONDS if job.format == "cartoon"
+        else REDOM_VIDEO_MAX_SECONDS
+    ) if job.operation == "compose" else REDOM_VIDEO_MAX_SECONDS
+    if duration < max(1, job.durationSeconds - 2) or duration > min(max_duration, job.durationSeconds + 1):
+        raise RuntimeError("Final video duration failed validation for this product and operation.")
     if job.watermark and (not Path("/app/assets/redom-logo.png").is_file()):
         raise RuntimeError("Required ReDom watermark logo is missing.")
 
@@ -493,10 +500,16 @@ async def callback(job: VideoJob, status: str, storage_key: str | None = None, e
 async def process(job: VideoJob):
     if job.runtime != RUNTIME_NAME or job.model != MODEL_NAME:
         raise ValueError("Unsupported ReDom video runtime.")
-    if job.durationSeconds > REDOM_VIDEO_MAX_SECONDS:
-        raise ValueError("ReDom Video maximum duration is 59 seconds (00:59).")
     if job.format not in ALLOWED_FORMATS:
         raise ValueError("Unsupported ReDom video format.")
+    if job.operation == "compose":
+        if MODEL_NAME != "Studio—Ultron 8.0R":
+            raise ValueError("Only Studio—Ultron 8.0R may compose a long-form project.")
+        max_duration = REDOM_MOVIE_STUDIO_MAX_SECONDS if job.format == "movie" else REDOM_CARTOON_MAX_SECONDS
+        if job.durationSeconds > max_duration:
+            raise ValueError(f"Composed {job.format} project exceeds its {max_duration}-second product limit.")
+    elif job.durationSeconds > REDOM_VIDEO_MAX_SECONDS:
+        raise ValueError("Individual generation jobs are limited to 59 seconds; long-form projects must be composed from short shots.")
 
     await callback(job, "processing")
     with tempfile.TemporaryDirectory(prefix="redom-video-output-") as work:
