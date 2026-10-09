@@ -1,6 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { env } from "../config/env";
 import { recordOpsAdminAudit, recordOpsEmailEvent } from "../services/operations/daily-ops-intelligence.service";
 
 function canonicalJson(value: unknown): string {
@@ -32,8 +31,8 @@ function verifyResendWebhook(raw: Buffer, id: string, timestamp: string, signatu
  * the private administrator key. Keep this route before the archive guard.
  */
 router.post("/email/webhook", async (req, res) => {
-  const secret = env.email.resend.webhookSecret;
-  if (!secret) return res.status(503).json({ success: false, message: "Resend delivery webhook secret is not configured." });
+  const secret = process.env.REDOM_OPS_RESEND_WEBHOOK_SECRET?.trim();
+  if (!secret) return res.status(503).json({ success: false, message: "Operations delivery webhook secret is not configured." });
   if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Expected raw webhook payload." });
   const id = req.header("svix-id") ?? "";
   const timestamp = req.header("svix-timestamp") ?? "";
