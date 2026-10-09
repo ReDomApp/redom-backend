@@ -118,7 +118,6 @@ export function assertReDomModelSupports(modelId: string, operation: string, for
   if (!runtime.dispatchable) {
     const missing = [
       !runtime.runtimeUrl && model.runtimeUrlEnv,
-      
       !runtime.enabled && model.statusEnv + "=true",
     ].filter(Boolean);
     const error = new Error(
