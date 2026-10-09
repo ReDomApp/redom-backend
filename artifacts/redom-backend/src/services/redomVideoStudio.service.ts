@@ -511,7 +511,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       model: MODEL,
       operation: "generate",
       format: project.format === "cartoon" ? "cartoon" : "movie",
-      watermark: true,
+      watermark: false,
       prompt: shot.generationPrompt,
       durationSeconds: shot.durationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
