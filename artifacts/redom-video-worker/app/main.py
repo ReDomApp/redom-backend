@@ -48,6 +48,10 @@ class VideoJob(BaseModel):
     shotKeys: list[str] = []
     referenceAssetKey: str | None = None
     cleanupReferenceAsset: bool = True
+    languageName: str | None = None
+    languageCode: str | None = None
+    captionText: str | None = None
+    generationDirection: str | None = None
     format: str = Field(default="video", pattern="^(video|movie|cartoon)$")
     watermark: bool = True
 
@@ -114,8 +118,13 @@ def last_frame(video_path: Path, image_path: Path):
     return Image.open(image_path).convert("RGB")
 
 
-def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool):
+def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool, caption_text: str | None = None):
     command = ["ffmpeg", "-y", "-i", str(input_path)]
+    if caption_text and caption_text.strip():
+        caption_file = output_path.parent / "redom-caption.txt"
+        caption_file.write_text(caption_text.strip()[:500].replace("\\r", " ").replace("\\n", " "), encoding="utf-8")
+        escaped_path = str(caption_file).replace("\\\\", "/").replace(":", "\\\\:").replace("'", "\\\\'")
+        vf += f",drawtext=fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf':textfile='{escaped_path}':x=(w-tw)/2:y=h-th-64:fontsize=30:fontcolor=white:borderw=2:bordercolor=black@0.8:box=1:boxcolor=black@0.45:boxborderw=14:expansion=none"
     if watermark:
         logo_path = Path("/app/assets/redom-logo.png")
         command += [
@@ -156,6 +165,8 @@ def render_project(job: VideoJob, output: Path):
             seconds = min(SEGMENT_SECONDS, remaining)
             frames = seconds * FPS + 1
             prompt = job.prompt.strip()
+            if job.generationDirection:
+                prompt += "\\nLanguage and caption direction: " + job.generationDirection
             if job.format == "cartoon":
                 prompt += ("\nAnimation direction: polished high-end animated film, expressive character acting, "
                            "deliberate animation timing, stable model sheets, consistent proportions, "
@@ -222,7 +233,7 @@ def render_project(job: VideoJob, output: Path):
             "unsharp=5:5:0.45:5:5:0,"
             + watermark_filter(job.format, job.watermark)
         )
-        encode_final(working, enhanced, vf, job.watermark)
+        encode_final(working, enhanced, vf, job.watermark, job.captionText)
         output.write_bytes(enhanced.read_bytes())
 
 
@@ -247,7 +258,7 @@ def compose_project(job: VideoJob, output: Path):
 
         width, height = target_size(job.aspectRatio, job.resolution)
         vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
-        encode_final(joined, output, vf, job.watermark)
+        encode_final(joined, output, vf, job.watermark, job.captionText)
 
 async def callback(job: VideoJob, status: str, storage_key: str | None = None, error: str | None = None):
     body = {
