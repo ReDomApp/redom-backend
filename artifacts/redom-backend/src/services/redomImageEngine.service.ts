@@ -27,13 +27,13 @@ const IMAGE_QUALITY_NEGATIVE_PROMPT = [
   "unwanted watermark",
 ].join(", ");
 
-const PHOTOREALISM_INTENT = /\\b(photorealistic|photo[- ]realistic|photographic|realistic photo|real[- ]life photograph|hyperrealistic|hyper-realistic|realistic portrait|realistic skin|true-to-life|true to life)\\b/i;
-const STYLIZED_INTENT = /\\b(anime|manga|cartoon|illustration|illustrated|watercolor|watercolour|oil painting|pencil sketch|line art|pixel art|comic book|storybook|claymation|3d render|cgi|low-poly|vector art)\\b/i;
+const PHOTOREALISM_INTENT = /\b(photorealistic|photo[- ]realistic|photographic|realistic photo|real[- ]life photograph|hyperrealistic|hyper-realistic|realistic portrait|realistic skin|true-to-life|true to life)\b/i;
+const STYLIZED_INTENT = /\b(anime|manga|cartoon|illustration|illustrated|watercolor|watercolour|oil painting|pencil sketch|line art|pixel art|comic book|storybook|claymation|3d render|cgi|low-poly|vector art)\b/i;
 
 function prepareImageQuality(prompt: string, suppliedNegativePrompt?: string) {
   const explicitPhotorealism = PHOTOREALISM_INTENT.test(prompt);
   const stylizedRequest = STYLIZED_INTENT.test(prompt);
-  const applyPhotographicDetail = explicitPhotorealism || (!stylizedRequest && /\\brealistic\\b/i.test(prompt));
+  const applyPhotographicDetail = explicitPhotorealism || (!stylizedRequest && /\brealistic\b/i.test(prompt));
   const effectivePrompt = applyPhotographicDetail
     ? prompt + ", natural physically plausible lighting, believable material textures, coherent perspective, realistic fine detail, balanced exposure, natural color response"
     : prompt;
