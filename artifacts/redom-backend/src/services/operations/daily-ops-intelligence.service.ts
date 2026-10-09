@@ -178,7 +178,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       COALESCE(stats.bounced,0)::int AS bounced,COALESCE(stats.rejected,0)::int AS rejected,
       CASE WHEN COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0)>0
         THEN round(100.0*COALESCE(stats.delivered,0)/(stats.delivered+stats.failed+stats.bounced+stats.rejected),2) ELSE NULL END AS delivery_rate_pct,
-      CASE WHEN COALESCE(stats.attempts,0)>0 THEN round(100.0*(COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0))/stats.attempts,2) ELSE NULL END AS outcome_coverage_pct
+      CASE WHEN COALESCE(stats.send_attempts,0)>0 THEN round(100.0*(COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0))/stats.send_attempts,2) ELSE NULL END AS outcome_coverage_pct
     FROM months LEFT JOIN stats USING(month_start) ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd,yearStart,now]),
     pool.query("SELECT min(occurred_at) AS first_at FROM redom_ops_email_events"),
     pool.query(`SELECT
