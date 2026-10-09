@@ -719,7 +719,9 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
     .innerJoin(reDomAiVideoEpisodes, eq(reDomAiVideoScenes.episodeId, reDomAiVideoEpisodes.id))
     .where(eq(reDomAiVideoEpisodes.projectId, projectId))
     .orderBy(asc(reDomAiVideoEpisodes.episodeNumber), asc(reDomAiVideoScenes.sceneNumber), asc(reDomAiVideoShots.shotNumber));
-  if (!shots.length) throw Object.assign(new Error("The movie has no planned shots."), { status: 409 });\n\n  const audioPlan = await prepareReDomMovieAudio(userId, project, shots);
+  if (!shots.length) throw Object.assign(new Error("The movie has no planned shots."), { status: 409 });
+
+  const audioPlan = await prepareReDomMovieAudio(userId, project, shots);
 
   const existing = await db.select({ id: reDomAiVideos.id }).from(reDomAiVideos).where(eq(reDomAiVideos.jobId, "movie_project_" + projectId)).limit(1);
   if (!existing.length) {
@@ -738,7 +740,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
     });
   }
 
-  const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
+  const callbackUrl = env.redomBackendUrl.replace(/\/$/, "") + "/ai/video/callback";
   const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
   for (const item of shots) {
     const shot = item.redom_ai_video_shots;
@@ -761,6 +763,9 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       aspectRatio: project.aspectRatio,
       callbackUrl,
       callbackToken: env.redomVideoEngine.token,
+      audioEnabled: project.audioEnabled,
+      audioTracks: audioPlan.shotTracks.get(shot.id) || [],
+      lipSyncEnabled: Boolean((audioPlan.shotTracks.get(shot.id) || []).length),
     };
     await db.insert(reDomAiVideoJobs).values({ projectId, shotId: shot.id, jobId, kind: "shot_generation", status: "queued", priority: 100, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
