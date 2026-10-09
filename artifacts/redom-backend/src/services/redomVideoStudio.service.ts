@@ -34,7 +34,7 @@ async function dispatchMovieJob(payload: Record<string, unknown>) {
   payload.model = model;
   payload.runtime = runtime;
   payload.callbackToken = endpoint.token;
-  const response = await fetch(endpoint.url.replace(/\\/$/, "") + "/v1/jobs", {
+  const response = await fetch(endpoint.url.replace(/\/$/, "") + "/v1/jobs", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: "Bearer " + endpoint.token },
     body: JSON.stringify(payload),
