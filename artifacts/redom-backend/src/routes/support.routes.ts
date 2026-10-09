@@ -4,11 +4,12 @@ import { z } from "zod";
 import { env } from "../config/env";
 import { pool } from "../database/db";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, claimInboundEvent, markInboundEvent, markInboundEventFailed, findRecentActiveSupportCase, type SupportCase } from "../services/support/support.service";
+import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, claimInboundEvent, markInboundEvent, markInboundEventFailed, findRecentActiveSupportCase, sendSupportEmail, type SupportCase } from "../services/support/support.service";
 import { generatePolicyAwareSupportReply } from "../services/support/policy-aware-support.service";
 import { sendGeneratedSupportEmail } from "../services/support/supportEmail.service";
 import { processRefundSupportEmail } from "../services/refund/refund.service";
 import { buildSupportEmailActions } from "../services/support/supportWebLinks.service";
+import { getSupportEmailGrantForVerification, issueSupportEmailChallenge, verifyAndConsumeSupportEmailChallenge } from "../services/support/supportEmailAccess.service";
 
 const router = Router();
 const resend = new Resend(env.email.resend.apiKey);
@@ -268,6 +269,82 @@ router.post("/feedback", authMiddleware, async (req, res) => {
   }
 });
 router.get("/cases", authMiddleware, async (req, res) => { try { return res.status(200).json({ success: true, cases: await listOwnedSupportCases(req.user!.userId) }); } catch (error) { req.log?.error?.({ err: error }, "Support case list failed"); return res.status(500).json({ success: false, message: "Unable to load your support history." }); } });
+router.get("/cases/:caseNumber/email/:token", async (req, res) => {
+  const caseNumber = String(req.params.caseNumber ?? "").toUpperCase();
+  const token = String(req.params.token ?? "");
+  if (!/^R\\d{11}$/.test(caseNumber) || !/^[A-Za-z0-9_-]{40,60}$/.test(token)) return res.status(404).send("Support link unavailable.");
+  const base = "/support/cases/" + encodeURIComponent(caseNumber) + "/email/" + encodeURIComponent(token);
+  res.setHeader("Cache-Control", "no-store, private");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+  return res.status(200).type("html").send("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Open support case · ReDom</title>\n<style>\n:root{color-scheme:light;--blue:#1877f2;--ink:#1c1e21;--muted:#65676b;--line:#dadde1;--surface:#f0f2f5}\n*{box-sizing:border-box}body{margin:0;background:var(--surface);font:16px Arial,Helvetica,sans-serif;color:var(--ink)}\nheader{background:#fff;border-bottom:1px solid var(--line);padding:16px 22px}header strong{font-size:25px;color:var(--blue)}header span{float:right;color:var(--muted);font-size:13px;padding-top:8px}\nmain{max-width:650px;margin:38px auto;padding:0 16px}.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:26px;box-shadow:0 2px 8px #00000008}\nh1{font-size:23px;margin:0 0 12px}p{line-height:1.55;color:var(--muted)}label{display:block;font-weight:600;margin:18px 0 8px}\ninput{width:100%;padding:13px;border:1px solid #bcc0c4;border-radius:8px;font-size:18px;letter-spacing:3px}\nbutton{background:var(--blue);color:#fff;border:0;border-radius:8px;padding:12px 16px;font-weight:700;cursor:pointer;margin-top:14px}button:disabled{opacity:.6}\n.notice{padding:12px;border-radius:8px;background:#f7f8fa;border:1px solid var(--line);font-size:14px;line-height:1.5}\n.error{color:#b42318}.case-meta{padding:14px;background:#f7f8fa;border-radius:8px;margin:12px 0}.message{border-top:1px solid var(--line);padding:14px 0;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}\nfooter{font-size:12px;color:var(--muted);text-align:center;padding:22px}\n</style></head><body><header><strong>ReDom</strong><span>SUPPORT</span></header>\n<main><section class=\"card\"><div class=\"notice\">Secure, recipient-restricted support access. This link can be used once and expires after 24 hours.</div>\n<h1 style=\"margin-top:22px\">Verify your email to view this case</h1><p>We will send a one-time verification code to the email address that received the original ReDom support message. Opening this page alone does not consume the link.</p>\n<div id=\"status\" role=\"status\" aria-live=\"polite\"></div>\n<div id=\"start\"><button id=\"send\" type=\"button\">Send verification code</button></div>\n<form id=\"verify\" hidden><label for=\"code\">6-digit verification code</label><input id=\"code\" inputmode=\"numeric\" autocomplete=\"one-time-code\" pattern=\"[0-9]{6}\" maxlength=\"6\" required><button id=\"open\" type=\"submit\">Verify and open case</button></form>\n<div id=\"result\" hidden></div></section></main><footer>ReDom Support · Keep verification codes private.</footer>\n<script>\n(function(){\n const base=__BASE__;\n const status=document.getElementById('status'),send=document.getElementById('send'),form=document.getElementById('verify'),code=document.getElementById('code'),result=document.getElementById('result');\n function say(text,error){status.className=error?'error':'';status.textContent=text;}\n function node(tag,text,cls){const el=document.createElement(tag);el.textContent=text;if(cls)el.className=cls;return el;}\n send.addEventListener('click',async function(){send.disabled=true;say('Requesting a verification code…');try{const r=await fetch(base+'/challenge',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',credentials:'same-origin',cache:'no-store'});const data=await r.json();if(!r.ok)throw new Error(data.message||'Unable to send code.');say(data.message);form.hidden=false;send.hidden=true;code.focus();}catch(e){say(e.message||'Unable to send code.',true);send.disabled=false;}});\n form.addEventListener('submit',async function(event){event.preventDefault();const value=code.value.trim();if(!/^[0-9]{6}$/.test(value)){say('Enter the 6-digit code.',true);return;}const open=document.getElementById('open');open.disabled=true;say('Verifying and opening your support case…');try{const r=await fetch(base+'/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:value}),credentials:'same-origin',cache:'no-store'});const data=await r.json();if(!r.ok)throw new Error(data.message||'Verification failed.');form.hidden=true;send.hidden=true;result.hidden=false;result.appendChild(node('h1','Case '+data.case.caseNumber));result.appendChild(node('div',(data.case.subject||'Support case')+' · '+data.case.status,'case-meta'));(data.messages||[]).forEach(function(m){const box=node('div','','message');box.appendChild(node('strong',String(m.senderType||m.sender_type||'Support')));box.appendChild(node('div',String(m.body||'')));box.appendChild(node('small',String(m.createdAt||m.created_at||''),'muted'));result.appendChild(box);});say('Verified. This one-time email link has now been consumed.');history.replaceState(null,'',location.pathname);}catch(e){say(e.message||'Verification failed.',true);open.disabled=false;}});\n})();\n</script></body></html>".replace("__BASE__", JSON.stringify(base)));
+});
+
+router.post("/cases/:caseNumber/email/:token/challenge", async (req, res) => {
+  const caseNumber = String(req.params.caseNumber ?? "").toUpperCase();
+  const token = String(req.params.token ?? "");
+  if (!/^R\d{11}$/.test(caseNumber)) return res.status(400).json({ success: false, message: "Invalid support link." });
+  try {
+    const grant = await getSupportEmailGrantForVerification(token);
+    const supportCase = await getSupportCase(caseNumber);
+    if (!grant || !supportCase || grant.caseId !== supportCase.id || grant.purpose !== "view_case") {
+      return res.status(404).json({ success: false, message: "This support link is invalid or expired." });
+    }
+    const challenge = await issueSupportEmailChallenge(grant.id);
+    if (!challenge) return res.status(410).json({ success: false, message: "This support link is no longer available." });
+    const { error } = await resend.emails.send({
+      from: env.email.securityFrom,
+      to: [challenge.recipientEmail],
+      subject: "ReDom Support — Verify your email",
+      text: "Your ReDom support access verification code is " + challenge.code + ". It expires in 10 minutes. If you did not request this, ignore this email. Do not share this code.",
+      html: '<!doctype html><html lang="en"><body style="margin:0;padding:24px;background:#f0f2f5;font-family:Arial,sans-serif;color:#1c1e21"><main style="max-width:560px;margin:auto;background:#fff;border:1px solid #dadde1;padding:28px"><strong style="font-size:24px;color:#1877f2">ReDom</strong><h1 style="font-size:22px">Verify support access</h1><p>Enter this code on the ReDom page you opened:</p><p style="font-size:32px;letter-spacing:8px;font-weight:bold;text-align:center">' + challenge.code + '</p><p>This code expires in 10 minutes. Never share it with anyone.</p></main></body></html>',
+    });
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ success: true, message: "A verification code was sent to the email address originally associated with this support link." });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "Temporary support access challenge failed");
+    return res.status(500).json({ success: false, message: "Unable to verify this support link right now." });
+  }
+});
+
+router.post("/cases/:caseNumber/email/:token/verify", async (req, res) => {
+  const caseNumber = String(req.params.caseNumber ?? "").toUpperCase();
+  const token = String(req.params.token ?? "");
+  const code = String(req.body?.code ?? "").trim();
+  if (!/^R\d{11}$/.test(caseNumber) || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({ success: false, message: "Invalid verification request." });
+  }
+  try {
+    const grant = await getSupportEmailGrantForVerification(token);
+    const supportCase = await getSupportCase(caseNumber);
+    if (!grant || !supportCase || grant.caseId !== supportCase.id || grant.purpose !== "view_case") {
+      return res.status(404).json({ success: false, message: "This support link is invalid, expired, or already used." });
+    }
+    const verified = await verifyAndConsumeSupportEmailChallenge({ grantId: grant.id, code });
+    if (!verified || verified.caseId !== supportCase.id || verified.recipientEmail.toLowerCase() !== String(supportCase.requesterEmail ?? "").toLowerCase()) {
+      return res.status(403).json({ success: false, message: "Recipient verification failed or the link has expired." });
+    }
+    const messages = await getSupportCaseMessages(supportCase.id, 50);
+    return res.status(200).json({
+      success: true,
+      case: {
+        caseNumber: supportCase.caseNumber,
+        subject: supportCase.subject,
+        category: supportCase.category,
+        status: supportCase.status,
+        createdAt: supportCase.createdAt,
+        updatedAt: supportCase.updatedAt,
+      },
+      messages,
+      access: { oneTime: true, consumed: true },
+    });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "Temporary support access verification failed");
+    return res.status(500).json({ success: false, message: "Unable to open this support case right now." });
+  }
+});
+
 router.get("/cases/:caseNumber", authMiddleware, async (req, res) => { const caseNumber = String(req.params.caseNumber).toUpperCase(); if (!/^R\d{11}$/.test(caseNumber)) return res.status(400).json({ success: false, message: "Invalid Case Number." }); try { const supportCase = await getOwnedSupportCase(req.user!.userId, caseNumber); if (!supportCase) return res.status(404).json({ success: false, message: "Support case not found." }); return res.status(200).json({ success: true, case: supportCase, messages: await getSupportCaseMessages(supportCase.id, 50) }); } catch (error) { req.log?.error?.({ err: error }, "Support case read failed"); return res.status(500).json({ success: false, message: "Unable to load this support case." }); } });
 
 router.post("/email/webhook", async (req, res) => {
@@ -319,9 +396,69 @@ router.post("/email/webhook", async (req, res) => {
       return res.status(200).json({ received: true, ignored: true, automatic: true });
     }
 
-    const looksLikeRefund = /\b(refund|refunds|money back|return (?:my|the) (?:payment|money)|charged in error)\b/i.test(`${email.subject ?? ""}\n${message}`);
-    if (looksLikeRefund) {
-      const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
+    const refundIntentText = String(email.subject ?? "") + "\n" + message;
+    const clearRefundRequest = /\b(?:i want to request|i'd like to request|i would like to request|i am requesting|i'm requesting|please refund|refund me|initiate|process|start|submit)\b.{0,40}\b(?:refund|money back)\b/i.test(refundIntentText)
+      || /\b(?:refund|return)\s+(?:my|this|the)\s+(?:payment|purchase|transaction|order)\b/i.test(refundIntentText)
+      || /\b(?:i want|i need|i'd like|i would like)\s+(?:a|the|my)\s+refund\b/i.test(refundIntentText);
+    const policyQuestion = /\b(refund|refunds|money back)\b/i.test(refundIntentText)
+      && /\b(policy|policies|rule|rules|eligible|eligibility|allowed|terms|conditions|how does|how do|what is|what are|explain|tell me about|information|window|deadline|time limit|requirement|requirements)\b/i.test(refundIntentText)
+      && !clearRefundRequest;
+
+    // Policy questions are informational, not refund applications. Never create a case here.
+    if (policyQuestion) {
+      const now = new Date().toISOString();
+      const policyAccount = await getAccountContextByEmail(senderEmail);
+      const policyResult = await generatePolicyAwareSupportReply({
+        message,
+        subject: String(email.subject ?? "Refund Policy Question"),
+        account: policyAccount,
+        // A non-persisted context object lets the existing policy engine answer from
+        // approved policy documents without inserting a support/refund case.
+        supportCase: {
+          id: "policy-only-no-persist",
+          caseNumber: "R00000000000",
+          userId: policyAccount?.userId ?? null,
+          requesterEmail: senderEmail,
+          subject: String(email.subject ?? "Refund Policy Question"),
+          category: "refund_payment",
+          status: "awaiting_support",
+          reminderSentAt: null,
+          lastUserMessageAt: now,
+          lastAiMessageAt: null,
+          closedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        history: [],
+      });
+      const policyReply = (policyResult.is_safe && policyResult.support_reply
+        ? policyResult.support_reply
+        : "I can explain ReDom's refund rules, but I don't want to guess at policy details. Please tell me which part you want clarified: eligibility, deadlines, or the review process. Asking about policy does not create a refund case. If you want to request a refund, say so explicitly and we will guide you through transaction and account verification.")
+        .replace(/^Case Number:\\s*R\\d{11}\\s*/i, "")
+        .replace(/R00000000000/g, "")
+        .trim();
+      await sendSupportEmail(
+        senderEmail,
+        "ReDom Refund Policy Information",
+        policyReply + "\n\nNo refund case has been created and no refund has been initiated. For your security, never email passwords, one-time verification codes, full card numbers, or CVV/CVC."
+      );
+      await markInboundEvent(id, inboundEmailId);
+      return res.status(200).json({ received: true, refundPolicyQuestion: true, caseCreated: false });
+    }
+
+    // A bare mention is not authorization to start the refund workflow.
+    if (/\b(refund|refunds|money back|return (?:my|the) (?:payment|money))\b/i.test(refundIntentText) && !clearRefundRequest) {
+      await sendSupportEmail(
+        senderEmail,
+        "Clarification Needed — ReDom Refund Support",
+        "I can help with either of these, but I don't want to open a refund case unless that is what you intend.\n\n1. Refund policy or rules: ask your question and I will explain the applicable policy.\n2. Request a refund: reply clearly, \"I want to request a refund.\" Only then will we begin the refund-request workflow and ask for the transaction details needed to verify it.\n\nNo refund case has been created, and no refund has been initiated. For your security, do not email passwords, one-time verification codes, full card numbers, or CVV/CVC."
+      );
+      await markInboundEvent(id, inboundEmailId);
+      return res.status(200).json({ received: true, refundIntentClarification: true, caseCreated: false });
+    }
+
+    if (clearRefundRequest) {
+      const referenced = extractCaseNumber(refundIntentText);
       const refundResult = await processRefundSupportEmail({
         senderEmail,
         message,
@@ -333,7 +470,7 @@ router.post("/email/webhook", async (req, res) => {
         if (refundCase) await linkInboundEvent(id, refundCase.id);
       }
       await markInboundEvent(id, inboundEmailId);
-      return res.status(200).json({ received: true, caseNumber: refundResult.caseNumber, refund: true });
+      return res.status(200).json({ received: true, caseNumber: refundResult.caseNumber, refund: true, explicitIntent: true });
     }
 
     const account = await getAccountContextByEmail(senderEmail);
