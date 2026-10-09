@@ -171,7 +171,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     dataCoverage: {
       emailLedger: firstEvent.rows[0]?.first_at ? "Available from " + iso(new Date(firstEvent.rows[0].first_at)) + "; only instrumented senders and ingested provider webhook events are represented, so this is not yet a complete platform-wide lifetime ledger." : "No email events recorded yet; email totals are unavailable until send paths and provider webhooks are instrumented.",
       supportCases: "Queried from support_cases; counts reflect persisted records.",
-      supportMessages: "Queried from support_messages; message counts are not equivalent to email delivery counts.",
+      supportMessages: "Queried from support_case_messages; message counts are not equivalent to email delivery counts.",
       applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
       providerDeliveryEvents: "Only events ingested into the ReDom operations email ledger are counted.",
       limits: DAILY_LIMIT || MONTHLY_LIMIT ? "Only configured REDOM_EMAIL_DAILY_LIMIT / REDOM_EMAIL_MONTHLY_LIMIT values are shown." : "Provider quotas are not yet connected; no quota value is assumed.",
@@ -353,9 +353,24 @@ async function generateReport(now: Date): Promise<void> {
     await client.query("BEGIN");
     const lock = await client.query("SELECT pg_try_advisory_xact_lock(hashtext('redom-daily-ops-report')) AS locked");
     if (!lock.rows[0]?.locked) { await client.query("ROLLBACK"); return; }
-    const existing = await client.query("SELECT id, status FROM redom_ops_report_runs WHERE report_key=$1 FOR UPDATE", [reportKey]);
+    const existing = await client.query("SELECT id, status, updated_at FROM redom_ops_report_runs WHERE report_key=$1 FOR UPDATE", [reportKey]);
     if (existing.rows[0]?.status === "sent") { await client.query("ROLLBACK"); return; }
     if (existing.rows[0]) {
+      const existingStatus = String(existing.rows[0].status);
+      const lastTouched = new Date(String(existing.rows[0].updated_at)).getTime();
+      // A recent running/generated run is already owned by another instance or is
+      // awaiting its send step. Only reclaim a stale run after a process crash.
+      if ((existingStatus === "running" || existingStatus === "generated") && Date.now() - lastTouched < 10 * 60 * 1000) {
+        await client.query("ROLLBACK");
+        return;
+      }
+      // Failed deliveries back off exponentially (1, 2, 4, 8, 16 minutes; capped
+      // at 30) rather than repeatedly calling Gemini/Resend every scheduler tick.
+      if (existingStatus === "failed") {
+        const attempts = Number((await client.query("SELECT attempt_count FROM redom_ops_report_runs WHERE id=$1", [String(existing.rows[0].id)])).rows[0]?.attempt_count ?? 1);
+        const backoffMs = Math.min(30, Math.pow(2, Math.max(0, attempts - 1))) * 60 * 1000;
+        if (Date.now() - lastTouched < backoffMs) { await client.query("ROLLBACK"); return; }
+      }
       runId = String(existing.rows[0].id);
       await client.query("UPDATE redom_ops_report_runs SET status='running', error_message=NULL, attempt_count=attempt_count+1, updated_at=now() WHERE id=$1", [runId]);
     } else {
