@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import { sendPaymentEmailForReference } from "./payment.service";
-import { getStripeStarsCountry } from "./stripe-country.service";
+import { getStripeStarsCountry, stripeMinimumMinor } from "./stripe-country.service";
 
 const API = "https://api.stripe.com/v1";
 const BACKEND_CALLBACK = "https://redom-backend.onrender.com/redom-backend/payments/stripe/callback";
