@@ -179,7 +179,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       COALESCE(stats.bounced,0)::int AS bounced,COALESCE(stats.rejected,0)::int AS rejected,
       CASE WHEN COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0)>0
         THEN round(100.0*COALESCE(stats.delivered,0)/(stats.delivered+stats.failed+stats.bounced+stats.rejected),2) ELSE NULL END AS delivery_rate_pct,
-      CASE WHEN COALESCE(stats.send_attempts,0)>0 THEN round(100.0*(COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0))/stats.send_attempts,2) ELSE NULL END AS outcome_coverage_pct
+      CASE WHEN COALESCE(stats.send_attempts,0)>0 THEN LEAST(100.0, round(100.0*(COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0))/stats.send_attempts,2)) ELSE NULL END AS outcome_coverage_pct
     FROM months LEFT JOIN stats USING(month_start) ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd,yearStart,now]),
     pool.query("SELECT min(occurred_at) AS first_at FROM redom_ops_email_events"),
     pool.query(`SELECT
@@ -329,10 +329,10 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       created24h: supportCreated, createdPrevious24h: previousSupport, changePct: pct(supportCreated, previousSupport),
       open: num(s.open), awaitingSupport: num(s.awaitingsupport), awaitingUser: num(s.awaitinguser), closed: num(s.closed),
       invalidated: num(lifecycle.invalidated), created365d: num(lifecycle.created365d), closed365d: num(lifecycle.closed365d),
-      activeCaseNumbers: Array.isArray(lifecycle.active_numbers) ? lifecycle.active_numbers.map(String).slice(0,100) : [],
-      createdCaseNumbers24h: Array.isArray(lifecycle.created_numbers) ? lifecycle.created_numbers.map(String).filter((n: string) => n && n !== "").slice(0,100) : [],
-      invalidCaseNumbers: Array.isArray(lifecycle.invalid_numbers) ? lifecycle.invalid_numbers.map(String).slice(0,100) : [],
-      resolvedCaseNumbers365d: Array.isArray(lifecycle.resolved_numbers) ? lifecycle.resolved_numbers.map(String).slice(0,100) : [],
+      activeCaseNumbers: Array.isArray(caseLists.rows[0]?.active_numbers) ? caseLists.rows[0].active_numbers.map(String).slice(0,100) : [],
+      createdCaseNumbers24h: Array.isArray(caseLists.rows[0]?.created_numbers) ? caseLists.rows[0].created_numbers.map(String).filter((n: string) => n && n !== "").slice(0,100) : [],
+      invalidCaseNumbers: Array.isArray(caseLists.rows[0]?.invalid_numbers) ? caseLists.rows[0].invalid_numbers.map(String).slice(0,100) : [],
+      resolvedCaseNumbers365d: Array.isArray(caseLists.rows[0]?.resolved_numbers) ? caseLists.rows[0].resolved_numbers.map(String).slice(0,100) : [],
       failedSupportInbound24h: num(failedSupportOps.rows[0]?.failed_inbound_24h),
       failedRefundOutcomes365d: num(failedSupportOps.rows[0]?.failed_refund_outcomes_365d),
       monthlyTrend: supportMonthly.rows.map((row: Record<string, unknown>) => ({ month: String(row.month), created: num(row.created), closed: num(row.closed) })),
@@ -388,6 +388,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       caseFailureStatus: "The support_cases status constraint contains awaiting_support, awaiting_user, and closed only; there is no failed-case status. Failed email deliveries and failed tracked incidents are reported separately.",
       applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
       providerDeliveryEvents: "Only events ingested into the ReDom operations email ledger are counted.",
+      emailOutcomeCoverage: "Outcome coverage is capped at 100%; provider events can exceed instrumented send attempts while legacy send paths remain uninstrumented, so email counts are not yet fully reconciled.",
       limits: DAILY_LIMIT || MONTHLY_LIMIT ? "Only configured REDOM_EMAIL_DAILY_LIMIT / REDOM_EMAIL_MONTHLY_LIMIT values are shown." : "Provider quotas are not yet connected; no quota value is assumed.",
     },
     forecast: {
@@ -424,29 +425,35 @@ function buildAnalysisPrompt(metrics: Metrics): string {
 
 async function analyzeWithGemini(metrics: Metrics): Promise<Record<string, any>> {
   const models = [...new Set([GEMINI_MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"])];
-  let lastUnavailableStatus: number | null = null;
+  const failures: string[] = [];
   for (const model of models) {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": env.gemini.apiKey },
-      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: buildAnalysisPrompt(metrics) }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
-      signal: AbortSignal.timeout(45000),
-    });
-    if (response.status === 404 && model !== models[models.length - 1]) {
-      lastUnavailableStatus = response.status;
+    let response: Response;
+    try {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": env.gemini.apiKey },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: buildAnalysisPrompt(metrics) }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (error) {
+      failures.push(`${model}: ${error instanceof Error ? error.message : "network/timeout failure"}`);
+      continue;
+    }
+    if (response.status === 404) {
+      failures.push(`${model}: HTTP 404 model unavailable`);
       continue;
     }
     if (!response.ok) throw new Error(`Gemini analysis failed with HTTP ${response.status} for configured/fallback model.`);
     const payload = await response.json() as any;
-    const text = payload?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim();
-    if (!text) throw new Error("Gemini returned no structured analysis.");
-    const parsed = JSON.parse(text);
+    const responseText = payload?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim();
+    if (!responseText) throw new Error("Gemini returned no structured analysis.");
+    const parsed = JSON.parse(responseText);
     if (!["healthy", "degraded", "critical", "unknown"].includes(parsed.status) || typeof parsed.executiveSummary !== "string" || !Array.isArray(parsed.findings) || !Array.isArray(parsed.nextActions)) {
       throw new Error("Gemini analysis failed schema validation.");
     }
     return parsed;
   }
-  throw new Error(`Gemini analysis unavailable: all configured/fallback models returned HTTP ${lastUnavailableStatus ?? 404}.`);
+  throw new Error(`Gemini analysis unavailable after fallback attempts: ${failures.join("; ")}`);
 }
 
 function pdfEscape(text: string): string {
@@ -695,7 +702,7 @@ function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string, stamp: 
 
 async function generateReport(now: Date): Promise<void> {
   const dayKey = Math.floor(now.getTime() / 86400000);
-  const reportKey = "daily-ops-" + dayKey + "-v2";
+  const reportKey = "daily-ops-" + dayKey + "-v3";
   const client = await pool.connect();
   let runId: string | null = null;
   try {
@@ -802,7 +809,7 @@ async function schedulerTick(): Promise<void> {
   try {
     const latest = await pool.query("SELECT report_key, period_end FROM redom_ops_report_runs WHERE status='sent' ORDER BY period_end DESC LIMIT 1");
     const latestKey = String(latest.rows[0]?.report_key ?? "");
-    const revisionUpgradeDue = Boolean(latest.rows[0]) && !latestKey.endsWith("-v2");
+    const revisionUpgradeDue = Boolean(latest.rows[0]) && !latestKey.endsWith("-v3");
     const due = !latest.rows[0] || revisionUpgradeDue || Date.now() - new Date(latest.rows[0].period_end).getTime() >= 86400000;
     if (due) await generateReport(new Date());
   } catch (error) {
