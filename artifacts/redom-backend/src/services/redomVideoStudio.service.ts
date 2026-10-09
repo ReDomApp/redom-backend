@@ -338,7 +338,7 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
       estimatedRuntimeSeconds: plan.estimatedRuntimeSeconds || project.targetDurationSeconds,
       episodeCount: plan.episodeCount || plan.episodes.length,
     },
-    research: { entries: plan.research || [], plannedBy: MODEL },
+    research: { ...(project.research || {}), entries: plan.research || [], plannedBy: MODEL },
     state: "ready",
     continuityVersion: project.continuityVersion + 1,
     updatedAt: new Date(),
