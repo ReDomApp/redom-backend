@@ -10,7 +10,7 @@ on:
       - "package.json"
       - ".github/workflows/redom-backend-check.yml"
   push:
-    branches: [main, feat/daily-ops-intelligence, fix/backend-ops-production-checks]
+    branches: [main, feat/daily-ops-intelligence]
     paths:
       - "artifacts/redom-backend/**"
       - "pnpm-lock.yaml"
