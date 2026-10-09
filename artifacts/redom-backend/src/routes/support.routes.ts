@@ -329,10 +329,38 @@ router.post("/email/webhook", async (req, res) => {
 
     // Policy questions are informational, not refund applications. Never create a case here.
     if (policyQuestion) {
+      const now = new Date().toISOString();
+      const policyAccount = await getAccountContextByEmail(senderEmail);
+      const policyResult = await generatePolicyAwareSupportReply({
+        message,
+        subject: String(email.subject ?? "Refund Policy Question"),
+        account: policyAccount,
+        // A non-persisted context object lets the existing policy engine answer from
+        // approved policy documents without inserting a support/refund case.
+        supportCase: {
+          id: "policy-only-no-persist",
+          caseNumber: "R00000000000",
+          userId: policyAccount?.userId ?? null,
+          requesterEmail: senderEmail,
+          subject: String(email.subject ?? "Refund Policy Question"),
+          category: "refund_payment",
+          status: "awaiting_support",
+          reminderSentAt: null,
+          lastUserMessageAt: now,
+          lastAiMessageAt: null,
+          closedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        history: [],
+      });
+      const policyReply = policyResult.is_safe && policyResult.support_reply
+        ? policyResult.support_reply
+        : "I can explain ReDom's refund rules, but I don't want to guess at policy details. Please tell me which part you want clarified: eligibility, deadlines, or the review process. Asking about policy does not create a refund case. If you want to request a refund, say so explicitly and we will guide you through transaction and account verification.";
       await sendSupportEmail(
         senderEmail,
         "ReDom Refund Policy Information",
-        "Thanks for contacting ReDom. Asking about the refund policy does not create a refund case, start a refund, or require you to share a transaction ID. Eligibility depends on the product, transaction status, and the applicable refund terms.\n\nIf you want the policy explained, reply with the specific rule you want clarified (for example, eligibility, deadlines, or the review process). If you actually want to request a refund for a transaction, reply clearly: \"I want to request a refund.\" We will then guide you through the required account and transaction verification.\n\nSecurity: never email passwords, one-time verification codes, full card numbers, or CVV/CVC."
+        policyReply + "\n\nNo refund case has been created and no refund has been initiated. For your security, never email passwords, one-time verification codes, full card numbers, or CVV/CVC."
       );
       await markInboundEvent(id, inboundEmailId);
       return res.status(200).json({ received: true, refundPolicyQuestion: true, caseCreated: false });
