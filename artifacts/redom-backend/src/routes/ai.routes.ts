@@ -16,7 +16,7 @@ import { analyzeReDomAiFile, editReDomAiImage, generateReDomAiImage, transcribeR
 import { analyzeReDomImageIntelligence } from "../services/redomAiImageIntelligence.service";
 import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDomVideoJob } from "../services/redomVideoEngine.service";
 import { env } from "../config/env";
-import { createReDomMovieProject, createReDomMovieTrailerPreview, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
+import { approveReDomMovieTrailerAndCreateProject, createReDomMovieProject, createReDomMovieTrailerPreview, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
 
 import { r2 } from "../lib/r2";
 
@@ -69,6 +69,7 @@ const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), refe
 const movieProjectSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), referenceImageDataUri: z.string().trim().min(32).max(20_000_000).optional(), format: z.enum(["movie","cartoon"]).default("movie"), duration: z.number().int().min(4).max(300).default(300), episodeCount: z.number().int().min(1).max(12).optional(), quality: z.enum(["fast","standard","high","pro"]).default("high"), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), audio: z.boolean().default(true), voice: z.boolean().default(true), singingEnabled: z.boolean().default(true), soundtrackStyle: z.string().trim().min(2).max(160).optional(), title: z.string().trim().max(240).optional() }).strict();
 const movieTrailerPreviewSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), format: z.enum(["movie","cartoon"]).default("movie"), duration: z.number().int().min(15).max(25).default(20), episodeCount: z.number().int().min(1).max(12).default(6), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), soundtrackStyle: z.string().trim().min(2).max(160).optional(), language: z.string().trim().min(2).max(64).optional() }).strict();
 const movieRevisionSchema = z.object({ instruction: z.string().trim().min(3).max(8_000) }).strict();
+const movieTrailerApprovalSchema = movieProjectSchema.extend({ trailerJobId: z.string().trim().min(8).max(100) });
 
 router.post("/localize", localizationRateLimit, async (req, res) => {
   const parsed = localizationSchema.safeParse(req.body);
@@ -100,6 +101,27 @@ router.post("/video/trailer-preview", rateLimit({ windowMs: 60_000, max: 3, stan
     return res.status(status >= 400 && status < 600 ? status : 502).json({
       success: false, code: (error as { code?: string })?.code,
       message: error instanceof Error ? error.message : "Trailer preview could not be created.",
+    });
+  }
+});
+
+router.post("/video/trailer-preview/approve", rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
+  const parsed = movieTrailerApprovalSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio trailer approval request.", issues: parsed.success ? undefined : parsed.error.flatten() });
+  try {
+    const { trailerJobId, ...projectInput } = parsed.data;
+    const result = await approveReDomMovieTrailerAndCreateProject(req.user.userId, trailerJobId, {
+      prompt: projectInput.prompt, referenceImageDataUri: projectInput.referenceImageDataUri, durationSeconds: projectInput.duration,
+      episodeCount: projectInput.episodeCount, quality: projectInput.quality, style: projectInput.style, format: projectInput.format,
+      aspectRatio: projectInput.aspectRatio, audio: projectInput.audio, voice: projectInput.voice,
+      singingEnabled: projectInput.singingEnabled, soundtrackStyle: projectInput.soundtrackStyle, title: projectInput.title,
+    });
+    return res.status(202).json({ success: true, ...result });
+  } catch (error) {
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false, code: (error as { code?: string })?.code,
+      message: error instanceof Error ? error.message : "Approved trailer could not be converted into a project.",
     });
   }
 });
