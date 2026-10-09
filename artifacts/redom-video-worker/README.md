@@ -124,6 +124,19 @@ For lip sync, the worker uploads a short-lived source video and voice-only WAV t
 - The video-generation worker still requires a provisioned CUDA GPU and mounted Wan2.2 checkpoint. A successful code build alone does not establish production readiness.
 
 
+## Movie Studio finishing for Cartoon projects
+
+When a Cartoon—R8.0 Movie Studio project reaches final composition, the Studio worker applies a dedicated animation post-production chain after joining the approved shots:
+- Lanczos scaling to the selected delivery dimensions.
+- Temporal/spatial denoising and debanding to reduce shimmer and banding.
+- Mild saturation/contrast and edge refinement for a more coherent animated finish.
+- Motion-compensated frame interpolation (default 48 fps) to smooth compatible motion between generated frames.
+- ReDom Cartoon watermark and localized caption burn-in, followed by H.264/AAC encoding and final validation.
+
+Configure `REDOM_STUDIO_CARTOON_INTERPOLATION_FPS` on the Studio worker as `48` (default), `60`, `30`, `24`, or `0` to disable interpolation. Optical-flow interpolation can produce artifacts on rapid cuts, particles, impact frames or heavy occlusion; use `0` or `24` for those projects and compare the actual rendered result. This is a real deterministic post-production pass, not a claim that FFmpeg can fix bad anatomy or turn an unsuitable checkpoint into a feature-animation model.
+
+Studio also owns the existing story plan, shot pacing, language/audio planning, dialogue/music handoff and final composition. Cartoon remains responsible for the authored animated shot generation. The current compose pass does not regenerate character motion with a second diffusion model.
+
 ## Cartoon—R8.0 runtime readiness and checkpoint contract
 
 The worker now rejects invalid model/runtime/format combinations at startup, validates that its configured checkpoint directory exists and is non-empty before loading, and reports `checkpointReady`, `gpuReady`, `pipelineLoaded` and `readiness` from `/health`. `/ping` remains the platform liveness endpoint; it is not proof the GPU model is ready.
