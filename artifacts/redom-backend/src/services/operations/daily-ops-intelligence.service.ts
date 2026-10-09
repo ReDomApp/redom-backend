@@ -114,10 +114,11 @@ export async function recordOpsIncident(input: {
 
 type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
-  email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null; monthlyTrend: Array<{ month: string; attempts: number; accepted: number; delivered: number; failed: number; bounced: number; rejected: number; deliveryRatePct: number | null; outcomeCoveragePct: number | null }> };
-  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidatedOrRecycled: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSenders30d: Array<{ email: string; messages: number; cases: number }>; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
-  fraud: { reviewedSignals: Array<{ email: string; risk: string; score: number; indicators: string[]; caseNumbers: string[]; count: number }>; signalCount30d: number; warning: string };
-  incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number; resolved365d: number; created365d: number };
+  email: { rolling365Start: string; rolling365End: string; current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null; monthlyTrend: Array<{ month: string; attempts: number; sendAttempts: number; accepted: number; delivered: number; failed: number; bounced: number; rejected: number; deliveryRatePct: number | null; outcomeCoveragePct: number | null }> };
+  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidatedOrRecycled: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; monthlyTrend: Array<{ month: string; created: number; closed: number }>; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSenders30d: Array<{ email: string; messages: number; cases: number }>; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
+  fraud: { reviewedSignals: Array<{ email: string; risk: string; score: number; indicators: string[]; caseNumbers: string[]; count: number; recommendedAction: string }>; signalCount30d: number; previousSignalCount30d: number; changePct30d: number | null; trend30d: "increased" | "decreased" | "unchanged" | "baseline-unavailable"; warning: string };
+  geography: { topCountries: Array<{ country: string; signups: number }>; topCities: Array<{ city: string; country: string; signups: number }>; source: string };
+  incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number; resolved365d: number; created365d: number; criticalResolved365d: number; criticalCreated365d: number };
   dataCoverage: Record<string, string>;
   forecast: { expectedEmailAttempts24h: number; expectedSupportCases24h: number; notes: string[] };
   system: { database: string; collectedAt: string };
@@ -128,11 +129,13 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const prevStart = new Date(now.getTime() - 172800000);
   const yearStart = new Date(now.getTime() - 365 * 86400000);
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const monthSeriesStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+  // The exact rolling year can touch 13 calendar-month buckets; edge buckets are partial.
+  const monthSeriesStart = new Date(Date.UTC(yearStart.getUTCFullYear(), yearStart.getUTCMonth(), 1));
   const monthSeriesEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
+  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, geography, supportMonthly, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
     pool.query(`SELECT
+      count(DISTINCT logical_email_id) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS uniqueEmails,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='delivered')::int AS delivered,
@@ -148,7 +151,9 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE occurred_at >= $3 AND event_type='attempted')::int AS monthlyAttempts
       FROM redom_ops_email_events`, [start, prevStart, monthStart]),
     pool.query(`SELECT
+      count(DISTINCT logical_email_id) FILTER (WHERE event_type='attempted')::int AS uniqueEmails,
       count(*) FILTER (WHERE event_type='attempted')::int AS attempts,
+      count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE event_type='accepted')::int AS accepted,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE event_type='delivered')::int AS delivered,
       count(*) FILTER (WHERE event_type='failed')::int AS failed,
       count(*) FILTER (WHERE event_type='bounced')::int AS bounced,
@@ -159,6 +164,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     ), stats AS (
       SELECT date_trunc('month',occurred_at) AS month_start,
         count(DISTINCT logical_email_id) FILTER (WHERE event_type='attempted')::int AS attempts,
+        count(*) FILTER (WHERE event_type='attempted')::int AS send_attempts,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='accepted')::int AS accepted,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='delivered')::int AS delivered,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='failed')::int AS failed,
@@ -167,13 +173,13 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       FROM redom_ops_email_events WHERE occurred_at >= $1 AND occurred_at < $2 GROUP BY 1
     )
     SELECT to_char(months.month_start,'YYYY-MM') AS month,
-      COALESCE(stats.attempts,0)::int AS attempts,COALESCE(stats.accepted,0)::int AS accepted,
+      COALESCE(stats.attempts,0)::int AS attempts,COALESCE(stats.send_attempts,0)::int AS send_attempts,COALESCE(stats.accepted,0)::int AS accepted,
       COALESCE(stats.delivered,0)::int AS delivered,COALESCE(stats.failed,0)::int AS failed,
       COALESCE(stats.bounced,0)::int AS bounced,COALESCE(stats.rejected,0)::int AS rejected,
       CASE WHEN COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0)>0
         THEN round(100.0*COALESCE(stats.delivered,0)/(stats.delivered+stats.failed+stats.bounced+stats.rejected),2) ELSE NULL END AS delivery_rate_pct,
-      CASE WHEN COALESCE(stats.attempts,0)>0 THEN round(100.0*(COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0))/stats.attempts,2) ELSE NULL END AS outcome_coverage_pct
-    FROM months LEFT JOIN stats USING(month_start) ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd]),
+      CASE WHEN COALESCE(stats.send_attempts,0)>0 THEN round(100.0*(COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0))/stats.send_attempts,2) ELSE NULL END AS outcome_coverage_pct
+    FROM months LEFT JOIN stats USING(month_start) ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd,yearStart,now]),
     pool.query("SELECT min(occurred_at) AS first_at FROM redom_ops_email_events"),
     pool.query(`SELECT
       count(*) FILTER (WHERE created_at >= $1)::int AS created,
@@ -225,11 +231,15 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       bool_or(body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment))') AS credential_or_bypass,
       bool_or(body ~* '(fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|not my transaction|different account|change.*receipt)') AS payment_integrity
     FROM candidate GROUP BY email HAVING count(*) >= 1 ORDER BY count(*) DESC LIMIT 25`, [thirtyDaysAgo]),
-    pool.query(`SELECT count(DISTINCT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,''))))::int AS senders,
-      count(*)::int AS messages FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
-      WHERE m.sender_type='user' AND m.created_at >= $1 AND
+    pool.query(`SELECT
+      count(DISTINCT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,'')))) FILTER (WHERE m.created_at >= $1)::int AS current_senders,
+      count(*) FILTER (WHERE m.created_at >= $1)::int AS current_messages,
+      count(DISTINCT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,'')))) FILTER (WHERE m.created_at >= $2 AND m.created_at < $1)::int AS previous_senders,
+      count(*) FILTER (WHERE m.created_at >= $2 AND m.created_at < $1)::int AS previous_messages
+      FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
+      WHERE m.sender_type='user' AND m.created_at >= $2 AND
       (m.body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment)|refund.{0,20}(without|bypass|verification))'
-        OR sc.category='refund_payment' AND m.body ~* '(not my transaction|different account|fake|bypass|without verification|change.*receipt)')`, [thirtyDaysAgo]),
+        OR sc.category='refund_payment' AND m.body ~* '(not my transaction|different account|fake|bypass|without verification|change.*receipt)')`, [thirtyDaysAgo,new Date(now.getTime()-60*86400000)]),
     pool.query(`SELECT c.case_number,
       count(*) FILTER (WHERE e.event_type='attempted')::int AS attempts,
       count(*) FILTER (WHERE e.event_type='accepted')::int AS accepted,
@@ -239,16 +249,41 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       JOIN support_cases c ON c.id=e.case_id
       WHERE c.created_at >= $1 AND e.occurred_at >= $1
       GROUP BY c.case_number ORDER BY count(*) FILTER (WHERE e.event_type='attempted') DESC, c.case_number LIMIT 20`, [start]),
+    pool.query(`WITH months AS (
+      SELECT generate_series(date_trunc('month',$1::timestamptz), date_trunc('month',$2::timestamptz) - interval '1 month', interval '1 month') AS month_start
+    ), created AS (
+      SELECT date_trunc('month',created_at) AS month_start,count(*)::int AS total
+      FROM support_cases WHERE created_at >= $1 AND created_at < $2 GROUP BY 1
+    ), closed AS (
+      SELECT date_trunc('month',closed_at) AS month_start,count(*)::int AS total
+      FROM support_cases WHERE closed_at >= $1 AND closed_at < $2 GROUP BY 1
+    )
+    SELECT to_char(months.month_start,'YYYY-MM') AS month,COALESCE(created.total,0)::int AS created,COALESCE(closed.total,0)::int AS closed
+    FROM months LEFT JOIN created USING(month_start) LEFT JOIN closed USING(month_start)
+    ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd]),
+    pool.query(`WITH locations AS (
+      SELECT COALESCE(NULLIF(memory->'networkSecurity'->>'country',''),NULLIF(ip_country_code,''),NULLIF(phone_lookup_country_code,''),'Unknown') AS country,
+        COALESCE(NULLIF(memory->'networkSecurity'->>'city',''),'Unknown') AS city
+      FROM registration_flow_reservations
+      WHERE created_at >= $1 AND status IN ('completed','active','blocked')
+    )
+    SELECT 'country' AS kind,country AS label,'' AS country,count(*)::int AS count FROM locations GROUP BY country
+    UNION ALL
+    SELECT 'city' AS kind,city AS label,country,count(*)::int AS count FROM locations WHERE city <> 'Unknown' GROUP BY city,country
+    ORDER BY count DESC LIMIT 30`, [yearStart]),
     pool.query(`SELECT id, incident_key, title, subsystem, severity, status, description, root_cause, resolution,
       verification_evidence, first_seen_at, last_seen_at, resolved_at, verified_at
       FROM redom_ops_incidents WHERE status NOT IN ('closed','resolved') ORDER BY
       CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'warning' THEN 3 ELSE 4 END, last_seen_at DESC LIMIT 30`),
     pool.query(`SELECT count(*)::int AS resolved FROM redom_ops_incidents WHERE status IN ('resolved','closed') AND resolved_at >= $1`, [start]),
     pool.query(`SELECT count(*) FILTER (WHERE status IN ('resolved','closed') AND resolved_at >= $1)::int AS resolved,
-      count(*) FILTER (WHERE created_at >= $1)::int AS created FROM redom_ops_incidents`, [yearStart]),
+      count(*) FILTER (WHERE created_at >= $1)::int AS created,
+      count(*) FILTER (WHERE severity='critical' AND created_at >= $1)::int AS critical_created,
+      count(*) FILTER (WHERE severity='critical' AND status IN ('resolved','closed') AND resolved_at >= $1)::int AS critical_resolved
+      FROM redom_ops_incidents`, [yearStart]),
     pool.query("SELECT 1 AS ok"),
   ]);
-  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {};
+  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {}, lifecycle = caseLists.rows[0] ?? {};
   const attempts = num(e.attempts), previousAttempts = num(e.previousattempts), delivered = num(e.delivered), failed = num(e.failed);
   const monthlySent = num(e.monthlyattempts);
   const supportCreated = num(s.created), previousSupport = num(s.previouscreated);
@@ -262,13 +297,14 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   return {
     generatedAt: iso(now), periodStart: iso(start), periodEnd: iso(now), timezone: REPORT_TIMEZONE,
     email: {
-      current24h: { attempts, accepted: num(e.accepted), delivered, failed, bounced: num(e.bounced), rejected: num(e.rejected), deferred: num(e.deferred), duplicateSuppressed: num(e.duplicatesuppressed), duplicateDelivery: num(e.duplicatedelivery) },
+      rolling365Start: iso(yearStart), rolling365End: iso(now),
+      current24h: { uniqueEmails: num(e.uniqueemails), attempts, accepted: num(e.accepted), delivered, failed, bounced: num(e.bounced), rejected: num(e.rejected), deferred: num(e.deferred), duplicateSuppressed: num(e.duplicatesuppressed), duplicateDelivery: num(e.duplicatedelivery) },
       previous24h: { attempts: previousAttempts, delivered: num(e.previousdelivered), failed: num(e.previousfailed) },
       changePct: { attempts: pct(attempts, previousAttempts), delivered: pct(delivered, num(e.previousdelivered)), failed: pct(failed, num(e.previousfailed)) },
-      last365d: { attempts: num(y.attempts), delivered: num(y.delivered), failed: num(y.failed), bounced: num(y.bounced), duplicateSuppressed: num(y.duplicatesuppressed) },
+      last365d: { uniqueEmails: num(y.uniqueemails), sendAttempts: num(y.attempts), accepted: num(y.accepted), delivered: num(y.delivered), failed: num(y.failed), bounced: num(y.bounced), duplicateSuppressed: num(y.duplicatesuppressed) },
       dailyLimit: DAILY_LIMIT, monthlyLimit: MONTHLY_LIMIT, dailyLimitUsedPct: dailyUsedPct, monthlyLimitUsedPct: monthlyUsedPct, monthlySent,
       ledgerCoverageStart: firstEvent.rows[0]?.first_at ? iso(new Date(firstEvent.rows[0].first_at)) : null,
-      monthlyTrend: monthlyTrend.rows.map((row: Record<string, unknown>) => ({ month: String(row.month), attempts: num(row.attempts), accepted: num(row.accepted), delivered: num(row.delivered), failed: num(row.failed), bounced: num(row.bounced), rejected: num(row.rejected), deliveryRatePct: row.delivery_rate_pct === null ? null : num(row.delivery_rate_pct), outcomeCoveragePct: row.outcome_coverage_pct === null ? null : num(row.outcome_coverage_pct) })),
+      monthlyTrend: monthlyTrend.rows.map((row: Record<string, unknown>) => ({ month: String(row.month), attempts: num(row.attempts), sendAttempts: num(row.send_attempts), accepted: num(row.accepted), delivered: num(row.delivered), failed: num(row.failed), bounced: num(row.bounced), rejected: num(row.rejected), deliveryRatePct: row.delivery_rate_pct === null ? null : num(row.delivery_rate_pct), outcomeCoveragePct: row.outcome_coverage_pct === null ? null : num(row.outcome_coverage_pct) })),
     },
     support: {
       created24h: supportCreated, createdPrevious24h: previousSupport, changePct: pct(supportCreated, previousSupport),
@@ -277,6 +313,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       activeCaseNumbers: Array.isArray(lifecycle.active_numbers) ? lifecycle.active_numbers.map(String).slice(0,100) : [],
       createdCaseNumbers24h: Array.isArray(lifecycle.created_numbers) ? lifecycle.created_numbers.map(String).filter((n: string) => n && n !== "").slice(0,100) : [],
       invalidCaseNumbers: Array.isArray(lifecycle.invalid_numbers) ? lifecycle.invalid_numbers.map(String).slice(0,100) : [],
+      monthlyTrend: supportMonthly.rows.map((row: Record<string, unknown>) => ({ month: String(row.month), created: num(row.created), closed: num(row.closed) })),
       messages24h: num(m.currentmessages), messagesPrevious24h: num(m.previousmessages), messagesChangePct: pct(num(m.currentmessages), num(m.previousmessages)),
       averageMessagesPerCase: cases ? Math.round((num(m.currentmessages) / cases) * 100) / 100 : null,
       emailsConsumedByNewCases24h: caseEmails.rows.reduce((sum: number, row: Record<string, unknown>) => sum + num(row.attempts), 0),
@@ -290,20 +327,40 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       reviewedSignals: fraudSignals.rows.map((row: Record<string, unknown>) => {
         const indicators = [row.credential_or_bypass ? "Requests involving API keys, credentials, or security/payment bypass" : null, row.payment_integrity ? "Potential payment/refund integrity manipulation language" : null].filter(Boolean) as string[];
         const score = Math.min(95, (row.credential_or_bypass ? 55 : 0) + (row.payment_integrity ? 40 : 0) + Math.min(20, Math.max(0, num(row.count) - 1) * 5));
-        return { email: String(row.email), risk: score >= 75 ? "high-review-priority" : score >= 50 ? "manual-review" : "low-confidence-signal", score, indicators, caseNumbers: Array.isArray(row.cases) ? row.cases.map(String).slice(0,10) : [], count: num(row.count) };
+        const recommendedAction = row.credential_or_bypass
+          ? "Preserve relevant case evidence; route to Security for context review; provide safe public API documentation only; never disclose secrets. Do not block solely from keyword matches."
+          : "Review refund/payment evidence and account ownership through established controls; request normal verification if warranted. No automatic denial or account action.";
+        return { email: String(row.email), risk: score >= 75 ? "high-review-priority" : score >= 50 ? "manual-review" : "low-confidence-signal", score, indicators, caseNumbers: Array.isArray(row.cases) ? row.cases.map(String).slice(0,10) : [], count: num(row.count), recommendedAction };
       }),
-      signalCount30d: num(fraudCount.rows[0]?.senders),
+      signalCount30d: num(fraudCount.rows[0]?.current_senders),
+      previousSignalCount30d: num(fraudCount.rows[0]?.previous_senders),
+      changePct30d: pct(num(fraudCount.rows[0]?.current_senders), num(fraudCount.rows[0]?.previous_senders)),
+      trend30d: num(fraudCount.rows[0]?.previous_senders) === 0
+        ? (num(fraudCount.rows[0]?.current_senders) === 0 ? "unchanged" : "baseline-unavailable")
+        : num(fraudCount.rows[0]?.current_senders) > num(fraudCount.rows[0]?.previous_senders) ? "increased"
+          : num(fraudCount.rows[0]?.current_senders) < num(fraudCount.rows[0]?.previous_senders) ? "decreased" : "unchanged",
       warning: "These are heuristic review signals, not findings of fraud. Human security review is required. Do not automatically suspend, block, deny refunds, or alter an account based on this report.",
+    },
+    geography: {
+      topCountries: geography.rows.filter((row: Record<string, unknown>) => row.kind === "country").slice(0,10).map((row: Record<string, unknown>) => ({ country: String(row.label), signups: num(row.count) })),
+      topCities: geography.rows.filter((row: Record<string, unknown>) => row.kind === "city").slice(0,10).map((row: Record<string, unknown>) => ({ city: String(row.label), country: String(row.country), signups: num(row.count) })),
+      source: "Aggregated registration_flow_reservations network/location metadata from the last 365 days. Counts are registrations/reservations, not proof of a user's current physical location; IP-derived locations can be inaccurate.",
     },
     incidents: {
       open: openIncidents, resolved24h: num(resolvedIncidents.rows[0]?.resolved), criticalOpen: openIncidents.filter(i => i.severity === "critical").length,
       resolved365d: num(annualIncidents.rows[0]?.resolved), created365d: num(annualIncidents.rows[0]?.created),
+      criticalResolved365d: num(annualIncidents.rows[0]?.critical_resolved), criticalCreated365d: num(annualIncidents.rows[0]?.critical_created),
     },
     dataCoverage: {
       emailLedger: firstEvent.rows[0]?.first_at ? "Available from " + iso(new Date(firstEvent.rows[0].first_at)) + "; only instrumented senders and ingested provider webhook events are represented, so this is not yet a complete platform-wide lifetime ledger." : "No email events recorded yet; email totals are unavailable until send paths and provider webhooks are instrumented.",
       supportCases: "Queried from support_cases; counts reflect persisted records.",
       supportMessages: "Queried from support_case_messages; message counts are not equivalent to email delivery counts.",
+      supportCasePriority: "The support_cases schema has no independent severity/priority field. Critical counts refer only to explicitly tracked operations incidents; support cases are not automatically classified as critical.",
+      caseExpirationAndRecycling: "The support_cases schema records invalidation fields but has no distinct expiration timestamp or recycling history. Expired/recycled counts cannot be asserted from current data.",
+      caseFailureStatus: "The support_cases status constraint contains awaiting_support, awaiting_user, and closed only; there is no failed-case status. Failed email deliveries and failed tracked incidents are reported separately.",
       applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
+      supportCasePriority: "The support_cases schema does not expose a severity/priority field. Critical counts refer only to explicitly tracked operations incidents; support cases are not automatically classified as critical.",
+      caseExpirationAndRecycling: "The support_cases schema records invalidation fields but has no distinct expiration timestamp or recycling history. Expired/recycled counts cannot be asserted from current data.",
       providerDeliveryEvents: "Only events ingested into the ReDom operations email ledger are counted.",
       limits: DAILY_LIMIT || MONTHLY_LIMIT ? "Only configured REDOM_EMAIL_DAILY_LIMIT / REDOM_EMAIL_MONTHLY_LIMIT values are shown." : "Provider quotas are not yet connected; no quota value is assumed.",
     },
@@ -313,6 +370,13 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     },
     system: { database: database.rows[0]?.ok ? "reachable" : "unknown", collectedAt: iso(new Date()) },
   };
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  const obj = value as Record<string, unknown>;
+  return "{" + Object.keys(obj).sort().map((key) => JSON.stringify(key) + ":" + canonicalJson(obj[key])).join(",") + "}";
 }
 
 function redactSensitiveText(value: string): string {
@@ -381,6 +445,22 @@ function makePdf(pages: string[][]): Buffer {
       }
       if (y < 48) break;
     }
+    if (pageIndex === pages.length - 1 && lines.some((line) => String(line).includes("OFFICIAL REDOM OPERATIONS REPORT"))) {
+      const signed = lines.some((line) => String(line).includes("DIGITALLY SIGNED"));
+      const reportId = String(lines.find((line) => String(line).startsWith("Report ID:")) ?? "Report ID: unavailable");
+      const signatureAt = lines.findIndex((line) => String(line).startsWith("Unique report signature:"));
+      const signatureText = signatureAt >= 0 ? String(lines[signatureAt + 1] ?? "unavailable") : "unavailable";
+      const statusLine = String(lines.find((line) => String(line).startsWith("Platform status marker:")) ?? "");
+      const platformStatus = statusLine.includes("CRITICAL") ? "CRITICAL" : statusLine.includes("DEGRADED") ? "DEGRADED" : statusLine.includes("HEALTHY") ? "HEALTHY" : "UNKNOWN";
+      const stampColor = !signed || platformStatus === "CRITICAL" ? "0.70 0.12 0.12" : platformStatus === "DEGRADED" ? "0.68 0.39 0.00" : platformStatus === "HEALTHY" ? "0.03 0.40 0.25" : "0.32 0.35 0.40";
+      parts.push("q " + stampColor + " RG 2 w 350 440 212 112 re S 358 448 196 96 re S Q");
+      parts.push("BT /F2 9 Tf " + stampColor + " rg 364 532 Td (REDOM OFFICIAL SYSTEM STAMP) Tj ET");
+      parts.push("BT /F2 10 Tf " + stampColor + " rg 364 513 Td (" + (signed ? "DIGITALLY SIGNED / VERIFY ONLINE" : "UNSIGNED / DO NOT TRUST AS AUTHENTIC") + ") Tj ET");
+      parts.push("BT /F2 9 Tf " + stampColor + " rg 364 500 Td (PLATFORM STATUS: " + platformStatus + ") Tj ET");
+      parts.push("BT /F1 8 Tf 0.12 0.13 0.15 rg 364 494 Td (" + pdfEscape(reportId).slice(0, 100) + ") Tj ET");
+      parts.push("BT /F1 8 Tf 0.12 0.13 0.15 rg 364 478 Td (Signature fingerprint: " + pdfEscape(signatureText).slice(0, 28) + ") Tj ET");
+      parts.push("BT /F1 7 Tf 0.12 0.13 0.15 rg 364 461 Td (Verify at /ops/reports/<report-id>/verify) Tj ET");
+    }
     streams.push(parts.join("\n"));
   }
   const contentIds: number[] = [];
@@ -409,6 +489,14 @@ function makePdf(pages: string[][]): Buffer {
 }
 
 function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: string; generatedAt: string; payloadHash: string; signature: string | null; keyId: string | null }): string[][] {
+  const currentMonth = m.periodEnd.slice(0, 7);
+  const rollingWindowFirstMonth = m.email.rolling365Start.slice(0, 7);
+  const completeMonths = m.email.monthlyTrend.filter((row) => row.month < currentMonth && row.month > rollingWindowFirstMonth);
+  const latestComplete = completeMonths[completeMonths.length - 1];
+  const previousComplete = completeMonths[completeMonths.length - 2];
+  const improvementSummary = latestComplete && previousComplete && latestComplete.deliveryRatePct !== null && previousComplete.deliveryRatePct !== null && latestComplete.outcomeCoveragePct !== null && previousComplete.outcomeCoveragePct !== null && latestComplete.outcomeCoveragePct >= 80 && previousComplete.outcomeCoveragePct >= 80
+    ? "Delivery rate " + (latestComplete.deliveryRatePct > previousComplete.deliveryRatePct ? "IMPROVED by " : latestComplete.deliveryRatePct < previousComplete.deliveryRatePct ? "DECLINED by " : "UNCHANGED at ") + Math.abs(latestComplete.deliveryRatePct - previousComplete.deliveryRatePct) + " percentage points (" + previousComplete.month + " " + previousComplete.deliveryRatePct + "% -> " + latestComplete.month + " " + latestComplete.deliveryRatePct + "%)."
+    : "No defensible month-over-month delivery improvement conclusion: monthly outcome coverage is missing or incomplete.";
   const lines = [
     "ReDom | DAILY OPERATIONS INTELLIGENCE",
     "Reporting period: " + m.periodStart + " to " + m.periodEnd + " (" + m.timezone + ")",
@@ -418,19 +506,27 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     ...wrap(String(a.executiveSummary ?? "AI analysis unavailable; factual metrics follow."), 88),
     "",
     "EMAIL OPERATIONS — LAST 24 HOURS",
-    "Attempts: " + emailMetric(m.email.current24h.attempts, m) + " | Accepted: " + emailMetric(m.email.current24h.accepted, m) + " | Delivered events: " + emailMetric(m.email.current24h.delivered, m),
+    "Unique emails: " + emailMetric(m.email.current24h.uniqueEmails, m) + " | Send attempts/retries: " + emailMetric(m.email.current24h.attempts, m) + " | Accepted: " + emailMetric(m.email.current24h.accepted, m) + " | Delivered events: " + emailMetric(m.email.current24h.delivered, m),
+    "24-hour delivery rate (delivered / known terminal outcomes): " + formatPct(rate(m.email.current24h.delivered, m.email.current24h.delivered + m.email.current24h.failed + m.email.current24h.bounced + m.email.current24h.rejected)),
     "Failed: " + emailMetric(m.email.current24h.failed, m) + " | Bounced: " + emailMetric(m.email.current24h.bounced, m) + " | Rejected: " + emailMetric(m.email.current24h.rejected, m),
     "Deferred: " + emailMetric(m.email.current24h.deferred, m) + " | Duplicate sends suppressed: " + emailMetric(m.email.current24h.duplicateSuppressed, m) + " | Duplicate deliveries: " + emailMetric(m.email.current24h.duplicateDelivery, m),
     "Previous 24h attempts: " + emailMetric(m.email.previous24h.attempts, m) + " | Change: " + formatPct(m.email.changePct.attempts),
     "",
+    "PAST-MONTH IMPROVEMENT SCORECARD",
+    improvementSummary,
+    latestComplete && previousComplete ? "Unique emails: " + previousComplete.attempts + " -> " + latestComplete.attempts + "; delivered: " + previousComplete.delivered + " -> " + latestComplete.delivered + "; failed: " + previousComplete.failed + " -> " + latestComplete.failed + "." : "Historical baseline unavailable; do not claim improvement or regression.",
+    "Annual incident register: " + m.incidents.created365d + " recorded, " + m.incidents.resolved365d + " resolved/closed in rolling 365 days; " + m.incidents.criticalCreated365d + " critical incidents created, " + m.incidents.criticalResolved365d + " critical resolved/closed, " + m.incidents.criticalOpen + " critical currently open.",
+    "",
     "EMAIL OPERATIONS — ROLLING 365 DAYS",
-    "Attempts: " + emailMetric(m.email.last365d.attempts, m) + " | Delivered events: " + emailMetric(m.email.last365d.delivered, m) + " | Failed: " + emailMetric(m.email.last365d.failed, m),
+    "Rolling window: " + m.email.rolling365Start + " through " + m.email.rolling365End,
+    "Unique emails attempted: " + emailMetric(m.email.last365d.uniqueEmails, m) + " | Send attempts/retries: " + emailMetric(m.email.last365d.sendAttempts, m) + " | Provider-accepted messages: " + emailMetric(m.email.last365d.accepted, m) + " | Delivered: " + emailMetric(m.email.last365d.delivered, m) + " | Failed: " + emailMetric(m.email.last365d.failed, m),
     "Bounced: " + emailMetric(m.email.last365d.bounced, m) + " | Duplicate suppression: " + emailMetric(m.email.last365d.duplicateSuppressed, m),
     "Email ledger coverage: " + (m.email.ledgerCoverageStart ?? "No events recorded"),
     "",
-    "MONTH-BY-MONTH EMAIL DELIVERY — LAST 12 CALENDAR MONTHS",
-    "Delivery rate = delivered / (delivered + failed + bounced + rejected); unknown outcomes are excluded.",
-    ...m.email.monthlyTrend.map((row) => row.month + ": attempts " + row.attempts + ", delivered " + row.delivered + ", failed " + row.failed + ", bounced " + row.bounced + ", rejected " + row.rejected + ", delivery rate " + (row.deliveryRatePct === null ? "N/A" : row.deliveryRatePct + "%") + ", outcome coverage " + (row.outcomeCoveragePct === null ? "N/A" : row.outcomeCoveragePct + "%")),
+    "MONTH-BY-MONTH EMAIL DELIVERY — EXACT ROLLING 365-DAY WINDOW",
+    "Window: " + m.email.rolling365Start + " through " + m.email.rolling365End + ". First/current month buckets may be partial; pre-window events are excluded.",
+    "Delivery rate = delivered / (delivered + failed + bounced + rejected); unknown outcomes are excluded. Outcome coverage is shown separately.",
+    ...m.email.monthlyTrend.map((row) => row.month + ": unique emails " + row.attempts + ", send attempts/retries " + row.sendAttempts + ", delivered " + row.delivered + ", failed " + row.failed + ", bounced " + row.bounced + ", rejected " + row.rejected + ", delivery rate " + (row.deliveryRatePct === null ? "N/A" : row.deliveryRatePct + "%") + ", outcome coverage " + (row.outcomeCoveragePct === null ? "N/A" : row.outcomeCoveragePct + "%")),
     "",
     "LIMITS AND CAPACITY",
     "Configured daily limit: " + (m.email.dailyLimit ?? "Unknown") + " | Usage: " + (m.email.dailyLimitUsedPct === null ? "Unknown" : m.email.dailyLimitUsedPct + "%"),
@@ -439,18 +535,25 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "SUPPORT OPERATIONS",
     "Cases created: " + moneyless(m.support.created24h) + " | Previous 24h: " + moneyless(m.support.createdPrevious24h) + " | Change: " + formatPct(m.support.changePct),
     "Created in rolling 365 days: " + moneyless(m.support.created365d) + " | Closed in rolling 365 days: " + moneyless(m.support.closed365d),
-    "Case numbers created in this report window: " + (m.support.createdCaseNumbers24h.join(", ") || "None recorded"),
-    "Active case numbers (first 100): " + (m.support.activeCaseNumbers.join(", ") || "None"),
-    "Invalidated/marked-invalid case numbers (first 100; not necessarily recycled): " + (m.support.invalidCaseNumbers.join(", ") || "None"),
-    "Invalidated or marked-invalid cases total: " + moneyless(m.support.invalidatedOrRecycled),
+    ...wrap("Case numbers created in this report window: " + (m.support.createdCaseNumbers24h.join(", ") || "None recorded"), 88),
+    ...wrap("Active case numbers (first 100): " + (m.support.activeCaseNumbers.join(", ") || "None"), 88),
+    ...wrap("Invalidated/marked-invalid case numbers (first 100; not necessarily recycled): " + (m.support.invalidCaseNumbers.join(", ") || "None"), 88),
+    "Invalidated/marked-invalid cases: " + moneyless(m.support.invalidatedOrRecycled) + ". Expiration/recycling have no distinct source fields, and the case status schema has no failed state; neither is inferred from invalidation or email failures.",
     "Most repeated contacts in the past 30 days (repeat contact is not proof of abuse):",
     ...m.support.repeatContactSenders30d.slice(0,10).map((r) => r.email + ": " + r.messages + " user messages across " + r.cases + " cases"),
+    "Support case trend — last 12 calendar months (created / closed):",
+    ...m.support.monthlyTrend.map((r) => r.month + ": " + r.created + " created / " + r.closed + " closed"),
     "Top support categories, past 30 days:",
     ...m.support.topTopics30d.slice(0,8).map((r) => r.topic + ": " + r.count),
     "Most common submitted subjects/questions, past 30 days:",
     ...m.support.topQuestions30d.slice(0,10).map((r) => r.count + "× " + r.question),
-    "Heuristic suspicious-support signals (manual review only): " + m.fraud.signalCount30d + " distinct senders. " + m.fraud.warning,
-    ...m.fraud.reviewedSignals.slice(0,12).map((r) => r.email + " | score " + r.score + "/100 (" + r.risk + ") | " + r.indicators.join("; ") + " | cases " + r.caseNumbers.join(", ")),
+    "Top registration countries, last 365 days (aggregate; location may be IP-derived):",
+    ...m.geography.topCountries.map((g) => g.country + ": " + g.signups + " registrations/reservations"),
+    "Top registration cities, last 365 days (aggregate; not current physical location):",
+    ...m.geography.topCities.map((g) => g.city + ", " + g.country + ": " + g.signups),
+    "Heuristic suspicious-support signals: current 30d " + m.fraud.signalCount30d + " distinct senders; previous 30d " + m.fraud.previousSignalCount30d + "; trend " + m.fraud.trend30d + " (" + formatPct(m.fraud.changePct30d) + "). " + m.fraud.warning,
+    ...m.fraud.reviewedSignals.slice(0,12).flatMap((r) => wrap(r.email + " | score " + r.score + "/100 (" + r.risk + ") | " + r.indicators.join("; ") + " | cases " + r.caseNumbers.join(", ") + " | recommended next step: " + r.recommendedAction, 88)),
+    "Critical tracked incident IDs: " + (m.incidents.open.filter((i: any) => i.severity === "critical").map((i: any) => String(i.incident_key ?? i.id)).join(", ") || "None currently open") + ". The support-case schema has no independent severity field; critical counts refer to the incident register, not guessed case priority.",
     "Open: " + moneyless(m.support.open) + " | Awaiting support: " + moneyless(m.support.awaitingSupport) + " | Awaiting user: " + moneyless(m.support.awaitingUser) + " | Closed: " + moneyless(m.support.closed),
     "Support messages: " + moneyless(m.support.messages24h) + " (not equal to outbound emails).",
     "Email events linked to cases created in this window: " + moneyless(m.support.emailsConsumedByNewCases24h) + " (attempts: " + moneyless(m.support.caseLinkedEmailAttempts24h) + ").",
@@ -472,6 +575,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "",
     "INCIDENTS AND RISKS",
     "Open tracked incidents: " + m.incidents.open.length + " | Critical open: " + m.incidents.criticalOpen,
+    "Critical incident identifiers: " + (m.incidents.open.filter((i: any) => i.severity === "critical").map((i: any) => String(i.incident_key ?? i.id)).join(", ") || "None currently open"),
     ...m.incidents.open.slice(0, 8).flatMap((i: any) => wrap("[" + String(i.severity).toUpperCase() + "] " + String(i.title) + " — " + String(i.status) + ". " + String(i.description), 88)),
     "",
     "GEMINI FINDINGS",
@@ -491,7 +595,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "Generated at " + m.generatedAt + ". Metrics are evidence-based; unavailable telemetry is not treated as healthy.",
   ];
   const chunks: string[][] = [];
-  for (let i = 0; i < lines.length; i += 48) chunks.push(lines.slice(i, i + 48));
+  for (let i = 0; i < lines.length; i += 32) chunks.push(lines.slice(i, i + 32));
   chunks.push([
     "OFFICIAL REDOM OPERATIONS REPORT",
     "AUTOMATED ADMINISTRATIVE RECORD — CONFIDENTIAL",
@@ -504,6 +608,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     ...wrap(stamp.signature ?? "NO SIGNATURE — configure REDOM_OPS_REPORT_SIGNING_KEY before treating reports as authenticated.", 78),
     "Verification endpoint: /ops/reports/" + stamp.reportKey + "/verify",
     "This is a cryptographic system stamp, not a handwritten officer signature.",
+    "Platform status marker: " + String(a.status ?? "unknown").toUpperCase() + ". The signature authenticates report integrity, not telemetry completeness.",
     "Fraud signals are unverified review leads and do not authorize automatic enforcement.",
   ]);
   return chunks.length ? chunks : [["ReDom Daily Operations Intelligence"]];
@@ -522,9 +627,19 @@ function arrayStrings(value: unknown): string[] {
     x?.recommendation, x?.rationale, x?.verification,
   ].filter(Boolean).join(" — ")).filter(Boolean);
 }
+function rate(delivered: number, terminalOutcomes: number): number | null { return terminalOutcomes > 0 ? Math.round((delivered / terminalOutcomes) * 10000) / 100 : null; }
+
 function formatPct(value: number | null): string { return value === null ? "N/A (previous period was zero or unavailable)" : (value > 0 ? "+" : "") + value + "%"; }
 
 function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string, stamp: { reportKey: string; generatedAt: string; payloadHash: string; signature: string | null; keyId: string | null }): string {
+  const currentMonth = m.periodEnd.slice(0, 7);
+  const rollingWindowFirstMonth = m.email.rolling365Start.slice(0, 7);
+  const completeMonths = m.email.monthlyTrend.filter((row) => row.month < currentMonth && row.month > rollingWindowFirstMonth);
+  const latestComplete = completeMonths[completeMonths.length - 1];
+  const previousComplete = completeMonths[completeMonths.length - 2];
+  const improvementSummary = latestComplete && previousComplete && latestComplete.deliveryRatePct !== null && previousComplete.deliveryRatePct !== null && latestComplete.outcomeCoveragePct !== null && previousComplete.outcomeCoveragePct !== null && latestComplete.outcomeCoveragePct >= 80 && previousComplete.outcomeCoveragePct >= 80
+    ? "Delivery rate " + (latestComplete.deliveryRatePct > previousComplete.deliveryRatePct ? "IMPROVED by " : latestComplete.deliveryRatePct < previousComplete.deliveryRatePct ? "DECLINED by " : "UNCHANGED at ") + Math.abs(latestComplete.deliveryRatePct - previousComplete.deliveryRatePct) + " percentage points (" + previousComplete.month + " " + previousComplete.deliveryRatePct + "% -> " + latestComplete.month + " " + latestComplete.deliveryRatePct + "%)."
+    : "No defensible month-over-month delivery improvement conclusion: monthly outcome coverage is missing or incomplete.";
   const status = ["healthy", "degraded", "critical"].includes(a.status) ? a.status : "unknown";
   const card = (label: string, value: string, note = "") => `<td style="padding:10px"><div style="background:#fff;border:1px solid #DADDE1;border-radius:10px;padding:15px"><div style="color:#65676B;font-size:12px">${esc(label)}</div><div style="font-size:24px;font-weight:700;color:#1C1E21;margin-top:7px">${esc(value)}</div><div style="color:#65676B;font-size:11px;margin-top:5px">${esc(note)}</div></div></td>`;
   const findings = arrayStrings(a.findings).slice(0, 8).map(x => `<li style="margin:8px 0">${esc(x)}</li>`).join("");
@@ -535,7 +650,7 @@ function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string, stamp: 
     const previousWidth = Math.max(0, Math.min(100, Math.round(previous / scale * 100)));
     return `<tr><td colspan="2" style="padding:8px 0"><div style="font-size:13px;font-weight:700;margin-bottom:7px">${esc(label)} · change ${esc(formatPct(change))}</div><div style="font-size:11px;color:#65676B">Previous 24h: ${moneyless(previous)}</div><div style="height:8px;background:#F0F2F5;border-radius:6px;overflow:hidden"><div style="height:8px;width:${previousWidth}%;background:#9CBDF8"></div></div><div style="font-size:11px;color:#65676B;margin-top:7px">Current 24h: ${moneyless(current)}</div><div style="height:8px;background:#F0F2F5;border-radius:6px;overflow:hidden"><div style="height:8px;width:${currentWidth}%;background:#1877F2"></div></div></td></tr>`;
   };
-  return `<!doctype html><html><body style="margin:0;background:#F0F2F5;color:#1C1E21;font-family:Arial,Helvetica,sans-serif"><div style="max-width:760px;margin:0 auto;padding:24px 12px"><div style="background:#1877F2;color:white;padding:26px;border-radius:14px 14px 0 0"><div style="font-size:12px;letter-spacing:2px">REDOM OPERATIONS INTELLIGENCE</div><h1 style="margin:12px 0 5px;font-size:26px">Daily Executive Report</h1><div style="font-size:13px">${esc(m.periodStart)} — ${esc(m.periodEnd)} (${esc(m.timezone)})</div></div><div style="background:white;padding:22px;border:1px solid #DADDE1"><div style="display:inline-block;background:${status==="critical"?"#FCE8E6":status==="degraded"?"#FFF4CE":status==="healthy"?"#E1F5E8":"#F0F2F5"};padding:8px 12px;border-radius:18px;font-weight:bold">Platform status: ${esc(status.toUpperCase())}</div><h2 style="font-size:18px;margin-top:20px">Executive summary</h2><p style="line-height:1.65">${esc(a.executiveSummary ?? "AI analysis unavailable; see verified metrics below.")}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>${card("Email attempts (24h)",emailMetric(m.email.current24h.attempts,m),"Change "+formatPct(m.email.changePct.attempts))}${card("Delivered events (24h)",emailMetric(m.email.current24h.delivered,m),"Provider events recorded")}</tr><tr>${card("Support cases (24h)",moneyless(m.support.created24h),"Change "+formatPct(m.support.changePct))}${card("Open critical incidents",String(m.incidents.criticalOpen),"Tracked incidents only")}</tr></table><h2 style="font-size:18px">Email usage</h2><p>Rolling 365-day attempts: <b>${emailMetric(m.email.last365d.attempts,m)}</b>. Failures: <b>${emailMetric(m.email.current24h.failed,m)}</b>. Duplicate sends suppressed: <b>${emailMetric(m.email.current24h.duplicateSuppressed,m)}</b>. Duplicate delivery events: <b>${emailMetric(m.email.current24h.duplicateDelivery,m)}</b>.</p><p>Daily quota: <b>${m.email.dailyLimit ?? "Unknown"}</b>; usage: <b>${m.email.dailyLimitUsedPct===null?"Unknown":m.email.dailyLimitUsedPct+"%"}</b>. Monthly quota: <b>${m.email.monthlyLimit ?? "Unknown"}</b>; month-to-date attempts: <b>${moneyless(m.email.monthlySent)}</b>.</p><h2 style="font-size:18px">24-hour trends</h2><table role="presentation" width="100%" cellspacing="0" cellpadding="0">${trend("Email attempts",m.email.current24h.attempts,m.email.previous24h.attempts,m.email.changePct.attempts)}${trend("Support cases",m.support.created24h,m.support.createdPrevious24h,m.support.changePct)}</table><h2 style="font-size:18px">Support workload</h2><p>Open: ${moneyless(m.support.open)} · Awaiting ReDom: ${moneyless(m.support.awaitingSupport)} · Awaiting customer: ${moneyless(m.support.awaitingUser)} · Support messages (24h): ${moneyless(m.support.messages24h)}. Email events attributed to newly created cases: ${moneyless(m.support.emailsConsumedByNewCases24h)} (attempts: ${moneyless(m.support.caseLinkedEmailAttempts24h)}). Message count is not equivalent to email delivery count.</p><h3 style="font-size:15px">Email use by new support case</h3><ul>${m.support.caseEmailBreakdown.slice(0,12).map(c=>`<li>Case ${esc(c.caseNumber)}: ${c.attempts} attempts, ${c.accepted} accepted, ${c.delivered} delivered, ${c.failed} failed</li>`).join("") || "<li>No case-linked email events recorded.</li>"}</ul><h2 style="font-size:18px">AI findings</h2><ul>${findings || "<li>No validated findings were returned.</li>"}</ul><h2 style="font-size:18px">Pending risks</h2><ul>${risks || "<li>No pending risks reported by analysis; see data coverage limitations.</li>"}</ul><h2 style="font-size:18px">Next 24 hours</h2><p>Expected email attempts: <b>${moneyless(m.forecast.expectedEmailAttempts24h)}</b>; expected support cases: <b>${moneyless(m.forecast.expectedSupportCases24h)}</b>. These are low-confidence weighted estimates until longer history is available.</p><h2 style="font-size:18px">Data quality</h2><ul>${Object.entries(m.dataCoverage).map(([k,v])=>`<li><b>${esc(k)}:</b> ${esc(v)}</li>`).join("")}</ul><h2 style="font-size:18px">Monthly delivery trend (last 12 calendar months)</h2><table width="100%" cellspacing="0" cellpadding="7" style="border-collapse:collapse;font-size:12px"><tr style="background:#F0F2F5"><th align="left">Month</th><th>Attempts</th><th>Delivered</th><th>Delivery rate</th><th>Outcome coverage</th></tr>${m.email.monthlyTrend.map(r=>`<tr><td>${esc(r.month)}</td><td align="right">${r.attempts}</td><td align="right">${r.delivered}</td><td align="right">${r.deliveryRatePct===null?"N/A":r.deliveryRatePct+"%"}</td><td align="right">${r.outcomeCoveragePct===null?"N/A":r.outcomeCoveragePct+"%"}</td></tr>`).join("")}</table><h2 style="font-size:18px">Support lifecycle and repeated contacts</h2><p>Created (365d): ${m.support.created365d}; closed (365d): ${m.support.closed365d}; active now: ${m.support.open}; invalidated/marked-invalid: ${m.support.invalidatedOrRecycled}. Case-number invalidation does not prove recycling.</p><ul>${m.support.repeatContactSenders30d.slice(0,10).map(r=>`<li>${esc(r.email)} — ${r.messages} user messages across ${r.cases} cases</li>`).join("")||"<li>No repeated-contact patterns at the configured threshold.</li>"}</ul><h2 style="font-size:18px">Potential risk signals — manual review only</h2><p>${esc(m.fraud.warning)} Distinct senders flagged: ${m.fraud.signalCount30d}.</p><ul>${m.fraud.reviewedSignals.slice(0,12).map(r=>`<li>${esc(r.email)} — score ${r.score}/100; ${esc(r.risk)}; ${esc(r.indicators.join("; "))}; cases ${esc(r.caseNumbers.join(", "))}</li>`).join("")||"<li>No heuristic signals detected in the sampled support-message window.</li>"}</ul><h2 style="font-size:18px">Official report stamp</h2><div style="border:2px solid ${stamp.signature?"#1877F2":"#B42318"};padding:14px;border-radius:8px"><b>${stamp.signature?"DIGITALLY SIGNED — HMAC-SHA256":"UNSIGNED — SIGNING KEY NOT CONFIGURED"}</b><p>Report ID: ${esc(stamp.reportKey)}<br>Payload SHA-256: ${esc(stamp.payloadHash)}<br>Key ID: ${esc(stamp.keyId??"NOT CONFIGURED")}<br>Signature: ${esc(stamp.signature??"No signature")}</p><p>Verify: /ops/reports/${esc(stamp.reportKey)}/verify</p></div><p style="font-size:11px;color:#65676B">PDF SHA-256: ${esc(pdfHash)}. This administrative report is confidential and intended only for the configured ReDom administrator.</p></div><div style="text-align:center;color:#65676B;font-size:11px;padding:18px">ReDom · Daily Operations Intelligence · Automated report</div></div></body></html>`;
+  return `<!doctype html><html><body style="margin:0;background:#F0F2F5;color:#1C1E21;font-family:Arial,Helvetica,sans-serif"><div style="max-width:760px;margin:0 auto;padding:24px 12px"><div style="background:#1877F2;color:white;padding:26px;border-radius:14px 14px 0 0"><div style="font-size:12px;letter-spacing:2px">REDOM OPERATIONS INTELLIGENCE</div><h1 style="margin:12px 0 5px;font-size:26px">Daily Executive Report</h1><div style="font-size:13px">${esc(m.periodStart)} — ${esc(m.periodEnd)} (${esc(m.timezone)})</div></div><div style="background:white;padding:22px;border:1px solid #DADDE1"><div style="display:inline-block;background:${status==="critical"?"#FCE8E6":status==="degraded"?"#FFF4CE":status==="healthy"?"#E1F5E8":"#F0F2F5"};padding:8px 12px;border-radius:18px;font-weight:bold">Platform status: ${esc(status.toUpperCase())}</div><h2 style="font-size:18px;margin-top:20px">Executive summary</h2><p style="line-height:1.65">${esc(a.executiveSummary ?? "AI analysis unavailable; see verified metrics below.")}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>${card("Email attempts (24h)",emailMetric(m.email.current24h.attempts,m),"Change "+formatPct(m.email.changePct.attempts))}${card("Delivered events (24h)",emailMetric(m.email.current24h.delivered,m),"Provider events recorded")}</tr><tr>${card("Support cases (24h)",moneyless(m.support.created24h),"Change "+formatPct(m.support.changePct))}${card("Open critical incidents",String(m.incidents.criticalOpen),"Tracked incidents only")}</tr></table><h2 style="font-size:18px">Email usage</h2><p>Rolling 365-day window: <b>${esc(m.email.rolling365Start)} — ${esc(m.email.rolling365End)}</b>. Unique emails attempted: <b>${emailMetric(m.email.last365d.uniqueEmails,m)}</b>; provider-accepted messages: <b>${emailMetric(m.email.last365d.accepted,m)}</b>; send attempts/retries: <b>${emailMetric(m.email.last365d.sendAttempts,m)}</b>. Failures: <b>${emailMetric(m.email.current24h.failed,m)}</b>. Duplicate sends suppressed: <b>${emailMetric(m.email.current24h.duplicateSuppressed,m)}</b>. Duplicate delivery events: <b>${emailMetric(m.email.current24h.duplicateDelivery,m)}</b>.</p><p>Daily quota: <b>${m.email.dailyLimit ?? "Unknown"}</b>; usage: <b>${m.email.dailyLimitUsedPct===null?"Unknown":m.email.dailyLimitUsedPct+"%"}</b>. Monthly quota: <b>${m.email.monthlyLimit ?? "Unknown"}</b>; month-to-date attempts: <b>${moneyless(m.email.monthlySent)}</b>.</p><h2 style="font-size:18px">24-hour trends</h2><table role="presentation" width="100%" cellspacing="0" cellpadding="0">${trend("Email attempts",m.email.current24h.attempts,m.email.previous24h.attempts,m.email.changePct.attempts)}${trend("Support cases",m.support.created24h,m.support.createdPrevious24h,m.support.changePct)}</table><h2 style="font-size:18px">Support workload</h2><p>Open: ${moneyless(m.support.open)} · Awaiting ReDom: ${moneyless(m.support.awaitingSupport)} · Awaiting customer: ${moneyless(m.support.awaitingUser)} · Support messages (24h): ${moneyless(m.support.messages24h)}. Email events attributed to newly created cases: ${moneyless(m.support.emailsConsumedByNewCases24h)} (attempts: ${moneyless(m.support.caseLinkedEmailAttempts24h)}). Message count is not equivalent to email delivery count.</p><h3 style="font-size:15px">Email use by new support case</h3><ul>${m.support.caseEmailBreakdown.slice(0,12).map(c=>`<li>Case ${esc(c.caseNumber)}: ${c.attempts} attempts, ${c.accepted} accepted, ${c.delivered} delivered, ${c.failed} failed</li>`).join("") || "<li>No case-linked email events recorded.</li>"}</ul><h2 style="font-size:18px">AI findings</h2><ul>${findings || "<li>No validated findings were returned.</li>"}</ul><h2 style="font-size:18px">Pending risks</h2><ul>${risks || "<li>No pending risks reported by analysis; see data coverage limitations.</li>"}</ul><h2 style="font-size:18px">Next 24 hours</h2><p>Expected email attempts: <b>${moneyless(m.forecast.expectedEmailAttempts24h)}</b>; expected support cases: <b>${moneyless(m.forecast.expectedSupportCases24h)}</b>. These are low-confidence weighted estimates until longer history is available.</p><h2 style="font-size:18px">Data quality</h2><ul>${Object.entries(m.dataCoverage).map(([k,v])=>`<li><b>${esc(k)}:</b> ${esc(v)}</li>`).join("")}</ul><h2 style="font-size:18px">Past-month improvement scorecard</h2><p>${esc(improvementSummary)} ${latestComplete&&previousComplete?esc("Unique emails "+previousComplete.attempts+" → "+latestComplete.attempts+"; delivered "+previousComplete.delivered+" → "+latestComplete.delivered+"; failed "+previousComplete.failed+" → "+latestComplete.failed+"."):"Historical baseline unavailable; improvement is not asserted."}</p><p>Tracked incidents created in rolling 365 days: ${m.incidents.created365d}; resolved/closed: ${m.incidents.resolved365d}; critical created: ${m.incidents.criticalCreated365d}; critical resolved: ${m.incidents.criticalResolved365d}; critical open: ${m.incidents.criticalOpen}.</p><h2 style="font-size:18px">Major registration locations (aggregate)</h2><p>${esc(m.geography.source)}</p><div class="grid"><div><b>Countries</b><ul>${m.geography.topCountries.map(g=>`<li>${esc(g.country)}: ${g.signups}</li>`).join("")||"<li>No location data recorded.</li>"}</ul></div><div><b>Cities</b><ul>${m.geography.topCities.map(g=>`<li>${esc(g.city+", "+g.country)}: ${g.signups}</li>`).join("")||"<li>No city data recorded.</li>"}</ul></div></div><h2 style="font-size:18px">Monthly delivery trend (exact rolling 365-day window; partial edge months)</h2><table width="100%" cellspacing="0" cellpadding="7" style="border-collapse:collapse;font-size:12px"><tr style="background:#F0F2F5"><th align="left">Month</th><th>Unique emails</th><th>Send attempts</th><th>Delivered</th><th>Delivery rate</th><th>Outcome coverage</th></tr>${m.email.monthlyTrend.map(r=>`<tr><td>${esc(r.month)}</td><td align="right">${r.attempts}</td><td align="right">${r.sendAttempts}</td><td align="right">${r.delivered}</td><td align="right">${r.deliveryRatePct===null?"N/A":r.deliveryRatePct+"%"}</td><td align="right">${r.outcomeCoveragePct===null?"N/A":r.outcomeCoveragePct+"%"}</td></tr>`).join("")}</table><h2 style="font-size:18px">Support case trend (last 12 calendar months)</h2><table width="100%" cellspacing="0" cellpadding="7" style="border-collapse:collapse;font-size:12px"><tr style="background:#F0F2F5"><th align="left">Month</th><th>Created</th><th>Closed</th></tr>${m.support.monthlyTrend.map(r=>`<tr><td>${esc(r.month)}</td><td align="right">${r.created}</td><td align="right">${r.closed}</td></tr>`).join("")}</table><h2 style="font-size:18px">Support lifecycle and repeated contacts</h2><p>Case numbers created in the last 24 hours: ${esc(m.support.createdCaseNumbers24h.join(", ")||"None")}</p><p>Active case numbers (first 100): ${esc(m.support.activeCaseNumbers.join(", ")||"None")}</p><p>Invalidated/marked-invalid case numbers (first 100): ${esc(m.support.invalidCaseNumbers.join(", ")||"None")}</p><p>Top categories: ${esc(m.support.topTopics30d.map(x=>x.topic+" ("+x.count+")").join("; ")||"None recorded")}</p><p>Common questions: ${esc(m.support.topQuestions30d.slice(0,8).map(x=>x.question+" ("+x.count+")").join("; ")||"None recorded")}</p><p>Created (365d): ${m.support.created365d}; closed (365d): ${m.support.closed365d}; active now: ${m.support.open}; invalidated/marked-invalid: ${m.support.invalidatedOrRecycled}. Expiration/recycling are not independently tracked in the current case schema, so invalidation must not be represented as either.</p><ul>${m.support.repeatContactSenders30d.slice(0,10).map(r=>`<li>${esc(r.email)} — ${r.messages} user messages across ${r.cases} cases</li>`).join("")||"<li>No repeated-contact patterns at the configured threshold.</li>"}</ul><h2 style="font-size:18px">Potential risk signals — manual review only</h2><p>${esc(m.fraud.warning)} Distinct senders flagged: ${m.fraud.signalCount30d}; previous 30 days: ${m.fraud.previousSignalCount30d}; trend: ${esc(m.fraud.trend30d)} (${esc(formatPct(m.fraud.changePct30d))}).</p><ul>${m.fraud.reviewedSignals.slice(0,12).map(r=>`<li>${esc(r.email)} — score ${r.score}/100; ${esc(r.risk)}; ${esc(r.indicators.join("; "))}; cases ${esc(r.caseNumbers.join(", "))}; recommended action: ${esc(r.recommendedAction)}</li>`).join("")||"<li>No heuristic signals detected in the sampled support-message window.</li>"}</ul><h2 style="font-size:18px">Official report stamp</h2><div style="border:2px solid ${stamp.signature?"#1877F2":"#B42318"};padding:14px;border-radius:8px"><b>${stamp.signature?"DIGITALLY SIGNED — HMAC-SHA256":"UNSIGNED — SIGNING KEY NOT CONFIGURED"}</b><p>Report ID: ${esc(stamp.reportKey)}<br>Payload SHA-256: ${esc(stamp.payloadHash)}<br>Key ID: ${esc(stamp.keyId??"NOT CONFIGURED")}<br>Signature: ${esc(stamp.signature??"No signature")}</p><p>Verify: /ops/reports/${esc(stamp.reportKey)}/verify</p></div><p style="font-size:11px;color:#65676B">PDF SHA-256: ${esc(pdfHash)}. This administrative report is confidential and intended only for the configured ReDom administrator.</p></div><div style="text-align:center;color:#65676B;font-size:11px;padding:18px">ReDom · Daily Operations Intelligence · Automated report</div></div></body></html>`;
 }
 
 async function generateReport(now: Date): Promise<void> {
@@ -587,7 +702,21 @@ async function generateReport(now: Date): Promise<void> {
       logger.error({ error: error instanceof Error ? error.message : String(error) }, "Gemini daily operations analysis unavailable");
       analysis = { status: "unknown", executiveSummary: "Gemini analysis unavailable. The attached report contains collected metrics and data-coverage limitations; no AI conclusions are asserted.", keyChanges: [], findings: [], resolvedIssues: [], pendingRisks: ["AI analysis unavailable; inspect backend/provider health and retry the report."], nextActions: [{ priority: "high", action: "Restore or verify Gemini reporting integration", rationale: "Automated analysis did not complete", verification: "A subsequent report contains schema-valid Gemini analysis." }], forecastCommentary: "Forecasts are simple weighted estimates.", limitations: ["Gemini analysis failed; see service logs."] };
     }
-    const payloadHash = createHash("sha256").update(JSON.stringify({ metrics, analysis })).digest("hex");
+    // Deterministic evidence-based guardrails override optimistic model wording.
+    // These rules change only the executive report, never production business records.
+    const terminalOutcomes24h = metrics.email.current24h.delivered + metrics.email.current24h.failed + metrics.email.current24h.bounced + metrics.email.current24h.rejected;
+    const deliveryRate24h = terminalOutcomes24h > 0 ? metrics.email.current24h.delivered / terminalOutcomes24h : null;
+    const recentEmailFailures = metrics.email.current24h.failed + metrics.email.current24h.bounced + metrics.email.current24h.rejected;
+    const hardCritical = metrics.incidents.criticalOpen > 0 || recentEmailFailures >= 10;
+    const objectivelyDegraded = metrics.incidents.open.some((incident: any) => incident.severity === "high") || recentEmailFailures >= 3 || (terminalOutcomes24h >= 5 && deliveryRate24h !== null && deliveryRate24h < 0.90);
+    if (hardCritical) {
+      analysis.status = "critical";
+      analysis.pendingRisks = [...(Array.isArray(analysis.pendingRisks) ? analysis.pendingRisks : []), "Deterministic operations guardrail: an open critical incident or at least 10 recent email failures/bounces/rejections requires urgent review."];
+    } else if (objectivelyDegraded && analysis.status !== "critical") {
+      analysis.status = "degraded";
+      analysis.pendingRisks = [...(Array.isArray(analysis.pendingRisks) ? analysis.pendingRisks : []), "Deterministic operations guardrail: tracked high-severity incidents, an email-failure burst, or delivery below 90% across at least five terminal outcomes requires review."];
+    }
+    const payloadHash = createHash("sha256").update(canonicalJson({ metrics, analysis })).digest("hex");
     const signedAt = iso(now);
     const signature = REPORT_SIGNING_KEY ? createHmac("sha256", REPORT_SIGNING_KEY).update(reportKey + "|" + signedAt + "|" + payloadHash).digest("hex") : null;
     const keyId = REPORT_SIGNING_KEY ? createHash("sha256").update(REPORT_SIGNING_KEY).digest("hex").slice(0, 12) : null;
