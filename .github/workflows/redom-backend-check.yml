@@ -1,0 +1,35 @@
+name: ReDom Backend Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "artifacts/redom-backend/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/redom-backend-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/redom-backend/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/redom-backend run typecheck
+      - run: pnpm --filter @workspace/redom-backend run build
