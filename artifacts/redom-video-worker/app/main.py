@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import boto3
@@ -185,28 +186,67 @@ def mix_audio_tracks(video_path: Path, output_path: Path, tracks: list[AudioTrac
         subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def apply_lip_sync(video_path: Path, voice_audio_path: Path, output_path: Path, job: VideoJob) -> None:
-    endpoint = os.getenv("REDOM_LIPSYNC_URL", "").rstrip("/")
-    token = os.getenv("REDOM_LIPSYNC_TOKEN", "")
-    if not endpoint or not token:
-        raise RuntimeError("Lip-sync is required for dialogue shots but REDOM_LIPSYNC_URL and REDOM_LIPSYNC_TOKEN are not configured.")
-    speaker_segments = [
-        {"characterName": track.characterName, "voiceId": track.voiceId, "startSeconds": track.startSeconds,
-         "durationSeconds": track.durationSeconds, "alignment": track.alignment}
-        for track in job.audioTracks
-    ]
-    with httpx.Client(timeout=httpx.Timeout(600, connect=30)) as client:
-        with video_path.open("rb") as video_file, voice_audio_path.open("rb") as audio_file:
+    api_key = os.getenv("SYNC_API_KEY", "")
+    model = os.getenv("REDOM_LIPSYNC_MODEL", "lipsync-2-pro")
+    if not api_key:
+        raise RuntimeError("Lip-sync is required for dialogue shots but SYNC_API_KEY is not configured.")
+    bucket = os.environ["R2_BUCKET_NAME"]
+    temp_prefix = f"redom-ai/movie-audio/lipsync/{job.jobId}"
+    video_key = temp_prefix + "/input.mp4"
+    audio_key = temp_prefix + "/dialogue.wav"
+    s3.upload_file(str(video_path), bucket, video_key, ExtraArgs={"ContentType": "video/mp4", "CacheControl": "private, max-age=900"})
+    s3.upload_file(str(voice_audio_path), bucket, audio_key, ExtraArgs={"ContentType": "audio/wav", "CacheControl": "private, max-age=900"})
+    try:
+        video_url = s3.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": video_key}, ExpiresIn=3600)
+        audio_url = s3.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": audio_key}, ExpiresIn=3600)
+        headers = {"x-api-key": api_key, "content-type": "application/json"}
+        with httpx.Client(timeout=httpx.Timeout(30, connect=15)) as client:
             response = client.post(
-                endpoint + "/v1/lipsync",
-                headers={"Authorization": "Bearer " + token},
-                files={"video": ("shot.mp4", video_file, "video/mp4"), "audio": ("dialogue.wav", audio_file, "audio/wav")},
-                data={"speaker_segments": json.dumps(speaker_segments), "format": job.format, "language_code": job.languageCode or ""},
+                "https://api.sync.so/v2/generate",
+                headers=headers,
+                json={
+                    "model": model,
+                    "input": [{"type": "video", "url": video_url}, {"type": "audio", "url": audio_url}],
+                    "options": {"sync_mode": "cut_off"},
+                    "outputFileName": "redom-" + job.jobId[:80],
+                },
             )
-    if response.status_code >= 400:
-        raise RuntimeError(f"Configured ReDom lip-sync service rejected the shot ({response.status_code}): {response.text[:300]}")
-    if not response.content or len(response.content) < 4096:
-        raise RuntimeError("ReDom lip-sync service returned an invalid video.")
-    output_path.write_bytes(response.content)
+            response.raise_for_status()
+            created = response.json()
+            generation_id = created.get("id")
+            if not isinstance(generation_id, str) or not generation_id:
+                raise RuntimeError("Lip-sync provider returned no generation ID.")
+            generation = created
+            for _ in range(90):
+                status = str(generation.get("status", "")).upper()
+                if status == "COMPLETED":
+                    break
+                if status in {"FAILED", "REJECTED"}:
+                    raise RuntimeError("Lip-sync generation " + status.lower() + ": " + str(generation.get("error", "no provider details"))[:500])
+                time.sleep(5)
+                poll = client.get("https://api.sync.so/v2/generate/" + generation_id, headers={"x-api-key": api_key})
+                poll.raise_for_status()
+                generation = poll.json()
+            else:
+                raise RuntimeError("Lip-sync generation timed out after 7.5 minutes.")
+            download_url = str(generation.get("outputUrl") or "").strip()
+            if not download_url:
+                download_response = client.get("https://api.sync.so/v2/generations/" + generation_id + "/download", headers={"x-api-key": api_key})
+                download_response.raise_for_status()
+                download_url = download_response.text.strip().strip('"')
+            if not download_url.startswith("https://"):
+                raise RuntimeError("Lip-sync provider returned an invalid output URL.")
+            result = client.get(download_url, timeout=httpx.Timeout(300, connect=30))
+            result.raise_for_status()
+            if len(result.content) < 4096:
+                raise RuntimeError("Lip-sync provider returned an invalid video.")
+            output_path.write_bytes(result.content)
+    finally:
+        try:
+            s3.delete_object(Bucket=bucket, Key=video_key)
+            s3.delete_object(Bucket=bucket, Key=audio_key)
+        except Exception:
+            pass
 
 def extract_voice_audio(video_path: Path, output_path: Path) -> None:
     subprocess.run(
