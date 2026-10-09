@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS support_email_access_grants (
   recipient_email varchar(255) NOT NULL,
   purpose varchar(80) NOT NULL DEFAULT 'view_case',
   token_hash char(64) NOT NULL UNIQUE,
+  token_ciphertext text NOT NULL,
   status varchar(16) NOT NULL DEFAULT 'active',
   expires_at timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
   consumed_at timestamptz,
