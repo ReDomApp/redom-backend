@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS redom_ops_report_runs (
   data_coverage jsonb NOT NULL DEFAULT '{}'::jsonb,
   pdf_base64 text,
   pdf_sha256 text,
+  report_signature text,
+  signature_payload_hash text,
+  signature_key_id text,
   provider_message_id text,
   delivery_status varchar(24) NOT NULL DEFAULT 'pending',
   attempt_count integer NOT NULL DEFAULT 0,
@@ -67,3 +70,12 @@ CREATE TABLE IF NOT EXISTS redom_ops_report_runs (
   CONSTRAINT redom_ops_delivery_status_check CHECK (delivery_status IN ('pending','accepted','delivered','failed','unknown'))
 );
 CREATE INDEX IF NOT EXISTS redom_ops_report_runs_period_idx ON redom_ops_report_runs(period_end DESC);
+
+CREATE TABLE IF NOT EXISTS redom_ops_admin_audit (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  action varchar(80) NOT NULL,
+  report_key text,
+  outcome varchar(24) NOT NULL DEFAULT 'success',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS redom_ops_admin_audit_time_idx ON redom_ops_admin_audit(created_at DESC);
