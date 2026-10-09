@@ -345,7 +345,7 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
   }).where(eq(reDomAiVideoProjects.id, projectId));
 }
 
-export async function createReDomMovieProject(userId: string, input: { prompt: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon" }) {
+export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon" }) {
   await requirePaid(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const durationSeconds = safeDuration(input.durationSeconds);
@@ -505,7 +505,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       jobId: "movie_project_" + projectId,
       status: "processing",
       prompt: project.prompt,
-      durationSeconds: project.targetDurationSeconds,
+      targetDurationSeconds: project.targetDurationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
       aspectRatio: project.aspectRatio,
       runtime: "redom-v2.8-native",
@@ -572,6 +572,7 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     const shotKeys = completedShots.map((row) => row.outputAssetKey).filter((key): key is string => Boolean(key));
     const project = (await db.select().from(reDomAiVideoProjects).where(eq(reDomAiVideoProjects.id, job.projectId)).limit(1))[0];
     if (!project || !shotKeys.length) return true;
+    const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
     const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
     const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
