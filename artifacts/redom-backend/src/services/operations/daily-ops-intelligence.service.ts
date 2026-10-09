@@ -149,6 +149,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE occurred_at >= $3 AND event_type='attempted')::int AS monthlyAttempts
       FROM redom_ops_email_events`, [start, prevStart, monthStart]),
     pool.query(`SELECT
+      count(DISTINCT logical_email_id) FILTER (WHERE event_type='attempted')::int AS uniqueEmails,
       count(*) FILTER (WHERE event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE event_type='delivered')::int AS delivered,
       count(*) FILTER (WHERE event_type='failed')::int AS failed,
@@ -160,6 +161,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     ), stats AS (
       SELECT date_trunc('month',occurred_at) AS month_start,
         count(DISTINCT logical_email_id) FILTER (WHERE event_type='attempted')::int AS attempts,
+        count(*) FILTER (WHERE event_type='attempted')::int AS send_attempts,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='accepted')::int AS accepted,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='delivered')::int AS delivered,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='failed')::int AS failed,
