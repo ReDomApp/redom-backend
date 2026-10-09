@@ -33,6 +33,12 @@ The local TI2V runtime supports text-to-video and image-conditioned video genera
 
 Five minutes is a **maximum project duration**, not a guaranteed generation-time SLA.
 
+## Creator formats and references
+
+The native worker accepts three format modes: `video` (short-form scenes), `movie` (cinematic production), and `cartoon` (animation-directed generation). An optional private R2 reference-image key conditions the first generated segment; each following segment uses the previous segment final frame to preserve continuity. Reference assets are removed after the worker finishes or fails the job.
+
+Every final encode applies a persistent far-right brand watermark: `ReDom Videos | AI-generated`, `ReDom Movie Studio | AI-generated`, or `ReDom Cartoon | AI-generated`. The worker image installs DejaVu fonts for FFmpeg drawtext. The watermark is applied after joining segments so it remains consistent across the finished output.
+
 ## Enhancement pipeline
 
 After native generation, the worker applies ReDom-controlled post-processing:
