@@ -767,6 +767,14 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
   const project = (await db.select().from(reDomAiVideoProjects).where(and(eq(reDomAiVideoProjects.id, projectId), eq(reDomAiVideoProjects.userId, userId))).limit(1))[0];
   if (!project) throw Object.assign(new Error("Movie project not found."), { status: 404 });
   if (project.state !== "ready") throw Object.assign(new Error("Review and approve the ReDom story plan before production."), { status: 409 });
+  // Preflight every required runtime before creating audio assets or enqueueing
+  // any shots, so a missing model endpoint cannot leave a half-started project.
+  if (!env.redomStudioEngine.url || !env.redomStudioEngine.token) {
+    throw Object.assign(new Error("Studio—Ultron 8.0R is not configured."), { status: 503, code: "STUDIO_ENGINE_UNAVAILABLE" });
+  }
+  if (project.format === "cartoon" && (!env.redomCartoonEngine.url || !env.redomCartoonEngine.token)) {
+    throw Object.assign(new Error("Cartoon—R8.0 is not configured for cartoon episode shots."), { status: 503, code: "CARTOON_ENGINE_UNAVAILABLE" });
+  }
 
   const continuity = await runReDomMovieContinuityCheck(userId, projectId);
   if (continuity.blockingWarnings.length) throw Object.assign(new Error("Production blocked: the story plan contains audience-knowledge leaks. Revise the story before rendering."), { status: 409, code: "MOVIE_CONTINUITY_BLOCKED" });
