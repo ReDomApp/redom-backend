@@ -15,7 +15,7 @@ import {
 } from "../database/reDomVideoStudio";
 import { reDomAiVideos } from "../database/reDomAiVideos";
 import { enforceReDomVideoPromptSecurity } from "./redomVideoSecurity.service";
-import { REDOM_VIDEO_MAX_SECONDS } from "./redomVideoEngine.service";
+import { REDOM_VIDEO_MAX_SECONDS, prepareReDomVideoLanguage } from "./redomVideoEngine.service";
 
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
 const MODEL = "ReDom-v2.8—Video";
@@ -348,6 +348,8 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
 export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon" }) {
   await requirePaid(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
+  const format = input.format || "movie";
+  const language = await prepareReDomVideoLanguage(input.prompt, format === "cartoon" ? "cartoon" : "movie");
   const durationSeconds = safeDuration(input.durationSeconds);
   const referenceMatch = input.referenceImageDataUri?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/) || null;
   if (input.referenceImageDataUri && !referenceMatch) throw Object.assign(new Error("Reference image must be a PNG, JPEG, or WebP data URI."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
@@ -357,7 +359,7 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     userId,
     title: input.title?.trim().slice(0, 240) || "Untitled ReDom Movie",
     prompt: input.prompt.trim(),
-    format: input.format || "movie",
+    format,
     targetDurationSeconds: durationSeconds,
     quality: input.quality || "high",
     style: input.format === "cartoon" ? "cartoon animation, " + (input.style || "cinematic") : (input.style || "cinematic"),
@@ -365,7 +367,7 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     audioEnabled: input.audio !== false,
     voiceEnabled: input.voice !== false,
     state: "planning",
-    research: { securityRequestId: security.requestId },
+    research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption },
   }).returning();
   if (!project) throw new Error("Could not create ReDom movie project.");
   if (referenceMatch && referenceBytes) {
