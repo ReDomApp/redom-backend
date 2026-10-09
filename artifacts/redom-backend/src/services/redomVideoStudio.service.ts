@@ -664,7 +664,7 @@ async function prepareReDomMovieAudio(userId: string, project: typeof reDomAiVid
     const details = rawConcept && typeof rawConcept === "object" ? rawConcept as Record<string, unknown> : {};
     const lyrics = typeof details.lyrics === "string" && details.lyrics.trim()
       ? details.lyrics.trim().slice(0, 3000)
-      : await generateOriginalSongLyrics(project.title, concept, String(research.languageName || "the story's primary language"), []);
+      : await generateOriginalSongLyrics(project.title, concept, String(research.languageName || "the story's primary language"), typeof details.singerCharacter === "string" ? [details.singerCharacter] : Array.isArray(details.characters) ? details.characters.filter((name): name is string => typeof name === "string").slice(0, 8) : []);
     const songDuration = Math.max(15, Math.min(60, Number(details.durationSeconds) || 40));
     const song = await createReDomMovieMusicAsset({
       userId,
@@ -673,7 +673,7 @@ async function prepareReDomMovieAudio(userId: string, project: typeof reDomAiVid
       durationSeconds: songDuration,
       instrumental: false,
       lyrics,
-      vocalStyle: String(research.singingVoiceStyle || "expressive, warm musical-theatre lead vocal with clear diction"),
+      vocalStyle: String(details.vocalStyle || research.singingVoiceStyle || "expressive, warm musical-theatre lead vocal with clear diction"),
       prompt: "Original character song for " + project.title + ". Story purpose: " + concept + ". Use a distinct, expressive lead vocal and memorable original melody.",
     });
     const requestedStart = Number(details.startSeconds);
@@ -682,6 +682,7 @@ async function prepareReDomMovieAudio(userId: string, project: typeof reDomAiVid
       startSeconds: Number.isFinite(requestedStart) ? Math.max(0, Math.min(project.targetDurationSeconds - 1, requestedStart)) : Math.max(0, Math.min(project.targetDurationSeconds - songDuration, 20 + (songIndex - 1) * 70)),
       volume: 0.9,
       kind: "song",
+      singerCharacter: typeof details.singerCharacter === "string" ? details.singerCharacter : undefined,
       singerIdentityNote: "Music-model vocal style is not guaranteed to match a character's spoken voice.",
     });
   }
