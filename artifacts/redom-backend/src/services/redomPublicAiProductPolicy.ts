@@ -71,9 +71,23 @@ export const REDOM_PUBLIC_AI_PRODUCTS: ReDomPublicProduct[] = [
     modelName: "Cartoon—R8.0",
     status: "upcoming",
     releaseDate: "Not announced",
-    creatorPurpose: "Support original cartoon and animated visual storytelling.",
-    capabilities: ["cartoon and animation workflows", "character-focused storytelling", "animated scene composition"],
-    rules: ["Treat the product as upcoming until ReDom officially confirms availability.", "A registered model name does not by itself mean the service is released, deployed, or ready for public use.", "Do not invent a release date."],
+    creatorPurpose: "Support original, high-quality human, animal, creature, anime-inspired, 2D, 3D, and hybrid animated storytelling.",
+    capabilities: [
+      "character-driven cartoon and animation workflows",
+      "human, animal, creature, and anthropomorphic character design",
+      "animation style research and genre-appropriate visual direction",
+      "character acting, facial expression, motion, staging, and continuity planning",
+      "multilingual dialogue and voice-performance planning where supported",
+      "research-informed settings, costumes, species behavior, and cultural details",
+    ],
+    rules: [
+      "Treat Cartoon—R8.0 as upcoming until ReDom officially confirms public availability.",
+      "A registered model name does not prove that a separate trained checkpoint, deployed runtime, or production-quality result exists.",
+      "Research public references to understand high-level animation craft and recommend a fitting original visual direction; do not copy protected characters, exact scenes, scripts, costumes, or signature compositions.",
+      "Preserve requested language, genre, character identity, and speaking style wherever supported.",
+      "Do not claim voice generation, lip-sync, or a particular visual quality unless the output and runtime have been verified.",
+      "Do not invent a release date, benchmark, or guaranteed studio-equivalent quality.",
+    ],
   },
   {
     name: "ReDom Next-Generation Image",
@@ -94,14 +108,17 @@ export const REDOM_PUBLIC_AI_PRODUCTS: ReDomPublicProduct[] = [
  */
 export const REDOM_GENERATIVE_MODEL_KNOWLEDGE = [
   "REGISTERED REDOM GENERATIVE MODELS AND HOW THEY WORK:",
-  "ReDom-v2.8—Video: the video-generation product. A creator supplies a prompt and may provide an image or other supported input. The generation workflow interprets the request, preserves the intended language, genre, tone, and visual direction, generates video, and composes supported outputs. The exact available operations depend on the live product configuration.",
-  "Cartoon—R8.0: the cartoon and animation-oriented product. It is intended for original animated storytelling and character-led visual work. Animation is a format, not a genre: a cartoon can be romance, comedy, horror, action, drama, fantasy, science fiction, or a blend. Its registered identity does not prove public availability or a healthy generation runtime.",
-  "Studio—Ultron 8.0R: the production-planning and orchestration product. It helps develop a creator's seed idea into story structure, characters, world details, scenes, storyboards, episodes, trailers, or other supported production plans, then coordinates the requested production workflow. The exact outputs depend on enabled capabilities and configured services.",
-  "Shared creative scope: these products are not cinema-only. Supported creative intent may include romance and love stories, horror and psychological thriller, action, comedy, drama, crime, mystery, adventure, science fiction, fantasy, historical stories, documentary, family animation, and multi-genre work. This taxonomy is extensible, not a guarantee that every genre/style combination has been tested or is available.",
-  "Genre handling: preserve an explicitly requested genre or blend. If the user does not specify a genre, infer a reasonable one from the prompt and ask for clarification only when ambiguity materially changes the result. Do not force every request into Hollywood-style cinema or action.",
-  "Language handling: preserve the user's requested language for story text and dialogue where supported. Do not claim that voice, lip-sync, music, or sound has been generated unless the actual output confirms it.",
-  "How to explain availability: the public catalogue describes product intent. Live backend/runtime status determines whether a generation service is configured for use. A registry entry, model name, or planned capability is not proof of a deployed, healthy, independently trained, or production-quality model. Never invent performance claims, benchmarks, release dates, or guaranteed realism.",
+  "ReDom-v2.8—Video: the video-generation product. A creator supplies a prompt and may provide an image or other supported input. The workflow interprets the request, preserves the intended language, genre, tone, and visual direction, generates video, and composes supported outputs. Exact operations depend on live product configuration.",
+  "Cartoon—R8.0: the dedicated cartoon/animation product identity for original human, animal, creature, and anime-inspired work. The intended workflow is to understand the story and language, research relevant factual and high-level visual references when useful, build an original style bible and consistent character/environment descriptions, plan acting and motion, create shots, coordinate dialogue/voice and sound where enabled, compose the result, and validate continuity and render quality. This is the target workflow, not proof that every stage is already implemented or available.",
+  "Animation craft: aim for clear silhouettes, readable staging, appealing character designs, stable anatomy and proportions, anticipation, timing, spacing, arcs, follow-through, overlapping motion, expressive acting, believable weight, and motivated secondary action. Apply squash-and-stretch and exaggeration only when appropriate to the selected style. Human characters need consistent faces, hands, bodies, clothing, gaze, gestures, and emotion. Animals need species-aware anatomy, gait, balance, paws/hooves/wings, fur/feathers/scales, tails/ears, sensory behavior, and vocal cues. Anthropomorphic characters may speak and emote like people while keeping coherent animal design and movement.",
+  "Anime and style guidance: infer or recommend an appropriate visual grammar from the prompt—character proportions and linework, facial/eye treatment, palette, backgrounds, animation timing, key-pose emphasis, camera framing, effects, lighting, and emotional staging. Explain why a style direction suits the genre. Research named works only as high-level references; create original characters and a distinct design rather than copying protected characters, costumes, exact shots, scripts, logos, or scene compositions.",
+  "Internet research: when useful, use reliable public sources for factual details such as species behavior, architecture, clothing, history, language, pronunciation, cultural setting, and animation craft. Prefer official studio production notes, creator interviews, academic/cultural institutions, and reputable publications. Record source titles and URLs in research notes; distinguish verified facts from invented story choices. Do not treat fan speculation as fact or reproduce protected scripts and scene sequences.",
+  "Language and speaking: preserve the requested language and writing system where supported. Plan character-specific voice identity, dialect/locale, pronunciation, pace, pitch range, timbre, vocabulary, emotion, pauses, and delivery. Dialogue must fit shot duration. Coordinate mouth shapes/visemes and facial acting when lip-sync is supported. Keep voices consistent across scenes and episodes, avoid caricatured accents, and never claim generated audio or completed lip-sync unless confirmed by actual output.",
+  "Genre-neutral scope: these products are not cinema-only. Creative intent may include romance, love stories, horror, psychological thriller, action, comedy, drama, crime, mystery, adventure, science fiction, fantasy, historical stories, documentary, family animation, and deliberate multi-genre blends. Animation is a format, not a genre. The taxonomy is extensible and does not guarantee that every combination has been tested or is available.",
+  "Studio—Ultron 8.0R: the production-planning and orchestration product. It helps develop a creator's seed idea into story structure, characters, world details, scenes, storyboards, episodes, trailers, or other supported production plans, then coordinates the requested workflow. Exact outputs depend on enabled capabilities and configured services.",
+  "Availability and truthfulness: the public catalogue describes product intent. Live backend/runtime status determines whether a generation service is configured for use. A registry entry, model name, or planned capability is not proof of a deployed, healthy, independently trained, or production-quality model. Never invent performance claims, benchmarks, release dates, or guaranteed realism. Do not silently claim one model produced output generated by another.",
   "Safety: apply ReDom's content and safety rules to every model. Mature romance must not be described as permission for non-consensual sexual content or sexual content involving minors. Never facilitate fraud, deceptive evidence, identity abuse, or other unsafe content.",
+  "Public references for animation craft: Disney Animation's animation principles and storyboarding guidance (https://www.disneyanimation.com/process/animation/ and https://www.disneyanimation.com/process/story/), Disney Animation lighting and visual-language guidance (https://www.disneyanimation.com/process/lighting/), and Japan's Agency for Cultural Affairs profile of Studio TRIGGER (https://www.bunka.go.jp/j-mediaarts/en/animation/FeaturingStudios/TRIGGER.html). These inform high-level techniques; they do not authorize copying protected expression.",
 ].join("\\n");
 
 export const REDOM_PUBLIC_AI_PRODUCT_POLICY = [
