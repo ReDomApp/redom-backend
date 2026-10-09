@@ -18,6 +18,7 @@ import wan
 from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, WAN_CONFIGS
 from wan.utils.utils import save_video
 from app.animation_direction import build_animation_direction
+from app.duration_policy import maximum_duration_seconds, validate_duration_seconds
 from app.studio_cartoon_finishing import cartoon_finishing_filter
 
 MODEL_NAME = os.getenv("REDOM_VIDEO_MODEL_ID", "ReDom-v2.8—Video")
@@ -437,11 +438,7 @@ def validate_final_video(path: Path, job: VideoJob):
     if video.get("width") != expected_width or video.get("height") != expected_height:
         raise RuntimeError("Final video dimensions do not match the requested output.")
     duration = float(metadata.get("format", {}).get("duration", 0))
-    max_duration = (
-        REDOM_MOVIE_STUDIO_MAX_SECONDS if job.format == "movie"
-        else REDOM_CARTOON_MAX_SECONDS if job.format == "cartoon"
-        else REDOM_VIDEO_MAX_SECONDS
-    ) if job.operation == "compose" else REDOM_VIDEO_MAX_SECONDS
+    max_duration = maximum_duration_seconds(job.format, job.operation)
     if duration < max(1, job.durationSeconds - 2) or duration > min(max_duration, job.durationSeconds + 1):
         raise RuntimeError("Final video duration failed validation for this product and operation.")
     if job.watermark and (not Path("/app/assets/redom-logo.png").is_file()):
@@ -502,14 +499,9 @@ async def process(job: VideoJob):
         raise ValueError("Unsupported ReDom video runtime.")
     if job.format not in ALLOWED_FORMATS:
         raise ValueError("Unsupported ReDom video format.")
-    if job.operation == "compose":
-        if MODEL_NAME != "Studio—Ultron 8.0R":
-            raise ValueError("Only Studio—Ultron 8.0R may compose a long-form project.")
-        max_duration = REDOM_MOVIE_STUDIO_MAX_SECONDS if job.format == "movie" else REDOM_CARTOON_MAX_SECONDS
-        if job.durationSeconds > max_duration:
-            raise ValueError(f"Composed {job.format} project exceeds its {max_duration}-second product limit.")
-    elif job.durationSeconds > REDOM_VIDEO_MAX_SECONDS:
-        raise ValueError("Individual generation jobs are limited to 59 seconds; long-form projects must be composed from short shots.")
+    if job.operation == "compose" and MODEL_NAME != "Studio—Ultron 8.0R":
+        raise ValueError("Only Studio—Ultron 8.0R may compose a long-form project.")
+    validate_duration_seconds(job.format, job.operation, job.durationSeconds)
 
     await callback(job, "processing")
     with tempfile.TemporaryDirectory(prefix="redom-video-output-") as work:
