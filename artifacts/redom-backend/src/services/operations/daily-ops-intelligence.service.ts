@@ -493,7 +493,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
   const completeMonths = m.email.monthlyTrend.filter((row) => row.month < currentMonth && row.month > rollingWindowFirstMonth);
   const latestComplete = completeMonths[completeMonths.length - 1];
   const previousComplete = completeMonths[completeMonths.length - 2];
-  const improvementSummary = latestComplete && previousComplete && latestComplete.deliveryRatePct !== null && previousComplete.deliveryRatePct !== null
+  const improvementSummary = latestComplete && previousComplete && latestComplete.deliveryRatePct !== null && previousComplete.deliveryRatePct !== null && latestComplete.outcomeCoveragePct !== null && previousComplete.outcomeCoveragePct !== null && latestComplete.outcomeCoveragePct >= 80 && previousComplete.outcomeCoveragePct >= 80
     ? "Delivery rate " + (latestComplete.deliveryRatePct > previousComplete.deliveryRatePct ? "IMPROVED by " : latestComplete.deliveryRatePct < previousComplete.deliveryRatePct ? "DECLINED by " : "UNCHANGED at ") + Math.abs(latestComplete.deliveryRatePct - previousComplete.deliveryRatePct) + " percentage points (" + previousComplete.month + " " + previousComplete.deliveryRatePct + "% -> " + latestComplete.month + " " + latestComplete.deliveryRatePct + "%)."
     : "No defensible month-over-month delivery improvement conclusion: monthly outcome coverage is missing or incomplete.";
   const lines = [
@@ -636,7 +636,7 @@ function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string, stamp: 
   const completeMonths = m.email.monthlyTrend.filter((row) => row.month < currentMonth && row.month > rollingWindowFirstMonth);
   const latestComplete = completeMonths[completeMonths.length - 1];
   const previousComplete = completeMonths[completeMonths.length - 2];
-  const improvementSummary = latestComplete && previousComplete && latestComplete.deliveryRatePct !== null && previousComplete.deliveryRatePct !== null
+  const improvementSummary = latestComplete && previousComplete && latestComplete.deliveryRatePct !== null && previousComplete.deliveryRatePct !== null && latestComplete.outcomeCoveragePct !== null && previousComplete.outcomeCoveragePct !== null && latestComplete.outcomeCoveragePct >= 80 && previousComplete.outcomeCoveragePct >= 80
     ? "Delivery rate " + (latestComplete.deliveryRatePct > previousComplete.deliveryRatePct ? "IMPROVED by " : latestComplete.deliveryRatePct < previousComplete.deliveryRatePct ? "DECLINED by " : "UNCHANGED at ") + Math.abs(latestComplete.deliveryRatePct - previousComplete.deliveryRatePct) + " percentage points (" + previousComplete.month + " " + previousComplete.deliveryRatePct + "% -> " + latestComplete.month + " " + latestComplete.deliveryRatePct + "%)."
     : "No defensible month-over-month delivery improvement conclusion: monthly outcome coverage is missing or incomplete.";
   const status = ["healthy", "degraded", "critical"].includes(a.status) ? a.status : "unknown";
