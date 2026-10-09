@@ -122,7 +122,7 @@ export async function createReDomVideoJob(
       resolution,
       quality: resolution === "1080p" ? "pro" : "high",
       aspectRatio,
-      callbackUrl: env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback",
+      callbackUrl: env.redomBackendUrl.replace(/\/$/, "") + "/ai/video/callback",
       callbackToken: env.redomVideoEngine.token,
     }),
     signal: AbortSignal.timeout(env.redomVideoEngine.timeoutMs),
