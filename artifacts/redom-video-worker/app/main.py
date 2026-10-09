@@ -66,6 +66,10 @@ class VideoJob(BaseModel):
     quality: str = "high"
     format: str = Field(default="video", pattern="^(video|movie|cartoon)$")
     watermark: bool = True
+    audioEnabled: bool = False
+    audioTracks: list[AudioTrack] = Field(default_factory=list)
+    musicTracks: list[AudioTrack] = Field(default_factory=list)
+    lipSyncEnabled: bool = False
 
 pipeline = None
 
