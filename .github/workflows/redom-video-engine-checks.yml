@@ -42,4 +42,5 @@ jobs:
         with:
           python-version: "3.10"
       - run: python -m py_compile artifacts/redom-video-worker/app/main.py artifacts/redom-video-worker/app/animation_direction.py artifacts/redom-video-worker/tests/test_animation_direction.py
-      - run: python -m unittest discover -s artifacts/redom-video-worker/tests -p "test_*.py"
+      - run: python -m unittest discover -s tests -p "test_*.py"
+        working-directory: artifacts/redom-video-worker
