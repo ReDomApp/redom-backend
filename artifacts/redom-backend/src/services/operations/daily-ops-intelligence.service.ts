@@ -115,7 +115,7 @@ export async function recordOpsIncident(input: {
 type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
   email: { rolling365Start: string; rolling365End: string; current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null; monthlyTrend: Array<{ month: string; attempts: number; sendAttempts: number; accepted: number; delivered: number; failed: number; bounced: number; rejected: number; deliveryRatePct: number | null; outcomeCoveragePct: number | null }> };
-  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidatedOrRecycled: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; monthlyTrend: Array<{ month: string; created: number; closed: number }>; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSendersPreviousMonth: Array<{ email: string; messages: number; cases: number }>; priorityReviewCases: Array<{ caseNumber: string; category: string; subject: string; status: string; indicators: string[] }>; failedSupportInbound24h: number; failedRefundOutcomes365d: number; resolvedCaseNumbers365d: string[]; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
+  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidated: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; monthlyTrend: Array<{ month: string; created: number; closed: number }>; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSendersPreviousMonth: Array<{ email: string; messages: number; cases: number }>; priorityReviewCases: Array<{ caseNumber: string; category: string; subject: string; status: string; indicators: string[] }>; failedSupportInbound24h: number; failedRefundOutcomes365d: number; resolvedCaseNumbers365d: string[]; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
   fraud: { reviewedSignals: Array<{ email: string; risk: string; score: number; indicators: string[]; caseNumbers: string[]; count: number; recommendedAction: string }>; signalCount30d: number; previousSignalCount30d: number; changePct30d: number | null; flaggedMessages30d: number; previousFlaggedMessages30d: number; flaggedMessagesChangePct30d: number | null; highReviewPriorityCount: number; manualReviewCount: number; trend30d: "increased" | "decreased" | "unchanged" | "baseline-unavailable"; warning: string };
   geography: { topCountries: Array<{ country: string; signups: number }>; topCities: Array<{ city: string; country: string; signups: number }>; source: string };
   incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number; resolved365d: number; created365d: number; criticalResolved365d: number; criticalCreated365d: number };
@@ -198,7 +198,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE created_at >= $1)::int AS created365d,
       count(*) FILTER (WHERE closed_at >= $1 OR (status='closed' AND updated_at >= $1))::int AS closed365d,
       count(*) FILTER (WHERE case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL)::int AS invalidated,
-      count(*) FILTER (WHERE case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL)::int AS recycled,
+      count(*) FILTER (WHERE case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL)::int AS invalidated,
       count(*) FILTER (WHERE status <> 'closed' AND case_number_invalid=false)::int AS active
       FROM support_cases`, [yearStart]),
     pool.query(`SELECT
@@ -328,7 +328,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     support: {
       created24h: supportCreated, createdPrevious24h: previousSupport, changePct: pct(supportCreated, previousSupport),
       open: num(s.open), awaitingSupport: num(s.awaitingsupport), awaitingUser: num(s.awaitinguser), closed: num(s.closed),
-      invalidatedOrRecycled: num(lifecycle.invalidated), created365d: num(lifecycle.created365d), closed365d: num(lifecycle.closed365d),
+      invalidated: num(lifecycle.invalidated), created365d: num(lifecycle.created365d), closed365d: num(lifecycle.closed365d),
       activeCaseNumbers: Array.isArray(lifecycle.active_numbers) ? lifecycle.active_numbers.map(String).slice(0,100) : [],
       createdCaseNumbers24h: Array.isArray(lifecycle.created_numbers) ? lifecycle.created_numbers.map(String).filter((n: string) => n && n !== "").slice(0,100) : [],
       invalidCaseNumbers: Array.isArray(lifecycle.invalid_numbers) ? lifecycle.invalid_numbers.map(String).slice(0,100) : [],
@@ -563,10 +563,10 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "Created in rolling 365 days: " + moneyless(m.support.created365d) + " | Closed in rolling 365 days: " + moneyless(m.support.closed365d),
     ...wrap("Case numbers created in this report window: " + (m.support.createdCaseNumbers24h.join(", ") || "None recorded"), 88),
     ...wrap("Active case numbers (first 100): " + (m.support.activeCaseNumbers.join(", ") || "None"), 88),
-    ...wrap("Invalidated/marked-invalid case numbers (first 100; not necessarily recycled): " + (m.support.invalidCaseNumbers.join(", ") || "None"), 88),
+    ...wrap("Invalidated/marked-invalid case numbers (first 100; recycling not independently tracked): " + (m.support.invalidCaseNumbers.join(", ") || "None"), 88),
     "Resolved case numbers in rolling 365 days (first 100): " + (m.support.resolvedCaseNumbers365d.join(", ") || "None recorded"),
     "Failed inbound support email processing in last 24h: " + m.support.failedSupportInbound24h + "; refund outcomes marked failed in rolling 365 days: " + m.support.failedRefundOutcomes365d + ". These are failed processing/refund outcomes, not a fabricated support-case status.",
-    "Invalidated/marked-invalid cases: " + moneyless(m.support.invalidatedOrRecycled) + ". Expiration/recycling have no distinct source fields, and the case status schema has no failed state; neither is inferred from invalidation or email failures.",
+    "Invalidated/marked-invalid cases: " + moneyless(m.support.invalidated) + ". Expiration/recycling have no distinct source fields, and the case status schema has no failed state; neither is inferred from invalidation or email failures.",
     "Most repeated contacts in the previous full calendar month (repeat contact is not proof of abuse):",
     ...m.support.repeatContactSendersPreviousMonth.slice(0,10).map((r) => r.email + ": " + r.messages + " user messages across " + r.cases + " cases"),
     "Open high-priority review candidates (heuristic only; the support schema has no official severity field): " + m.support.priorityReviewCases.length,
