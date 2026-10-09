@@ -8,7 +8,7 @@ import { openai } from "../lib/openai";
 export type ReDomMediaSecurityDecision = {
   requestId: string;
   action: "allow" | "block";
-  policyCode: "SAFE_TRANSFORMATION" | "UNSAFE_CONTENT" | "IDENTITY_PHOTO_MODIFICATION" | "DECEPTIVE_MEDIA" | "FRAUD_ASSISTANCE" | "UNKNOWN_HIGH_RISK";
+  policyCode: "SAFE_TRANSFORMATION" | "UNSAFE_CONTENT" | "IDENTITY_PHOTO_MODIFICATION" | "DECEPTIVE_MEDIA" | "FRAUD_ASSISTANCE" | "REFERENCE_RIGHTS_REQUIRED" | "REFERENCE_CONSENT_REQUIRED" | "CHARACTER_RIGHTS_REQUIRED" | "UNKNOWN_HIGH_RISK";
   riskLevel: "SAFE" | "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
   userMessage?: string;
 };
@@ -46,12 +46,8 @@ async function recentBlocks(userId: string) {
 }
 
 async function moderatePrompt(prompt: string) {
-  try {
-    const result = await openai.moderations.create({ model: "omni-moderation-latest", input: prompt });
-    return { flagged: Boolean(result.results?.[0]?.flagged) };
-  } catch {
-    return { flagged: false };
-  }
+  const result = await openai.moderations.create({ model: "omni-moderation-latest", input: prompt });
+  return { flagged: Boolean(result.results?.[0]?.flagged) };
 }
 
 async function classifyWithGemini(prompt: string) {
@@ -62,9 +58,9 @@ async function classifyWithGemini(prompt: string) {
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text:
         "You are ReDom's defensive media safety classifier. Return JSON only. " +
-        "Classify whether this video request asks for identity manipulation, deceptive/deepfake media, fraud or forged evidence, explicit sexual content, or dangerous unsafe content. " +
-        "Ordinary fictional characters, ordinary filmmaking, and harmless CGI are allowed. " +
-        '{"identityManipulation":false,"deceptiveMedia":false,"fraud":false,"sexualContent":false,"unsafeContent":false,"blocked":false}\nRequest: ' + prompt,
+        "Classify whether this video request asks for identity manipulation, deceptive/deepfake media, fraud or forged evidence, explicit sexual content, dangerous unsafe content, unconsented real-person likeness use, or unauthorized reproduction of a protected fictional character. " +
+        "Original fictional characters, original cartoons, authorized references, ordinary filmmaking, and harmless CGI are allowed. A watermark does not make unauthorized likeness use safe. For real-person references require explicit informed consent and adult status; for protected studio characters require a documented license or verified public-domain basis. Never infer consent or rights from an upload alone. " +
+        '{"identityManipulation":false,"deceptiveMedia":false,"fraud":false,"sexualContent":false,"unsafeContent":false,"unconsentedLikeness":false,"protectedCharacterCopy":false,"blocked":false}\nRequest: ' + prompt,
       }] }],
       safetySettings: [
         { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_LOW_AND_ABOVE" },
@@ -96,13 +92,23 @@ export async function enforceReDomVideoPromptSecurity(userId: string, prompt: st
     throw Object.assign(new Error(decision.userMessage), { code: decision.policyCode, status: 429 });
   }
 
-  const moderation = await moderatePrompt(clean);
-  const classification = await classifyWithGemini(clean);
+  let moderation: { flagged: boolean };
+  let classification: Record<string, any>;
+  try {
+    moderation = await moderatePrompt(clean);
+    classification = await classifyWithGemini(clean);
+  } catch {
+    const decision: ReDomMediaSecurityDecision = { requestId, action: "block", policyCode: "UNKNOWN_HIGH_RISK", riskLevel: "HIGH", userMessage: "ReDom could not complete the required safety checks. The request was not sent to generation; please retry shortly." };
+    await record(userId, decision, "input");
+    throw Object.assign(new Error(decision.userMessage), { code: decision.policyCode, status: 503 });
+  }
   const identity = IDENTITY.test(clean) || Boolean(classification.identityManipulation);
   const deceptive = DECEPTIVE.test(clean) || Boolean(classification.deceptiveMedia);
   const fraud = FRAUD.test(clean) || GOVERNMENT.test(clean) || FINANCIAL.test(clean) || Boolean(classification.fraud);
   const sexual = SEXUAL.test(clean) || Boolean(classification.sexualContent);
   const unsafe = UNSAFE.test(clean) || Boolean(classification.unsafeContent) || Boolean(classification.blocked);
+  const unconsentedLikeness = Boolean(classification.unconsentedLikeness);
+  const protectedCharacterCopy = Boolean(classification.protectedCharacterCopy);
 
   let policyCode: ReDomMediaSecurityDecision["policyCode"] = "SAFE_TRANSFORMATION";
   let riskLevel: ReDomMediaSecurityDecision["riskLevel"] = "LOW";
@@ -112,6 +118,8 @@ export async function enforceReDomVideoPromptSecurity(userId: string, prompt: st
   else if (identity) { blocked = true; policyCode = "IDENTITY_PHOTO_MODIFICATION"; riskLevel = "CRITICAL"; }
   else if (deceptive) { blocked = true; policyCode = "DECEPTIVE_MEDIA"; riskLevel = "CRITICAL"; }
   else if (fraud) { blocked = true; policyCode = "FRAUD_ASSISTANCE"; riskLevel = "CRITICAL"; }
+  else if (unconsentedLikeness) { blocked = true; policyCode = "REFERENCE_CONSENT_REQUIRED"; riskLevel = "CRITICAL"; }
+  else if (protectedCharacterCopy) { blocked = true; policyCode = "CHARACTER_RIGHTS_REQUIRED"; riskLevel = "HIGH"; }
   else if (unsafe) { blocked = true; policyCode = "UNSAFE_CONTENT"; riskLevel = "HIGH"; }
 
   const decision: ReDomMediaSecurityDecision = {
