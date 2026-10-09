@@ -38,6 +38,7 @@ export const WEB_SCREEN_REGISTRY: WebRoute[] = [
   { key: "Friends", category: "Social", title: "Friends", path: "/app/friends", description: "Mobile parity reference for friends." },
   { key: "Events", category: "Social", title: "Events", path: "/app/events", description: "Mobile parity reference for events." },
   { key: "ReDomAI", category: "AI", title: "ReDom AI", path: "/app/reDomAI", description: "Mobile parity reference for ReDom AI." },
+  { key: "ReDomVideoStudio", category: "AI", title: "ReDom Video Studio", path: "/app/reDomVideoStudio", description: "Create videos, movies, episodic stories and cartoons with automatic prompt-language captions." },
   { key: "ReDomAIInfo", category: "AI", title: "About ReDom AI", path: "/app/reDomAIInfo", description: "Mobile parity reference for ReDom AI information." },
   { key: "ReDomAIPolicy", category: "AI", title: "ReDom AI Policy", path: "/app/reDomAIPolicy", description: "Mobile parity reference for the ReDom AI policy." },
   { key: "Chat", category: "Messaging", title: "Chat", path: "/app/chat", description: "Mobile parity reference for chat." },
