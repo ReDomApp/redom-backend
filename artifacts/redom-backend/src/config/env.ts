@@ -45,6 +45,10 @@ export const env = {
   gemini: { apiKey: required("GEMINI_API_KEY") },
   redomImageEngine: { url: optional("REDOM_IMAGE_ENGINE_URL"), token: optional("REDOM_IMAGE_ENGINE_TOKEN"), timeoutMs: Number(optional("REDOM_IMAGE_ENGINE_TIMEOUT_MS") ?? "180000") },
   redomBackendUrl: optional("REDOM_BACKEND_URL") ?? "https://redom-backend.onrender.com",
-  redomVideoEngine: { url: optional("REDOM_VIDEO_ENGINE_URL"), token: optional("REDOM_VIDEO_ENGINE_TOKEN"), timeoutMs: Number(optional("REDOM_VIDEO_ENGINE_TIMEOUT_MS") ?? "15000") },
+  // Three independently deployable inference endpoints. Never route one model's
+  // request to another model as a fallback.
+  redomVideoEngine: { url: optional("REDOM_VIDEO_ENGINE_URL"), token: optional("REDOM_VIDEO_ENGINE_TOKEN"), timeoutMs: Number(optional("REDOM_VIDEO_ENGINE_TIMEOUT_MS") ?? "30000") },
+  redomCartoonEngine: { url: optional("REDOM_CARTOON_ENGINE_URL"), token: optional("REDOM_CARTOON_ENGINE_TOKEN"), timeoutMs: Number(optional("REDOM_CARTOON_ENGINE_TIMEOUT_MS") ?? "30000") },
+  redomStudioEngine: { url: optional("REDOM_STUDIO_ENGINE_URL"), token: optional("REDOM_STUDIO_ENGINE_TOKEN"), timeoutMs: Number(optional("REDOM_STUDIO_ENGINE_TIMEOUT_MS") ?? "30000") },
   redomMovieAudio: { elevenLabsApiKey: optional("ELEVENLABS_API_KEY"), defaultVoiceId: optional("REDOM_DEFAULT_VOICE_ID"), voiceModel: optional("REDOM_MOVIE_VOICE_MODEL") ?? "eleven_multilingual_v2", musicModel: optional("REDOM_MOVIE_MUSIC_MODEL") ?? "music_v2_5" },
 } as const;
