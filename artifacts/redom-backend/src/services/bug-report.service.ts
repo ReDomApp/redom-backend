@@ -1,4 +1,5 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
+import { recordOpsEmailEvent } from "./operations/daily-ops-intelligence.service";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Resend } from "resend";
 import { env } from "../config/env";
@@ -227,7 +228,9 @@ export async function submitBugReport(input: BugReportInput): Promise<BugReport>
     const fallback = fallbackHtml({ reportId, product: input.product, category: input.category, description: input.description, fixRequired, diagnostics: input.includeDiagnostics ? input.diagnostics ?? null : null, attachments });
     const html = draft?.html ? sanitizeHtml(draft.html, reportId) ?? fallback : fallback;
     const subject = `ReDom technical problem [${reportId}] · ${safeText(input.product, 80)}`;
-    const { error } = await resend.emails.send({
+    const logicalEmailId = createHash("sha256").update("bug-report|" + reportId).digest("hex");
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "bug-reports", eventType: "attempted", recipient: env.email.bugReportRecipients[0] ?? null }).catch(() => undefined);
+    const { data, error } = await resend.emails.send({
       from,
       to: env.email.bugReportRecipients,
       subject,
@@ -235,7 +238,11 @@ export async function submitBugReport(input: BugReportInput): Promise<BugReport>
       html,
       attachments: storedAttachments.map((a) => ({ filename: a.filename, content: a.body })),
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      await recordOpsEmailEvent({ logicalEmailId, subsystem: "bug-reports", eventType: "failed", recipient: env.email.bugReportRecipients[0] ?? null, metadata: { error: error.message } }).catch(() => undefined);
+      throw new Error(error.message);
+    }
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "bug-reports", eventType: "accepted", recipient: env.email.bugReportRecipients[0] ?? null, providerMessageId: data?.id ?? null }).catch(() => undefined);
     const emailedAt = new Date();
     await pool.query(`UPDATE bug_reports SET status='emailed', email_status='sent', emailed_at=$1, updated_at=now() WHERE id=$2`, [emailedAt, report.id]);
     report = mapReport((await pool.query(`SELECT * FROM bug_reports WHERE id=$1`, [report.id])).rows[0]);
