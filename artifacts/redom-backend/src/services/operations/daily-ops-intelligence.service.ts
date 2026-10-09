@@ -114,7 +114,7 @@ export async function recordOpsIncident(input: {
 
 type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
-  email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null; monthlyTrend: Array<{ month: string; attempts: number; accepted: number; delivered: number; failed: number; bounced: number; rejected: number; deliveryRatePct: number | null; outcomeCoveragePct: number | null }> };
+  email: { rolling365Start: string; rolling365End: string; current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null; monthlyTrend: Array<{ month: string; attempts: number; sendAttempts: number; accepted: number; delivered: number; failed: number; bounced: number; rejected: number; deliveryRatePct: number | null; outcomeCoveragePct: number | null }> };
   support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidatedOrRecycled: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSenders30d: Array<{ email: string; messages: number; cases: number }>; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
   fraud: { reviewedSignals: Array<{ email: string; risk: string; score: number; indicators: string[]; caseNumbers: string[]; count: number }>; signalCount30d: number; warning: string };
   geography: { topCountries: Array<{ country: string; signups: number }>; topCities: Array<{ city: string; country: string; signups: number }>; source: string };
@@ -134,7 +134,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
   const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, geography, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
     pool.query(`SELECT
-      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
+      count(DISTINCT logical_email_id) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS uniqueEmails,\n      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='delivered')::int AS delivered,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='failed')::int AS failed,
@@ -168,7 +168,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       FROM redom_ops_email_events WHERE occurred_at >= $1 AND occurred_at < $2 GROUP BY 1
     )
     SELECT to_char(months.month_start,'YYYY-MM') AS month,
-      COALESCE(stats.attempts,0)::int AS attempts,COALESCE(stats.accepted,0)::int AS accepted,
+      COALESCE(stats.attempts,0)::int AS attempts,COALESCE(stats.send_attempts,0)::int AS send_attempts,COALESCE(stats.accepted,0)::int AS accepted,
       COALESCE(stats.delivered,0)::int AS delivered,COALESCE(stats.failed,0)::int AS failed,
       COALESCE(stats.bounced,0)::int AS bounced,COALESCE(stats.rejected,0)::int AS rejected,
       CASE WHEN COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0)>0
@@ -276,10 +276,10 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       current24h: { attempts, accepted: num(e.accepted), delivered, failed, bounced: num(e.bounced), rejected: num(e.rejected), deferred: num(e.deferred), duplicateSuppressed: num(e.duplicatesuppressed), duplicateDelivery: num(e.duplicatedelivery) },
       previous24h: { attempts: previousAttempts, delivered: num(e.previousdelivered), failed: num(e.previousfailed) },
       changePct: { attempts: pct(attempts, previousAttempts), delivered: pct(delivered, num(e.previousdelivered)), failed: pct(failed, num(e.previousfailed)) },
-      last365d: { attempts: num(y.attempts), delivered: num(y.delivered), failed: num(y.failed), bounced: num(y.bounced), duplicateSuppressed: num(y.duplicatesuppressed) },
+      last365d: { uniqueEmails: num(y.uniqueemails), sendAttempts: num(y.attempts), delivered: num(y.delivered), failed: num(y.failed), bounced: num(y.bounced), duplicateSuppressed: num(y.duplicatesuppressed) },
       dailyLimit: DAILY_LIMIT, monthlyLimit: MONTHLY_LIMIT, dailyLimitUsedPct: dailyUsedPct, monthlyLimitUsedPct: monthlyUsedPct, monthlySent,
       ledgerCoverageStart: firstEvent.rows[0]?.first_at ? iso(new Date(firstEvent.rows[0].first_at)) : null,
-      monthlyTrend: monthlyTrend.rows.map((row: Record<string, unknown>) => ({ month: String(row.month), attempts: num(row.attempts), accepted: num(row.accepted), delivered: num(row.delivered), failed: num(row.failed), bounced: num(row.bounced), rejected: num(row.rejected), deliveryRatePct: row.delivery_rate_pct === null ? null : num(row.delivery_rate_pct), outcomeCoveragePct: row.outcome_coverage_pct === null ? null : num(row.outcome_coverage_pct) })),
+      monthlyTrend: monthlyTrend.rows.map((row: Record<string, unknown>) => ({ month: String(row.month), attempts: num(row.attempts), sendAttempts: num(row.send_attempts), accepted: num(row.accepted), delivered: num(row.delivered), failed: num(row.failed), bounced: num(row.bounced), rejected: num(row.rejected), deliveryRatePct: row.delivery_rate_pct === null ? null : num(row.delivery_rate_pct), outcomeCoveragePct: row.outcome_coverage_pct === null ? null : num(row.outcome_coverage_pct) })),
     },
     support: {
       created24h: supportCreated, createdPrevious24h: previousSupport, changePct: pct(supportCreated, previousSupport),
@@ -434,13 +434,13 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     ...wrap(String(a.executiveSummary ?? "AI analysis unavailable; factual metrics follow."), 88),
     "",
     "EMAIL OPERATIONS — LAST 24 HOURS",
-    "Attempts: " + emailMetric(m.email.current24h.attempts, m) + " | Accepted: " + emailMetric(m.email.current24h.accepted, m) + " | Delivered events: " + emailMetric(m.email.current24h.delivered, m),
+    "Unique emails: " + emailMetric(m.email.current24h.uniqueEmails, m) + " | Send attempts/retries: " + emailMetric(m.email.current24h.attempts, m) + " | Accepted: " + emailMetric(m.email.current24h.accepted, m) + " | Delivered events: " + emailMetric(m.email.current24h.delivered, m),
     "Failed: " + emailMetric(m.email.current24h.failed, m) + " | Bounced: " + emailMetric(m.email.current24h.bounced, m) + " | Rejected: " + emailMetric(m.email.current24h.rejected, m),
     "Deferred: " + emailMetric(m.email.current24h.deferred, m) + " | Duplicate sends suppressed: " + emailMetric(m.email.current24h.duplicateSuppressed, m) + " | Duplicate deliveries: " + emailMetric(m.email.current24h.duplicateDelivery, m),
     "Previous 24h attempts: " + emailMetric(m.email.previous24h.attempts, m) + " | Change: " + formatPct(m.email.changePct.attempts),
     "",
     "EMAIL OPERATIONS — ROLLING 365 DAYS",
-    "Attempts: " + emailMetric(m.email.last365d.attempts, m) + " | Delivered events: " + emailMetric(m.email.last365d.delivered, m) + " | Failed: " + emailMetric(m.email.last365d.failed, m),
+    "Rolling window: " + m.email.rolling365Start + " through " + m.email.rolling365End,\n    "Unique emails attempted: " + emailMetric(m.email.last365d.uniqueEmails, m) + " | Send attempts/retries: " + emailMetric(m.email.last365d.sendAttempts, m) + " | Delivered events: " + emailMetric(m.email.last365d.delivered, m) + " | Failed: " + emailMetric(m.email.last365d.failed, m),
     "Bounced: " + emailMetric(m.email.last365d.bounced, m) + " | Duplicate suppression: " + emailMetric(m.email.last365d.duplicateSuppressed, m),
     "Email ledger coverage: " + (m.email.ledgerCoverageStart ?? "No events recorded"),
     "",
