@@ -41,6 +41,18 @@ The backend and worker now expose a real image-engine contract instead of a prom
 
 The worker's `/health` endpoint advertises its enabled capability set so the backend/operations layer can distinguish a configured capability from a merely documented one.
 
+## Image realism and quality conditioning
+
+The backend applies a versioned, style-aware prompt-conditioning pass before inference:
+
+- Photorealistic requests receive restrained photographic cues for plausible lighting, material texture, perspective, fine detail and natural color.
+- Stylized prompts (for example anime, cartoons, illustration, watercolor, pixel art and vector art) retain their requested style instead of being forced into photorealism.
+- A shared negative-prompt baseline discourages blur, compression artifacts, malformed anatomy, duplicate limbs and unwanted watermarks; user-supplied negative prompts are preserved.
+- The original user prompt remains the security-reviewed and database-visible prompt. The effective prompt, quality profile and enhancement version are saved with generation settings for reproducibility.
+- The same conditioning policy applies to generation and editing, while edits still use the user's original instruction to describe the intended change.
+
+This is prompt-level quality conditioning, not a guarantee of perfect anatomy or photorealism. Results remain bounded by the configured checkpoint, GPU runtime, reference conditioning and inference settings.
+
 ## Current worker foundation
 
 The initial worker uses Hugging Face Diffusers with an SDXL checkpoint selected by `REDOM_IMAGE_MODEL_ID`.

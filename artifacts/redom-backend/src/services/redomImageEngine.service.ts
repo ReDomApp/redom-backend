@@ -15,6 +15,37 @@ const DEFAULT_GUIDANCE = 7.0;
 const MAX_INPUT_BYTES = 25 * 1024 * 1024;
 const MAX_REFERENCES = 4;
 
+const IMAGE_QUALITY_NEGATIVE_PROMPT = [
+  "low quality",
+  "blurry",
+  "pixelated",
+  "compression artifacts",
+  "distorted anatomy",
+  "malformed hands",
+  "extra fingers",
+  "duplicate limbs",
+  "unwanted watermark",
+].join(", ");
+
+const PHOTOREALISM_INTENT = /\b(photorealistic|photo[- ]realistic|photographic|realistic photo|real[- ]life photograph|hyperrealistic|hyper-realistic|realistic portrait|realistic skin|true-to-life|true to life)\b/i;
+const STYLIZED_INTENT = /\b(anime|manga|cartoon|illustration|illustrated|watercolor|watercolour|oil painting|pencil sketch|line art|pixel art|comic book|storybook|claymation|3d render|cgi|low-poly|vector art)\b/i;
+
+function prepareImageQuality(prompt: string, suppliedNegativePrompt?: string) {
+  const explicitPhotorealism = PHOTOREALISM_INTENT.test(prompt);
+  const stylizedRequest = STYLIZED_INTENT.test(prompt);
+  const applyPhotographicDetail = explicitPhotorealism || (!stylizedRequest && /\brealistic\b/i.test(prompt));
+  const effectivePrompt = applyPhotographicDetail
+    ? prompt + ", natural physically plausible lighting, believable material textures, coherent perspective, realistic fine detail, balanced exposure, natural color response"
+    : prompt;
+  const negativeParts = [suppliedNegativePrompt?.trim(), IMAGE_QUALITY_NEGATIVE_PROMPT].filter(Boolean);
+  return {
+    effectivePrompt,
+    effectiveNegativePrompt: [...new Set(negativeParts)].join(", "),
+    profile: applyPhotographicDetail ? "photorealistic" : "style-preserving",
+    applied: applyPhotographicDetail,
+  };
+}
+
 export type ReDomImageAspectRatio =
   | "1:1" | "4:3" | "3:4" | "16:9" | "9:16"
   | "3:2" | "2:3" | "4:5" | "5:4" | "21:9";
@@ -260,9 +291,10 @@ export async function generateReDomImage(userId: string, options: GenerateOption
   if (steps < 1 || steps > 80 || images < 1 || images > 4) throw new Error("Invalid ReDom-1.6RD— Image generation settings.");
   if (guidanceScale < 0 || guidanceScale > 20) throw new Error("Invalid guidance scale.");
 
+  const quality = prepareImageQuality(prompt, options.negativePrompt);
   return runImageOperation(userId, "generate", prompt, {
-    prompt,
-    negative_prompt: options.negativePrompt?.trim() || null,
+    prompt: quality.effectivePrompt,
+    negative_prompt: quality.effectiveNegativePrompt,
     width: dimensions.width,
     height: dimensions.height,
     steps,
@@ -284,7 +316,10 @@ export async function generateReDomImage(userId: string, options: GenerateOption
     aspectRatio: options.aspectRatio ?? null,
     referenceCount: refs.length,
     referenceStrength: options.referenceStrength ?? refs[0]?.strength ?? 0.75,
-    negativePrompt: options.negativePrompt?.trim() || null,
+    negativePrompt: quality.effectiveNegativePrompt,
+    effectivePrompt: quality.effectivePrompt,
+    qualityProfile: quality.profile,
+    promptEnhancementVersion: 1,
   });
 }
 
@@ -322,9 +357,10 @@ export async function editReDomImage(userId: string, imageDataUri: string, promp
   const maskDataUri = options.maskDataUri ? validateDataUri(options.maskDataUri, "mask image") : undefined;
   const operation: ReDomImageOperation = maskDataUri ? "inpaint" : refs.length ? "variation" : "edit";
 
+  const quality = prepareImageQuality(trimmed);
   return runImageOperation(userId, operation, trimmed, {
-    prompt: trimmed,
-    negative_prompt: null,
+    prompt: quality.effectivePrompt,
+    negative_prompt: quality.effectiveNegativePrompt,
     width: dimensions.width,
     height: dimensions.height,
     steps,
@@ -351,5 +387,9 @@ export async function editReDomImage(userId: string, imageDataUri: string, promp
     referenceCount: refs.length,
     referenceStrength: options.referenceStrength ?? refs[0]?.strength ?? 0.75,
     hasMask: Boolean(maskDataUri),
+    effectivePrompt: quality.effectivePrompt,
+    negativePrompt: quality.effectiveNegativePrompt,
+    qualityProfile: quality.profile,
+    promptEnhancementVersion: 1,
   });
 }
