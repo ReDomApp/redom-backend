@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "../database/db";
 import { redis } from "../lib/redis";
+import { r2 } from "../lib/r2";
 import { openai } from "../lib/openai";
 import { env } from "../config/env";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
@@ -140,6 +142,7 @@ function plannerInstructions(durationSeconds: number, style: string, quality: st
     "MYSTERY ARCHITECTURE: create secrets, clues, foreshadowing and payoffs. Every major reveal should have earlier evidence. Do not reveal hidden identities early just because the model knows them.",
     "CHARACTER ARCS: each major character needs an initial state, motivation, internal conflict, relationship changes, turning points and intended resolution.",
     "WORLD LOGIC: establish rules and enforce them. Power escalation must have causes and consequences.",
+    "LANGUAGE: honor the language or languages explicitly requested by the creator. Write dialogue, pronunciation notes, and subtitle text in the requested language; do not silently switch to English. Keep each character's voice and speaking style consistent.",
     "USER CONTROL: structure the result so a later revision such as 'reveal Ethan in episode 9', 'make the villain stronger', or 'give Ethan three forms' can be applied without losing continuity.",
     "RESEARCH: use web search only when factual/reference research improves the story. Research is separate from movie memory. Do not reproduce copyrighted passages or existing fictional works; use factual, public-domain, licensed or user-provided material as appropriate.",
     "Create approximately " + episodeTarget + " episodes for this runtime. Use 3-12 scenes per episode as needed and enough shots to make the visual edit coherent. Keep the total planned duration at or below " + durationSeconds + " seconds.",
@@ -315,6 +318,8 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
             JSON.stringify(shot.camera || scene.camera || {}),
             JSON.stringify(shot.lighting || scene.lighting || {}),
             JSON.stringify(shot.motion || scene.motion || {}),
+            "Dialogue and language direction: " + JSON.stringify(shot.dialogue || []),
+            "Sound design direction: " + JSON.stringify(shot.sound || {}),
             "Preserve all referenced entity identities and world rules.",
             "Do not reveal author-only knowledge before its planned reveal.",
           ].join("\n"),
@@ -340,17 +345,22 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
   }).where(eq(reDomAiVideoProjects.id, projectId));
 }
 
-export async function createReDomMovieProject(userId: string, input: { prompt: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string }) {
+export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon" }) {
   await requirePaid(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const durationSeconds = safeDuration(input.durationSeconds);
+  const referenceMatch = input.referenceImageDataUri?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/) || null;
+  if (input.referenceImageDataUri && !referenceMatch) throw Object.assign(new Error("Reference image must be a PNG, JPEG, or WebP data URI."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
+  const referenceBytes = referenceMatch ? Buffer.from(referenceMatch[2], "base64") : undefined;
+  if (referenceBytes && (referenceBytes.length < 32 || referenceBytes.length > 15 * 1024 * 1024)) throw Object.assign(new Error("Reference image is outside the supported size range."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
   const [project] = await db.insert(reDomAiVideoProjects).values({
     userId,
     title: input.title?.trim().slice(0, 240) || "Untitled ReDom Movie",
     prompt: input.prompt.trim(),
+    format: input.format || "movie",
     targetDurationSeconds: durationSeconds,
     quality: input.quality || "high",
-    style: input.style || "cinematic",
+    style: input.format === "cartoon" ? "cartoon animation, " + (input.style || "cinematic") : (input.style || "cinematic"),
     aspectRatio: input.aspectRatio || "16:9",
     audioEnabled: input.audio !== false,
     voiceEnabled: input.voice !== false,
@@ -358,6 +368,12 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     research: { securityRequestId: security.requestId },
   }).returning();
   if (!project) throw new Error("Could not create ReDom movie project.");
+  if (referenceMatch && referenceBytes) {
+    const extension = referenceMatch[1] === "jpeg" ? "jpg" : referenceMatch[1];
+    const referenceAssetKey = `redom-ai/video-references/${userId}/movie-project-${project.id}/reference.${extension}`;
+    await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey, Body: referenceBytes, ContentType: "image/" + referenceMatch[1], CacheControl: "private, max-age=900" }));
+    await db.update(reDomAiVideoProjects).set({ research: { securityRequestId: security.requestId, referenceAssetKey } }).where(eq(reDomAiVideoProjects.id, project.id));
+  }
   return { projectId: project.id, state: project.state, model: MODEL, maxDurationSeconds: REDOM_VIDEO_MAX_SECONDS };
 }
 
@@ -489,7 +505,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       jobId: "movie_project_" + projectId,
       status: "processing",
       prompt: project.prompt,
-      durationSeconds: project.targetDurationSeconds,
+      targetDurationSeconds: project.targetDurationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
       aspectRatio: project.aspectRatio,
       runtime: "redom-v2.8-native",
@@ -501,6 +517,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
   }
 
   const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
+  const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
   for (const item of shots) {
     const shot = item.redom_ai_video_shots;
     const jobId = "movie_shot_" + randomUUID().replace(/-/g, "");
@@ -509,6 +526,10 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       runtime: "redom-v2.8-native",
       model: MODEL,
       operation: "generate",
+      format: project.format === "cartoon" ? "cartoon" : "movie",
+      watermark: false,
+      referenceAssetKey,
+      cleanupReferenceAsset: false,
       prompt: shot.generationPrompt,
       durationSeconds: shot.durationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
@@ -551,9 +572,10 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     const shotKeys = completedShots.map((row) => row.outputAssetKey).filter((key): key is string => Boolean(key));
     const project = (await db.select().from(reDomAiVideoProjects).where(eq(reDomAiVideoProjects.id, job.projectId)).limit(1))[0];
     if (!project || !shotKeys.length) return true;
+    const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
     const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
-    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
+    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
   }

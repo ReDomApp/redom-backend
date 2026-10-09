@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { db } from "../database/db";
 import { reDomAiVideos } from "../database/reDomAiVideos";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
@@ -29,7 +29,7 @@ async function requirePaidVideoEntitlement(userId: string) {
 
 export async function createReDomVideoJob(
   userId: string,
-  input: { prompt: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi" },
+  input: { prompt: string; referenceImageDataUri?: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi"; format?: "video" | "movie" | "cartoon"; watermark?: boolean },
 ) {
   await requirePaidVideoEntitlement(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
@@ -37,7 +37,19 @@ export async function createReDomVideoJob(
   const resolution = input.resolution ?? "720p";
   const aspectRatio = input.aspectRatio ?? "16:9";
   const operation = input.operation ?? "generate";
+  const format = input.format ?? "video";
+  const watermark = input.watermark !== false;
   const jobId = "vid_" + randomUUID().replace(/-/g, "");
+  let referenceAssetKey: string | undefined;
+  if (input.referenceImageDataUri) {
+    const match = input.referenceImageDataUri.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) throw Object.assign(new Error("Reference image must be a PNG, JPEG, or WebP data URI."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
+    const contentType = "image/" + match[1];
+    const imageBytes = Buffer.from(match[2], "base64");
+    if (imageBytes.length < 32 || imageBytes.length > 15 * 1024 * 1024) throw Object.assign(new Error("Reference image is outside the supported size range."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
+    referenceAssetKey = `redom-ai/video-references/${userId}/${jobId}/reference.${match[1] === "jpeg" ? "jpg" : match[1]}`;
+    await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey, Body: imageBytes, ContentType: contentType, CacheControl: "private, max-age=900" }));
+  }
 
   await db.insert(reDomAiVideos).values({
     userId,
@@ -54,6 +66,7 @@ export async function createReDomVideoJob(
   });
 
   if (!env.redomVideoEngine.url || !env.redomVideoEngine.token) {
+    if (referenceAssetKey) await r2.send(new DeleteObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey }));
     await failReDomVideoJob(jobId, "ReDom-v2.8—Video native GPU runtime is not configured.");
     throw Object.assign(new Error("ReDom-v2.8—Video is temporarily unavailable."), { status: 503 });
   }
@@ -66,6 +79,9 @@ export async function createReDomVideoJob(
       runtime: REDOM_VIDEO_RUNTIME,
       model: REDOM_VIDEO_MODEL,
       operation,
+      format,
+      watermark,
+      referenceAssetKey,
       prompt: input.prompt.trim(),
       durationSeconds: target,
       resolution,
@@ -77,6 +93,7 @@ export async function createReDomVideoJob(
   });
 
   if (!response.ok) {
+    if (referenceAssetKey) await r2.send(new DeleteObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey }));
     await failReDomVideoJob(jobId, "ReDom native video worker rejected the job.");
     throw Object.assign(new Error("ReDom-v2.8—Video is temporarily unavailable."), { status: 503 });
   }

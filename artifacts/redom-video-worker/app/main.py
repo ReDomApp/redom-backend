@@ -46,8 +46,26 @@ class VideoJob(BaseModel):
     callbackUrl: str
     callbackToken: str
     shotKeys: list[str] = []
+    referenceAssetKey: str | None = None
+    cleanupReferenceAsset: bool = True
+    format: str = Field(default="video", pattern="^(video|movie|cartoon)$")
+    watermark: bool = True
 
 pipeline = None
+
+def watermark_label(format_name: str) -> str:
+    return {"movie": "ReDom Movie Studio | AI-generated", "cartoon": "ReDom Cartoon | AI-generated", "video": "ReDom Videos | AI-generated"}.get(format_name, "ReDom Videos | AI-generated")
+
+def watermark_filter(format_name: str, enabled: bool = True) -> str:
+    if not enabled:
+        return "format=yuv420p"
+    label = watermark_label(format_name)
+    font = os.getenv("REDOM_VIDEO_WATERMARK_FONT", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    # A persistent, unobtrusive brand mark in the far-right upper corner.
+    escaped = label.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+    return (f"drawtext=fontfile='{font}':text='{escaped}':x=w-tw-88:y=24:"
+            "fontsize=22:fontcolor=white@0.92:borderw=2:bordercolor=black@0.65:"
+            "box=1:boxcolor=black@0.28:boxborderw=10,format=yuv420p")
 
 def target_size(aspect_ratio: str, resolution: str):
     if resolution == "1080p":
@@ -95,6 +113,28 @@ def last_frame(video_path: Path, image_path: Path):
     )
     return Image.open(image_path).convert("RGB")
 
+
+def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool):
+    command = ["ffmpeg", "-y", "-i", str(input_path)]
+    if watermark:
+        logo_path = Path("/app/assets/redom-logo.png")
+        command += [
+            "-loop", "1", "-i", str(logo_path),
+            "-filter_complex",
+            f"[0:v]{vf}[base];[1:v]scale=44:44[logo];[base][logo]overlay=x=W-w-18:y=18:shortest=1[v]",
+            "-map", "[v]",
+        ]
+    else:
+        command += ["-vf", vf, "-map", "0:v"]
+    command += [
+        "-map", "0:a?",
+        "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
+        "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
+        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+        str(output_path),
+    ]
+    subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 def render_project(job: VideoJob, output: Path):
     pipe = load_pipeline()
     segments = []
@@ -104,11 +144,27 @@ def render_project(job: VideoJob, output: Path):
 
     with tempfile.TemporaryDirectory(prefix="redom-video-") as work:
         workdir = Path(work)
+        if job.referenceAssetKey:
+            if not job.referenceAssetKey.startswith("redom-ai/video-references/") or ".." in job.referenceAssetKey:
+                raise ValueError("Invalid ReDom reference asset key.")
+            reference_path = workdir / "reference-image"
+            s3.download_file(os.environ["R2_BUCKET_NAME"], job.referenceAssetKey, str(reference_path))
+            with Image.open(reference_path) as reference_image:
+                reference = reference_image.convert("RGB").copy()
         while remaining > 0:
             scene_index += 1
             seconds = min(SEGMENT_SECONDS, remaining)
             frames = seconds * FPS + 1
             prompt = job.prompt.strip()
+            if job.format == "cartoon":
+                prompt += ("\nAnimation direction: polished high-end animated film, expressive character acting, "
+                           "deliberate animation timing, stable model sheets, consistent proportions, "
+                           "appealing silhouettes, clean materials, intentional color design and readable staging. "
+                           "Do not drift into live-action photorealism unless explicitly requested.")
+            elif job.format == "movie":
+                prompt += ("\nFeature-film direction: motivated camera movement, intentional shot composition, "
+                           "naturalistic performance, believable lighting, cinematic depth, consistent wardrobe "
+                           "and screen direction, emotionally legible facial acting and coherent scene geography.")
             if job.operation == "cgi":
                 prompt += (
                     "\nCGI production brief: physically based materials, coherent geometry, "
@@ -164,21 +220,9 @@ def render_project(job: VideoJob, output: Path):
             f"scale={width}:{height}:flags=lanczos,"
             "hqdn3d=1.2:1.2:3:3,"
             "unsharp=5:5:0.45:5:5:0,"
-            "format=yuv420p"
+            + watermark_filter(job.format, job.watermark)
         )
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", str(working), "-vf", vf,
-                "-map", "0:v", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
-                "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
-                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
-                str(enhanced),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        encode_final(working, enhanced, vf, job.watermark)
         output.write_bytes(enhanced.read_bytes())
 
 
@@ -202,18 +246,8 @@ def compose_project(job: VideoJob, output: Path):
         )
 
         width, height = target_size(job.aspectRatio, job.resolution)
-        vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0,format=yuv420p"
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", str(joined), "-vf", vf,
-                "-map", "0:v", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", os.getenv("REDOM_VIDEO_X264_PRESET", "medium"),
-                "-crf", os.getenv("REDOM_VIDEO_CRF", "18"),
-                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
-                str(output),
-            ],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
+        encode_final(joined, output, vf, job.watermark)
 
 async def callback(job: VideoJob, status: str, storage_key: str | None = None, error: str | None = None):
     body = {
@@ -221,6 +255,7 @@ async def callback(job: VideoJob, status: str, storage_key: str | None = None, e
         "status": status,
         "storageKey": storage_key,
         "durationSeconds": job.durationSeconds,
+        "format": job.format,
         "error": error,
     }
     async with httpx.AsyncClient(timeout=30) as client:
@@ -236,6 +271,8 @@ async def process(job: VideoJob):
         raise ValueError("Unsupported ReDom video runtime.")
     if job.durationSeconds > 300:
         raise ValueError("Video duration exceeds the ReDom maximum.")
+    if job.format not in {"video", "movie", "cartoon"}:
+        raise ValueError("Unsupported ReDom video format.")
 
     await callback(job, "processing")
     with tempfile.TemporaryDirectory(prefix="redom-video-output-") as work:
@@ -264,6 +301,12 @@ async def worker_loop():
             await callback(job, "completed", key)
         except Exception as error:
             await callback(job, "failed", error=str(error)[:1000])
+        finally:
+            if job.cleanupReferenceAsset and job.referenceAssetKey and job.referenceAssetKey.startswith("redom-ai/video-references/") and ".." not in job.referenceAssetKey:
+                try:
+                    await asyncio.to_thread(s3.delete_object, Bucket=os.environ["R2_BUCKET_NAME"], Key=job.referenceAssetKey)
+                except Exception:
+                    pass
 
 @app.on_event("startup")
 async def startup():

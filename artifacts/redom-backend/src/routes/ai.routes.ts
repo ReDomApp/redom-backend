@@ -65,8 +65,8 @@ const imageEditSchema = z.object({
 const voiceSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000) }).strict();
 const fileSchema = z.object({ dataUri: z.string().trim().min(32).max(35_000_000), fileName: z.string().trim().min(1).max(160), mimeType: z.string().trim().max(160).default("application/octet-stream"), prompt: z.string().trim().max(4_000).default("Analyze this file and summarize the important information.") }).strict();
 const feedbackSchema = z.object({ rating: z.enum(["good", "bad"]), reason: z.enum(["Not relevant", "Not accurate", "Too repetitive", "Harmful or offensive", "Something else"]).optional() }).strict();
-const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), operation: z.enum(["generate","cgi"]).optional(), durationSeconds: z.number().int().min(4).max(300).optional(), resolution: z.enum(["720p","1080p"]).optional(), aspectRatio: z.enum(["16:9","9:16","1:1"]).optional() }).strict();
-const movieProjectSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), duration: z.number().int().min(4).max(300).default(300), quality: z.enum(["fast","standard","high","pro"]).default("high"), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), audio: z.boolean().default(true), voice: z.boolean().default(true), title: z.string().trim().max(240).optional() }).strict();
+const videoSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), referenceImageDataUri: z.string().trim().min(32).max(20_000_000).optional(), operation: z.enum(["generate","cgi"]).optional(), format: z.enum(["video","movie","cartoon"]).default("video"), watermark: z.boolean().default(true), durationSeconds: z.number().int().min(4).max(300).optional(), resolution: z.enum(["720p","1080p"]).optional(), aspectRatio: z.enum(["16:9","9:16","1:1"]).optional() }).strict();
+const movieProjectSchema = z.object({ prompt: z.string().trim().min(5).max(8_000), referenceImageDataUri: z.string().trim().min(32).max(20_000_000).optional(), format: z.enum(["movie","cartoon"]).default("movie"), duration: z.number().int().min(4).max(300).default(300), quality: z.enum(["fast","standard","high","pro"]).default("high"), style: z.string().trim().min(2).max(64).default("cinematic"), aspectRatio: z.enum(["16:9","9:16","1:1"]).default("16:9"), audio: z.boolean().default(true), voice: z.boolean().default(true), title: z.string().trim().max(240).optional() }).strict();
 const movieRevisionSchema = z.object({ instruction: z.string().trim().min(3).max(8_000) }).strict();
 
 router.post("/localize", localizationRateLimit, async (req, res) => {
@@ -88,7 +88,7 @@ router.post("/video/projects", rateLimit({ windowMs: 60_000, max: 5, standardHea
   const parsed = movieProjectSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio request." });
   try {
-    const result = await createReDomMovieProject(req.user.userId, { prompt: parsed.data.prompt, durationSeconds: parsed.data.duration, quality: parsed.data.quality, style: parsed.data.style, aspectRatio: parsed.data.aspectRatio, audio: parsed.data.audio, voice: parsed.data.voice, title: parsed.data.title });
+    const result = await createReDomMovieProject(req.user.userId, { prompt: parsed.data.prompt, referenceImageDataUri: parsed.data.referenceImageDataUri, durationSeconds: parsed.data.duration, quality: parsed.data.quality, style: parsed.data.style, format: parsed.data.format, aspectRatio: parsed.data.aspectRatio, audio: parsed.data.audio, voice: parsed.data.voice, title: parsed.data.title });
     return res.status(202).json({ success: true, ...result });
   } catch (error) {
     const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
