@@ -74,7 +74,7 @@ export async function recordOpsEmailEvent(input: {
 type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
   email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null };
-  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageEmailsPerCase: number | null };
+  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null };
   incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number };
   dataCoverage: Record<string, string>;
   forecast: { expectedEmailAttempts24h: number; expectedSupportCases24h: number; notes: string[] };
@@ -156,7 +156,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       averageMessagesPerCase: cases ? Math.round((num(m.currentmessages) / cases) * 100) / 100 : null,
     },
     incidents: {
-      open: openIncidents, resolved24h: 0, criticalOpen: openIncidents.filter(i => i.severity === "critical").length,
+      open: openIncidents, resolved24h: num(resolvedIncidents.rows[0]?.resolved), criticalOpen: openIncidents.filter(i => i.severity === "critical").length,
     },
     dataCoverage: {
       emailLedger: firstEvent.rows[0]?.first_at ? "Available from " + iso(new Date(firstEvent.rows[0].first_at)) + "; totals before this timestamp are not represented by this ledger." : "No email events recorded yet; email totals are incomplete until send paths are instrumented.",
@@ -376,7 +376,6 @@ async function schedulerTick(): Promise<void> {
   if (inProcess) return;
   inProcess = true;
   try {
-    await ensureOpsIntelligenceSchema();
     const latest = await pool.query("SELECT status, period_end FROM redom_ops_report_runs WHERE status='sent' ORDER BY period_end DESC LIMIT 1");
     const due = !latest.rows[0] || Date.now() - new Date(latest.rows[0].period_end).getTime() >= 86400000;
     if (due) await generateReport(new Date());
