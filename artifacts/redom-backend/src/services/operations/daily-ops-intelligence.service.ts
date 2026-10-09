@@ -90,8 +90,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const [email, annual, firstEvent, support, messages, caseEmails, incidents, resolvedIncidents, database] = await Promise.all([
     pool.query(`SELECT
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
-      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
-      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='delivered')::int AS delivered,
+      count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
+      count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='delivered')::int AS delivered,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='failed')::int AS failed,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='bounced')::int AS bounced,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='rejected')::int AS rejected,
@@ -99,13 +99,13 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='duplicate_suppressed')::int AS duplicateSuppressed,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='duplicate_delivery')::int AS duplicateDelivery,
       count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='attempted')::int AS previousAttempts,
-      count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='delivered')::int AS previousDelivered,
+      count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='delivered')::int AS previousDelivered,
       count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='failed')::int AS previousFailed,
       count(*) FILTER (WHERE occurred_at >= $3 AND event_type='attempted')::int AS monthlyAttempts
       FROM redom_ops_email_events`, [start, prevStart, monthStart]),
     pool.query(`SELECT
       count(*) FILTER (WHERE event_type='attempted')::int AS attempts,
-      count(*) FILTER (WHERE event_type='delivered')::int AS delivered,
+      count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE event_type='delivered')::int AS delivered,
       count(*) FILTER (WHERE event_type='failed')::int AS failed,
       count(*) FILTER (WHERE event_type='bounced')::int AS bounced,
       count(*) FILTER (WHERE event_type='duplicate_suppressed')::int AS duplicateSuppressed
@@ -125,7 +125,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       FROM support_case_messages WHERE created_at >= $2`, [start, prevStart]),
     pool.query(`SELECT
       count(*) FILTER (WHERE e.event_type='attempted')::int AS attempts,
-      count(*) FILTER (WHERE e.event_type IN ('attempted','accepted','delivered','failed','bounced','rejected','deferred'))::int AS events
+      count(DISTINCT e.logical_email_id) FILTER (WHERE e.event_type='attempted')::int AS events
       FROM redom_ops_email_events e
       JOIN support_cases c ON c.id=e.case_id
       WHERE c.created_at >= $1 AND e.occurred_at >= $1`, [start]),
