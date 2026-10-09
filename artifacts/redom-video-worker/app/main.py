@@ -128,7 +128,7 @@ def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool, 
         escaped_path = caption_file.as_posix()
         caption_color, caption_box = {"movie": ("white", "black@0.48"), "cartoon": ("black", "white@0.86"), "video": ("white", "black@0.52")}.get(format_name, ("white", "black@0.52"))
         caption_border = "black@0.65" if caption_color == "white" else "white@0.8"
-        vf += (f",drawtext=font='Noto Sans':textfile='{escaped_path}':x=(w-tw)/2:y=h-th- max(38\\,h*0.045):"
+        vf += (f",drawtext=font='Noto Sans':textfile='{escaped_path}':x=(w-tw)/2:y=h-th-max(38\\,h*0.045):"
                f"fontsize=max(18\\,min(28\\,h*0.022)):fontcolor={caption_color}:borderw=1:bordercolor={caption_border}:"
                f"box=1:boxcolor={caption_box}:boxborderw=6:expansion=none")
     if watermark:
