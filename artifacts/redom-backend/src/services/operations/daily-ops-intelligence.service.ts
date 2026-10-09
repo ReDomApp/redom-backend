@@ -244,12 +244,16 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       GROUP BY c.case_number ORDER BY count(*) FILTER (WHERE e.event_type='attempted') DESC, c.case_number LIMIT 20`, [start]),
     pool.query(`WITH months AS (
       SELECT generate_series(date_trunc('month',$1::timestamptz), date_trunc('month',$2::timestamptz) - interval '1 month', interval '1 month') AS month_start
+    ), created AS (
+      SELECT date_trunc('month',created_at) AS month_start,count(*)::int AS total
+      FROM support_cases WHERE created_at >= $1 AND created_at < $2 GROUP BY 1
+    ), closed AS (
+      SELECT date_trunc('month',closed_at) AS month_start,count(*)::int AS total
+      FROM support_cases WHERE closed_at >= $1 AND closed_at < $2 GROUP BY 1
     )
-    SELECT to_char(months.month_start,'YYYY-MM') AS month,
-      count(sc.id) FILTER (WHERE sc.created_at >= months.month_start AND sc.created_at < months.month_start + interval '1 month')::int AS created,
-      count(sc.id) FILTER (WHERE sc.closed_at >= months.month_start AND sc.closed_at < months.month_start + interval '1 month')::int AS closed
-    FROM months LEFT JOIN support_cases sc ON sc.created_at >= months.month_start AND sc.created_at < months.month_start + interval '1 month'
-    GROUP BY months.month_start ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd]),
+    SELECT to_char(months.month_start,'YYYY-MM') AS month,COALESCE(created.total,0)::int AS created,COALESCE(closed.total,0)::int AS closed
+    FROM months LEFT JOIN created USING(month_start) LEFT JOIN closed USING(month_start)
+    ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd]),
     pool.query(`WITH locations AS (
       SELECT COALESCE(NULLIF(memory->'networkSecurity'->>'country',''),NULLIF(ip_country_code,''),NULLIF(phone_lookup_country_code,''),'Unknown') AS country,
         COALESCE(NULLIF(memory->'networkSecurity'->>'city',''),'Unknown') AS city
