@@ -829,15 +829,16 @@ async function criticalAlertTick(): Promise<void> {
     for (const alert of alerts) {
       const bucketKey = alert.key + ":" + hourBucket;
       if (alertBuckets.has(bucketKey)) continue;
-      const idempotencyKey = "redom-ops-alert-" + createHash("sha256").update(bucketKey).digest("hex").slice(0, 40);
-      const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#F0F2F5;font-family:Arial,sans-serif;color:#1C1E21"><div style="max-width:640px;margin:auto;background:white;border:1px solid #DADDE1"><div style="background:#1877F2;color:white;padding:22px"><strong>ReDom · Operations Alert</strong></div><div style="padding:24px"><div style="font-size:12px;font-weight:bold;color:#B42318">${esc(alert.severity.toUpperCase())} PRIORITY</div><h1 style="font-size:22px">${esc(alert.title)}</h1><p style="line-height:1.6">${esc(alert.detail)}</p><p style="font-size:12px;color:#65676B">Observed at ${esc(new Date().toISOString())}. This alert is separate from the scheduled daily report.</p></div></div></body></html>`;
+      const observedAt = new Date(hourBucket * 3_600_000).toISOString();
+      const idempotencyKey = "redom-ops-alert-" + createHash("sha256").update(JSON.stringify({ bucketKey, title: alert.title, detail: alert.detail, severity: alert.severity })).digest("hex").slice(0, 40);
+      const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#F0F2F5;font-family:Arial,sans-serif;color:#1C1E21"><div style="max-width:640px;margin:auto;background:white;border:1px solid #DADDE1"><div style="background:#1877F2;color:white;padding:22px"><strong>ReDom · Operations Alert</strong></div><div style="padding:24px"><div style="font-size:12px;font-weight:bold;color:#B42318">${esc(alert.severity.toUpperCase())} PRIORITY</div><h1 style="font-size:22px">${esc(alert.title)}</h1><p style="line-height:1.6">${esc(alert.detail)}</p><p style="font-size:12px;color:#65676B">Observed at ${esc(observedAt)}. This alert is separate from the scheduled daily report.</p></div></div></body></html>`;
       try {
         const sent = await resend.emails.send({
           from: REPORT_FROM,
           to: [RECIPIENT],
           subject: `[ReDom ${alert.severity.toUpperCase()}] ${alert.title}`,
           html,
-          text: `${alert.severity.toUpperCase()}: ${alert.title}\n\n${alert.detail}\n\nObserved at ${new Date().toISOString()}.`,
+          text: `${alert.severity.toUpperCase()}: ${alert.title}\n\n${alert.detail}\n\nObserved at ${observedAt}.`,
           headers: { "X-ReDom-Alert-Key": idempotencyKey },
         }, { idempotencyKey });
         if (sent.error) throw new Error(sent.error.message);
