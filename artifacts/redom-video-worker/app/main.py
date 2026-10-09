@@ -18,6 +18,7 @@ import wan
 from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, WAN_CONFIGS
 from wan.utils.utils import save_video
 from app.animation_direction import build_animation_direction
+from app.studio_cartoon_finishing import cartoon_finishing_filter
 
 MODEL_NAME = os.getenv("REDOM_VIDEO_MODEL_ID", "ReDom-v2.8—Video")
 RUNTIME_NAME = os.getenv("REDOM_VIDEO_RUNTIME_ID", "redom-v2.8-native")
@@ -463,7 +464,12 @@ def compose_project(job: VideoJob, output: Path):
             joined = mixed
 
         width, height = target_size(job.aspectRatio, job.resolution)
-        vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
+        if job.format == "cartoon":
+            # Studio performs a real post-production pass after Cartoon rendering:
+            # cleanup, color consistency, edge refinement and motion interpolation.
+            vf = cartoon_finishing_filter(width, height, watermark_filter(job.format, job.watermark))
+        else:
+            vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
         encode_final(joined, output, vf, job.watermark, job.captionText, job.format)
 
 async def callback(job: VideoJob, status: str, storage_key: str | None = None, error: str | None = None):
