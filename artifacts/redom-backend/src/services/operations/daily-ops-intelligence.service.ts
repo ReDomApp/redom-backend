@@ -99,9 +99,10 @@ export async function recordOpsIncident(input: {
 
 type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
-  email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null };
-  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }> };
-  incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number };
+  email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null; monthlyTrend: Array<{ month: string; attempts: number; accepted: number; delivered: number; failed: number; bounced: number; rejected: number; deliveryRatePct: number | null; outcomeCoveragePct: number | null }> };
+  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidatedOrRecycled: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSenders30d: Array<{ email: string; messages: number; cases: number }>; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
+  fraud: { reviewedSignals: Array<{ email: string; risk: string; score: number; indicators: string[]; caseNumbers: string[]; count: number }>; signalCount30d: number; warning: string };
+  incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number; resolved365d: number; created365d: number };
   dataCoverage: Record<string, string>;
   forecast: { expectedEmailAttempts24h: number; expectedSupportCases24h: number; notes: string[] };
   system: { database: string; collectedAt: string };
@@ -112,7 +113,10 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const prevStart = new Date(now.getTime() - 172800000);
   const yearStart = new Date(now.getTime() - 365 * 86400000);
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const [email, annual, firstEvent, support, messages, caseEmails, incidents, resolvedIncidents, database] = await Promise.all([
+  const monthSeriesStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+  const monthSeriesEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
+  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
     pool.query(`SELECT
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
@@ -135,6 +139,26 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE event_type='bounced')::int AS bounced,
       count(*) FILTER (WHERE event_type='duplicate_suppressed')::int AS duplicateSuppressed
       FROM redom_ops_email_events WHERE occurred_at >= $1`, [yearStart]),
+    pool.query(`WITH months AS (
+      SELECT generate_series(date_trunc('month',$1::timestamptz), date_trunc('month',$2::timestamptz) - interval '1 month', interval '1 month') AS month_start
+    ), stats AS (
+      SELECT date_trunc('month',occurred_at) AS month_start,
+        count(DISTINCT logical_email_id) FILTER (WHERE event_type='attempted')::int AS attempts,
+        count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='accepted')::int AS accepted,
+        count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='delivered')::int AS delivered,
+        count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='failed')::int AS failed,
+        count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='bounced')::int AS bounced,
+        count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='rejected')::int AS rejected
+      FROM redom_ops_email_events WHERE occurred_at >= $1 AND occurred_at < $2 GROUP BY 1
+    )
+    SELECT to_char(months.month_start,'YYYY-MM') AS month,
+      COALESCE(stats.attempts,0)::int AS attempts,COALESCE(stats.accepted,0)::int AS accepted,
+      COALESCE(stats.delivered,0)::int AS delivered,COALESCE(stats.failed,0)::int AS failed,
+      COALESCE(stats.bounced,0)::int AS bounced,COALESCE(stats.rejected,0)::int AS rejected,
+      CASE WHEN COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0)>0
+        THEN round(100.0*COALESCE(stats.delivered,0)/(stats.delivered+stats.failed+stats.bounced+stats.rejected),2) ELSE NULL END AS delivery_rate_pct,
+      CASE WHEN COALESCE(stats.attempts,0)>0 THEN round(100.0*(COALESCE(stats.delivered,0)+COALESCE(stats.failed,0)+COALESCE(stats.bounced,0)+COALESCE(stats.rejected,0))/stats.attempts,2) ELSE NULL END AS outcome_coverage_pct
+    FROM months LEFT JOIN stats USING(month_start) ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd]),
     pool.query("SELECT min(occurred_at) AS first_at FROM redom_ops_email_events"),
     pool.query(`SELECT
       count(*) FILTER (WHERE created_at >= $1)::int AS created,
@@ -148,6 +172,49 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE created_at >= $1)::int AS currentMessages,
       count(*) FILTER (WHERE created_at >= $2 AND created_at < $1)::int AS previousMessages
       FROM support_case_messages WHERE created_at >= $2`, [start, prevStart]),
+    pool.query(`SELECT
+      count(*) FILTER (WHERE created_at >= $1)::int AS created365d,
+      count(*) FILTER (WHERE closed_at >= $1 OR (status='closed' AND updated_at >= $1))::int AS closed365d,
+      count(*) FILTER (WHERE case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL)::int AS invalidated,
+      count(*) FILTER (WHERE case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL)::int AS recycled,
+      count(*) FILTER (WHERE status <> 'closed' AND case_number_invalid=false)::int AS active
+      FROM support_cases`, [yearStart]),
+    pool.query(`SELECT
+      COALESCE(array_agg(case_number ORDER BY created_at DESC) FILTER (WHERE created_at >= $1), ARRAY[]::text[]) AS created_numbers,
+      COALESCE(array_agg(case_number ORDER BY updated_at DESC) FILTER (WHERE status <> 'closed' AND case_number_invalid=false), ARRAY[]::text[]) AS active_numbers,
+      COALESCE(array_agg(case_number ORDER BY updated_at DESC) FILTER (WHERE case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL), ARRAY[]::text[]) AS invalid_numbers
+      FROM support_cases WHERE created_at >= $2 OR status <> 'closed' OR case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL`, [start,yearStart]),
+    pool.query(`SELECT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,''))) AS email,
+      count(*)::int AS messages,count(DISTINCT sc.id)::int AS cases
+      FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
+      WHERE m.sender_type='user' AND m.created_at >= $1
+        AND COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,'')) IS NOT NULL
+      GROUP BY 1 HAVING count(*) >= 3
+      ORDER BY count(*) DESC LIMIT 20`, [thirtyDaysAgo]),
+    pool.query(`SELECT COALESCE(NULLIF(category,''),'uncategorized') AS topic,count(*)::int AS count
+      FROM support_cases WHERE created_at >= $1 GROUP BY 1 ORDER BY count(*) DESC LIMIT 12`, [thirtyDaysAgo]),
+    pool.query(`SELECT regexp_replace(trim(subject),'[[:space:]]+',' ','g') AS question,count(*)::int AS count
+      FROM support_cases WHERE created_at >= $1 AND COALESCE(trim(subject),'') <> ''
+      GROUP BY 1 ORDER BY count(*) DESC LIMIT 15`, [thirtyDaysAgo]),
+    pool.query(`WITH candidate AS (
+      SELECT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,''))) AS email,
+        sc.case_number,sc.category,sc.subject,m.body,m.created_at
+      FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
+      WHERE m.sender_type='user' AND m.created_at >= $1
+        AND COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,'')) IS NOT NULL
+        AND (m.body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment)|refund.{0,20}(without|bypass|verification))'
+          OR sc.category='refund_payment' AND m.body ~* '(not my transaction|different account|fake|bypass|without verification|change.*receipt)')
+    )
+    SELECT email,count(*)::int AS count,count(DISTINCT case_number)::int AS case_count,
+      array_agg(DISTINCT case_number) AS cases,
+      bool_or(body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment))') AS credential_or_bypass,
+      bool_or(body ~* '(fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|not my transaction|different account|change.*receipt)') AS payment_integrity
+    FROM candidate GROUP BY email HAVING count(*) >= 1 ORDER BY count(*) DESC LIMIT 25`, [thirtyDaysAgo]),
+    pool.query(`SELECT count(DISTINCT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,''))))::int AS senders,
+      count(*)::int AS messages FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
+      WHERE m.sender_type='user' AND m.created_at >= $1 AND
+      (m.body ~* '(api[ -]?key|secret key|access token|password|credential|bypass.{0,30}(security|verification|payment)|fake.{0,20}(receipt|payment|refund)|forge.{0,20}(receipt|transaction)|steal.{0,20}(account|token)|exploit.{0,20}(api|payment)|refund.{0,20}(without|bypass|verification))'
+        OR sc.category='refund_payment' AND m.body ~* '(not my transaction|different account|fake|bypass|without verification|change.*receipt)')`, [thirtyDaysAgo]),
     pool.query(`SELECT c.case_number,
       count(*) FILTER (WHERE e.event_type='attempted')::int AS attempts,
       count(*) FILTER (WHERE e.event_type='accepted')::int AS accepted,
@@ -162,6 +229,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       FROM redom_ops_incidents WHERE status NOT IN ('closed','resolved') ORDER BY
       CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'warning' THEN 3 ELSE 4 END, last_seen_at DESC LIMIT 30`),
     pool.query(`SELECT count(*)::int AS resolved FROM redom_ops_incidents WHERE status IN ('resolved','closed') AND resolved_at >= $1`, [start]),
+    pool.query(`SELECT count(*) FILTER (WHERE status IN ('resolved','closed') AND resolved_at >= $1)::int AS resolved,
+      count(*) FILTER (WHERE created_at >= $1)::int AS created FROM redom_ops_incidents`, [yearStart]),
     pool.query("SELECT 1 AS ok"),
   ]);
   const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {};
