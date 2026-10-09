@@ -311,6 +311,25 @@ def render_project(job: VideoJob, output: Path):
             stderr=subprocess.DEVNULL,
         )
 
+        if job.audioEnabled:
+            if job.audioTracks:
+                voice_mix = workdir / "voice-mix.mp4"
+                mix_audio_tracks(working, voice_mix, job.audioTracks, job.durationSeconds, keep_video_audio=False)
+                if job.lipSyncEnabled:
+                    voice_wav = workdir / "voice-only.wav"
+                    extract_voice_audio(voice_mix, voice_wav)
+                    synced = workdir / "lip-synced.mp4"
+                    apply_lip_sync(working, voice_wav, synced, job)
+                    mixed = workdir / "dialogue-mixed.mp4"
+                    mix_audio_tracks(synced, mixed, job.audioTracks, job.durationSeconds, keep_video_audio=False)
+                    working = mixed
+                else:
+                    working = voice_mix
+            else:
+                silent = workdir / "silent-audio.mp4"
+                mix_audio_tracks(working, silent, [], job.durationSeconds, keep_video_audio=False)
+                working = silent
+
         width, height = target_size(job.aspectRatio, job.resolution)
         enhanced = workdir / "final.mp4"
         vf = (
@@ -335,6 +354,9 @@ def validate_final_video(path: Path, job: VideoJob):
     metadata = json.loads(result.stdout)
     streams = metadata.get("streams", [])
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
+    if job.audioEnabled and (not audio or audio.get("codec_name") != "aac"):
+        raise RuntimeError("Final video is missing the required AAC soundtrack/dialogue stream.")
     if not video or video.get("codec_name") != "h264":
         raise RuntimeError("Final video failed codec validation.")
     expected_width, expected_height = target_size(job.aspectRatio, job.resolution)
@@ -364,6 +386,11 @@ def compose_project(job: VideoJob, output: Path):
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(joined)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+
+        if job.audioEnabled:
+            mixed = workdir / "score-mixed.mp4"
+            mix_audio_tracks(joined, mixed, job.musicTracks, job.durationSeconds, keep_video_audio=True)
+            joined = mixed
 
         width, height = target_size(job.aspectRatio, job.resolution)
         vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
