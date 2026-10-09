@@ -41,6 +41,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: python -m py_compile artifacts/redom-video-worker/app/main.py artifacts/redom-video-worker/app/animation_direction.py artifacts/redom-video-worker/app/studio_cartoon_finishing.py artifacts/redom-video-worker/tests/test_animation_direction.py artifacts/redom-video-worker/tests/test_studio_cartoon_finishing.py
+      - run: python -m py_compile artifacts/redom-video-worker/app/main.py artifacts/redom-video-worker/app/animation_direction.py artifacts/redom-video-worker/app/studio_cartoon_finishing.py artifacts/redom-video-worker/app/duration_policy.py artifacts/redom-video-worker/tests/test_animation_direction.py artifacts/redom-video-worker/tests/test_studio_cartoon_finishing.py artifacts/redom-video-worker/tests/test_duration_policy.py
       - run: python -m unittest discover -s tests -p "test_*.py"
         working-directory: artifacts/redom-video-worker

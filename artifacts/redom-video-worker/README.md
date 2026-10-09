@@ -172,3 +172,20 @@ Backend environment mapping:
 The configured checkpoint directory must contain the correct compatible checkpoint files before the worker is marked ready. The code does not synthesize or train weights. The currently checked-in runtime uses the Wan2.2 TI2V-5B implementation, so each mounted checkpoint must be compatible with that runtime. These endpoint profiles isolate routing and operational resources; they do not, by themselves, prove that three separately trained model weights exist. Do not describe a model as a separately trained proprietary model until its checkpoint provenance and quality have been verified.
 
 The Studio endpoint receives live-action movie shots and all final-composition jobs from the backend's existing Movie Studio planner. Cartoon episode shots are sent to Cartoon—R8.0; final assembly for either movie or cartoon projects runs on Studio—Ultron 8.0R. It must use the Studio token for worker authorization and callbacks, and its own Redis URL/queue. The worker must have access to the same R2 bucket where project audio and shot assets are stored.
+
+
+## Long-form duration contract
+
+- ReDom-v2.8—Video standalone generation: maximum 59 seconds.
+- Cartoon—R8.0 complete animated project: maximum 3,600 seconds (60 minutes).
+- Studio—Ultron 8.0R complete movie project: maximum 7,200 seconds (120 minutes).
+- Trailer previews remain 15-25 seconds.
+
+These limits apply at project composition, not to an individual model-generation call. Each diffusion job remains limited to 59 seconds and long-form projects must be assembled from short, validated shots. The API rejects project durations above the format-specific limit; the Studio worker checks composition duration and probes the final export. The duration contract does not itself prove complete shot coverage, continuous soundtrack generation, or successful feature-length GPU rendering. Those remain release gates requiring actual render and recovery tests.
+
+
+## Whole-movie episodic runtime contract
+
+A full Studio—Ultron 8.0R movie is one project with a maximum total runtime of 7,200 seconds (120 minutes) across all episodes combined. Trailer preview and creator approval happen before the full movie project is created. The Movie Director/Planner must create at least four episodes for a full movie (and may choose more when story pacing calls for it), assign each episode an explicit target runtime, and allocate those episode runtimes so their sum equals the approved whole-project runtime exactly. The requested runtime is never a per-episode allowance. Each episode is further divided into scenes and short generation shots; no diffusion call should attempt to render a whole episode or movie. The backend normalizes episode runtime allocations to the whole-project target and rejects plans with fewer than four episodes or empty episodes. Episode planning is limited to 24 episodes per project.
+
+Example: a 120-minute project can be split into four 30-minute episodes or six 20-minute episodes. The planner chooses the structure that best supports the story, while the sum stays at 120 minutes or less.
