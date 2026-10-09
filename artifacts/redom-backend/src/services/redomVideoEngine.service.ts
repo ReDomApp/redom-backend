@@ -12,7 +12,7 @@ import { openai } from "../lib/openai";
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
 export const REDOM_VIDEO_MODEL = "ReDom-v2.8—Video";
 export const REDOM_VIDEO_RUNTIME = "redom-v2.8-native";
-export const REDOM_VIDEO_MAX_SECONDS = 300;
+export const REDOM_VIDEO_MAX_SECONDS = 59;
 
 async function requirePaidVideoEntitlement(userId: string) {
   const now = new Date();
