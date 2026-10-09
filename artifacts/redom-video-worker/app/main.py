@@ -516,6 +516,12 @@ async def startup():
 async def shutdown():
     await redis.close()
 
+@app.get("/ping")
+async def runpod_health_check():
+    # RunPod Load Balancer requires GET /ping to return HTTP 200 when ready.
+    return {"status": "healthy"}
+
+
 @app.get("/health")
 async def health():
     return {
