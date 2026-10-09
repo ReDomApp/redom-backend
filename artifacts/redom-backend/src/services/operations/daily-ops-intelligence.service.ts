@@ -540,7 +540,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     : "No defensible month-over-month delivery improvement conclusion: monthly outcome coverage is missing or incomplete.";
   const lines = [
     "ReDom | DAILY OPERATIONS INTELLIGENCE",
-    "Reporting period: " + m.periodStart + " to " + m.periodEnd + " (" + m.timezone + ")",
+    "Reporting period: " + displayDate(m.periodStart, m.timezone) + " to " + displayDate(m.periodEnd, m.timezone),
     "Overall status: " + String(a.status ?? "unknown").toUpperCase(),
     "",
     "EXECUTIVE SUMMARY",
@@ -637,7 +637,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "DATA COVERAGE AND LIMITATIONS",
     ...Object.entries(m.dataCoverage).flatMap(([k, v]) => wrap(k + ": " + v, 88)),
     "",
-    "Generated at " + m.generatedAt + ". Metrics are evidence-based; unavailable telemetry is not treated as healthy.",
+    "Generated at " + displayDate(m.generatedAt, m.timezone) + ". Metrics are evidence-based; unavailable telemetry is not treated as healthy.",
   ];
   const chunks: string[][] = [];
   for (let i = 0; i < lines.length; i += 32) chunks.push(lines.slice(i, i + 32));
@@ -789,9 +789,9 @@ async function generateReport(now: Date): Promise<void> {
     const send = await resend.emails.send({
       from: REPORT_FROM,
       to: [RECIPIENT],
-      subject: `ReDom Daily Operations Intelligence — ${now.toISOString().slice(0,10)} — ${String(analysis.status ?? "unknown").toUpperCase()}`,
+      subject: `ReDom Daily Operations Report — ${new Intl.DateTimeFormat("en-CA", { timeZone: REPORT_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now)} — ${String(analysis.status ?? "unknown").toUpperCase()}`,
       html,
-      attachments: [{ filename: `ReDom-Daily-Operations-${now.toISOString().slice(0,10)}.pdf`, content: pdf.toString("base64") }],
+      attachments: [{ filename: `ReDom-Daily-Operations-${new Intl.DateTimeFormat("en-CA", { timeZone: REPORT_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now)}.pdf`, content: pdf.toString("base64") }],
       headers: { "X-ReDom-Report-Key": reportKey },
     }, { idempotencyKey: "redom-daily-ops-" + reportKey });
     if (send.error) throw new Error("Resend rejected daily operations report: " + send.error.message);
@@ -865,7 +865,7 @@ async function criticalAlertTick(): Promise<void> {
           to: [RECIPIENT],
           subject: `[ReDom ${alert.severity.toUpperCase()}] ${alert.title}`,
           html,
-          text: `${alert.severity.toUpperCase()}: ${alert.title}\n\n${alert.detail}\n\nObserved at ${observedAt}.`,
+          text: `${alert.severity.toUpperCase()}: ${alert.title}\n\n${alert.detail}\n\nObserved ${displayDate(observedAt)}.\n\nReDom Admin Dashboard: ${(process.env.REDOM_OPS_ADMIN_URL?.trim() || "https://redom-backend.onrender.com/redom-backend/ops/admin").replace(/\/$/, "")}`,
           headers: { "X-ReDom-Alert-Key": idempotencyKey },
         }, { idempotencyKey });
         if (sent.error) throw new Error(sent.error.message);
