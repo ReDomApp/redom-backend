@@ -85,7 +85,26 @@ router.post("/chat", authMiddleware, async (req, res) => {
   catch (error) { req.log?.error?.({ err: error }, "ReDom AI chat failed"); return res.status(502).json({ success: false, message: "ReDom AI is temporarily unavailable. Please try again shortly." }); }
 });
 
-router.post("/video/trailer-preview", rateLimit({ windowMs: 60_000, max: 3, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {\n  const parsed = movieTrailerPreviewSchema.safeParse(req.body);\n  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio trailer preview request.", issues: parsed.success ? undefined : parsed.error.flatten() });\n  try { const result = await createReDomMovieTrailerPreview(req.user.userId, { prompt: parsed.data.prompt, format: parsed.data.format, durationSeconds: parsed.data.duration, episodeCount: parsed.data.episodeCount, style: parsed.data.style, aspectRatio: parsed.data.aspectRatio, soundtrackStyle: parsed.data.soundtrackStyle, language: parsed.data.language }); return res.status(202).json({ success: true, ...result }); }\n  catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, code: (error as { code?: string })?.code, message: error instanceof Error ? error.message : "Trailer preview could not be created." }); }\n});\n\nrouter.post("/video/projects", rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
+router.post("/video/trailer-preview", rateLimit({ windowMs: 60_000, max: 3, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
+  const parsed = movieTrailerPreviewSchema.safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio trailer preview request.", issues: parsed.success ? undefined : parsed.error.flatten() });
+  try {
+    const result = await createReDomMovieTrailerPreview(req.user.userId, {
+      prompt: parsed.data.prompt, format: parsed.data.format, durationSeconds: parsed.data.duration,
+      episodeCount: parsed.data.episodeCount, style: parsed.data.style, aspectRatio: parsed.data.aspectRatio,
+      soundtrackStyle: parsed.data.soundtrackStyle, language: parsed.data.language,
+    });
+    return res.status(202).json({ success: true, ...result });
+  } catch (error) {
+    const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false, code: (error as { code?: string })?.code,
+      message: error instanceof Error ? error.message : "Trailer preview could not be created.",
+    });
+  }
+});
+
+router.post("/video/projects", rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
   const parsed = movieProjectSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio request." });
   try {
