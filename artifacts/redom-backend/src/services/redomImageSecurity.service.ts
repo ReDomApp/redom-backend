@@ -249,7 +249,7 @@ export async function enforceReDomImageSecurity(
   const providerSignals: ProviderSignals = {};
   providerSignals.openai = await moderatePrompt(cleanPrompt, options.imageDataUri);
 
-  if (providerSignals.openai.flagged) {
+  if (providerSignals.openai?.flagged) {
     const decision: ImageSecurityDecision = {
       requestId, operation, action: "block", policyCode: "UNSAFE_CONTENT", riskLevel: "HIGH",
       documentClass: "unknown", governmentDocument: false, financialDocument: false, authenticityRelevant: false,
