@@ -56,6 +56,19 @@ The generation worker does not make a generated object available directly. The b
 
 The API supports a `cgi` operation. CGI mode augments the ReDom scene brief with physically based materials, coherent geometry, cinematic camera movement, volumetric lighting, stable object identity, realistic shadows, and temporal continuity. It is still rendered through the ReDom-controlled video runtime; it is not a third-party CGI API.
 
+## RunPod Serverless Load Balancer
+
+This FastAPI worker is intended to be deployed as a **Load balancer** endpoint, not a RunPod Queue endpoint. It owns its existing Redis queue consumer and accepts backend jobs at `POST /v1/jobs`.
+
+- Health check path: `/ping` (returns HTTP 200)
+- Application port: set `PORT=8080`
+- Health-check port: set `PORT_HEALTH=8080`
+- Expose HTTP port `8080` in the RunPod template/endpoint configuration.
+- Keep the repository Dockerfile path as `artifacts/redom-video-worker/Dockerfile` and build context as `artifacts/redom-video-worker`.
+- Mount the provisioned model checkpoint at `/models/redom-v2.8-video` and configure the required Redis and R2 variables before enabling traffic.
+
+RunPod's edge authentication does not replace ReDom's application-level bearer token on `POST /v1/jobs`. Configure `REDOM_VIDEO_WORKER_TOKEN` to match the backend's `REDOM_VIDEO_ENGINE_TOKEN`.
+
 ## Required worker environment
 
 - `REDOM_VIDEO_MODEL_ID=ReDom-v2.8—Video`
