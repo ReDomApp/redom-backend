@@ -4,7 +4,7 @@ import { z } from "zod";
 import { env } from "../config/env";
 import { pool } from "../database/db";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, claimInboundEvent, markInboundEvent, markInboundEventFailed, findRecentActiveSupportCase, type SupportCase } from "../services/support/support.service";
+import { addSupportMessage, classifySupportCategory, createSupportCase, extractCaseNumber, formatCaseReply, getAccountContextByEmail, getAccountContextById, getCaseRequesterEmail, getOwnedSupportCase, getSupportCase, getSupportCaseMessages, linkInboundEvent, listOwnedSupportCases, claimInboundEvent, markInboundEvent, markInboundEventFailed, findRecentActiveSupportCase, sendSupportEmail, type SupportCase } from "../services/support/support.service";
 import { generatePolicyAwareSupportReply } from "../services/support/policy-aware-support.service";
 import { sendGeneratedSupportEmail } from "../services/support/supportEmail.service";
 import { processRefundSupportEmail } from "../services/refund/refund.service";
@@ -319,9 +319,38 @@ router.post("/email/webhook", async (req, res) => {
       return res.status(200).json({ received: true, ignored: true, automatic: true });
     }
 
-    const looksLikeRefund = /\b(refund|refunds|money back|return (?:my|the) (?:payment|money)|charged in error)\b/i.test(`${email.subject ?? ""}\n${message}`);
-    if (looksLikeRefund) {
-      const referenced = extractCaseNumber(`${email.subject ?? ""}\n${message}`);
+    const refundIntentText = String(email.subject ?? "") + "\n" + message;
+    const policyQuestion = /\b(refund|refunds|money back)\b/i.test(refundIntentText)
+      && /\b(policy|policies|rule|rules|eligible|eligibility|allowed|terms|conditions|how does|how do|what is|what are|explain|tell me about|information|window|deadline|time limit|requirement|requirements)\b/i.test(refundIntentText)
+      && !/\b(?:i want|i need|please|can you|could you|initiate|process|submit|request|claim|file|apply for)\b.{0,45}\b(?:refund|money back)\b/i.test(refundIntentText);
+    const clearRefundRequest = /\b(?:i want|i need|please|can you|could you|initiate|process|submit|request|claim|file|apply for|start)\b.{0,55}\b(?:a |the |my )?(?:refund|money back|return my payment)\b/i.test(refundIntentText)
+      || /\b(?:refund|return)\s+(?:my|this|the)\s+(?:payment|purchase|transaction|order)\b/i.test(refundIntentText)
+      || /\b(?:please refund|refund me|i am requesting a refund|i'm requesting a refund)\b/i.test(refundIntentText);
+
+    // Policy questions are informational, not refund applications. Never create a case here.
+    if (policyQuestion) {
+      await sendSupportEmail(
+        senderEmail,
+        "ReDom Refund Policy Information",
+        "Thanks for contacting ReDom. Asking about the refund policy does not create a refund case, start a refund, or require you to share a transaction ID. Eligibility depends on the product, transaction status, and the applicable refund terms.\n\nIf you want the policy explained, reply with the specific rule you want clarified (for example, eligibility, deadlines, or the review process). If you actually want to request a refund for a transaction, reply clearly: \"I want to request a refund.\" We will then guide you through the required account and transaction verification.\n\nSecurity: never email passwords, one-time verification codes, full card numbers, or CVV/CVC."
+      );
+      await markInboundEvent(id, inboundEmailId);
+      return res.status(200).json({ received: true, refundPolicyQuestion: true, caseCreated: false });
+    }
+
+    // A bare mention is not authorization to start the refund workflow.
+    if (/\b(refund|refunds|money back|return (?:my|the) (?:payment|money))\b/i.test(refundIntentText) && !clearRefundRequest) {
+      await sendSupportEmail(
+        senderEmail,
+        "Clarification Needed — ReDom Refund Support",
+        "I can help with either of these, but I don't want to open a refund case unless that is what you intend.\n\n1. Refund policy or rules: ask your question and I will explain the applicable policy.\n2. Request a refund: reply clearly, \"I want to request a refund.\" Only then will we begin the refund-request workflow and ask for the transaction details needed to verify it.\n\nNo refund case has been created, and no refund has been initiated. For your security, do not email passwords, one-time verification codes, full card numbers, or CVV/CVC."
+      );
+      await markInboundEvent(id, inboundEmailId);
+      return res.status(200).json({ received: true, refundIntentClarification: true, caseCreated: false });
+    }
+
+    if (clearRefundRequest) {
+      const referenced = extractCaseNumber(refundIntentText);
       const refundResult = await processRefundSupportEmail({
         senderEmail,
         message,
@@ -333,7 +362,7 @@ router.post("/email/webhook", async (req, res) => {
         if (refundCase) await linkInboundEvent(id, refundCase.id);
       }
       await markInboundEvent(id, inboundEmailId);
-      return res.status(200).json({ received: true, caseNumber: refundResult.caseNumber, refund: true });
+      return res.status(200).json({ received: true, caseNumber: refundResult.caseNumber, refund: true, explicitIntent: true });
     }
 
     const account = await getAccountContextByEmail(senderEmail);
