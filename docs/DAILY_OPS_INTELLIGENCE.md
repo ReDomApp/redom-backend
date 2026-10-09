@@ -45,6 +45,7 @@ Application logs, Sentry issue feeds, deployment events, latency, and infrastruc
 4. Set internal quota variables only if those are actual enforced ReDom limits.
 5. Run `pnpm --filter @workspace/redom-backend run typecheck` and `pnpm --filter @workspace/redom-backend run build`.
 6. Verify the worker creates one report run, submits a PDF attachment, records provider acceptance, and later reconciles delivered/bounced events.
-7. Verify the five-minute alert watcher sends and deduplicates high/critical incident alerts and email-failure-burst alerts.\n8. Verify a restart and a second backend instance do not create duplicate daily reports.
-8. Verify the PDF opens in a standard PDF reader and all data coverage limitations are visible.
-9. Confirm production deployment and actual inbox delivery before calling the system live.
+7. Verify the five-minute alert watcher sends and deduplicates high/critical incident alerts and email-failure-burst alerts.
+8. Verify a restart and a second backend instance do not create duplicate daily reports.
+9. Verify the PDF opens in a standard PDF reader and all data coverage limitations are visible.
+10. Confirm production deployment and actual inbox delivery before calling the system live.
