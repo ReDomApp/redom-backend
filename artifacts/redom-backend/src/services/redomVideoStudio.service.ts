@@ -427,7 +427,19 @@ export async function createReDomMovieTrailerPreview(userId: string, input: { pr
   };
 }
 
-export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; episodeCount?: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon"; soundtrackStyle?: string; singingEnabled?: boolean }) {
+export async function approveReDomMovieTrailerAndCreateProject(userId: string, trailerJobId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; episodeCount?: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon"; soundtrackStyle?: string; singingEnabled?: boolean }) {
+  await requirePaid(userId);
+  const trailer = (await db.select({ jobId: reDomAiVideos.jobId, status: reDomAiVideos.status, userId: reDomAiVideos.userId })
+    .from(reDomAiVideos)
+    .where(and(eq(reDomAiVideos.jobId, trailerJobId), eq(reDomAiVideos.userId, userId)))
+    .limit(1))[0];
+  if (!trailer) throw Object.assign(new Error("Trailer preview not found for this account."), { status: 404, code: "MOVIE_TRAILER_NOT_FOUND" });
+  if (trailer.status !== "completed") throw Object.assign(new Error("The trailer must finish successfully before the movie project can be created."), { status: 409, code: "MOVIE_TRAILER_NOT_READY" });
+  const project = await createReDomMovieProject(userId, { ...input, approvedTrailerJobId: trailerJobId });
+  return { ...project, approvedTrailerJobId: trailerJobId, approvalRequired: false };
+}
+
+export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; episodeCount?: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon"; soundtrackStyle?: string; singingEnabled?: boolean; approvedTrailerJobId?: string }) {
   await requirePaid(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const format = input.format || "movie";
@@ -449,14 +461,14 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     audioEnabled: input.audio !== false,
     voiceEnabled: input.voice !== false,
     state: "planning",
-    research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption, requestedEpisodeCount: input.episodeCount, soundtrackStyle: input.soundtrackStyle, singingEnabled: input.singingEnabled !== false },
+    research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption, requestedEpisodeCount: input.episodeCount, soundtrackStyle: input.soundtrackStyle, singingEnabled: input.singingEnabled !== false, approvedTrailerJobId: input.approvedTrailerJobId },
   }).returning();
   if (!project) throw new Error("Could not create ReDom movie project.");
   if (referenceMatch && referenceBytes) {
     const extension = referenceMatch[1] === "jpeg" ? "jpg" : referenceMatch[1];
     const referenceAssetKey = `redom-ai/video-references/${userId}/movie-project-${project.id}/reference.${extension}`;
     await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey, Body: referenceBytes, ContentType: "image/" + referenceMatch[1], CacheControl: "private, max-age=900" }));
-    await db.update(reDomAiVideoProjects).set({ research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption, requestedEpisodeCount: input.episodeCount, soundtrackStyle: input.soundtrackStyle, singingEnabled: input.singingEnabled !== false, referenceAssetKey } }).where(eq(reDomAiVideoProjects.id, project.id));
+    await db.update(reDomAiVideoProjects).set({ research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption, requestedEpisodeCount: input.episodeCount, soundtrackStyle: input.soundtrackStyle, singingEnabled: input.singingEnabled !== false, approvedTrailerJobId: input.approvedTrailerJobId, referenceAssetKey } }).where(eq(reDomAiVideoProjects.id, project.id));
   }
   return { projectId: project.id, state: project.state, model: MODEL, maxDurationSeconds: REDOM_VIDEO_MAX_SECONDS };
 }
