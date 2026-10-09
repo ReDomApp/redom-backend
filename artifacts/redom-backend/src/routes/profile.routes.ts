@@ -37,7 +37,7 @@ async function getProfile(req: Request, res: Response) {
   try {
     const viewerId = req.user!.userId;
     const viewerProfileId = req.user!.profileId;
-    const rawRequestedId = req.params.userId || viewerId;
+    const rawRequestedId = (typeof req.params.userId === "string" ? req.params.userId : undefined) || viewerId;
     const requestedId = decodeProfileShareToken(rawRequestedId) || rawRequestedId;
 
     const profileResult = await pool.query(
