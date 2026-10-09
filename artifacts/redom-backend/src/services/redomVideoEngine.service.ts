@@ -61,11 +61,12 @@ export async function prepareReDomVideoLanguage(prompt: string, format: "video" 
 ) {
   await requirePaidVideoEntitlement(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
+  const format = input.format ?? "video";
+  const language = await prepareReDomVideoLanguage(input.prompt, format);
   const target = Math.max(4, Math.min(REDOM_VIDEO_MAX_SECONDS, Math.floor(input.durationSeconds ?? 30)));
   const resolution = input.resolution ?? "720p";
   const aspectRatio = input.aspectRatio ?? "16:9";
   const operation = input.operation ?? "generate";
-  const format = input.format ?? "video";
   const watermark = input.watermark !== false;
   const jobId = "vid_" + randomUUID().replace(/-/g, "");
   let referenceAssetKey: string | undefined;
@@ -109,10 +110,10 @@ export async function prepareReDomVideoLanguage(prompt: string, format: "video" 
       operation,
       format,
       watermark,
-      languageName: input.languageName,
-      languageCode: input.languageCode,
-      captionText: input.caption,
-      generationDirection: input.generationDirection,
+      languageName: language.languageName,
+      languageCode: language.languageCode,
+      captionText: language.caption,
+      generationDirection: language.generationDirection,
       referenceAssetKey,
       prompt: input.prompt.trim(),
       durationSeconds: target,
