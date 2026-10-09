@@ -70,6 +70,13 @@ export async function createReDomVideoJob(
   const aspectRatio = input.aspectRatio ?? "16:9";
   const operation = input.operation ?? "generate";
   const watermark = input.watermark !== false;
+  // Route by product format. A model outage fails closed; it never falls back
+  // to another product's model or credentials.
+  const modelConfig = format === "cartoon"
+    ? { model: "Cartoon—R8.0", runtime: "redom-cartoon-r8-native", endpoint: env.redomCartoonEngine }
+    : format === "movie"
+      ? { model: "Studio—Ultron 8.0R", runtime: "redom-studio-ultron-8r-native", endpoint: env.redomStudioEngine }
+      : { model: REDOM_VIDEO_MODEL, runtime: REDOM_VIDEO_RUNTIME, endpoint: env.redomVideoEngine };
   const jobId = "vid_" + randomUUID().replace(/-/g, "");
   let referenceAssetKey: string | undefined;
   if (input.referenceImageDataUri) {
@@ -85,8 +92,8 @@ export async function createReDomVideoJob(
   await db.insert(reDomAiVideos).values({
     userId,
     jobId,
-    runtime: REDOM_VIDEO_RUNTIME,
-    model: REDOM_VIDEO_MODEL,
+    runtime: modelConfig.runtime,
+    model: modelConfig.model,
     operation,
     prompt: input.prompt.trim(),
     targetDurationSeconds: target,
@@ -96,19 +103,19 @@ export async function createReDomVideoJob(
     securityRequestId: security.requestId,
   });
 
-  if (!env.redomVideoEngine.url || !env.redomVideoEngine.token) {
+  if (!modelConfig.endpoint.url || !modelConfig.endpoint.token) {
     if (referenceAssetKey) await r2.send(new DeleteObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey }));
     await failReDomVideoJob(jobId, "ReDom-v2.8—Video native GPU runtime is not configured.");
     throw Object.assign(new Error("ReDom-v2.8—Video is temporarily unavailable."), { status: 503 });
   }
 
-  const response = await fetch(env.redomVideoEngine.url.replace(/\/$/, "") + "/v1/jobs", {
+  const response = await fetch(modelConfig.endpoint.url.replace(/\/$/, "") + "/v1/jobs", {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer " + env.redomVideoEngine.token },
+    headers: { "content-type": "application/json", authorization: "Bearer " + modelConfig.endpoint.token },
     body: JSON.stringify({
       jobId,
-      runtime: REDOM_VIDEO_RUNTIME,
-      model: REDOM_VIDEO_MODEL,
+      runtime: modelConfig.runtime,
+      model: modelConfig.model,
       operation,
       format,
       watermark,
@@ -127,9 +134,9 @@ export async function createReDomVideoJob(
       quality: resolution === "1080p" ? "pro" : "high",
       aspectRatio,
       callbackUrl: env.redomBackendUrl.replace(/\/$/, "") + "/ai/video/callback",
-      callbackToken: env.redomVideoEngine.token,
+      callbackToken: modelConfig.endpoint.token,
     }),
-    signal: AbortSignal.timeout(env.redomVideoEngine.timeoutMs),
+    signal: AbortSignal.timeout(modelConfig.endpoint.timeoutMs),
   });
 
   if (!response.ok) {
@@ -140,8 +147,8 @@ export async function createReDomVideoJob(
 
   return {
     jobId,
-    model: REDOM_VIDEO_MODEL,
-    runtime: REDOM_VIDEO_RUNTIME,
+    model: modelConfig.model,
+    runtime: modelConfig.runtime,
     status: "queued",
     maxDurationSeconds: REDOM_VIDEO_MAX_SECONDS,
   };

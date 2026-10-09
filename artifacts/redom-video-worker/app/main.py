@@ -19,6 +19,8 @@ from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, WAN_CONFIGS
 from wan.utils.utils import save_video
 
 MODEL_NAME = os.getenv("REDOM_VIDEO_MODEL_ID", "ReDom-v2.8—Video")
+RUNTIME_NAME = os.getenv("REDOM_VIDEO_RUNTIME_ID", "redom-v2.8-native")
+ALLOWED_FORMATS = {value.strip() for value in os.getenv("REDOM_VIDEO_ALLOWED_FORMATS", "video").split(",") if value.strip()}
 CHECKPOINT_DIR = os.environ["REDOM_VIDEO_CHECKPOINT_DIR"]
 REDIS_URL = os.environ["REDOM_VIDEO_REDIS_URL"]
 WORKER_TOKEN = os.environ["REDOM_VIDEO_WORKER_TOKEN"]
@@ -48,7 +50,7 @@ class AudioTrack(BaseModel):
 
 class VideoJob(BaseModel):
     jobId: str
-    runtime: str = "redom-v2.8-native"
+    runtime: str = RUNTIME_NAME
     model: str = MODEL_NAME
     operation: str = "generate"
     prompt: str = Field(min_length=5, max_length=8000)
@@ -466,11 +468,11 @@ async def callback(job: VideoJob, status: str, storage_key: str | None = None, e
         response.raise_for_status()
 
 async def process(job: VideoJob):
-    if job.runtime != "redom-v2.8-native" or job.model != MODEL_NAME:
+    if job.runtime != RUNTIME_NAME or job.model != MODEL_NAME:
         raise ValueError("Unsupported ReDom video runtime.")
     if job.durationSeconds > 300:
         raise ValueError("Video duration exceeds the ReDom maximum.")
-    if job.format not in {"video", "movie", "cartoon"}:
+    if job.format not in ALLOWED_FORMATS:
         raise ValueError("Unsupported ReDom video format.")
 
     await callback(job, "processing")
@@ -527,7 +529,7 @@ async def health():
     return {
         "ok": True,
         "model": MODEL_NAME,
-        "runtime": "redom-v2.8-native",
+        "runtime": RUNTIME_NAME,
         "generation": "local-gpu",
     }
 
@@ -535,7 +537,7 @@ async def health():
 async def enqueue(job: VideoJob, authorization: str | None = Header(default=None)):
     if authorization != "Bearer " + WORKER_TOKEN:
         raise HTTPException(401, "Unauthorized")
-    if job.runtime != "redom-v2.8-native" or job.model != MODEL_NAME:
+    if job.runtime != RUNTIME_NAME or job.model != MODEL_NAME:
         raise HTTPException(400, "Unsupported ReDom video runtime.")
     await redis.lpush(QUEUE, job.model_dump_json())
     return {"accepted": True, "jobId": job.jobId, "status": "queued", "model": MODEL_NAME}

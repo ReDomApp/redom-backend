@@ -19,8 +19,31 @@ import { REDOM_VIDEO_MAX_SECONDS, createReDomVideoJob, prepareReDomVideoLanguage
 import { createReDomMovieMusicAsset, createReDomMovieSpeechAsset } from "./redomMovieAudio.service";
 
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
-const MODEL = "ReDom-v2.8—Video";
-const JOB_QUEUE = process.env.REDOM_VIDEO_QUEUE || "redom:video:jobs";
+const MODEL = "Studio—Ultron 8.0R";
+
+async function dispatchMovieJob(payload: Record<string, unknown>) {
+  // Cartoon episodes render their shots on Cartoon—R8.0. Final assembly always
+  // runs on Studio—Ultron 8.0R because composition is a Movie Studio operation.
+  const isCartoonShot = payload.operation !== "compose" && payload.format === "cartoon";
+  const endpoint = isCartoonShot ? env.redomCartoonEngine : env.redomStudioEngine;
+  const model = isCartoonShot ? "Cartoon—R8.0" : "Studio—Ultron 8.0R";
+  const runtime = isCartoonShot ? "redom-cartoon-r8-native" : "redom-studio-ultron-8r-native";
+  if (!endpoint.url || !endpoint.token) {
+    throw Object.assign(new Error(model + " runtime is not configured."), { status: 503, code: "REDOM_MODEL_ENDPOINT_UNAVAILABLE" });
+  }
+  payload.model = model;
+  payload.runtime = runtime;
+  payload.callbackToken = endpoint.token;
+  const response = await fetch(endpoint.url.replace(/\/$/, "") + "/v1/jobs", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer " + endpoint.token },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(endpoint.timeoutMs),
+  });
+  if (!response.ok) {
+    throw Object.assign(new Error(model + " worker rejected a production job."), { status: 503, code: "REDOM_MODEL_JOB_REJECTED" });
+  }
+}
 
 type Knowledge = {
   scope: "author" | "character" | "audience";
@@ -744,6 +767,14 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
   const project = (await db.select().from(reDomAiVideoProjects).where(and(eq(reDomAiVideoProjects.id, projectId), eq(reDomAiVideoProjects.userId, userId))).limit(1))[0];
   if (!project) throw Object.assign(new Error("Movie project not found."), { status: 404 });
   if (project.state !== "ready") throw Object.assign(new Error("Review and approve the ReDom story plan before production."), { status: 409 });
+  // Preflight every required runtime before creating audio assets or enqueueing
+  // any shots, so a missing model endpoint cannot leave a half-started project.
+  if (!env.redomStudioEngine.url || !env.redomStudioEngine.token) {
+    throw Object.assign(new Error("Studio—Ultron 8.0R is not configured."), { status: 503, code: "STUDIO_ENGINE_UNAVAILABLE" });
+  }
+  if (project.format === "cartoon" && (!env.redomCartoonEngine.url || !env.redomCartoonEngine.token)) {
+    throw Object.assign(new Error("Cartoon—R8.0 is not configured for cartoon episode shots."), { status: 503, code: "CARTOON_ENGINE_UNAVAILABLE" });
+  }
 
   const continuity = await runReDomMovieContinuityCheck(userId, projectId);
   if (continuity.blockingWarnings.length) throw Object.assign(new Error("Production blocked: the story plan contains audience-knowledge leaks. Revise the story before rendering."), { status: 409, code: "MOVIE_CONTINUITY_BLOCKED" });
@@ -767,8 +798,8 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       targetDurationSeconds: project.targetDurationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
       aspectRatio: project.aspectRatio,
-      runtime: "redom-v2.8-native",
-      model: MODEL,
+      runtime: "redom-studio-ultron-8r-native",
+      model: "Studio—Ultron 8.0R",
       operation: "generate",
       securityRequestId: typeof project.research?.securityRequestId === "string" ? project.research.securityRequestId : undefined,
     });
@@ -781,7 +812,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
     const jobId = "movie_shot_" + randomUUID().replace(/-/g, "");
     const payload = {
       jobId,
-      runtime: "redom-v2.8-native",
+      runtime: "redom-studio-ultron-8r-native",
       model: MODEL,
       operation: "generate",
       format: project.format === "cartoon" ? "cartoon" : "movie",
@@ -796,16 +827,16 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       resolution: project.quality === "pro" ? "1080p" : "720p",
       aspectRatio: project.aspectRatio,
       callbackUrl,
-      callbackToken: env.redomVideoEngine.token,
+      callbackToken: env.redomStudioEngine.token,
       audioEnabled: project.audioEnabled,
       audioTracks: audioPlan.shotTracks.get(shot.id) || [],
       lipSyncEnabled: Boolean((audioPlan.shotTracks.get(shot.id) || []).length),
     };
     await db.insert(reDomAiVideoJobs).values({ projectId, shotId: shot.id, jobId, kind: "shot_generation", status: "queued", priority: 100, payload });
-    await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
+    await dispatchMovieJob(payload);
   }
   await db.update(reDomAiVideoProjects).set({ state: "producing", updatedAt: new Date() }).where(eq(reDomAiVideoProjects.id, projectId));
-  return { projectId, status: "processing", shotCount: shots.length, model: MODEL, runtime: "redom-v2.8-native" };
+  return { projectId, status: "processing", shotCount: shots.length, model: MODEL, runtime: "redom-studio-ultron-8r-native" };
 }
 
 export async function registerReDomMovieJobCallback(jobId: string, status: string, storageKey?: string, error?: string) {
@@ -852,9 +883,9 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
     const callbackUrl = env.redomBackendUrl.replace(/\/$/, "") + "/ai/video/callback";
-    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, audioEnabled: project.audioEnabled, musicTracks: Array.isArray(project.research?.musicTracks) ? project.research.musicTracks : [], lipSyncEnabled: false, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
+    const payload = { jobId: composeJobId, runtime: "redom-studio-ultron-8r-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, audioEnabled: project.audioEnabled, musicTracks: Array.isArray(project.research?.musicTracks) ? project.research.musicTracks : [], lipSyncEnabled: false, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomStudioEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
-    await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
+    await dispatchMovieJob(payload);
   }
   return true;
 }
