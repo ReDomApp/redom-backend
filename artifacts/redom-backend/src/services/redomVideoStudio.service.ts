@@ -363,7 +363,7 @@ export async function createReDomMovieTrailerPreview(userId: string, input: { pr
     model: "gpt-5.6-luna",
     instructions: [
       "You are the ReDom Movie Studio research producer, showrunner, trailer editor and music supervisor.",
-      "Research named source material with web_search when useful. Return JSON only with title, logline, adaptationApproach, research, characters, episodeOptions, trailerBeats, trailerPrompt, soundtrackDirection, narrationDirection, songConcepts, language.",
+      "Research named source material with web_search when useful. Return JSON only with title, logline, adaptationApproach, research, characters, episodeOptions, trailerBeats, trailerPrompt, soundtrackDirection, narrationDirection, narrationText, songConcepts, language.",
       "Use reliable high-level facts and include source URLs in research. Separate verified facts from creative invention.",
       "When adapting copyrighted fiction, do not copy scripts, dialogue, or scene-by-scene plots. Propose a meaningfully original transformation with new names, character designs, relationships, setting and events, unless the user provides rights context. Do not imply official affiliation.",
       "Trailer should be a teaser, not the whole story: hook immediately, introduce distinct character silhouettes, escalate stakes, include one emotional beat, and end on a strong question. Avoid legible text in generated frames; titles can be composited separately.",
@@ -397,6 +397,24 @@ export async function createReDomMovieTrailerPreview(userId: string, input: { pr
     throw Object.assign(new Error("ReDom returned an incomplete trailer proposal."), { code: "MOVIE_TRAILER_PROPOSAL_INCOMPLETE", status: 502 });
   }
   const language = await prepareReDomVideoLanguage(input.prompt, input.format);
+  const previewProjectId = "trailer-preview-" + randomUUID();
+  const score = await createReDomMovieMusicAsset({
+    userId,
+    projectId: previewProjectId,
+    trackName: "trailer-score",
+    durationSeconds: previewDuration,
+    instrumental: true,
+    prompt: "Original trailer score for " + String(proposal.title) + ". " + String(proposal.soundtrackDirection || input.soundtrackStyle || "Beautiful cinematic music with an emotional hook, rising wonder, a brief tender moment and a powerful final sting.").slice(0, 1800) + " Do not imitate any existing film score or known composer.",
+  });
+  let narrationTrack: Record<string, unknown> | undefined;
+  if (typeof proposal.narrationText === "string" && proposal.narrationText.trim() && env.redomMovieAudio.defaultVoiceId) {
+    const narration = await createReDomMovieSpeechAsset({
+      userId, projectId: previewProjectId, shotId: "trailer-narration", lineIndex: 1,
+      text: proposal.narrationText.trim().slice(0, 1200), voiceId: env.redomMovieAudio.defaultVoiceId,
+      languageCode: typeof proposal.language === "string" ? proposal.language : language.languageCode,
+    });
+    narrationTrack = { assetKey: narration.key, startSeconds: 0, volume: 1, characterName: "Trailer Narrator", voiceId: narration.voiceId, durationSeconds: narration.durationSeconds };
+  }
   const trailer = await createReDomVideoJob(userId, {
     prompt: proposal.trailerPrompt.slice(0, 8000),
     durationSeconds: previewDuration,
@@ -404,6 +422,10 @@ export async function createReDomMovieTrailerPreview(userId: string, input: { pr
     aspectRatio: input.aspectRatio || "16:9",
     format: input.format,
     watermark: true,
+    audioEnabled: true,
+    audioTracks: narrationTrack ? [narrationTrack] : [],
+    musicTracks: [{ assetKey: score.key, startSeconds: 0, volume: 0.45, kind: "trailer-score" }],
+    lipSyncEnabled: false,
     languageName: language.languageName,
     languageCode: language.languageCode,
     caption: language.caption,
@@ -425,10 +447,10 @@ export async function createReDomMovieTrailerPreview(userId: string, input: { pr
       episodeCount,
       trailerBeats: Array.isArray(proposal.trailerBeats) ? proposal.trailerBeats.slice(0, 12) : [],
       soundtrackDirection: proposal.soundtrackDirection || input.soundtrackStyle || "Original cinematic score",
-      narrationDirection: proposal.narrationDirection || "Optional narration; requires ReDom Voices audio rendering",
+      narrationDirection: proposal.narrationDirection || "Optional trailer narration",\n      narrationText: typeof proposal.narrationText === "string" ? proposal.narrationText.slice(0, 1200) : undefined,
       songConcepts: Array.isArray(proposal.songConcepts) ? proposal.songConcepts.slice(0, 8) : [],
       language: proposal.language || language.languageName,
-      audioRenderingStatus: "not_generated_by_trailer_video_worker",
+      audioRenderingStatus: narrationTrack ? "original_score_and_narration_generated" : "original_score_generated_narration_not_configured",
     },
     maxDurationSeconds: REDOM_VIDEO_MAX_SECONDS,
   };
