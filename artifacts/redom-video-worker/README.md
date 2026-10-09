@@ -27,15 +27,15 @@ The local TI2V runtime supports text-to-video and image-conditioned video genera
 ## Project duration
 
 - Minimum: 4 seconds
-- Maximum: 300 seconds (5 minutes)
+- Maximum: 59 seconds (00:59), enforced by the backend and GPU worker
 - Scene segments: 5 seconds by default
 - Final output is composited and enhanced by the ReDom worker.
 
-Five minutes is a **maximum project duration**, not a guaranteed generation-time SLA.
+The 59-second limit is a hard output-duration ceiling, not a guaranteed generation-time SLA. Movie and Cartoon use the same cap; Movie Studio may direct either format but cannot export a longer video.
 
 ## Creator formats and references
 
-The native worker accepts three format modes: `video` (short-form scenes), `movie` (cinematic production), and `cartoon` (animation-directed generation). An optional private R2 reference-image key conditions the first generated segment; each following segment uses the previous segment final frame to preserve continuity. Reference assets are removed after the worker finishes or fails the job.
+The native worker accepts three format modes: `video` (short-form scenes), `movie` (cinematic production), and `cartoon` (animation-directed generation). Every generated/exported video is limited to 59 seconds maximum. Movie Intelligence and Cartoon Intelligence are coordinated capabilities, not competing formats: Movie Studio can plan/direct either format, while Cartoon—R8.0 renders animated shots. An optional private R2 reference-image key conditions the first generated segment; each following segment uses the previous segment final frame to preserve continuity. Reference assets are removed after the worker finishes or fails the job.
 
 Every final encode applies the official ReDom logo beside a persistent far-right brand watermark: `ReDom Videos | AI-generated`, `ReDom Movie Studio | AI-generated`, or `ReDom Cartoon | AI-generated`. The worker image converts the approved ReDom SVG to PNG and installs DejaVu fonts for FFmpeg drawtext. Branding is applied after joining segments so it remains consistent across the finished output.
 
@@ -123,6 +123,34 @@ For lip sync, the worker uploads a short-lived source video and voice-only WAV t
 - If dialogue is present and `SYNC_API_KEY` is missing, the shot fails explicitly rather than silently returning a falsely marked lip-synced result.
 - The video-generation worker still requires a provisioned CUDA GPU and mounted Wan2.2 checkpoint. A successful code build alone does not establish production readiness.
 
+
+## Movie Studio finishing for Cartoon projects
+
+When a Cartoon—R8.0 Movie Studio project reaches final composition, the Studio worker applies a dedicated animation post-production chain after joining the approved shots:
+- Lanczos scaling to the selected delivery dimensions.
+- Temporal/spatial denoising and debanding to reduce shimmer and banding.
+- Mild saturation/contrast and edge refinement for a more coherent animated finish.
+- Motion-compensated frame interpolation (default 48 fps) to smooth compatible motion between generated frames.
+- ReDom Cartoon watermark and localized caption burn-in, followed by H.264/AAC encoding and final validation.
+
+Configure `REDOM_STUDIO_CARTOON_INTERPOLATION_FPS` on the Studio worker as `48` (default), `60`, `30`, `24`, or `0` to disable interpolation. Optical-flow interpolation can produce artifacts on rapid cuts, particles, impact frames or heavy occlusion; use `0` or `24` for those projects and compare the actual rendered result. This is a real deterministic post-production pass, not a claim that FFmpeg can fix bad anatomy or turn an unsuitable checkpoint into a feature-animation model.
+
+Studio also owns the existing story plan, shot pacing, language/audio planning, dialogue/music handoff and final composition. Cartoon remains responsible for the authored animated shot generation. The current compose pass does not regenerate character motion with a second diffusion model.
+
+## Cartoon—R8.0 runtime readiness and checkpoint contract
+
+The worker now rejects invalid model/runtime/format combinations at startup, validates that its configured checkpoint directory exists and is non-empty before loading, and reports `checkpointReady`, `gpuReady`, `pipelineLoaded` and `readiness` from `/health`. `/ping` remains the platform liveness endpoint; it is not proof the GPU model is ready.
+
+For the dedicated Cartoon endpoint, configure:
+- `REDOM_VIDEO_MODEL_ID=Cartoon—R8.0`
+- `REDOM_VIDEO_RUNTIME_ID=redom-cartoon-r8-native`
+- `REDOM_VIDEO_ALLOWED_FORMATS=cartoon`
+- `REDOM_VIDEO_CHECKPOINT_DIR=/models/cartoon-r8`
+- `REDOM_VIDEO_WAN_CONFIG=ti2v-5B` only when the provisioned Cartoon checkpoint is compatible with Wan2.2 TI2V-5B.
+
+The worker injects an animation-specific direction into every cartoon segment, including identity/model-sheet invariants, human/animal anatomy, posing and motion, temporal artifacts, camera/world continuity and anime-style constraints. Movie Studio retains the separate responsibility of composing approved Cartoon shots, music, dialogue and captions. Composition currently means media assembly and post-processing, not a second diffusion-based generative enhancement pass.
+
+**Provisioning caveat:** this code does not download or train model weights. The Cartoon checkpoint must be acquired/provisioned separately, have documented provenance/licensing, match the selected Wan architecture, and pass actual GPU renders. A non-empty directory is only a basic readiness signal, not a checkpoint-integrity or animation-quality certification. Do not enable production traffic until the twelve Cartoon acceptance tests in `docs/cartoon-r8-animation-intelligence-spec.md` have real render evidence.
 
 ## Deploying the three isolated model endpoints
 
