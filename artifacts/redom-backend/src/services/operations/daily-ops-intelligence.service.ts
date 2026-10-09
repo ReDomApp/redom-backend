@@ -134,7 +134,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const monthSeriesStart = new Date(Date.UTC(yearStart.getUTCFullYear(), yearStart.getUTCMonth(), 1));
   const monthSeriesEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, failedSupportOps, priorityCases, geography, supportMonthly, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
+  const [email, annual, monthlyTrend, firstEvent, support, messages, caseLifecycle, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, caseEmails, supportMonthly, failedSupportOps, priorityCases, geography, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
     pool.query(`SELECT
       count(DISTINCT logical_email_id) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS uniqueEmails,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
@@ -301,7 +301,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       FROM redom_ops_incidents`, [yearStart]),
     pool.query("SELECT 1 AS ok"),
   ]);
-  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {}, lifecycle = caseLists.rows[0] ?? {};
+  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {};
+  const lifecycle = caseLifecycle.rows[0] ?? {};
   const attempts = num(e.attempts), previousAttempts = num(e.previousattempts), delivered = num(e.delivered), failed = num(e.failed);
   const monthlySent = num(e.monthlyattempts);
   const supportCreated = num(s.created), previousSupport = num(s.previouscreated);
@@ -422,20 +423,30 @@ function buildAnalysisPrompt(metrics: Metrics): string {
 }
 
 async function analyzeWithGemini(metrics: Metrics): Promise<Record<string, any>> {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(env.gemini.apiKey)}`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: buildAnalysisPrompt(metrics) }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
-    signal: AbortSignal.timeout(45000),
-  });
-  if (!response.ok) throw new Error(`Gemini analysis failed with HTTP ${response.status}`);
-  const payload = await response.json() as any;
-  const text = payload?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim();
-  if (!text) throw new Error("Gemini returned no structured analysis.");
-  const parsed = JSON.parse(text);
-  if (!["healthy", "degraded", "critical", "unknown"].includes(parsed.status) || typeof parsed.executiveSummary !== "string" || !Array.isArray(parsed.findings) || !Array.isArray(parsed.nextActions)) {
-    throw new Error("Gemini analysis failed schema validation.");
+  const models = [...new Set([GEMINI_MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"])];
+  let lastUnavailableStatus: number | null = null;
+  for (const model of models) {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": env.gemini.apiKey },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: buildAnalysisPrompt(metrics) }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
+      signal: AbortSignal.timeout(45000),
+    });
+    if (response.status === 404 && model !== models[models.length - 1]) {
+      lastUnavailableStatus = response.status;
+      continue;
+    }
+    if (!response.ok) throw new Error(`Gemini analysis failed with HTTP ${response.status} for configured/fallback model.`);
+    const payload = await response.json() as any;
+    const text = payload?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim();
+    if (!text) throw new Error("Gemini returned no structured analysis.");
+    const parsed = JSON.parse(text);
+    if (!["healthy", "degraded", "critical", "unknown"].includes(parsed.status) || typeof parsed.executiveSummary !== "string" || !Array.isArray(parsed.findings) || !Array.isArray(parsed.nextActions)) {
+      throw new Error("Gemini analysis failed schema validation.");
+    }
+    return parsed;
   }
-  return parsed;
+  throw new Error(`Gemini analysis unavailable: all configured/fallback models returned HTTP ${lastUnavailableStatus ?? 404}.`);
 }
 
 function pdfEscape(text: string): string {
