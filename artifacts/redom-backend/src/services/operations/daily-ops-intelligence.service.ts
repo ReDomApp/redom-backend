@@ -1,0 +1,394 @@
+import { createHash } from "node:crypto";
+import { Resend } from "resend";
+import { env } from "../../config/env";
+import { pool } from "../../database/db";
+import { logger } from "../../lib/logger";
+
+const resend = new Resend(env.email.resend.apiKey);
+const RECIPIENT = process.env.REDOM_OPS_REPORT_RECIPIENT?.trim() || "christianuzamaosahuo@gmail.com";
+const REPORT_FROM = process.env.REDOM_OPS_REPORT_FROM?.trim() || "admin@wnncompany.com";
+const REPORT_TIMEZONE = process.env.REDOM_OPS_REPORT_TIMEZONE?.trim() || "UTC";
+const DAILY_LIMIT = positiveInt(process.env.REDOM_EMAIL_DAILY_LIMIT);
+const MONTHLY_LIMIT = positiveInt(process.env.REDOM_EMAIL_MONTHLY_LIMIT);
+const GEMINI_MODEL = process.env.REDOM_OPS_GEMINI_MODEL || "gemini-2.5-flash";
+let timer: NodeJS.Timeout | undefined;
+let inProcess = false;
+
+function positiveInt(value?: string): number | null {
+  if (!value) return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+function num(value: unknown): number { const n = Number(value ?? 0); return Number.isFinite(n) ? n : 0; }
+function pct(current: number, previous: number): number | null { return previous === 0 ? null : Math.round(((current - previous) / previous) * 10000) / 100; }
+function iso(d: Date): string { return d.toISOString(); }
+function esc(s: unknown): string { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+function moneyless(n: number): string { return Math.round(n).toLocaleString("en-US"); }
+
+export async function ensureOpsIntelligenceSchema(): Promise<void> {
+  await pool.query(`CREATE TABLE IF NOT EXISTS redom_ops_email_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(), logical_email_id text NOT NULL, provider_message_id text,
+    subsystem varchar(80) NOT NULL, event_type varchar(40) NOT NULL, recipient_domain varchar(255), case_id uuid,
+    idempotency_key text, metadata jsonb NOT NULL DEFAULT '{}'::jsonb, occurred_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT redom_ops_email_event_type_check CHECK (event_type IN ('queued','attempted','accepted','delivered','deferred','bounced','rejected','failed','duplicate_suppressed','duplicate_delivery','complained'))
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS redom_ops_email_events_time_idx ON redom_ops_email_events(occurred_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS redom_ops_email_events_logical_idx ON redom_ops_email_events(logical_email_id, occurred_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS redom_ops_email_events_subsystem_idx ON redom_ops_email_events(subsystem, occurred_at DESC)");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS redom_ops_email_events_idempotency_idx ON redom_ops_email_events(idempotency_key) WHERE idempotency_key IS NOT NULL");
+  await pool.query("CREATE INDEX IF NOT EXISTS redom_ops_email_events_provider_idx ON redom_ops_email_events(provider_message_id) WHERE provider_message_id IS NOT NULL");
+  await pool.query(`CREATE TABLE IF NOT EXISTS redom_ops_incidents (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(), incident_key text NOT NULL UNIQUE, title text NOT NULL, subsystem varchar(100) NOT NULL,
+    severity varchar(20) NOT NULL DEFAULT 'warning', status varchar(24) NOT NULL DEFAULT 'open', description text NOT NULL,
+    evidence jsonb NOT NULL DEFAULT '{}'::jsonb, root_cause text, resolution text, verification_evidence text,
+    first_seen_at timestamptz NOT NULL DEFAULT now(), last_seen_at timestamptz NOT NULL DEFAULT now(), resolved_at timestamptz,
+    verified_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT redom_ops_incident_severity_check CHECK (severity IN ('info','warning','high','critical')),
+    CONSTRAINT redom_ops_incident_status_check CHECK (status IN ('open','investigating','mitigated','resolved','closed'))
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS redom_ops_incidents_status_idx ON redom_ops_incidents(status, severity, last_seen_at DESC)");
+  await pool.query(`CREATE TABLE IF NOT EXISTS redom_ops_report_runs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(), report_key text NOT NULL UNIQUE, period_start timestamptz NOT NULL, period_end timestamptz NOT NULL,
+    timezone varchar(80) NOT NULL DEFAULT 'UTC', status varchar(24) NOT NULL DEFAULT 'running', metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+    analysis jsonb NOT NULL DEFAULT '{}'::jsonb, data_coverage jsonb NOT NULL DEFAULT '{}'::jsonb, pdf_base64 text, pdf_sha256 text,
+    provider_message_id text, delivery_status varchar(24) NOT NULL DEFAULT 'pending', attempt_count integer NOT NULL DEFAULT 0,
+    error_message text, generated_at timestamptz, delivered_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT redom_ops_report_status_check CHECK (status IN ('running','generated','sent','failed')),
+    CONSTRAINT redom_ops_delivery_status_check CHECK (delivery_status IN ('pending','accepted','delivered','failed','unknown'))
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS redom_ops_report_runs_period_idx ON redom_ops_report_runs(period_end DESC)");
+}
+
+export async function recordOpsEmailEvent(input: {
+  logicalEmailId: string; subsystem: string; eventType: "queued" | "attempted" | "accepted" | "delivered" | "deferred" | "bounced" | "rejected" | "failed" | "duplicate_suppressed" | "duplicate_delivery" | "complained";
+  recipient?: string | null; providerMessageId?: string | null; caseId?: string | null; idempotencyKey?: string | null; metadata?: Record<string, unknown>;
+}): Promise<void> {
+  await pool.query(`INSERT INTO redom_ops_email_events
+    (logical_email_id, subsystem, event_type, recipient_domain, provider_message_id, case_id, idempotency_key, metadata)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
+  [input.logicalEmailId, input.subsystem.slice(0, 80), input.eventType, input.recipient?.split("@").pop()?.toLowerCase() ?? null,
+    input.providerMessageId ?? null, input.caseId ?? null, input.idempotencyKey ?? null, JSON.stringify(input.metadata ?? {})]);
+}
+
+type Metrics = {
+  generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
+  email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null };
+  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageEmailsPerCase: number | null };
+  incidents: { open: Array<Record<string, unknown>>; resolved24h: number; criticalOpen: number };
+  dataCoverage: Record<string, string>;
+  forecast: { expectedEmailAttempts24h: number; expectedSupportCases24h: number; notes: string[] };
+  system: { database: string; collectedAt: string };
+};
+
+async function collectMetrics(now: Date): Promise<Metrics> {
+  const start = new Date(now.getTime() - 86400000);
+  const prevStart = new Date(now.getTime() - 172800000);
+  const yearStart = new Date(now.getTime() - 365 * 86400000);
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const [email, annual, firstEvent, support, messages, incidents, database] = await Promise.all([
+    pool.query(`SELECT
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type IN ('attempted','accepted','delivered','deferred','bounced','rejected','failed'))::int AS attempts,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='delivered')::int AS delivered,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='failed')::int AS failed,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='bounced')::int AS bounced,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='rejected')::int AS rejected,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='deferred')::int AS deferred,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='duplicate_suppressed')::int AS duplicateSuppressed,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='duplicate_delivery')::int AS duplicateDelivery,
+      count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type IN ('attempted','accepted','delivered','deferred','bounced','rejected','failed'))::int AS previousAttempts,
+      count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='delivered')::int AS previousDelivered,
+      count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='failed')::int AS previousFailed,
+      count(*) FILTER (WHERE occurred_at >= $3 AND event_type IN ('attempted','accepted','delivered','deferred','bounced','rejected','failed'))::int AS monthlyAttempts
+      FROM redom_ops_email_events`, [start, prevStart, monthStart]),
+    pool.query(`SELECT
+      count(*) FILTER (WHERE event_type IN ('attempted','accepted','delivered','deferred','bounced','rejected','failed'))::int AS attempts,
+      count(*) FILTER (WHERE event_type='delivered')::int AS delivered,
+      count(*) FILTER (WHERE event_type='failed')::int AS failed,
+      count(*) FILTER (WHERE event_type='bounced')::int AS bounced,
+      count(*) FILTER (WHERE event_type='duplicate_suppressed')::int AS duplicateSuppressed
+      FROM redom_ops_email_events WHERE occurred_at >= $1`, [yearStart]),
+    pool.query("SELECT min(occurred_at) AS first_at FROM redom_ops_email_events"),
+    pool.query(`SELECT
+      count(*) FILTER (WHERE created_at >= $1)::int AS created,
+      count(*) FILTER (WHERE created_at >= $2 AND created_at < $1)::int AS previousCreated,
+      count(*) FILTER (WHERE status <> 'closed')::int AS open,
+      count(*) FILTER (WHERE status = 'awaiting_support')::int AS awaitingSupport,
+      count(*) FILTER (WHERE status = 'awaiting_user')::int AS awaitingUser,
+      count(*) FILTER (WHERE status = 'closed')::int AS closed
+      FROM support_cases`, [start, prevStart]),
+    pool.query(`SELECT
+      count(*) FILTER (WHERE created_at >= $1)::int AS currentMessages,
+      count(*) FILTER (WHERE created_at >= $2 AND created_at < $1)::int AS previousMessages
+      FROM support_messages WHERE created_at >= $2`, [start, prevStart]),
+    pool.query(`SELECT id, incident_key, title, subsystem, severity, status, description, root_cause, resolution,
+      verification_evidence, first_seen_at, last_seen_at, resolved_at, verified_at
+      FROM redom_ops_incidents WHERE status NOT IN ('closed','resolved') ORDER BY
+      CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'warning' THEN 3 ELSE 4 END, last_seen_at DESC LIMIT 30`),
+    pool.query("SELECT 1 AS ok"),
+  ]);
+  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {};
+  const attempts = num(e.attempts), previousAttempts = num(e.previousattempts), delivered = num(e.delivered), failed = num(e.failed);
+  const monthlySent = num(e.monthlyattempts);
+  const supportCreated = num(s.created), previousSupport = num(s.previouscreated);
+  const cases = num(s.created);
+  const openIncidents = incidents.rows as Array<Record<string, unknown>>;
+  const expectedEmail = Math.round(Math.max(0, attempts, previousAttempts) * 0.75 + Math.max(0, previousAttempts) * 0.25);
+  const expectedCases = Math.round(supportCreated * 0.7 + previousSupport * 0.3);
+  const dailyUsedPct = DAILY_LIMIT ? Math.round((attempts / DAILY_LIMIT) * 10000) / 100 : null;
+  const monthlyUsedPct = MONTHLY_LIMIT ? Math.round((monthlySent / MONTHLY_LIMIT) * 10000) / 100 : null;
+  return {
+    generatedAt: iso(now), periodStart: iso(start), periodEnd: iso(now), timezone: REPORT_TIMEZONE,
+    email: {
+      current24h: { attempts, accepted: num(e.accepted), delivered, failed, bounced: num(e.bounced), rejected: num(e.rejected), deferred: num(e.deferred), duplicateSuppressed: num(e.duplicatesuppressed), duplicateDelivery: num(e.duplicatedelivery) },
+      previous24h: { attempts: previousAttempts, delivered: num(e.previousdelivered), failed: num(e.previousfailed) },
+      changePct: { attempts: pct(attempts, previousAttempts), delivered: pct(delivered, num(e.previousdelivered)), failed: pct(failed, num(e.previousfailed)) },
+      last365d: { attempts: num(y.attempts), delivered: num(y.delivered), failed: num(y.failed), bounced: num(y.bounced), duplicateSuppressed: num(y.duplicatesuppressed) },
+      dailyLimit: DAILY_LIMIT, monthlyLimit: MONTHLY_LIMIT, dailyLimitUsedPct: dailyUsedPct, monthlyLimitUsedPct: monthlyUsedPct, monthlySent,
+      ledgerCoverageStart: firstEvent.rows[0]?.first_at ? iso(new Date(firstEvent.rows[0].first_at)) : null,
+    },
+    support: {
+      created24h: supportCreated, createdPrevious24h: previousSupport, changePct: pct(supportCreated, previousSupport),
+      open: num(s.open), awaitingSupport: num(s.awaitingsupport), awaitingUser: num(s.awaitinguser), closed: num(s.closed),
+      messages24h: num(m.currentmessages), messagesPrevious24h: num(m.previousmessages), messagesChangePct: pct(num(m.currentmessages), num(m.previousmessages)),
+      averageEmailsPerCase: cases ? Math.round((num(m.currentmessages) / cases) * 100) / 100 : null,
+    },
+    incidents: {
+      open: openIncidents, resolved24h: 0, criticalOpen: openIncidents.filter(i => i.severity === "critical").length,
+    },
+    dataCoverage: {
+      emailLedger: firstEvent.rows[0]?.first_at ? "Available from " + iso(new Date(firstEvent.rows[0].first_at)) + "; totals before this timestamp are not represented by this ledger." : "No email events recorded yet; email totals are incomplete until send paths are instrumented.",
+      supportCases: "Queried from support_cases; counts reflect persisted records.",
+      supportMessages: "Queried from support_messages; message counts are not equivalent to email delivery counts.",
+      applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
+      providerDeliveryEvents: "Only events ingested into the ReDom operations email ledger are counted.",
+      limits: DAILY_LIMIT || MONTHLY_LIMIT ? "Only configured REDOM_EMAIL_DAILY_LIMIT / REDOM_EMAIL_MONTHLY_LIMIT values are shown." : "Provider quotas are not yet connected; no quota value is assumed.",
+    },
+    forecast: {
+      expectedEmailAttempts24h: expectedEmail, expectedSupportCases24h: expectedCases,
+      notes: ["Simple weighted estimate based on the current and preceding 24-hour counts; confidence is low until sufficient history is available.", "Forecasts are not actual measurements."],
+    },
+    system: { database: database.rows[0]?.ok ? "reachable" : "unknown", collectedAt: iso(new Date()) },
+  };
+}
+
+function buildAnalysisPrompt(metrics: Metrics): string {
+  return [
+    "You are ReDom's evidence-bound operations analyst. Analyze only the JSON facts supplied. Do not invent counts, incidents, fixes, provider limits, causes, or successful deployments.",
+    "Return valid JSON with keys: status (healthy|degraded|critical|unknown), executiveSummary (string), keyChanges (array of strings), findings (array of objects with severity, title, evidence, impact, confidence, recommendation), resolvedIssues (array of strings), pendingRisks (array of strings), nextActions (array of objects with priority, action, rationale, verification), forecastCommentary (string), limitations (array of strings).",
+    "Separate confirmed facts from hypotheses. If logs are not available, say root-cause analysis is limited. Mark missing or partial email ledger coverage prominently. Do not call a metric zero when telemetry is missing.",
+    JSON.stringify(metrics),
+  ].join("\n\n");
+}
+
+async function analyzeWithGemini(metrics: Metrics): Promise<Record<string, any>> {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(env.gemini.apiKey)}`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: buildAnalysisPrompt(metrics) }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
+    signal: AbortSignal.timeout(45000),
+  });
+  if (!response.ok) throw new Error(`Gemini analysis failed with HTTP ${response.status}`);
+  const payload = await response.json() as any;
+  const text = payload?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim();
+  if (!text) throw new Error("Gemini returned no structured analysis.");
+  const parsed = JSON.parse(text);
+  if (!["healthy", "degraded", "critical", "unknown"].includes(parsed.status) || typeof parsed.executiveSummary !== "string" || !Array.isArray(parsed.findings) || !Array.isArray(parsed.nextActions)) {
+    throw new Error("Gemini analysis failed schema validation.");
+  }
+  return parsed;
+}
+
+function pdfEscape(text: string): string {
+  return text.normalize("NFKD").replace(/[^\x20-\x7E]/g, "?").replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+function makePdf(pages: string[][]): Buffer {
+  const objects: string[] = [];
+  const pageIds: number[] = [];
+  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objects.push("");
+  for (const lines of pages) {
+    const contentParts = ["BT", "/F1 10 Tf", "48 790 Td", "14 TL"];
+    for (const line of lines) contentParts.push("(" + pdfEscape(line) + ") Tj", "T*");
+    contentParts.push("ET");
+    const stream = contentParts.join("\n");
+    const contentId = objects.length + 1;
+    objects.push("<< /Length " + Buffer.byteLength(stream, "ascii") + " >>\nstream\n" + stream + "\nendstream");
+    const pageId = objects.length + 1;
+    objects.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 " + (objects.length + 2) + " 0 R >> >> /Contents " + contentId + " 0 R >>");
+    pageIds.push(pageId);
+  }
+  const fontId = objects.length + 1;
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  objects[1] = "<< /Type /Pages /Kids [" + pageIds.map(id => id + " 0 R").join(" ") + "] /Count " + pageIds.length + " >>";
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((obj, index) => { offsets.push(Buffer.byteLength(pdf, "ascii")); pdf += (index + 1) + " 0 obj\n" + obj + "\nendobj\n"; });
+  const xref = Buffer.byteLength(pdf, "ascii");
+  pdf += "xref\n0 " + (objects.length + 1) + "\n0000000000 65535 f \n";
+  for (let i = 1; i < offsets.length; i++) pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+  pdf += "trailer\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF";
+  return Buffer.from(pdf, "ascii");
+}
+function reportPages(m: Metrics, a: Record<string, any>): string[][] {
+  const lines = [
+    "ReDom | DAILY OPERATIONS INTELLIGENCE",
+    "Reporting period: " + m.periodStart + " to " + m.periodEnd + " (" + m.timezone + ")",
+    "Overall status: " + String(a.status ?? "unknown").toUpperCase(),
+    "",
+    "EXECUTIVE SUMMARY",
+    ...wrap(String(a.executiveSummary ?? "AI analysis unavailable; factual metrics follow."), 88),
+    "",
+    "EMAIL OPERATIONS — LAST 24 HOURS",
+    "Attempts: " + moneyless(m.email.current24h.attempts) + " | Accepted: " + moneyless(m.email.current24h.accepted) + " | Delivered events: " + moneyless(m.email.current24h.delivered),
+    "Failed: " + moneyless(m.email.current24h.failed) + " | Bounced: " + moneyless(m.email.current24h.bounced) + " | Rejected: " + moneyless(m.email.current24h.rejected),
+    "Deferred: " + moneyless(m.email.current24h.deferred) + " | Duplicate sends suppressed: " + moneyless(m.email.current24h.duplicateSuppressed) + " | Duplicate deliveries: " + moneyless(m.email.current24h.duplicateDelivery),
+    "Previous 24h attempts: " + moneyless(m.email.previous24h.attempts) + " | Change: " + formatPct(m.email.changePct.attempts),
+    "",
+    "EMAIL OPERATIONS — ROLLING 365 DAYS",
+    "Attempts: " + moneyless(m.email.last365d.attempts) + " | Delivered events: " + moneyless(m.email.last365d.delivered) + " | Failed: " + moneyless(m.email.last365d.failed),
+    "Bounced: " + moneyless(m.email.last365d.bounced) + " | Duplicate suppression: " + moneyless(m.email.last365d.duplicateSuppressed),
+    "Email ledger coverage: " + (m.email.ledgerCoverageStart ?? "No events recorded"),
+    "",
+    "LIMITS AND CAPACITY",
+    "Configured daily limit: " + (m.email.dailyLimit ?? "Unknown") + " | Usage: " + (m.email.dailyLimitUsedPct === null ? "Unknown" : m.email.dailyLimitUsedPct + "%"),
+    "Configured monthly limit: " + (m.email.monthlyLimit ?? "Unknown") + " | Month-to-date attempts: " + moneyless(m.email.monthlySent) + " | Usage: " + (m.email.monthlyLimitUsedPct === null ? "Unknown" : m.email.monthlyLimitUsedPct + "%"),
+    "",
+    "SUPPORT OPERATIONS",
+    "Cases created: " + moneyless(m.support.created24h) + " | Previous 24h: " + moneyless(m.support.createdPrevious24h) + " | Change: " + formatPct(m.support.changePct),
+    "Open: " + moneyless(m.support.open) + " | Awaiting support: " + moneyless(m.support.awaitingSupport) + " | Awaiting user: " + moneyless(m.support.awaitingUser) + " | Closed: " + moneyless(m.support.closed),
+    "Support messages: " + moneyless(m.support.messages24h) + " (not equal to outbound emails).",
+    "",
+    "INCIDENTS AND RISKS",
+    "Open tracked incidents: " + m.incidents.open.length + " | Critical open: " + m.incidents.criticalOpen,
+    ...m.incidents.open.slice(0, 8).flatMap((i: any) => wrap("[" + String(i.severity).toUpperCase() + "] " + String(i.title) + " — " + String(i.status) + ". " + String(i.description), 88)),
+    "",
+    "GEMINI FINDINGS",
+    ...arrayStrings(a.findings).slice(0, 8).flatMap((s) => wrap("• " + s, 88)),
+    "",
+    "PENDING RISKS",
+    ...arrayStrings(a.pendingRisks).slice(0, 8).flatMap((s) => wrap("• " + s, 88)),
+    "",
+    "NEXT 24 HOURS — FORECAST",
+    "Expected email attempts: " + moneyless(m.forecast.expectedEmailAttempts24h) + " (low-confidence weighted estimate)",
+    "Expected support cases: " + moneyless(m.forecast.expectedSupportCases24h) + " (low-confidence weighted estimate)",
+    ...m.forecast.notes.flatMap((s) => wrap("• " + s, 88)),
+    "",
+    "DATA COVERAGE AND LIMITATIONS",
+    ...Object.entries(m.dataCoverage).flatMap(([k, v]) => wrap(k + ": " + v, 88)),
+    "",
+    "Generated at " + m.generatedAt + ". Metrics are evidence-based; unavailable telemetry is not treated as healthy.",
+  ];
+  const chunks: string[][] = [];
+  for (let i = 0; i < lines.length; i += 48) chunks.push(lines.slice(i, i + 48));
+  return chunks.length ? chunks : [["ReDom Daily Operations Intelligence"]];
+}
+function wrap(value: string, width: number): string[] {
+  const words = value.replace(/\s+/g, " ").trim().split(" ");
+  const out: string[] = []; let line = "";
+  for (const word of words) { if (line && line.length + word.length + 1 > width) { out.push(line); line = word; } else line += (line ? " " : "") + word; }
+  if (line) out.push(line);
+  return out;
+}
+function arrayStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((x: any) => typeof x === "string" ? x : [x?.severity, x?.title, x?.evidence, x?.recommendation].filter(Boolean).join(" — ")).filter(Boolean);
+}
+function formatPct(value: number | null): string { return value === null ? "N/A (previous period was zero or unavailable)" : (value > 0 ? "+" : "") + value + "%"; }
+
+function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string): string {
+  const status = ["healthy", "degraded", "critical"].includes(a.status) ? a.status : "unknown";
+  const card = (label: string, value: string, note = "") => `<td style="padding:10px"><div style="background:#fff;border:1px solid #DADDE1;border-radius:10px;padding:15px"><div style="color:#65676B;font-size:12px">${esc(label)}</div><div style="font-size:24px;font-weight:700;color:#1C1E21;margin-top:7px">${esc(value)}</div><div style="color:#65676B;font-size:11px;margin-top:5px">${esc(note)}</div></div></td>`;
+  const findings = arrayStrings(a.findings).slice(0, 8).map(x => `<li style="margin:8px 0">${esc(x)}</li>`).join("");
+  const risks = arrayStrings(a.pendingRisks).slice(0, 8).map(x => `<li style="margin:8px 0">${esc(x)}</li>`).join("");
+  return `<!doctype html><html><body style="margin:0;background:#F0F2F5;color:#1C1E21;font-family:Arial,Helvetica,sans-serif"><div style="max-width:760px;margin:0 auto;padding:24px 12px"><div style="background:#1877F2;color:white;padding:26px;border-radius:14px 14px 0 0"><div style="font-size:12px;letter-spacing:2px">REDOM OPERATIONS INTELLIGENCE</div><h1 style="margin:12px 0 5px;font-size:26px">Daily Executive Report</h1><div style="font-size:13px">${esc(m.periodStart)} — ${esc(m.periodEnd)} (${esc(m.timezone)})</div></div><div style="background:white;padding:22px;border:1px solid #DADDE1"><div style="display:inline-block;background:${status==="critical"?"#FCE8E6":status==="degraded"?"#FFF4CE":status==="healthy"?"#E1F5E8":"#F0F2F5"};padding:8px 12px;border-radius:18px;font-weight:bold">Platform status: ${esc(status.toUpperCase())}</div><h2 style="font-size:18px;margin-top:20px">Executive summary</h2><p style="line-height:1.65">${esc(a.executiveSummary ?? "AI analysis unavailable; see verified metrics below.")}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>${card("Email attempts (24h)",moneyless(m.email.current24h.attempts),"Change "+formatPct(m.email.changePct.attempts))}${card("Delivered events (24h)",moneyless(m.email.current24h.delivered),"Provider events recorded")}</tr><tr>${card("Support cases (24h)",moneyless(m.support.created24h),"Change "+formatPct(m.support.changePct))}${card("Open critical incidents",String(m.incidents.criticalOpen),"Tracked incidents only")}</tr></table><h2 style="font-size:18px">Email usage</h2><p>Rolling 365-day attempts: <b>${moneyless(m.email.last365d.attempts)}</b>. Failures: <b>${moneyless(m.email.current24h.failed)}</b>. Duplicate sends suppressed: <b>${moneyless(m.email.current24h.duplicateSuppressed)}</b>. Duplicate delivery events: <b>${moneyless(m.email.current24h.duplicateDelivery)}</b>.</p><p>Daily quota: <b>${m.email.dailyLimit ?? "Unknown"}</b>; usage: <b>${m.email.dailyLimitUsedPct===null?"Unknown":m.email.dailyLimitUsedPct+"%"}</b>. Monthly quota: <b>${m.email.monthlyLimit ?? "Unknown"}</b>; month-to-date attempts: <b>${moneyless(m.email.monthlySent)}</b>.</p><h2 style="font-size:18px">Support workload</h2><p>Open: ${moneyless(m.support.open)} · Awaiting ReDom: ${moneyless(m.support.awaitingSupport)} · Awaiting customer: ${moneyless(m.support.awaitingUser)} · Support messages (24h): ${moneyless(m.support.messages24h)}. Message count is not equivalent to email delivery count.</p><h2 style="font-size:18px">AI findings</h2><ul>${findings || "<li>No validated findings were returned.</li>"}</ul><h2 style="font-size:18px">Pending risks</h2><ul>${risks || "<li>No pending risks reported by analysis; see data coverage limitations.</li>"}</ul><h2 style="font-size:18px">Next 24 hours</h2><p>Expected email attempts: <b>${moneyless(m.forecast.expectedEmailAttempts24h)}</b>; expected support cases: <b>${moneyless(m.forecast.expectedSupportCases24h)}</b>. These are low-confidence weighted estimates until longer history is available.</p><h2 style="font-size:18px">Data quality</h2><ul>${Object.entries(m.dataCoverage).map(([k,v])=>`<li><b>${esc(k)}:</b> ${esc(v)}</li>`).join("")}</ul><p style="font-size:11px;color:#65676B">PDF SHA-256: ${esc(pdfHash)}. This administrative report is confidential and intended only for the configured ReDom administrator.</p></div><div style="text-align:center;color:#65676B;font-size:11px;padding:18px">ReDom · Daily Operations Intelligence · Automated report</div></div></body></html>`;
+}
+
+async function generateReport(now: Date): Promise<void> {
+  const dayKey = Math.floor(now.getTime() / 86400000);
+  const reportKey = "daily-ops-" + dayKey;
+  const client = await pool.connect();
+  let runId: string | null = null;
+  try {
+    await client.query("BEGIN");
+    const lock = await client.query("SELECT pg_try_advisory_xact_lock(hashtext('redom-daily-ops-report')) AS locked");
+    if (!lock.rows[0]?.locked) { await client.query("ROLLBACK"); return; }
+    const existing = await client.query("SELECT id, status FROM redom_ops_report_runs WHERE report_key=$1 FOR UPDATE", [reportKey]);
+    if (existing.rows[0]?.status === "sent") { await client.query("ROLLBACK"); return; }
+    if (existing.rows[0]) {
+      runId = String(existing.rows[0].id);
+      await client.query("UPDATE redom_ops_report_runs SET status='running', error_message=NULL, attempt_count=attempt_count+1, updated_at=now() WHERE id=$1", [runId]);
+    } else {
+      const start = new Date(now.getTime() - 86400000);
+      const inserted = await client.query("INSERT INTO redom_ops_report_runs (report_key,period_start,period_end,timezone,status,attempt_count) VALUES ($1,$2,$3,$4,'running',1) RETURNING id", [reportKey,start,now,REPORT_TIMEZONE]);
+      runId = String(inserted.rows[0].id);
+    }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+  if (!runId) return;
+
+  try {
+    const metrics = await collectMetrics(now);
+    let analysis: Record<string, any>;
+    try { analysis = await analyzeWithGemini(metrics); }
+    catch (error) {
+      logger.error({ error: error instanceof Error ? error.message : String(error) }, "Gemini daily operations analysis unavailable");
+      analysis = { status: "unknown", executiveSummary: "Gemini analysis unavailable. The attached report contains collected metrics and data-coverage limitations; no AI conclusions are asserted.", keyChanges: [], findings: [], resolvedIssues: [], pendingRisks: ["AI analysis unavailable; inspect backend/provider health and retry the report."], nextActions: [{ priority: "high", action: "Restore or verify Gemini reporting integration", rationale: "Automated analysis did not complete", verification: "A subsequent report contains schema-valid Gemini analysis." }], forecastCommentary: "Forecasts are simple weighted estimates.", limitations: ["Gemini analysis failed; see service logs."] };
+    }
+    const pages = reportPages(metrics, analysis);
+    const pdf = makePdf(pages);
+    const pdfHash = createHash("sha256").update(pdf).digest("hex");
+    const html = htmlReport(metrics, analysis, pdfHash);
+    await pool.query("UPDATE redom_ops_report_runs SET status='generated',metrics=$2::jsonb,analysis=$3::jsonb,data_coverage=$4::jsonb,pdf_base64=$5,pdf_sha256=$6,generated_at=now(),updated_at=now() WHERE id=$1",
+      [runId, JSON.stringify(metrics), JSON.stringify(analysis), JSON.stringify(metrics.dataCoverage), pdf.toString("base64"), pdfHash]);
+    const send = await resend.emails.send({
+      from: REPORT_FROM,
+      to: [RECIPIENT],
+      subject: `ReDom Daily Operations Intelligence — ${now.toISOString().slice(0,10)} — ${String(analysis.status ?? "unknown").toUpperCase()}`,
+      html,
+      attachments: [{ filename: `ReDom-Daily-Operations-${now.toISOString().slice(0,10)}.pdf`, content: pdf.toString("base64") }],
+      headers: { "X-ReDom-Report-Key": reportKey },
+    });
+    if (send.error) throw new Error("Resend rejected daily operations report: " + send.error.message);
+    const messageId = send.data?.id ?? null;
+    await pool.query("UPDATE redom_ops_report_runs SET status='sent',delivery_status='accepted',provider_message_id=$2,delivered_at=now(),updated_at=now() WHERE id=$1", [runId,messageId]);
+    await recordOpsEmailEvent({ logicalEmailId: reportKey, subsystem: "daily-operations-report", eventType: "accepted", recipient: RECIPIENT, providerMessageId: messageId, idempotencyKey: "ops-report:" + reportKey, metadata: { pdfSha256: pdfHash } });
+    logger.info({ reportKey, recipient: RECIPIENT, providerMessageId: messageId, pdfSha256: pdfHash }, "ReDom daily operations report submitted to Resend");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await pool.query("UPDATE redom_ops_report_runs SET status='failed',delivery_status='failed',error_message=$2,updated_at=now() WHERE id=$1", [runId,message.slice(0,2000)]).catch(() => undefined);
+    await pool.query(`INSERT INTO redom_ops_incidents (incident_key,title,subsystem,severity,status,description,evidence)
+      VALUES ('daily-ops-report-delivery','Daily operations report generation or delivery failed','reporting','high','open',$1,$2::jsonb)
+      ON CONFLICT (incident_key) DO UPDATE SET last_seen_at=now(),updated_at=now(),status='open',description=EXCLUDED.description,evidence=EXCLUDED.evidence`,
+      [message.slice(0,1000),JSON.stringify({ reportKey })]).catch(() => undefined);
+    logger.error({ reportKey, error: message }, "ReDom daily operations report failed");
+  }
+}
+
+async function schedulerTick(): Promise<void> {
+  if (inProcess) return;
+  inProcess = true;
+  try {
+    await ensureOpsIntelligenceSchema();
+    const latest = await pool.query("SELECT status, period_end FROM redom_ops_report_runs WHERE status='sent' ORDER BY period_end DESC LIMIT 1");
+    const due = !latest.rows[0] || Date.now() - new Date(latest.rows[0].period_end).getTime() >= 86400000;
+    if (due) await generateReport(new Date());
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, "Daily operations scheduler tick failed");
+  } finally { inProcess = false; }
+}
+
+export function startDailyOpsIntelligence(): void {
+  if (timer) return;
+  timer = setInterval(() => { void schedulerTick(); }, 60_000);
+  timer.unref();
+  void schedulerTick();
+  logger.info({ recipient: RECIPIENT, sender: REPORT_FROM, timezone: REPORT_TIMEZONE }, "Daily operations intelligence scheduler started");
+}
+export function stopDailyOpsIntelligence(): void {
+  if (timer) clearInterval(timer);
+  timer = undefined;
+}
