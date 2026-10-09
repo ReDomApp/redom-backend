@@ -49,9 +49,15 @@ For animated projects, Studio—Ultron 8.0R is responsible for final assembly: e
 For every acceptance test retain the prompt and settings, model/checkpoint identifier and provenance, runtime version, seed where supported, job IDs, logs, output artifact, automated metrics, human review rubric and pass/fail decision. Run the actual GPU endpoint; prompt-string unit tests and successful compilation do not count as rendered animation acceptance evidence. Release gates include endpoint health, checkpoint checksum/provenance, successful short renders, output security validation, timing/language checks, and continuity review.
 
 
-## Unified ReDom Video Intelligence and 00:59 ceiling
+## Unified ReDom Video Intelligence and format-specific duration limits
 
-ReDom Video coordinates Movie Intelligence and Cartoon Intelligence in one creative workflow. Every delivered video, whether live-action-style movie, animation, anime, animal cartoon or mixed-format short, must be no longer than 59 seconds (00:59). Enforce this in API request validation, Studio project planning, worker schema validation, compose payloads, final media probing and backend completion validation. Do not silently trim a planned 60+ second story after generation; reject or re-plan the project to fit the ceiling. The 59-second rule applies to the final composed export as well as direct generation.
+ReDom Video coordinates Movie Intelligence and Cartoon Intelligence in one creative workflow, but standalone generation and long-form projects have different limits:
+- **ReDom-v2.8—Video standalone export:** maximum 59 seconds.
+- **Cartoon—R8.0 complete animated project:** maximum 3,600 seconds (60 minutes).
+- **Studio—Ultron 8.0R complete movie project:** maximum 7,200 seconds (120 minutes).
+- **Trailer previews:** 15-25 seconds.
+
+Long-form limits apply only to the final project composition. Every individual model-generation job remains capped at 59 seconds and production planning should use short 4-10 second shots. Enforce format-specific project limits in project creation, composition worker validation, final media probing and backend completion validation. Reject out-of-range requests; never silently truncate a requested story. A duration limit is a product contract, not evidence that the current planner can reliably produce enough scenes, audio assets, or acceptable GPU renders for every 60/120-minute runtime.
 
 ### Shared creative recommendation and memory
 - Combine the creator's current prompt and reference assets with authorized ReDom project memory: recurring characters, preferred language/dialect, genre, prior approved style briefs, continuity decisions and previously accepted/rejected creative directions.
@@ -68,6 +74,6 @@ ReDom Video coordinates Movie Intelligence and Cartoon Intelligence in one creat
 3. For cinematic live-action-style output, Movie Intelligence directs the Video/Studio rendering path.
 4. For animation, Cartoon—R8.0 renders the approved human/animal/creature shots with stable model sheets, acting, motion and medium-specific art direction.
 5. Studio finishes either format while preserving the approved story, identity, visual medium, language and audio timing.
-6. A final duration gate verifies the exported file is at most 59 seconds before it can be marked complete.
+6. The final duration gate applies the format-specific limit: 59 seconds for standalone Video jobs, 3,600 seconds for Cartoon projects, or 7,200 seconds for Studio movie projects. Only a Studio compose job may exceed 59 seconds.
 
 This shared workflow does not mean one checkpoint automatically contains both animation and movie capability. The appropriate model endpoint, compatible checkpoint, credentials and GPU runtime must be deployed and acceptance-tested independently.
