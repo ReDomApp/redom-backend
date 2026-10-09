@@ -63,7 +63,7 @@ async function classifyWithGemini(prompt: string) {
       contents: [{ role: "user", parts: [{ text:
         "You are ReDom's defensive media safety classifier. Return JSON only. " +
         "Classify whether this video request asks for identity manipulation, deceptive/deepfake media, fraud or forged evidence, explicit sexual content, or dangerous unsafe content. " +
-        "Ordinary fictional characters, ordinary filmmaking, and harmless CGI are allowed. " +
+        "Ordinary fictional characters, ordinary filmmaking, harmless CGI, and clearly fictional, visibly watermarked entertainment featuring public figures or a user-provided likeness are allowed. Do not classify a real person appearing in a fictional scene as identity manipulation by itself. Only flag deceptive impersonation intended to mislead, fabricated evidence, fraud, non-consensual sexual content, or unsafe content. " +
         '{"identityManipulation":false,"deceptiveMedia":false,"fraud":false,"sexualContent":false,"unsafeContent":false,"blocked":false}\nRequest: ' + prompt,
       }] }],
       safetySettings: [
@@ -175,7 +175,7 @@ export async function enforceReDomVideoOutputSecurity(userId: string, requestId:
       store: false,
       input: [
         { type: "video", uri: fileUri, mime_type: "video/mp4", processing: "static" },
-        { type: "text", text: "Inspect the entire generated video. Return JSON only with booleans: identityManipulation, deceptiveMedia, fraud, sexualContent, unsafeContent, blocked. Ordinary fictional filmmaking and harmless CGI are allowed." },
+        { type: "text", text: "Inspect the entire generated video. Return JSON only with booleans: identityManipulation, deceptiveMedia, fraud, sexualContent, unsafeContent, blocked. Ordinary fictional filmmaking, harmless CGI, and visibly watermarked fictional entertainment featuring public figures or a user-provided likeness are allowed. Do not flag a real person appearing in a fictional scene as identity manipulation by itself. Flag deceptive impersonation intended to mislead, fabricated evidence, fraud, non-consensual sexual content, or unsafe content." },
       ],
     }),
   });
