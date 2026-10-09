@@ -702,7 +702,7 @@ function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string, stamp: 
 
 async function generateReport(now: Date): Promise<void> {
   const dayKey = Math.floor(now.getTime() / 86400000);
-  const reportKey = "daily-ops-" + dayKey + "-v3";
+  const reportKey = "daily-ops-" + dayKey + "-v4";
   const client = await pool.connect();
   let runId: string | null = null;
   try {
@@ -766,7 +766,8 @@ async function generateReport(now: Date): Promise<void> {
       analysis.status = "degraded";
       analysis.pendingRisks = [...(Array.isArray(analysis.pendingRisks) ? analysis.pendingRisks : []), "Deterministic operations guardrail: tracked high-severity incidents, an email-failure burst, or delivery below 90% across at least five terminal outcomes requires review."];
     }
-    const payloadHash = createHash("sha256").update(canonicalJson({ metrics, analysis })).digest("hex");
+    const signedPayload = JSON.parse(JSON.stringify({ metrics, analysis }));
+    const payloadHash = createHash("sha256").update(canonicalJson(signedPayload)).digest("hex");
     const signedAt = iso(now);
     const signature = REPORT_SIGNING_KEY ? createHmac("sha256", REPORT_SIGNING_KEY).update(reportKey + "|" + signedAt + "|" + payloadHash).digest("hex") : null;
     const keyId = REPORT_SIGNING_KEY ? createHash("sha256").update(REPORT_SIGNING_KEY).digest("hex").slice(0, 12) : null;
@@ -809,7 +810,7 @@ async function schedulerTick(): Promise<void> {
   try {
     const latest = await pool.query("SELECT report_key, period_end FROM redom_ops_report_runs WHERE status='sent' ORDER BY period_end DESC LIMIT 1");
     const latestKey = String(latest.rows[0]?.report_key ?? "");
-    const revisionUpgradeDue = Boolean(latest.rows[0]) && !latestKey.endsWith("-v3");
+    const revisionUpgradeDue = Boolean(latest.rows[0]) && !latestKey.endsWith("-v4");
     const due = !latest.rows[0] || revisionUpgradeDue || Date.now() - new Date(latest.rows[0].period_end).getTime() >= 86400000;
     if (due) await generateReport(new Date());
   } catch (error) {
