@@ -1,4 +1,6 @@
 import { resend } from "../../lib/resend";
+import { createHash } from "node:crypto";
+import { recordOpsEmailEvent } from "../operations/daily-ops-intelligence.service";
 import type { IPAPIResult } from "../../lib/ipapi";
 
 export class LoginNotificationService {
@@ -38,6 +40,8 @@ export class LoginNotificationService {
     const timeText = `${part("hour")}:${part("minute")} ${part("dayPeriod")} (${part("timeZoneName")})`;
     const whenText = `${part("weekday")}, ${dateText} ${timeText}`;
 
+    const logicalEmailId = createHash("sha256").update(params.email.toLowerCase() + "|login-notification|" + params.eventAt.toISOString()).digest("hex");
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "attempted", recipient: params.email }).catch(() => undefined);
     const result = await resend.emails.send({
       from: this.sender,
       to: params.email,
@@ -45,8 +49,7 @@ export class LoginNotificationService {
       html: `<!doctype html><html><body style="margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><h2 style="margin:0 0 12px">Dear ${this.escape(params.firstName)} ${this.escape(params.lastName)},</h2><p>You have successfully logged in to ReDom on <strong>${this.escape(whenText)}</strong>.</p><p>Here are some extra details about this recent login:</p><div style="border:1px solid #e4e7ec;border-radius:12px;padding:16px;line-height:1.8"><strong>Location:</strong> ${this.escape(location)} (shown as approximate)<br><strong>Device:</strong> ${this.escape(device)}<br><strong>IP:</strong> ${this.escape(params.ipAddress)}<br><strong>Time:</strong> ${this.escape(timeText)}<br><strong>Date:</strong> ${this.escape(dateText)}<br><strong>Timezone:</strong> ${this.escape(timezone)}</div><p style="margin-top:22px">If this was you, please you can disregard this message.</p><p>If that wasn't you, we highly advise that you change your password as soon as possible and also notify us by replying to this mail.</p><p>Please if you did not initiate this action, contact our customer support on <a href="mailto:support@redomapp.com">support@redomapp.com</a> or send us a WhatsApp message at +234 70 1486 5940.</p><p style="margin-top:28px">Kind Regards,<br>ReDom Platforms, Inc.</p></div></div></body></html>`,
       replyTo: "support@redomapp.com",
     });
-    if (result.error) throw new Error(`Resend failed to deliver the login notification: ${result.error.message}`);
-    return { provider: "resend", providerReference: result.data?.id };
+    if (result.error) {\n      await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "failed", recipient: params.email, metadata: { error: result.error.message } }).catch(() => undefined);\n      throw new Error(`Resend failed to deliver the login notification: ${result.error.message}`);\n    }\n    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "accepted", recipient: params.email, providerMessageId: result.data?.id ?? null }).catch(() => undefined);\n    return { provider: "resend", providerReference: result.data?.id };
   }
 
   private parseDevice(userAgent: string): string {
