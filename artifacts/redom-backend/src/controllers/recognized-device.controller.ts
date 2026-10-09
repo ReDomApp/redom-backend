@@ -16,7 +16,7 @@ export class RecognizedDeviceController {
   async list(req: Request, res: Response): Promise<void> {
     try {
       const value = credential(req);
-      if (!value) return res.status(200).json({ success: true, deviceId: null, accounts: [] });
+      if (!value) { res.status(200).json({ success: true, deviceId: null, accounts: [] }); return; }
       res.status(200).json({ success: true, ...(await recognizedDeviceService.list(value)) }); return;
     } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to load recognized accounts." }); }
   }
@@ -25,7 +25,7 @@ export class RecognizedDeviceController {
     catch (error) { res.status(404).json({ success: false, message: error instanceof Error ? error.message : "Recognized account not found." }); }
   }
   async remove(req: Request, res: Response): Promise<void> {
-    try { const value = credential(req); if (!value) throw new Error("Device credential is required."); res.status(200).json(await recognizedDeviceService.removeAccount(value, req.params.userId)); }
+    try { const value = credential(req); if (!value) throw new Error("Device credential is required."); res.status(200).json(await recognizedDeviceService.removeAccount(value, String(req.params.userId))); }
     catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to remove the profile from this device." }); }
   }
 }
