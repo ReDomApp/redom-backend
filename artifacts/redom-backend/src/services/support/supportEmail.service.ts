@@ -166,7 +166,9 @@ export async function sendGeneratedSupportEmail(input: {
   });
   const html = await generateSupportEmailHtml({ ...input, actions });
   const logicalEmailId = createHash("sha256").update(input.idempotencyKey ?? (input.to.toLowerCase() + "|" + input.subject + "|" + input.caseNumber)).digest("hex");
-  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "attempted", recipient: input.to, caseId: null }).catch(() => undefined);
+  const caseResult = await pool.query("SELECT id FROM support_cases WHERE case_number=$1 LIMIT 1", [input.caseNumber]).catch(() => ({ rows: [] as Array<{ id: string }> }));
+  const caseId = caseResult.rows[0]?.id ? String(caseResult.rows[0].id) : null;
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "attempted", recipient: input.to, caseId }).catch(() => undefined);
   const { data, error } = await resend.emails.send({
     from: env.email.supportFrom,
     to: [input.to],
