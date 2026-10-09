@@ -102,6 +102,13 @@ type MoviePlan = {
   storyArcs?: StoryArc[];
   episodes: PlanEpisode[];
   research?: Array<{ sourceType: string; title: string; url?: string; summary: string; claims?: string[]; rightsBasis?: string }>;
+  trailerBeats?: Array<Record<string, unknown>>;
+  trailerPrompt?: string;
+  soundtrackDirection?: string;
+  soundscape?: Record<string, unknown> | string;
+  dialogueDirection?: Record<string, unknown> | string;
+  narrationDirection?: string;
+  songConcepts?: Array<Record<string, unknown> | string>;
 };
 
 function safeDuration(value: number) {
@@ -340,7 +347,7 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
       estimatedRuntimeSeconds: plan.estimatedRuntimeSeconds || project.targetDurationSeconds,
       episodeCount: plan.episodeCount || plan.episodes.length,
     },
-    research: { ...(project.research || {}), entries: plan.research || [], plannedBy: MODEL },
+    research: { ...(project.research || {}), entries: plan.research || [], plannedBy: MODEL, trailerBeats: plan.trailerBeats || [], soundtrackDirection: plan.soundtrackDirection || project.research?.soundtrackStyle || "Original cinematic score", soundscape: plan.soundscape || {}, dialogueDirection: plan.dialogueDirection || {}, narrationDirection: plan.narrationDirection || "", songConcepts: plan.songConcepts || [], audioRenderingStatus: "planned_not_rendered" },
     state: "ready",
     continuityVersion: project.continuityVersion + 1,
     updatedAt: new Date(),
