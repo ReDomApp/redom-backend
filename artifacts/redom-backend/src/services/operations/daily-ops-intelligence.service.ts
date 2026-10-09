@@ -327,9 +327,18 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       reviewedSignals: fraudSignals.rows.map((row: Record<string, unknown>) => {
         const indicators = [row.credential_or_bypass ? "Requests involving API keys, credentials, or security/payment bypass" : null, row.payment_integrity ? "Potential payment/refund integrity manipulation language" : null].filter(Boolean) as string[];
         const score = Math.min(95, (row.credential_or_bypass ? 55 : 0) + (row.payment_integrity ? 40 : 0) + Math.min(20, Math.max(0, num(row.count) - 1) * 5));
-        return { email: String(row.email), risk: score >= 75 ? "high-review-priority" : score >= 50 ? "manual-review" : "low-confidence-signal", score, indicators, caseNumbers: Array.isArray(row.cases) ? row.cases.map(String).slice(0,10) : [], count: num(row.count) };
+        const recommendedAction = row.credential_or_bypass
+          ? "Preserve relevant case evidence; route to Security for context review; provide safe public API documentation only; never disclose secrets. Do not block solely from keyword matches."
+          : "Review refund/payment evidence and account ownership through established controls; request normal verification if warranted. No automatic denial or account action.";
+        return { email: String(row.email), risk: score >= 75 ? "high-review-priority" : score >= 50 ? "manual-review" : "low-confidence-signal", score, indicators, caseNumbers: Array.isArray(row.cases) ? row.cases.map(String).slice(0,10) : [], count: num(row.count), recommendedAction };
       }),
-      signalCount30d: num(fraudCount.rows[0]?.senders),
+      signalCount30d: num(fraudCount.rows[0]?.current_senders),
+      previousSignalCount30d: num(fraudCount.rows[0]?.previous_senders),
+      changePct30d: pct(num(fraudCount.rows[0]?.current_senders), num(fraudCount.rows[0]?.previous_senders)),
+      trend30d: num(fraudCount.rows[0]?.previous_senders) === 0
+        ? (num(fraudCount.rows[0]?.current_senders) === 0 ? "unchanged" : "baseline-unavailable")
+        : num(fraudCount.rows[0]?.current_senders) > num(fraudCount.rows[0]?.previous_senders) ? "increased"
+          : num(fraudCount.rows[0]?.current_senders) < num(fraudCount.rows[0]?.previous_senders) ? "decreased" : "unchanged",
       warning: "These are heuristic review signals, not findings of fraud. Human security review is required. Do not automatically suspend, block, deny refunds, or alter an account based on this report.",
     },
     geography: {
