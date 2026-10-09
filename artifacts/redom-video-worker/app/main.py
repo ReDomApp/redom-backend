@@ -120,13 +120,17 @@ def last_frame(video_path: Path, image_path: Path):
     return Image.open(image_path).convert("RGB")
 
 
-def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool, caption_text: str | None = None):
+def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool, caption_text: str | None = None, format_name: str = "video"):
     command = ["ffmpeg", "-y", "-i", str(input_path)]
     if caption_text and caption_text.strip():
         caption_file = output_path.parent / "redom-caption.txt"
         caption_file.write_text(caption_text.strip()[:500].replace("\r", " ").replace("\n", " "), encoding="utf-8")
         escaped_path = caption_file.as_posix()
-        vf += f",drawtext=font='Noto Sans':textfile='{escaped_path}':x=(w-tw)/2:y=h-th-64:fontsize=30:fontcolor=white:borderw=2:bordercolor=black@0.8:box=1:boxcolor=black@0.45:boxborderw=14:expansion=none"
+        caption_color, caption_box = {"movie": ("white", "black@0.48"), "cartoon": ("black", "white@0.86"), "video": ("white", "black@0.52")}.get(format_name, ("white", "black@0.52"))
+        caption_border = "black@0.65" if caption_color == "white" else "white@0.8"
+        vf += (f",drawtext=font='Noto Sans':textfile='{escaped_path}':x=(w-tw)/2:y=h-th- max(38\\,h*0.045):"
+               f"fontsize=max(18\\,min(28\\,h*0.022)):fontcolor={caption_color}:borderw=1:bordercolor={caption_border}:"
+               f"box=1:boxcolor={caption_box}:boxborderw=6:expansion=none")
     if watermark:
         logo_path = Path("/app/assets/redom-logo.png")
         command += [
@@ -235,7 +239,7 @@ def render_project(job: VideoJob, output: Path):
             "unsharp=5:5:0.45:5:5:0,"
             + watermark_filter(job.format, job.watermark)
         )
-        encode_final(working, enhanced, vf, job.watermark, job.captionText)
+        encode_final(working, enhanced, vf, job.watermark, job.captionText, job.format)
         output.write_bytes(enhanced.read_bytes())
 
 
@@ -283,7 +287,7 @@ def compose_project(job: VideoJob, output: Path):
 
         width, height = target_size(job.aspectRatio, job.resolution)
         vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
-        encode_final(joined, output, vf, job.watermark, job.captionText)
+        encode_final(joined, output, vf, job.watermark, job.captionText, job.format)
 
 async def callback(job: VideoJob, status: str, storage_key: str | None = None, error: str | None = None):
     body = {
