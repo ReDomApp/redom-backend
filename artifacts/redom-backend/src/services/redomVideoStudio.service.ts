@@ -357,6 +357,12 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
 
 export async function createReDomMovieTrailerPreview(userId: string, input: { prompt: string; format: "movie" | "cartoon"; durationSeconds?: number; episodeCount?: number; style?: string; aspectRatio?: "16:9" | "9:16" | "1:1"; soundtrackStyle?: string; language?: string }) {
   await requirePaid(userId);
+  if (!env.redomVideoEngine.url || !env.redomVideoEngine.token) {
+    throw Object.assign(new Error("The native GPU video worker is not configured, so ReDom cannot render a trailer yet."), { status: 503, code: "MOVIE_VIDEO_WORKER_NOT_CONFIGURED" });
+  }
+  if (!env.redomMovieAudio.elevenLabsApiKey) {
+    throw Object.assign(new Error("ReDom Movie Audio is not configured. Set ELEVENLABS_API_KEY to generate trailer music."), { status: 503, code: "MOVIE_AUDIO_PROVIDER_NOT_CONFIGURED" });
+  }
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const previewDuration = Math.max(15, Math.min(25, Math.floor(input.durationSeconds ?? 20)));
   const episodeCount = Math.max(1, Math.min(12, Math.floor(input.episodeCount ?? 6)));
@@ -472,6 +478,9 @@ export async function approveReDomMovieTrailerAndCreateProject(userId: string, t
 
 export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; episodeCount?: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon"; soundtrackStyle?: string; singingVoiceStyle?: string; voiceAssignments?: Record<string, string>; singingEnabled?: boolean; approvedTrailerJobId?: string }) {
   await requirePaid(userId);
+  if (!input.approvedTrailerJobId) {
+    throw Object.assign(new Error("Create and approve a completed trailer preview before adding this movie to the project list."), { status: 409, code: "MOVIE_TRAILER_APPROVAL_REQUIRED" });
+  }
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const format = input.format || "movie";
   const language = await prepareReDomVideoLanguage(input.prompt, format === "cartoon" ? "cartoon" : "movie");
