@@ -134,7 +134,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const monthSeriesStart = new Date(Date.UTC(yearStart.getUTCFullYear(), yearStart.getUTCMonth(), 1));
   const monthSeriesEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, failedSupportOps, priorityCases, geography, supportMonthly, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
+  const [email, annual, monthlyTrend, firstEvent, support, messages, caseLifecycle, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, caseEmails, supportMonthly, failedSupportOps, priorityCases, geography, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
     pool.query(`SELECT
       count(DISTINCT logical_email_id) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS uniqueEmails,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
@@ -301,7 +301,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       FROM redom_ops_incidents`, [yearStart]),
     pool.query("SELECT 1 AS ok"),
   ]);
-  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {}, lifecycle = caseLists.rows[0] ?? {};
+  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {};
+  const lifecycle = caseLifecycle.rows[0] ?? {};
   const attempts = num(e.attempts), previousAttempts = num(e.previousattempts), delivered = num(e.delivered), failed = num(e.failed);
   const monthlySent = num(e.monthlyattempts);
   const supportCreated = num(s.created), previousSupport = num(s.previouscreated);
