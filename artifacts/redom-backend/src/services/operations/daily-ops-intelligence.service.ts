@@ -197,15 +197,15 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     pool.query(`SELECT
       count(*) FILTER (WHERE created_at >= $1)::int AS created365d,
       count(*) FILTER (WHERE closed_at >= $1 OR (status='closed' AND updated_at >= $1))::int AS closed365d,
-      count(*) FILTER (WHERE case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL)::int AS invalidated,
-      count(*) FILTER (WHERE status <> 'closed' AND case_number_invalid=false)::int AS active
+      count(*) FILTER (WHERE EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.case_id=support_cases.id AND rr.case_invalidated_at IS NOT NULL))::int AS invalidated,
+      count(*) FILTER (WHERE status <> 'closed' AND NOT EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.case_id=support_cases.id AND rr.case_invalidated_at IS NOT NULL))::int AS active
       FROM support_cases`, [yearStart]),
     pool.query(`SELECT
       COALESCE(array_agg(case_number::text ORDER BY created_at DESC) FILTER (WHERE created_at >= $1), ARRAY[]::text[]) AS created_numbers,
-      COALESCE(array_agg(case_number::text ORDER BY updated_at DESC) FILTER (WHERE status <> 'closed' AND case_number_invalid=false), ARRAY[]::text[]) AS active_numbers,
-      COALESCE(array_agg(case_number::text ORDER BY updated_at DESC) FILTER (WHERE case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL), ARRAY[]::text[]) AS invalid_numbers,
+      COALESCE(array_agg(case_number::text ORDER BY updated_at DESC) FILTER (WHERE status <> 'closed' AND NOT EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.case_id=support_cases.id AND rr.case_invalidated_at IS NOT NULL)), ARRAY[]::text[]) AS active_numbers,
+      COALESCE(array_agg(case_number::text ORDER BY updated_at DESC) FILTER (WHERE EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.case_id=support_cases.id AND rr.case_invalidated_at IS NOT NULL)), ARRAY[]::text[]) AS invalid_numbers,
       COALESCE(array_agg(case_number::text ORDER BY closed_at DESC) FILTER (WHERE status='closed' AND closed_at >= $2), ARRAY[]::text[]) AS resolved_numbers
-      FROM support_cases WHERE created_at >= $2 OR status <> 'closed' OR case_number_invalid=true OR refund_case_invalidated_at IS NOT NULL`, [start,yearStart]),
+      FROM support_cases WHERE created_at >= $2 OR status <> 'closed' OR EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.case_id=support_cases.id AND rr.case_invalidated_at IS NOT NULL)`, [start,yearStart]),
     pool.query(`SELECT lower(COALESCE(NULLIF(sc.requester_email,''),NULLIF(m.sender_email,''))) AS email,
       count(*)::int AS messages,count(DISTINCT sc.id)::int AS cases
       FROM support_case_messages m JOIN support_cases sc ON sc.id=m.case_id
@@ -273,7 +273,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
         CASE WHEN COALESCE(string_agg(m.body,' '),'') ~* '(account takeover|unauthori[sz]ed access|data breach|api[ -]?key leak|credential leak|production down|major outage|security vulnerability|exploit|payment fraud|forged receipt)' THEN 'security/payment-risk keywords in user messages' END
       ],NULL) AS indicators
       FROM support_cases sc LEFT JOIN support_case_messages m ON m.case_id=sc.id AND m.sender_type='user'
-      WHERE sc.status <> 'closed' AND sc.case_number_invalid=false
+      WHERE sc.status <> 'closed' AND NOT EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.case_id=sc.id AND rr.case_invalidated_at IS NOT NULL)
       GROUP BY sc.id,sc.case_number,sc.category,sc.subject,sc.status
       HAVING COALESCE(sc.subject,'') ~* '(account takeover|unauthori[sz]ed access|data breach|api[ -]?key leak|credential leak|production down|major outage|security vulnerability|exploit)'
         OR COALESCE(sc.category,'') ~* '(security|fraud|payment|refund)'
@@ -383,7 +383,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       supportCases: "Queried from support_cases; counts reflect persisted records.",
       supportMessages: "Queried from support_case_messages; message counts are not equivalent to email delivery counts.",
       supportCasePriority: "The support_cases schema has no independent severity/priority field. Critical counts refer only to explicitly tracked operations incidents; support cases are not automatically classified as critical.",
-      caseExpirationAndRecycling: "The support_cases schema records invalidation fields but has no distinct expiration timestamp or recycling history. Expired/recycled counts cannot be asserted from current data.",
+      caseExpirationAndRecycling: "Refund invalidation is recorded in refund_requests.case_invalidated_at; support_cases has no distinct expiration timestamp or recycling history. Expired/recycled counts cannot be asserted from current data.",
       caseFailureStatus: "The support_cases status constraint contains awaiting_support, awaiting_user, and closed only; there is no failed-case status. Failed email deliveries and failed tracked incidents are reported separately.",
       applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
       providerDeliveryEvents: "Only events ingested into the ReDom operations email ledger are counted.",
