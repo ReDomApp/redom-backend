@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 python3.10-dev python3-pip git ffmpeg build-essential fonts-dejavu-core librsvg2-bin \
+    python3.10 python3.10-dev python3-pip git ffmpeg build-essential fonts-dejavu-core fonts-noto-core fonts-noto-cjk librsvg2-bin \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip
