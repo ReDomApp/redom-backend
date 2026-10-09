@@ -165,7 +165,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       open: openIncidents, resolved24h: num(resolvedIncidents.rows[0]?.resolved), criticalOpen: openIncidents.filter(i => i.severity === "critical").length,
     },
     dataCoverage: {
-      emailLedger: firstEvent.rows[0]?.first_at ? "Available from " + iso(new Date(firstEvent.rows[0].first_at)) + "; totals before this timestamp are not represented by this ledger." : "No email events recorded yet; email totals are incomplete until send paths are instrumented.",
+      emailLedger: firstEvent.rows[0]?.first_at ? "Available from " + iso(new Date(firstEvent.rows[0].first_at)) + "; only instrumented senders and ingested provider webhook events are represented, so this is not yet a complete platform-wide lifetime ledger." : "No email events recorded yet; email totals are unavailable until send paths and provider webhooks are instrumented.",
       supportCases: "Queried from support_cases; counts reflect persisted records.",
       supportMessages: "Queried from support_messages; message counts are not equivalent to email delivery counts.",
       applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
@@ -354,7 +354,7 @@ async function generateReport(now: Date): Promise<void> {
     const html = htmlReport(metrics, analysis, pdfHash);
     await pool.query("UPDATE redom_ops_report_runs SET status='generated',metrics=$2::jsonb,analysis=$3::jsonb,data_coverage=$4::jsonb,pdf_base64=$5,pdf_sha256=$6,generated_at=now(),updated_at=now() WHERE id=$1",
       [runId, JSON.stringify(metrics), JSON.stringify(analysis), JSON.stringify(metrics.dataCoverage), pdf.toString("base64"), pdfHash]);
-    const send = await resend.emails.send({
+    await recordOpsEmailEvent({ logicalEmailId: reportKey, subsystem: "daily-operations-report", eventType: "attempted", recipient: RECIPIENT, metadata: { pdfSha256: pdfHash } }).catch(() => undefined);\n    const send = await resend.emails.send({
       from: REPORT_FROM,
       to: [RECIPIENT],
       subject: `ReDom Daily Operations Intelligence — ${now.toISOString().slice(0,10)} — ${String(analysis.status ?? "unknown").toUpperCase()}`,
@@ -374,7 +374,7 @@ async function generateReport(now: Date): Promise<void> {
       VALUES ('daily-ops-report-delivery','Daily operations report generation or delivery failed','reporting','high','open',$1,$2::jsonb)
       ON CONFLICT (incident_key) DO UPDATE SET last_seen_at=now(),updated_at=now(),status='open',description=EXCLUDED.description,evidence=EXCLUDED.evidence`,
       [message.slice(0,1000),JSON.stringify({ reportKey })]).catch(() => undefined);
-    logger.error({ reportKey, error: message }, "ReDom daily operations report failed");
+    await recordOpsEmailEvent({ logicalEmailId: reportKey, subsystem: "daily-operations-report", eventType: "failed", recipient: RECIPIENT, metadata: { error: message.slice(0, 500) } }).catch(() => undefined);\n    logger.error({ reportKey, error: message }, "ReDom daily operations report failed");
   }
 }
 
