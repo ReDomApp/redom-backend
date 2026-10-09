@@ -124,8 +124,8 @@ def encode_final(input_path: Path, output_path: Path, vf: str, watermark: bool, 
     command = ["ffmpeg", "-y", "-i", str(input_path)]
     if caption_text and caption_text.strip():
         caption_file = output_path.parent / "redom-caption.txt"
-        caption_file.write_text(caption_text.strip()[:500].replace("\\r", " ").replace("\\n", " "), encoding="utf-8")
-        escaped_path = str(caption_file).replace("\\\\", "/").replace(":", "\\\\:").replace("'", "\\\\'")
+        caption_file.write_text(caption_text.strip()[:500].replace("\r", " ").replace("\n", " "), encoding="utf-8")
+        escaped_path = caption_file.as_posix()
         vf += f",drawtext=font='Noto Sans':textfile='{escaped_path}':x=(w-tw)/2:y=h-th-64:fontsize=30:fontcolor=white:borderw=2:bordercolor=black@0.8:box=1:boxcolor=black@0.45:boxborderw=14:expansion=none"
     if watermark:
         logo_path = Path("/app/assets/redom-logo.png")
@@ -168,7 +168,7 @@ def render_project(job: VideoJob, output: Path):
             frames = seconds * FPS + 1
             prompt = job.prompt.strip()
             if job.generationDirection:
-                prompt += "\\nLanguage and caption direction: " + job.generationDirection
+                prompt += "\nLanguage and caption direction: " + job.generationDirection
             if job.format == "cartoon":
                 prompt += ("\nAnimation direction: polished high-end animated film, expressive character acting, "
                            "deliberate animation timing, stable model sheets, consistent proportions, "
