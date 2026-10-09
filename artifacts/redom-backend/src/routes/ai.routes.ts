@@ -18,10 +18,17 @@ import { completeReDomVideoJob, createReDomVideoJob, failReDomVideoJob, getReDom
 import { env } from "../config/env";
 import { approveReDomMovieTrailerAndCreateProject, createReDomMovieProject, createReDomMovieTrailerPreview, getReDomMovieProject, getReDomMovieJobContext, planReDomMovieProject, reviseReDomMovieProject, registerReDomMovieJobCallback, runReDomMovieContinuityCheck, startReDomMovieProduction } from "../services/redomVideoStudio.service";
 import { listReDomMovieVoices } from "../services/redomMovieAudio.service";
+import { listReDomModels } from "../services/redomCinematicModelRegistry.service";
 
 import { r2 } from "../lib/r2";
 
 const router = Router();
+
+// Authenticated model catalogue. "configured_unprobed" is not a health or quality claim.
+router.get("/video/models", authMiddleware, async (req, res) => {
+  if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
+  return res.status(200).json({ success: true, models: listReDomModels() });
+});
 
 const localizationRateLimit = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 const imageRateLimit = rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false, message: { success: false, message: "Too many image requests. Please try again shortly." } });
