@@ -17,16 +17,32 @@ from redis.asyncio import Redis
 import wan
 from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, WAN_CONFIGS
 from wan.utils.utils import save_video
+from app.animation_direction import build_animation_direction
+from app.studio_cartoon_finishing import cartoon_finishing_filter
 
 MODEL_NAME = os.getenv("REDOM_VIDEO_MODEL_ID", "ReDom-v2.8—Video")
 RUNTIME_NAME = os.getenv("REDOM_VIDEO_RUNTIME_ID", "redom-v2.8-native")
 ALLOWED_FORMATS = {value.strip() for value in os.getenv("REDOM_VIDEO_ALLOWED_FORMATS", "video").split(",") if value.strip()}
 CHECKPOINT_DIR = os.environ["REDOM_VIDEO_CHECKPOINT_DIR"]
+MODEL_PROFILES = {
+    "ReDom-v2.8—Video": ("redom-v2.8-native", {"video"}),
+    "Cartoon—R8.0": ("redom-cartoon-r8-native", {"cartoon"}),
+    "Studio—Ultron 8.0R": ("redom-studio-ultron-8r-native", {"movie", "cartoon"}),
+}
+if MODEL_NAME not in MODEL_PROFILES:
+    raise RuntimeError("Unknown ReDom model profile: " + MODEL_NAME)
+_EXPECTED_RUNTIME, _EXPECTED_FORMATS = MODEL_PROFILES[MODEL_NAME]
+if RUNTIME_NAME != _EXPECTED_RUNTIME:
+    raise RuntimeError(f"Model/runtime configuration mismatch for {MODEL_NAME}: expected {_EXPECTED_RUNTIME}, received {RUNTIME_NAME}")
+if not ALLOWED_FORMATS or not ALLOWED_FORMATS.issubset(_EXPECTED_FORMATS):
+    raise RuntimeError(f"Invalid formats for {MODEL_NAME}; allowed profile formats are {sorted(_EXPECTED_FORMATS)}")
+WAN_CONFIG_NAME = os.getenv("REDOM_VIDEO_WAN_CONFIG", "ti2v-5B")
 REDIS_URL = os.environ["REDOM_VIDEO_REDIS_URL"]
 WORKER_TOKEN = os.environ["REDOM_VIDEO_WORKER_TOKEN"]
 QUEUE = os.getenv("REDOM_VIDEO_QUEUE", "redom:video:jobs")
 FPS = 24
 SEGMENT_SECONDS = 5
+REDOM_VIDEO_MAX_SECONDS = 59
 
 app = FastAPI(title="ReDom-v2.8—Video Native Worker")
 redis = Redis.from_url(REDIS_URL, decode_responses=True)
@@ -54,7 +70,7 @@ class VideoJob(BaseModel):
     model: str = MODEL_NAME
     operation: str = "generate"
     prompt: str = Field(min_length=5, max_length=8000)
-    durationSeconds: int = Field(ge=4, le=300)
+    durationSeconds: int = Field(ge=4, le=REDOM_VIDEO_MAX_SECONDS)
     resolution: str = "720p"
     aspectRatio: str = "16:9"
     callbackUrl: str
@@ -104,8 +120,13 @@ def load_pipeline():
     if pipeline is None:
         if not torch.cuda.is_available():
             raise RuntimeError("A CUDA GPU is required for ReDom-v2.8—Video.")
+        checkpoint = Path(CHECKPOINT_DIR)
+        if not checkpoint.is_dir() or not any(checkpoint.iterdir()):
+            raise RuntimeError(f"Model checkpoint directory is missing or empty: {CHECKPOINT_DIR}")
+        if WAN_CONFIG_NAME not in WAN_CONFIGS:
+            raise RuntimeError(f"Unsupported Wan model configuration: {WAN_CONFIG_NAME}")
         pipeline = wan.WanTI2V(
-            config=WAN_CONFIGS["ti2v-5B"],
+            config=WAN_CONFIGS[WAN_CONFIG_NAME],
             checkpoint_dir=CHECKPOINT_DIR,
             device_id=int(os.getenv("LOCAL_RANK", "0")),
             rank=0,
@@ -310,10 +331,7 @@ def render_project(job: VideoJob, output: Path):
             if job.generationDirection:
                 prompt += "\nLanguage and caption direction: " + job.generationDirection
             if job.format == "cartoon":
-                prompt += ("\nAnimation direction: polished high-end animated film, expressive character acting, "
-                           "deliberate animation timing, stable model sheets, consistent proportions, "
-                           "appealing silhouettes, clean materials, intentional color design and readable staging. "
-                           "Do not drift into live-action photorealism unless explicitly requested.")
+                prompt = build_animation_direction(prompt, job.generationDirection)
             elif job.format == "movie":
                 prompt += ("\nFeature-film direction: motivated camera movement, intentional shot composition, "
                            "naturalistic performance, believable lighting, cinematic depth, consistent wardrobe "
@@ -417,7 +435,7 @@ def validate_final_video(path: Path, job: VideoJob):
     if video.get("width") != expected_width or video.get("height") != expected_height:
         raise RuntimeError("Final video dimensions do not match the requested output.")
     duration = float(metadata.get("format", {}).get("duration", 0))
-    if duration < max(1, job.durationSeconds - 2) or duration > job.durationSeconds + 8:
+    if duration < max(1, job.durationSeconds - 2) or duration > min(REDOM_VIDEO_MAX_SECONDS, job.durationSeconds + 1):
         raise RuntimeError("Final video duration failed validation.")
     if job.watermark and (not Path("/app/assets/redom-logo.png").is_file()):
         raise RuntimeError("Required ReDom watermark logo is missing.")
@@ -437,7 +455,7 @@ def compose_project(job: VideoJob, output: Path):
         manifest.write_text("".join("file '" + path.as_posix() + "'\n" for path in local_segments), encoding="utf-8")
         joined = workdir / "joined.mp4"
         subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(joined)],
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-t", str(job.durationSeconds), "-c", "copy", str(joined)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
 
@@ -447,7 +465,12 @@ def compose_project(job: VideoJob, output: Path):
             joined = mixed
 
         width, height = target_size(job.aspectRatio, job.resolution)
-        vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
+        if job.format == "cartoon":
+            # Studio performs a real post-production pass after Cartoon rendering:
+            # cleanup, color consistency, edge refinement and motion interpolation.
+            vf = cartoon_finishing_filter(width, height, watermark_filter(job.format, job.watermark))
+        else:
+            vf = f"scale={width}:{height}:flags=lanczos,hqdn3d=1.2:1.2:3:3,unsharp=5:5:0.45:5:5:0," + watermark_filter(job.format, job.watermark)
         encode_final(joined, output, vf, job.watermark, job.captionText, job.format)
 
 async def callback(job: VideoJob, status: str, storage_key: str | None = None, error: str | None = None):
@@ -470,8 +493,8 @@ async def callback(job: VideoJob, status: str, storage_key: str | None = None, e
 async def process(job: VideoJob):
     if job.runtime != RUNTIME_NAME or job.model != MODEL_NAME:
         raise ValueError("Unsupported ReDom video runtime.")
-    if job.durationSeconds > 300:
-        raise ValueError("Video duration exceeds the ReDom maximum.")
+    if job.durationSeconds > REDOM_VIDEO_MAX_SECONDS:
+        raise ValueError("ReDom Video maximum duration is 59 seconds (00:59).")
     if job.format not in ALLOWED_FORMATS:
         raise ValueError("Unsupported ReDom video format.")
 
@@ -526,11 +549,20 @@ async def runpod_health_check():
 
 @app.get("/health")
 async def health():
+    checkpoint = Path(CHECKPOINT_DIR)
+    checkpoint_ready = checkpoint.is_dir() and any(checkpoint.iterdir())
+    gpu_ready = torch.cuda.is_available()
     return {
-        "ok": True,
+        "ok": checkpoint_ready and gpu_ready,
         "model": MODEL_NAME,
         "runtime": RUNTIME_NAME,
+        "allowedFormats": sorted(ALLOWED_FORMATS),
+        "wanConfig": WAN_CONFIG_NAME,
+        "checkpointReady": checkpoint_ready,
+        "gpuReady": gpu_ready,
+        "pipelineLoaded": pipeline is not None,
         "generation": "local-gpu",
+        "readiness": "ready" if checkpoint_ready and gpu_ready else "not_ready",
     }
 
 @app.post("/v1/jobs")
