@@ -569,6 +569,19 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
   await db.update(reDomAiVideoJobs).set({ status: "completed", outputAssetKey: storageKey, completedAt: new Date() }).where(eq(reDomAiVideoJobs.id, job.id));
   if (job.shotId) await db.update(reDomAiVideoShots).set({ status: "completed", outputAssetKey: storageKey }).where(eq(reDomAiVideoShots.id, job.shotId));
 
+  if (job.kind === "final_composition") {
+    const project = (await db.select().from(reDomAiVideoProjects).where(eq(reDomAiVideoProjects.id, job.projectId)).limit(1))[0];
+    if (!project) throw new Error("Movie project disappeared before finalization.");
+    await db.update(reDomAiVideoProjects).set({ state: "completed", updatedAt: new Date() }).where(eq(reDomAiVideoProjects.id, job.projectId));
+    await db.update(reDomAiVideos).set({
+      status: "completed",
+      storageKey,
+      completedAt: new Date(),
+      generationMs: Date.now() - project.createdAt.getTime(),
+    }).where(eq(reDomAiVideos.jobId, "movie_project_" + job.projectId));
+    return true;
+  }
+
   const remaining = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs).where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.status, "queued")));
   const processing = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs).where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.status, "processing")));
   const composerAlreadyQueued = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs).where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.kind, "final_composition")));
