@@ -525,7 +525,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "MONTH-BY-MONTH EMAIL DELIVERY — EXACT ROLLING 365-DAY WINDOW",
     "Window: " + m.email.rolling365Start + " through " + m.email.rolling365End + ". First/current month buckets may be partial; pre-window events are excluded.",
     "Delivery rate = delivered / (delivered + failed + bounced + rejected); unknown outcomes are excluded. Outcome coverage is shown separately.",
-    ...m.email.monthlyTrend.map((row) => row.month + ": unique emails " + row.attempts + ", send attempts/retries " + row.sendAttempts + ", delivered " + row.delivered + ", failed " + row.failed + ", bounced " + row.bounced + ", rejected " + row.rejected + ", delivery rate  + (row.deliveryRatePct === null ? "N/A" : row.deliveryRatePct + "%") + ", outcome coverage " + (row.outcomeCoveragePct === null ? "N/A" : row.outcomeCoveragePct + "%")),
+    ...m.email.monthlyTrend.map((row) => row.month + ": unique emails " + row.attempts + ", send attempts/retries " + row.sendAttempts + ", delivered " + row.delivered + ", failed " + row.failed + ", bounced " + row.bounced + ", rejected " + row.rejected + ", delivery rate " + (row.deliveryRatePct === null ? "N/A" : row.deliveryRatePct + "%") + ", outcome coverage " + (row.outcomeCoveragePct === null ? "N/A" : row.outcomeCoveragePct + "%")),
     "",
     "LIMITS AND CAPACITY",
     "Configured daily limit: " + (m.email.dailyLimit ?? "Unknown") + " | Usage: " + (m.email.dailyLimitUsedPct === null ? "Unknown" : m.email.dailyLimitUsedPct + "%"),
