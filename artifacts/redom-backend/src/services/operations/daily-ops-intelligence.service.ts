@@ -695,7 +695,7 @@ function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string, stamp: 
 
 async function generateReport(now: Date): Promise<void> {
   const dayKey = Math.floor(now.getTime() / 86400000);
-  const reportKey = "daily-ops-" + dayKey;
+  const reportKey = "daily-ops-" + dayKey + "-v2";
   const client = await pool.connect();
   let runId: string | null = null;
   try {
