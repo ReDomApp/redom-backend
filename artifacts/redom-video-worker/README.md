@@ -172,3 +172,14 @@ Backend environment mapping:
 The configured checkpoint directory must contain the correct compatible checkpoint files before the worker is marked ready. The code does not synthesize or train weights. The currently checked-in runtime uses the Wan2.2 TI2V-5B implementation, so each mounted checkpoint must be compatible with that runtime. These endpoint profiles isolate routing and operational resources; they do not, by themselves, prove that three separately trained model weights exist. Do not describe a model as a separately trained proprietary model until its checkpoint provenance and quality have been verified.
 
 The Studio endpoint receives live-action movie shots and all final-composition jobs from the backend's existing Movie Studio planner. Cartoon episode shots are sent to Cartoon—R8.0; final assembly for either movie or cartoon projects runs on Studio—Ultron 8.0R. It must use the Studio token for worker authorization and callbacks, and its own Redis URL/queue. The worker must have access to the same R2 bucket where project audio and shot assets are stored.
+
+
+## Long-form duration contract (project composition only)
+
+- ReDom-v2.8—Video standalone generation: maximum 59 seconds.
+- Cartoon—R8.0 final animated project: maximum 3,600 seconds (60 minutes).
+- Studio—Ultron 8.0R final movie project: maximum 7,200 seconds (120 minutes).
+- Trailer previews remain 15-25 seconds.
+- Individual diffusion jobs must remain short (4-59 seconds); long-form projects are composed from approved shot assets. Only a Studio profile may run compose above 59 seconds. The worker probes and validates final duration against the format-specific ceiling.
+
+These limits enable long-form composition at the API/worker contract level; they do not certify that the current planner produces complete feature-length coverage or that long-duration GPU/audio workloads have passed production acceptance tests. Long-form release still requires shot-coverage, audio-segmentation, resume/retry, and real GPU render tests.
