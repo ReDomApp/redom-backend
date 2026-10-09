@@ -100,6 +100,7 @@ export function listReDomModels() {
       runtimeId: runtime.runtimeId,
       operations: runtime.operations,
       formats: runtime.formats,
+      genres: runtime.genres,
       maxSingleJobSeconds: runtime.maxSingleJobSeconds,
       configured: runtime.configured,
       readiness: runtime.readiness,
