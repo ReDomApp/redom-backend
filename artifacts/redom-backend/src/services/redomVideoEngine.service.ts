@@ -133,7 +133,10 @@ export async function createReDomVideoJob(
       captionText: language.caption,
       generationDirection: language.generationDirection,
       referenceAssetKey,
-      prompt: input.prompt.trim(),
+      prompt: format === "cartoon" ? [
+        input.prompt.trim(),
+        "Cartoon—R8.0 animation direction: create original, polished animation in the requested 2D, stylized 3D, anime, cel-shaded or painterly language. Keep recurring human, animal and creature designs, proportions, markings, colors and scale consistent throughout the shot. Use clear silhouettes, readable posing, expressive face acting, anticipation, coherent arcs, weight, contact, overlap and follow-through, and believable species-specific locomotion. Animate the environment with restrained layered background motion and motivated lighting. Avoid morphing, anatomy drift, extra limbs, flicker, texture crawl and foot sliding. Preserve requested spoken language and dialect; do not claim audio or lip-sync unless generated."
+      ].join("\\n") : input.prompt.trim(),
       durationSeconds: target,
       resolution,
       quality: resolution === "1080p" ? "pro" : "high",
