@@ -2,6 +2,13 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "../config/env";
 import { recordOpsAdminAudit, recordOpsEmailEvent } from "../services/operations/daily-ops-intelligence.service";
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  const obj = value as Record<string, unknown>;
+  return "{" + Object.keys(obj).sort().map((key) => JSON.stringify(key) + ":" + canonicalJson(obj[key])).join(",") + "}";
+}
 import { pool } from "../database/db";
 
 const router = Router();
@@ -80,12 +87,14 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   const expected = process.env.REDOM_OPS_ADMIN_KEY;
   const supplied = req.header("x-redom-ops-key") ?? "";
   if (!expected) {
+    void recordOpsAdminAudit("auth.denied", null, "disabled").catch(() => undefined);
     res.status(503).json({ success: false, message: "Operations report archive is disabled until REDOM_OPS_ADMIN_KEY is configured." });
     return;
   }
   const a = Buffer.from(expected);
   const b = Buffer.from(supplied);
   if (!supplied || a.length !== b.length || !timingSafeEqual(a, b)) {
+    void recordOpsAdminAudit("auth.denied", null, "unauthorized").catch(() => undefined);
     res.status(401).json({ success: false, message: "Unauthorized." });
     return;
   }
@@ -120,9 +129,11 @@ router.get("/reports/:reportKey/verify", requireAdmin, async (req, res) => {
     const key = process.env.REDOM_OPS_REPORT_SIGNING_KEY ?? "";
     let signatureValid = false;
     if (key && row.report_signature && row.signature_payload_hash && row.generated_at) {
+      const actualPayloadHash = createHash("sha256").update(canonicalJson({ metrics: row.metrics, analysis: row.analysis })).digest("hex");
       const expected = createHmac("sha256", key).update(String(row.report_key) + "|" + new Date(row.generated_at).toISOString() + "|" + String(row.signature_payload_hash)).digest("hex");
       const a = Buffer.from(expected), b = Buffer.from(String(row.report_signature));
-      signatureValid = a.length === b.length && timingSafeEqual(a, b) &&
+      signatureValid = actualPayloadHash === String(row.signature_payload_hash) &&
+        a.length === b.length && timingSafeEqual(a, b) &&
         String(row.signature_key_id ?? "") === createHash("sha256").update(key).digest("hex").slice(0, 12);
     }
     await recordOpsAdminAudit("report.verify", reportKey, pdfIntegrity && signatureValid ? "success" : "warning").catch(() => undefined);
