@@ -105,7 +105,7 @@ router.post("/video/projects/:projectId/plan", authMiddleware, async (req, res) 
 router.post("/video/projects/:projectId/revise", authMiddleware, async (req, res) => {
   const parsed = movieRevisionSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio revision." });
-  try { return res.status(200).json({ success: true, ...(await reviseReDomMovieProject(req.user.userId, req.params.projectId, parsed.data.instruction)) }); }
+  try { return res.status(200).json({ success: true, ...(await reviseReDomMovieProject(req.user.userId, String(req.params.projectId), parsed.data.instruction)) }); }
   catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, code: (error as { code?: string })?.code, message: error instanceof Error ? error.message : "Movie revision failed." }); }
 });
 
