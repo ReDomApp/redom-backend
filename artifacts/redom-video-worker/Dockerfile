@@ -22,4 +22,4 @@ RUN rsvg-convert -w 64 -h 64 assets/redom-logo.svg -o assets/redom-logo.png
 
 ENV REDOM_VIDEO_QUEUE=redom:video:jobs
 EXPOSE 8080
-CMD ["python","-m","uvicorn","app.main:app","--host","0.0.0.0","--port","8080"]
+CMD ["sh","-c","python -m uvicorn app.main:app --host 0.0.0.0 --port \\${PORT:-8080}"]
