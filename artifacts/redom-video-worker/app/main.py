@@ -220,7 +220,7 @@ def render_project(job: VideoJob, output: Path):
             f"scale={width}:{height}:flags=lanczos,"
             "hqdn3d=1.2:1.2:3:3,"
             "unsharp=5:5:0.45:5:5:0,"
-            watermark_filter(job.format, job.watermark)
+            + watermark_filter(job.format, job.watermark)
         )
         encode_final(working, enhanced, vf, job.watermark)
         output.write_bytes(enhanced.read_bytes())
