@@ -14,7 +14,8 @@ The worker starts with the backend, checks its persistent report schedule every 
 | `REDOM_OPS_REPORT_SIGNING_KEY` | Secret used to HMAC-sign canonical report metrics/analysis | Not configured; reports are marked UNSIGNED |
 | `REDOM_EMAIL_DAILY_LIMIT` | Verified/configured internal daily limit, if applicable | Unknown |
 | `REDOM_EMAIL_MONTHLY_LIMIT` | Verified/configured internal monthly limit, if applicable | Unknown |
-| `RESEND_WEBHOOK_SECRET` | Secret used to verify signed Resend delivery webhooks | Optional in existing environment configuration |
+| `RESEND_WEBHOOK_SECRET` | Existing inbound-support webhook signing secret | Keep unchanged for the existing `email.received` webhook |
+| `REDOM_OPS_RESEND_WEBHOOK_SECRET` | Dedicated signing secret for the operations delivery-event webhook | Set from the new Resend webhook at `/ops/email/webhook` |
 
 Do not set an internal limit to imitate a provider quota. Configure the actual limits only after confirming them in the provider dashboard or official account configuration. Store all secrets in Render/Replit environment configuration, never in Git.
 
@@ -40,7 +41,7 @@ Application logs, Sentry issue feeds, deployment events, latency, and infrastruc
 ## Operational verification checklist
 
 1. Set and verify `REDOM_OPS_REPORT_FROM` in Resend. The code's default sender will fail if the identity/domain is not verified.
-2. Configure the Resend webhook for `POST /ops/email/webhook` and set `RESEND_WEBHOOK_SECRET`.
+2. Configure a separate Resend delivery-event webhook for `POST /ops/email/webhook`, then set its signing secret as `REDOM_OPS_RESEND_WEBHOOK_SECRET`. Keep `RESEND_WEBHOOK_SECRET` unchanged for the existing inbound support webhook.
 3. Set `REDOM_OPS_ADMIN_KEY` and `REDOM_OPS_REPORT_SIGNING_KEY` to separate high-entropy secrets in the deployment environment.
 4. Set internal quota variables only if those are actual enforced ReDom limits.
 5. Run `pnpm --filter @workspace/redom-backend run typecheck` and `pnpm --filter @workspace/redom-backend run build`.

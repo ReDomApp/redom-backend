@@ -150,11 +150,11 @@ router.post("/payment-problem", authMiddleware, async (req, res) => {
         "Security note: No raw PAN or CVC/CVV is included in this report.",
       ].join("\n");
       await addSupportMessage({ caseId: caseRecord.id, senderType: "user", senderEmail: connectedEmail, body: parsed.data.description });
-      const safe = (value: string) => value.replace(/[&<>"]/g, (ch) => ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : "&quot;");
+      const safe = (value: unknown) => String(value ?? "").replace(/[&<>"]/g, (ch) => ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : "&quot;");
       const html = "<!doctype html><html><body style=\"font-family:Arial,sans-serif;color:#1c1e21\"><h2>ReDom Pay payment method problem</h2><p><strong>Case:</strong> "+safe(caseRecord.caseNumber)+"</p><p><strong>Payment method:</strong> "+safe(String(row.provider||"stripe"))+" / "+safe(String(row.brand||"card"))+"-****"+safe(String(row.last4||""))+"</p><p><strong>Country:</strong> "+safe(String(row.country_code||"not recorded"))+"</p><p><strong>Status:</strong> "+safe(String(row.status||"unknown"))+"</p><p><strong>Problem:</strong> "+safe(parsed.data.description).replace(/\\n/g,"<br>")+"</p><p><strong>Security:</strong> No raw PAN or CVC/CVV included.</p></body></html>";
       const { error } = await resend.emails.send({
-        from: env.email.supportFrom,
-        to: [env.email.supportFrom],
+        from: env.email.supportFrom || env.email.securityFrom,
+        to: [env.email.supportFrom || env.email.securityFrom],
         replyTo: connectedEmail,
         subject: "ReDom Pay Payment Method Problem — Case " + caseRecord.caseNumber,
         text: supportBody,
@@ -238,11 +238,11 @@ router.post("/payment-problem", authMiddleware, async (req, res) => {
 
     await addSupportMessage({ caseId: caseRecord.id, senderType: "user", senderEmail: parsed.data.email, body: parsed.data.description });
 
-    const safe = (value: string) => value.replace(/[&<>"]/g, (ch) => { if (ch === "&") return "&amp;"; if (ch === "<") return "&lt;"; if (ch === ">") return "&gt;"; return "&quot;"; });
+    const safe = (value: unknown) => String(value ?? "").replace(/[&<>"]/g, (ch) => { if (ch === "&") return "&amp;"; if (ch === "<") return "&lt;"; if (ch === ">") return "&gt;"; return "&quot;"; });
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1c1e21"><h2>ReDom Pay transaction problem</h2><p><strong>Case:</strong> ${safe(caseRecord.caseNumber)}</p><p><strong>Submitted email:</strong> ${safe(parsed.data.email)}</p><p><strong>Transaction:</strong> ${safe(parsed.data.transactionNumber)}</p><p><strong>ReDom transaction ID:</strong> ${safe(kind === "payment" ? String(transaction.redom_transaction_id ?? "") : String(transaction.transaction_id))}</p><p><strong>Product:</strong> ${safe(product)}</p><p><strong>Status:</strong> ${safe(kind === "payment" ? String(transaction.refund_status || transaction.status) : String(transaction.payment_status || transaction.order_status))}</p><p><strong>Amount:</strong> ${safe(amount)} minor units ${safe(currency)}</p><p><strong>Payment method:</strong> ${safe(kind === "payment" ? String(metadata?.paymentDetails?.channel ?? metadata?.preferredChannel ?? "not recorded") : String(transaction.payment_method ?? "not recorded"))}</p><hr><p><strong>Problem description</strong></p><p>${safe(parsed.data.description).replace(/\\n/g, "<br>")}</p></body></html>`;
     const { error } = await resend.emails.send({
-      from: env.email.supportFrom,
-      to: [env.email.supportFrom],
+      from: env.email.supportFrom || env.email.securityFrom,
+      to: [env.email.supportFrom || env.email.securityFrom],
       replyTo: parsed.data.email,
       subject: `ReDom Pay Transaction Problem — ${parsed.data.transactionNumber} — Case ${caseRecord.caseNumber}`,
       text: supportBody,

@@ -7,7 +7,7 @@ import { pool } from "../database/db";
 import { env } from "../config/env";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { geocodePlace } from "../lib/mapbox";
-import { createStripeStarsCheckout, createSavedStripeStarsPayment, verifyStripeStarsCheckout } from "../services/payments/stripe-payment.service";
+import { createStripeStarsCheckout, createSavedStripeStarsPayment, verifyStripeStarsCheckout, createDeferredStripeStarsCheckout } from "../services/payments/stripe-payment.service";
 import { createStarsTrialSetupCheckout, getStarsTrialEligibility, TERMS_VERSION } from "../services/payments/stripe-stars-trial.service";
 import { getStripeStarsCountries, getStripeStarsCountry, stripeMinimumMinor } from "../services/payments/stripe-country.service";
 import { createStripeCardSetup, finalizeStripeCardSetup, createStripeCardSetupCheckout, finalizeStripeCardSetupCheckout, listStripeCardMethods, getStripeCardMethodForUser, detachStripeCardMethod } from "../services/payments/stripe-saved-payment.service";
@@ -362,13 +362,13 @@ router.get("/payment-methods/setup/web/success", async (req,res)=>{
   const sessionId=typeof req.query.session_id==="string"?req.query.session_id:"";
   if(!/^(redom|exp):\/\//i.test(returnUrl)||!/^cs_[A-Za-z0-9_]+$/.test(sessionId))return res.status(400).send("Invalid ReDom Pay return request.");
   const target=returnUrl+(returnUrl.includes("?")?"&":"?")+"session_id="+encodeURIComponent(sessionId);
-  res.type("html").send("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ReDom Pay</title></head><body style=\"font-family:Arial;text-align:center;padding:48px\"><h2>Card setup complete</h2><p>Returning to ReDom Pay securely…</p><p><a href=\""+target.replace(/&/g,"&amp;")+"\">Return to ReDom</a></p><script>setTimeout(function(){location.href="+JSON.stringify(target)+"},350);</script></body></html>");
+  return res.type("html").send("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ReDom Pay</title></head><body style=\"font-family:Arial;text-align:center;padding:48px\"><h2>Card setup complete</h2><p>Returning to ReDom Pay securely…</p><p><a href=\""+target.replace(/&/g,"&amp;")+"\">Return to ReDom</a></p><script>setTimeout(function(){location.href="+JSON.stringify(target)+"},350);</script></body></html>");
 });
 router.get("/payment-methods/setup/web/cancel", async (req,res)=>{
   const returnUrl=typeof req.query.return_url==="string"?req.query.return_url:"";
   if(!/^(redom|exp):\/\//i.test(returnUrl))return res.status(400).send("Invalid ReDom Pay return request.");
   const target=returnUrl+(returnUrl.includes("?")?"&":"?")+"status=cancelled";
-  res.type("html").send("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ReDom Pay</title></head><body style=\"font-family:Arial;text-align:center;padding:48px\"><h2>Card setup cancelled</h2><p>Returning to ReDom Pay…</p><p><a href=\""+target.replace(/&/g,"&amp;")+"\">Return to ReDom</a></p><script>setTimeout(function(){location.href="+JSON.stringify(target)+"},350);</script></body></html>");
+  return res.type("html").send("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ReDom Pay</title></head><body style=\"font-family:Arial;text-align:center;padding:48px\"><h2>Card setup cancelled</h2><p>Returning to ReDom Pay…</p><p><a href=\""+target.replace(/&/g,"&amp;")+"\">Return to ReDom</a></p><script>setTimeout(function(){location.href="+JSON.stringify(target)+"},350);</script></body></html>");
 });
 router.post("/payment-methods/setup", authMiddleware, async (req,res)=>{
   const userId=req.user?.userId; if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
@@ -410,7 +410,7 @@ async function issueRemovalCode(userId:string,methodId:string,attemptCount=0){
   const code=String(crypto.randomInt(10000000,100000000)); const expiresAt=new Date(Date.now()+10*60*1000);
   let channel="email"; let target=String(user.email);
   if(user.phone_number){
-    try { await twilioSmsProvider.sendOtp({channel:"sms",to:String(user.phone_number),code,expiresAt}); channel="sms"; target=maskTarget(String(user.phone_number)); } catch {}
+    try { await twilioSmsProvider.sendOtp({channel:"sms",purpose:"payment_method_removal",to:String(user.phone_number),code,expiresAt}); channel="sms"; target=maskTarget(String(user.phone_number)); } catch {}
   }
   if(channel==="email"){ const resend=new Resend(env.email.resend.apiKey); const result=await resend.emails.send({from:env.email.securityFrom,to:[String(user.email)],subject:"ReDom Pay Security Verification",text:"Your ReDom Pay payment-method removal code is "+code+". It expires in 10 minutes. If you did not request this, do not use the code and contact ReDom Support.",html:"<p><strong>ReDom Pay Security Verification</strong></p><p>Your payment-method removal code is <strong>"+code+"</strong>.</p><p>This code expires in 10 minutes.</p><p><strong>Security warning:</strong> Never share this code with anyone.</p>"}); if(result.error)throw new Error(result.error.message); }
   await pool.query("INSERT INTO payment_method_removal_challenges(user_id,payment_method_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,$3,$4,$5,$6,$7,2)",[userId,methodId,channel,target,hashRemovalCode(code),expiresAt,attemptCount]);
