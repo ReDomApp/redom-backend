@@ -55,7 +55,9 @@ export async function prepareReDomVideoLanguage(prompt: string, format: "video" 
     generationDirection: parsed.generationDirection.slice(0, 1000),
   };
 }
-\nexport async function createReDomVideoJob(
+
+
+export async function createReDomVideoJob(
   userId: string,
   input: { prompt: string; referenceImageDataUri?: string; languageName?: string; languageCode?: string; caption?: string; generationDirection?: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi"; format?: "video" | "movie" | "cartoon"; watermark?: boolean },
 ) {
