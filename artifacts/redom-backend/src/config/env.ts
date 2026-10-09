@@ -44,5 +44,6 @@ export const env = {
   openAI: { apiKey: required("OPENAI_API_KEY") },
   gemini: { apiKey: required("GEMINI_API_KEY") },
   redomImageEngine: { url: optional("REDOM_IMAGE_ENGINE_URL"), token: optional("REDOM_IMAGE_ENGINE_TOKEN"), timeoutMs: Number(optional("REDOM_IMAGE_ENGINE_TIMEOUT_MS") ?? "180000") },
+  redomBackendUrl: optional("REDOM_BACKEND_URL") ?? "https://redom-backend.onrender.com",
   redomVideoEngine: { url: optional("REDOM_VIDEO_ENGINE_URL"), token: optional("REDOM_VIDEO_ENGINE_TOKEN"), timeoutMs: Number(optional("REDOM_VIDEO_ENGINE_TIMEOUT_MS") ?? "15000") },
 } as const;
