@@ -37,7 +37,7 @@ Five minutes is a **maximum project duration**, not a guaranteed generation-time
 
 The native worker accepts three format modes: `video` (short-form scenes), `movie` (cinematic production), and `cartoon` (animation-directed generation). An optional private R2 reference-image key conditions the first generated segment; each following segment uses the previous segment final frame to preserve continuity. Reference assets are removed after the worker finishes or fails the job.
 
-Every final encode applies a persistent far-right brand watermark: `ReDom Videos | AI-generated`, `ReDom Movie Studio | AI-generated`, or `ReDom Cartoon | AI-generated`. The worker image installs DejaVu fonts for FFmpeg drawtext. The watermark is applied after joining segments so it remains consistent across the finished output.
+Every final encode applies the official ReDom logo beside a persistent far-right brand watermark: `ReDom Videos | AI-generated`, `ReDom Movie Studio | AI-generated`, or `ReDom Cartoon | AI-generated`. The worker image converts the approved ReDom SVG to PNG and installs DejaVu fonts for FFmpeg drawtext. Branding is applied after joining segments so it remains consistent across the finished output.
 
 ## Enhancement pipeline
 
