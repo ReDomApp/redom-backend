@@ -124,6 +124,21 @@ For lip sync, the worker uploads a short-lived source video and voice-only WAV t
 - The video-generation worker still requires a provisioned CUDA GPU and mounted Wan2.2 checkpoint. A successful code build alone does not establish production readiness.
 
 
+## Cartoon—R8.0 runtime readiness and checkpoint contract
+
+The worker now rejects invalid model/runtime/format combinations at startup, validates that its configured checkpoint directory exists and is non-empty before loading, and reports `checkpointReady`, `gpuReady`, `pipelineLoaded` and `readiness` from `/health`. `/ping` remains the platform liveness endpoint; it is not proof the GPU model is ready.
+
+For the dedicated Cartoon endpoint, configure:
+- `REDOM_VIDEO_MODEL_ID=Cartoon—R8.0`
+- `REDOM_VIDEO_RUNTIME_ID=redom-cartoon-r8-native`
+- `REDOM_VIDEO_ALLOWED_FORMATS=cartoon`
+- `REDOM_VIDEO_CHECKPOINT_DIR=/models/cartoon-r8`
+- `REDOM_VIDEO_WAN_CONFIG=ti2v-5B` only when the provisioned Cartoon checkpoint is compatible with Wan2.2 TI2V-5B.
+
+The worker injects an animation-specific direction into every cartoon segment, including identity/model-sheet invariants, human/animal anatomy, posing and motion, temporal artifacts, camera/world continuity and anime-style constraints. Movie Studio retains the separate responsibility of composing approved Cartoon shots, music, dialogue and captions. Composition currently means media assembly and post-processing, not a second diffusion-based generative enhancement pass.
+
+**Provisioning caveat:** this code does not download or train model weights. The Cartoon checkpoint must be acquired/provisioned separately, have documented provenance/licensing, match the selected Wan architecture, and pass actual GPU renders. A non-empty directory is only a basic readiness signal, not a checkpoint-integrity or animation-quality certification. Do not enable production traffic until the twelve Cartoon acceptance tests in `docs/cartoon-r8-animation-intelligence-spec.md` have real render evidence.
+
 ## Deploying the three isolated model endpoints
 
 The same worker image supports isolated deployment profiles through environment configuration. Deploy three separate RunPod Load Balancer endpoints from this Dockerfile. Do not point all three backend URLs at one endpoint.
