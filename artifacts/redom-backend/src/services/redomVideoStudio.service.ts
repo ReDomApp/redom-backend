@@ -20,7 +20,6 @@ import { createReDomMovieMusicAsset, createReDomMovieSpeechAsset } from "./redom
 
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
 const MODEL = "Studio—Ultron 8.0R";
-const JOB_QUEUE = process.env.REDOM_STUDIO_QUEUE || "redom:studio:jobs";
 
 async function dispatchStudioJob(payload: Record<string, unknown>) {
   if (!env.redomStudioEngine.url || !env.redomStudioEngine.token) {
