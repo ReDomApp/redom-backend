@@ -440,6 +440,19 @@ function makePdf(pages: string[][]): Buffer {
       }
       if (y < 48) break;
     }
+    if (pageIndex === pages.length - 1 && lines.some((line) => String(line).includes("OFFICIAL REDOM OPERATIONS REPORT"))) {
+      const signed = lines.some((line) => String(line).includes("DIGITALLY SIGNED"));
+      const reportId = String(lines.find((line) => String(line).startsWith("Report ID:")) ?? "Report ID: unavailable");
+      const signatureAt = lines.findIndex((line) => String(line).startsWith("Unique report signature:"));
+      const signatureText = signatureAt >= 0 ? String(lines[signatureAt + 1] ?? "unavailable") : "unavailable";
+      const stampColor = signed ? "0.03 0.40 0.25" : "0.70 0.12 0.12";
+      parts.push("q " + stampColor + " RG 2 w 350 440 212 112 re S 358 448 196 96 re S Q");
+      parts.push("BT /F2 9 Tf " + stampColor + " rg 364 532 Td (REDOM OFFICIAL SYSTEM STAMP) Tj ET");
+      parts.push("BT /F2 10 Tf " + stampColor + " rg 364 513 Td (" + (signed ? "DIGITALLY SIGNED / VERIFY ONLINE" : "UNSIGNED / DO NOT TRUST AS AUTHENTIC") + ") Tj ET");
+      parts.push("BT /F1 8 Tf 0.12 0.13 0.15 rg 364 494 Td (" + pdfEscape(reportId).slice(0, 100) + ") Tj ET");
+      parts.push("BT /F1 8 Tf 0.12 0.13 0.15 rg 364 478 Td (Signature fingerprint: " + pdfEscape(signatureText).slice(0, 28) + ") Tj ET");
+      parts.push("BT /F1 7 Tf 0.12 0.13 0.15 rg 364 461 Td (Verify at /ops/reports/<report-id>/verify) Tj ET");
+    }
     streams.push(parts.join("\n"));
   }
   const contentIds: number[] = [];
