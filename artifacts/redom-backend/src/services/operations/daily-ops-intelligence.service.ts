@@ -699,6 +699,20 @@ async function generateReport(now: Date): Promise<void> {
       logger.error({ error: error instanceof Error ? error.message : String(error) }, "Gemini daily operations analysis unavailable");
       analysis = { status: "unknown", executiveSummary: "Gemini analysis unavailable. The attached report contains collected metrics and data-coverage limitations; no AI conclusions are asserted.", keyChanges: [], findings: [], resolvedIssues: [], pendingRisks: ["AI analysis unavailable; inspect backend/provider health and retry the report."], nextActions: [{ priority: "high", action: "Restore or verify Gemini reporting integration", rationale: "Automated analysis did not complete", verification: "A subsequent report contains schema-valid Gemini analysis." }], forecastCommentary: "Forecasts are simple weighted estimates.", limitations: ["Gemini analysis failed; see service logs."] };
     }
+    // Deterministic evidence-based guardrails override optimistic model wording.
+    // These rules change only the executive report, never production business records.
+    const terminalOutcomes24h = metrics.email.current24h.delivered + metrics.email.current24h.failed + metrics.email.current24h.bounced + metrics.email.current24h.rejected;
+    const deliveryRate24h = terminalOutcomes24h > 0 ? metrics.email.current24h.delivered / terminalOutcomes24h : null;
+    const recentEmailFailures = metrics.email.current24h.failed + metrics.email.current24h.bounced + metrics.email.current24h.rejected;
+    const hardCritical = metrics.incidents.criticalOpen > 0 || recentEmailFailures >= 10;
+    const objectivelyDegraded = metrics.incidents.open.some((incident: any) => incident.severity === "high") || recentEmailFailures >= 3 || (terminalOutcomes24h >= 5 && deliveryRate24h !== null && deliveryRate24h < 0.90);
+    if (hardCritical) {
+      analysis.status = "critical";
+      analysis.pendingRisks = [...(Array.isArray(analysis.pendingRisks) ? analysis.pendingRisks : []), "Deterministic operations guardrail: an open critical incident or at least 10 recent email failures/bounces/rejections requires urgent review."];
+    } else if (objectivelyDegraded && analysis.status !== "critical") {
+      analysis.status = "degraded";
+      analysis.pendingRisks = [...(Array.isArray(analysis.pendingRisks) ? analysis.pendingRisks : []), "Deterministic operations guardrail: tracked high-severity incidents, an email-failure burst, or delivery below 90% across at least five terminal outcomes requires review."];
+    }
     const payloadHash = createHash("sha256").update(canonicalJson({ metrics, analysis })).digest("hex");
     const signedAt = iso(now);
     const signature = REPORT_SIGNING_KEY ? createHmac("sha256", REPORT_SIGNING_KEY).update(reportKey + "|" + signedAt + "|" + payloadHash).digest("hex") : null;
