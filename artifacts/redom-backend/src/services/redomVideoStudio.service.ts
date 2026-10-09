@@ -514,7 +514,6 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       model: MODEL,
       operation: "generate",
       securityRequestId: typeof project.research?.securityRequestId === "string" ? project.research.securityRequestId : undefined,
-      startedAt: new Date(),
     });
   }
 
