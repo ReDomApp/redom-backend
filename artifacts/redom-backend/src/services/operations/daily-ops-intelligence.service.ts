@@ -444,6 +444,7 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "",
     "EMAIL OPERATIONS — LAST 24 HOURS",
     "Unique emails: " + emailMetric(m.email.current24h.uniqueEmails, m) + " | Send attempts/retries: " + emailMetric(m.email.current24h.attempts, m) + " | Accepted: " + emailMetric(m.email.current24h.accepted, m) + " | Delivered events: " + emailMetric(m.email.current24h.delivered, m),
+    "24-hour delivery rate (delivered / known terminal outcomes): " + formatPct(rate(m.email.current24h.delivered, m.email.current24h.failed + m.email.current24h.bounced + m.email.current24h.rejected)),
     "Failed: " + emailMetric(m.email.current24h.failed, m) + " | Bounced: " + emailMetric(m.email.current24h.bounced, m) + " | Rejected: " + emailMetric(m.email.current24h.rejected, m),
     "Deferred: " + emailMetric(m.email.current24h.deferred, m) + " | Duplicate sends suppressed: " + emailMetric(m.email.current24h.duplicateSuppressed, m) + " | Duplicate deliveries: " + emailMetric(m.email.current24h.duplicateDelivery, m),
     "Previous 24h attempts: " + emailMetric(m.email.previous24h.attempts, m) + " | Change: " + formatPct(m.email.changePct.attempts),
@@ -556,9 +557,18 @@ function arrayStrings(value: unknown): string[] {
     x?.recommendation, x?.rationale, x?.verification,
   ].filter(Boolean).join(" — ")).filter(Boolean);
 }
+function rate(delivered: number, terminalOutcomes: number): number | null { return terminalOutcomes > 0 ? Math.round((delivered / terminalOutcomes) * 10000) / 100 : null; }
+
 function formatPct(value: number | null): string { return value === null ? "N/A (previous period was zero or unavailable)" : (value > 0 ? "+" : "") + value + "%"; }
 
 function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string, stamp: { reportKey: string; generatedAt: string; payloadHash: string; signature: string | null; keyId: string | null }): string {
+  const currentMonth = m.periodEnd.slice(0, 7);
+  const completeMonths = m.email.monthlyTrend.filter((row) => row.month < currentMonth);
+  const latestComplete = completeMonths[completeMonths.length - 1];
+  const previousComplete = completeMonths[completeMonths.length - 2];
+  const improvementSummary = latestComplete && previousComplete && latestComplete.deliveryRatePct !== null && previousComplete.deliveryRatePct !== null
+    ? "Delivery rate " + (latestComplete.deliveryRatePct > previousComplete.deliveryRatePct ? "IMPROVED by " : latestComplete.deliveryRatePct < previousComplete.deliveryRatePct ? "DECLINED by " : "UNCHANGED at ") + Math.abs(latestComplete.deliveryRatePct - previousComplete.deliveryRatePct) + " percentage points (" + previousComplete.month + " " + previousComplete.deliveryRatePct + "% -> " + latestComplete.month + " " + latestComplete.deliveryRatePct + "%)."
+    : "No defensible month-over-month delivery improvement conclusion: monthly outcome coverage is missing or incomplete.";
   const status = ["healthy", "degraded", "critical"].includes(a.status) ? a.status : "unknown";
   const card = (label: string, value: string, note = "") => `<td style="padding:10px"><div style="background:#fff;border:1px solid #DADDE1;border-radius:10px;padding:15px"><div style="color:#65676B;font-size:12px">${esc(label)}</div><div style="font-size:24px;font-weight:700;color:#1C1E21;margin-top:7px">${esc(value)}</div><div style="color:#65676B;font-size:11px;margin-top:5px">${esc(note)}</div></div></td>`;
   const findings = arrayStrings(a.findings).slice(0, 8).map(x => `<li style="margin:8px 0">${esc(x)}</li>`).join("");
