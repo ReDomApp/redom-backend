@@ -346,7 +346,7 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
   await requirePaid(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const durationSeconds = safeDuration(input.durationSeconds);
-  const referenceMatch = input.referenceImageDataUri?.match(/^data:image\\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/) || null;
+  const referenceMatch = input.referenceImageDataUri?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/) || null;
   if (input.referenceImageDataUri && !referenceMatch) throw Object.assign(new Error("Reference image must be a PNG, JPEG, or WebP data URI."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
   const referenceBytes = referenceMatch ? Buffer.from(referenceMatch[2], "base64") : undefined;
   if (referenceBytes && (referenceBytes.length < 32 || referenceBytes.length > 15 * 1024 * 1024)) throw Object.assign(new Error("Reference image is outside the supported size range."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
@@ -514,6 +514,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
   }
 
   const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
+  const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
   for (const item of shots) {
     const shot = item.redom_ai_video_shots;
     const jobId = "movie_shot_" + randomUUID().replace(/-/g, "");
