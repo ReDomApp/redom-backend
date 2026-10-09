@@ -8,6 +8,22 @@ import { env } from "../../config/env";
 import { twilioSmsProvider } from "../../lib/providers/sms/twilio-sms-provider";
 import { sendRefundDecisionEmail, REFUND_EMAIL_SECURITY_WARNING } from "./refundDecisionEmail.service";
 
+async function sendRefundTerminalEmail(input: { email: string; caseNumber: string; transactionNumber: string; status: string; reason: string; target: string; amount: string; currency: string; refundId?: string | null }): Promise<void> {
+  const lower = input.status.toLowerCase();
+  const decision = lower.includes("non-refundable") || lower.includes("non_refundable") ? "non_refundable" : lower.includes("provider") || lower.includes("failed") ? "provider_failure" : lower.includes("approved") || lower.includes("refunded") ? "approved" : "rejected";
+  await sendRefundDecisionEmail({ customerEmail: input.email, caseNumber: input.caseNumber, transactionNumber: input.transactionNumber, status: input.status, decision, reason: input.reason, amount: input.amount, currency: input.currency, target: input.target, refundId: input.refundId ?? null });
+}
+
+function refundIdentifierMatches(candidate: string, row: Record<string, unknown>): boolean {
+  const normalize = (value: unknown) => String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const supplied = normalize(candidate);
+  if (!supplied) return false;
+  return ["transaction_number", "case_number", "reference", "refund_id", "redom_transaction_id", "provider_reference"].some((key) => {
+    const value = normalize(row[key]);
+    return value.length > 0 && supplied === value;
+  });
+}
+
 export const REFUND_MINIMUM_REVIEW_MINUTES = 10;
 export const REFUND_FEATURE_ENABLED = true;
 export const STARS_REFUND_WINDOW_MINUTES = 60;
@@ -160,7 +176,7 @@ async function issueRefundSecurityChallenge(refundRequestId:string,userId:string
   if(phone) {
     const code=randomInt(10_000_000,100_000_000).toString();
     try {
-      await twilioSmsProvider.sendOtp({channel:"sms",to:phone,code,expiresAt});
+      await twilioSmsProvider.sendOtp({channel:"sms",purpose:"refund_verification",to:phone,code,expiresAt});
       await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'sms',$3,$4,$5,0,3)",[refundRequestId,userId,maskRefundTarget(phone),hashRefundCode(code),expiresAt]);
       return {channel:"sms",target:maskRefundTarget(phone)??"phone"};
     } catch {}
@@ -231,7 +247,7 @@ export async function startStarsRefund(input:{userId:string;transactionNumber:st
     target:refundTargetDisplay(typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata??{},target.masked),
     amount:String(row.amount_minor??0),
     currency:String(row.currency??""),
-  }).catch((error)=>{ throw error; });
+  }).catch((error: unknown)=>{ throw error; });
   return nonRefundablePayload(transactionNumber,caseRecord.caseNumber,cutoff);
  }
  const challenge=await issueRefundSecurityChallenge(String((await pool.query("SELECT id FROM refund_requests WHERE transaction_number=$1 ORDER BY created_at DESC LIMIT 1",[transactionNumber])).rows[0].id),input.userId,String(row.email),row.phone_number?String(row.phone_number):null,transactionNumber);
@@ -286,7 +302,7 @@ export async function completeStarsRefund(input:{userId:string;transactionNumber
    if(channel==="sms") {
     try {
      await pool.query("INSERT INTO refund_verification_challenges(refund_request_id,user_id,channel_type,target_masked,code_hash,expires_at,attempt_count,max_attempts) VALUES($1,$2,'sms',$3,$4,$5,0,3)",[row.id,row.user_id,nextTarget,hashRefundCode(nextCode),nextExpiresAt]);
-     await twilioSmsProvider.sendOtp({channel:"sms",to:String(row.phone_number??""),code:nextCode,expiresAt:nextExpiresAt});
+     await twilioSmsProvider.sendOtp({channel:"sms",purpose:"refund_verification",to:String(row.phone_number??""),code:nextCode,expiresAt:nextExpiresAt});
      await pool.query("UPDATE refund_requests SET status='verification_code_sent',verification_sent_at=now(),updated_at=now() WHERE id=$1",[row.id]);
      await addSupportMessage({caseId:String(row.case_id),senderType:"ai",senderEmail:env.email.supportFrom,body:"The previous verification code is no longer valid. A new 8-digit security code has been sent to your verified ReDom phone ("+nextTarget+"). This is failed attempt "+failedAttempt+" of 3. Enter the new code.\n\n"+REFUND_SECURITY_WARNING});
      return {success:false,status:"verification_code_sent",code:"NEW_CODE_REQUIRED",reason:"The previous code was incorrect and has been invalidated. A new 8-digit code was sent.",transactionNumber,caseNumber:String(row.case_number),target:nextTarget};
