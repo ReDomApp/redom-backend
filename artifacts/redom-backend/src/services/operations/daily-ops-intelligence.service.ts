@@ -75,7 +75,7 @@ type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
   email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null };
   support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageEmailsPerCase: number | null };
-  incidents: { open: Array<Record<string, unknown>>; resolved24h: number; criticalOpen: number };
+  incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number };
   dataCoverage: Record<string, string>;
   forecast: { expectedEmailAttempts24h: number; expectedSupportCases24h: number; notes: string[] };
   system: { database: string; collectedAt: string };
@@ -88,7 +88,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const [email, annual, firstEvent, support, messages, incidents, database] = await Promise.all([
     pool.query(`SELECT
-      count(*) FILTER (WHERE occurred_at >= $1 AND event_type IN ('attempted','accepted','delivered','deferred','bounced','rejected','failed'))::int AS attempts,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='delivered')::int AS delivered,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='failed')::int AS failed,
@@ -97,13 +97,13 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='deferred')::int AS deferred,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='duplicate_suppressed')::int AS duplicateSuppressed,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='duplicate_delivery')::int AS duplicateDelivery,
-      count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type IN ('attempted','accepted','delivered','deferred','bounced','rejected','failed'))::int AS previousAttempts,
+      count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='attempted')::int AS previousAttempts,
       count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='delivered')::int AS previousDelivered,
       count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='failed')::int AS previousFailed,
-      count(*) FILTER (WHERE occurred_at >= $3 AND event_type IN ('attempted','accepted','delivered','deferred','bounced','rejected','failed'))::int AS monthlyAttempts
+      count(*) FILTER (WHERE occurred_at >= $3 AND event_type='attempted')::int AS monthlyAttempts
       FROM redom_ops_email_events`, [start, prevStart, monthStart]),
     pool.query(`SELECT
-      count(*) FILTER (WHERE event_type IN ('attempted','accepted','delivered','deferred','bounced','rejected','failed'))::int AS attempts,
+      count(*) FILTER (WHERE event_type='attempted')::int AS attempts,
       count(*) FILTER (WHERE event_type='delivered')::int AS delivered,
       count(*) FILTER (WHERE event_type='failed')::int AS failed,
       count(*) FILTER (WHERE event_type='bounced')::int AS bounced,
@@ -152,7 +152,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       created24h: supportCreated, createdPrevious24h: previousSupport, changePct: pct(supportCreated, previousSupport),
       open: num(s.open), awaitingSupport: num(s.awaitingsupport), awaitingUser: num(s.awaitinguser), closed: num(s.closed),
       messages24h: num(m.currentmessages), messagesPrevious24h: num(m.previousmessages), messagesChangePct: pct(num(m.currentmessages), num(m.previousmessages)),
-      averageEmailsPerCase: cases ? Math.round((num(m.currentmessages) / cases) * 100) / 100 : null,
+      averageMessagesPerCase: cases ? Math.round((num(m.currentmessages) / cases) * 100) / 100 : null,
     },
     incidents: {
       open: openIncidents, resolved24h: 0, criticalOpen: openIncidents.filter(i => i.severity === "critical").length,
@@ -203,31 +203,34 @@ function pdfEscape(text: string): string {
   return text.normalize("NFKD").replace(/[^\x20-\x7E]/g, "?").replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 function makePdf(pages: string[][]): Buffer {
-  const objects: string[] = [];
-  const pageIds: number[] = [];
-  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
-  objects.push("");
+  const objects: string[] = ["<< /Type /Catalog /Pages 2 0 R >>", ""];
+  const pageContents: string[] = [];
   for (const lines of pages) {
     const contentParts = ["BT", "/F1 10 Tf", "48 790 Td", "14 TL"];
     for (const line of lines) contentParts.push("(" + pdfEscape(line) + ") Tj", "T*");
     contentParts.push("ET");
-    const stream = contentParts.join("\n");
-    const contentId = objects.length + 1;
-    objects.push("<< /Length " + Buffer.byteLength(stream, "ascii") + " >>\nstream\n" + stream + "\nendstream");
-    const pageId = objects.length + 1;
-    objects.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 " + (objects.length + 2) + " 0 R >> >> /Contents " + contentId + " 0 R >>");
-    pageIds.push(pageId);
+    pageContents.push(contentParts.join("\\n"));
   }
-  const fontId = objects.length + 1;
+  const contentIds: number[] = [];
+  for (const stream of pageContents) {
+    contentIds.push(objects.length + 1);
+    objects.push("<< /Length " + Buffer.byteLength(stream, "ascii") + " >>\\nstream\\n" + stream + "\\nendstream");
+  }
+  const pageStartId = objects.length + 1;
+  const pageIds = pages.map((_, index) => pageStartId + index);
+  const fontId = pageStartId + pages.length;
+  for (let index = 0; index < pages.length; index++) {
+    objects.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 " + fontId + " 0 R >> >> /Contents " + contentIds[index] + " 0 R >>");
+  }
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   objects[1] = "<< /Type /Pages /Kids [" + pageIds.map(id => id + " 0 R").join(" ") + "] /Count " + pageIds.length + " >>";
-  let pdf = "%PDF-1.4\n";
+  let pdf = "%PDF-1.4\\n";
   const offsets = [0];
-  objects.forEach((obj, index) => { offsets.push(Buffer.byteLength(pdf, "ascii")); pdf += (index + 1) + " 0 obj\n" + obj + "\nendobj\n"; });
+  objects.forEach((obj, index) => { offsets.push(Buffer.byteLength(pdf, "ascii")); pdf += (index + 1) + " 0 obj\\n" + obj + "\\nendobj\\n"; });
   const xref = Buffer.byteLength(pdf, "ascii");
-  pdf += "xref\n0 " + (objects.length + 1) + "\n0000000000 65535 f \n";
-  for (let i = 1; i < offsets.length; i++) pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
-  pdf += "trailer\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF";
+  pdf += "xref\\n0 " + (objects.length + 1) + "\\n0000000000 65535 f \\n";
+  for (let i = 1; i < offsets.length; i++) pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \\n";
+  pdf += "trailer\\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\\nstartxref\\n" + xref + "\\n%%EOF";
   return Buffer.from(pdf, "ascii");
 }
 function reportPages(m: Metrics, a: Record<string, any>): string[][] {
