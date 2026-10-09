@@ -72,9 +72,9 @@ router.post("/token", async (req,res) => {
       redirectUri:String(req.body.redirect_uri ?? ""),
       codeVerifier:String(req.body.code_verifier ?? ""),
     });
-    res.json({ access_token:result.accessToken, token_type:result.tokenType, expires_in:result.expiresIn, scope:result.scope });
+    return res.json({ access_token:result.accessToken, token_type:result.tokenType, expires_in:result.expiresIn, scope:result.scope });
   } catch (error) {
-    res.status(400).json({error:"invalid_grant",error_description:error instanceof Error?error.message:"Unable to exchange authorization code."});
+    return res.status(400).json({error:"invalid_grant",error_description:error instanceof Error?error.message:"Unable to exchange authorization code."});
   }
 });
 
