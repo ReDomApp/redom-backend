@@ -355,6 +355,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       emailLedger: firstEvent.rows[0]?.first_at ? "Available from " + iso(new Date(firstEvent.rows[0].first_at)) + "; only instrumented senders and ingested provider webhook events are represented, so this is not yet a complete platform-wide lifetime ledger." : "No email events recorded yet; email totals are unavailable until send paths and provider webhooks are instrumented.",
       supportCases: "Queried from support_cases; counts reflect persisted records.",
       supportMessages: "Queried from support_case_messages; message counts are not equivalent to email delivery counts.",
+      supportCasePriority: "The support_cases schema has no independent severity/priority field. Critical counts refer only to explicitly tracked operations incidents; support cases are not automatically classified as critical.",
+      caseExpirationAndRecycling: "The support_cases schema records invalidation fields but has no distinct expiration timestamp or recycling history. Expired/recycled counts cannot be asserted from current data.",
       applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
       supportCasePriority: "The support_cases schema does not expose a severity/priority field. Critical counts refer only to explicitly tracked operations incidents; support cases are not automatically classified as critical.",
       caseExpirationAndRecycling: "The support_cases schema records invalidation fields but has no distinct expiration timestamp or recycling history. Expired/recycled counts cannot be asserted from current data.",
