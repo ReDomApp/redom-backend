@@ -236,3 +236,13 @@ Cartoon—R8.0 is not considered production-ready until:
 - limitations are visible to the creator and unsupported combinations are not marked complete.
 
 A registry entry, model name, cinematic prompt, successful build or upscaled 720p output is not evidence of top-tier animation quality.
+
+
+## Long-form duration contract
+
+- ReDom-v2.8—Video standalone generation: maximum 59 seconds.
+- Cartoon—R8.0 complete animated project: maximum 3,600 seconds (60 minutes).
+- Studio—Ultron 8.0R complete movie project: maximum 7,200 seconds (120 minutes).
+- Trailer previews remain 15-25 seconds.
+
+These limits apply at project composition, not to an individual model-generation call. Each diffusion job remains limited to 59 seconds and long-form projects must be assembled from short, validated shots. The API rejects project durations above the format-specific limit; the Studio worker checks composition duration and probes the final export. The duration contract does not itself prove complete shot coverage, continuous soundtrack generation, or successful feature-length GPU rendering. Those remain release gates requiring actual render and recovery tests.
