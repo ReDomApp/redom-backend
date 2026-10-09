@@ -362,10 +362,10 @@ async function generateReport(now: Date): Promise<void> {
       html,
       attachments: [{ filename: `ReDom-Daily-Operations-${now.toISOString().slice(0,10)}.pdf`, content: pdf.toString("base64") }],
       headers: { "X-ReDom-Report-Key": reportKey },
-    });
+    }, { idempotencyKey: "redom-daily-ops-" + reportKey });
     if (send.error) throw new Error("Resend rejected daily operations report: " + send.error.message);
     const messageId = send.data?.id ?? null;
-    await pool.query("UPDATE redom_ops_report_runs SET status='sent',delivery_status='accepted',provider_message_id=$2,delivered_at=now(),updated_at=now() WHERE id=$1", [runId,messageId]);
+    await pool.query("UPDATE redom_ops_report_runs SET status='sent',delivery_status='accepted',provider_message_id=$2,updated_at=now() WHERE id=$1", [runId,messageId]);
     await recordOpsEmailEvent({ logicalEmailId: reportKey, subsystem: "daily-operations-report", eventType: "accepted", recipient: RECIPIENT, providerMessageId: messageId, idempotencyKey: "ops-report:" + reportKey, metadata: { pdfSha256: pdfHash } });
     logger.info({ reportKey, recipient: RECIPIENT, providerMessageId: messageId, pdfSha256: pdfHash }, "ReDom daily operations report submitted to Resend");
   } catch (error) {
