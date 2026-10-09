@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "../config/env";
+import { recordOpsEmailEvent } from "../services/operations/daily-ops-intelligence.service";
 import { pool } from "../database/db";
 
 const router = Router();
@@ -22,6 +24,64 @@ router.use((req, res, next) => {
   }
   res.setHeader("Cache-Control", "no-store");
   return next();
+});
+
+
+function verifyResendWebhook(raw: Buffer, id: string, timestamp: string, signature: string, secret: string): boolean {
+  const seconds = Number(timestamp);
+  if (!Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > 300) return false;
+  const key = secret.startsWith("whsec_") ? Buffer.from(secret.slice(6), "base64") : Buffer.from(secret);
+  const expected = createHmac("sha256", key).update(id + "." + timestamp + "." + raw.toString("utf8")).digest("base64");
+  return signature.split(" ").some((part) => {
+    const pieces = part.split(",");
+    if (pieces.length !== 2 || pieces[0] !== "v1") return false;
+    const supplied = Buffer.from(pieces[1]);
+    const calculated = Buffer.from(expected);
+    return supplied.length === calculated.length && timingSafeEqual(supplied, calculated);
+  });
+}
+
+router.post("/email/webhook", async (req, res) => {
+  const secret = env.email.resend.webhookSecret;
+  if (!secret) return res.status(503).json({ success: false, message: "Resend delivery webhook secret is not configured." });
+  if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Expected raw webhook payload." });
+  const id = req.header("svix-id") ?? "";
+  const timestamp = req.header("svix-timestamp") ?? "";
+  const signature = req.header("svix-signature") ?? "";
+  if (!id || !timestamp || !signature || !verifyResendWebhook(req.body, id, timestamp, signature, secret)) {
+    return res.status(400).json({ success: false, message: "Invalid webhook signature." });
+  }
+  let event: any;
+  try { event = JSON.parse(req.body.toString("utf8")); } catch { return res.status(400).json({ success: false, message: "Invalid JSON payload." }); }
+  const eventType = String(event?.type ?? "");
+  const typeMap: Record<string, "accepted" | "delivered" | "deferred" | "bounced" | "rejected" | "failed" | "complained"> = {
+    "email.sent": "accepted",
+    "email.delivered": "delivered",
+    "email.delivery_delayed": "deferred",
+    "email.bounced": "bounced",
+    "email.rejected": "rejected",
+    "email.failed": "failed",
+    "email.complained": "complained",
+  };
+  const mapped = typeMap[eventType];
+  const messageId = String(event?.data?.email_id ?? event?.data?.id ?? "");
+  if (!mapped || !messageId) return res.status(200).json({ received: true, ignored: true });
+  const toValue = event?.data?.to;
+  const recipient = Array.isArray(toValue) ? String(toValue[0] ?? "") : String(toValue ?? "");
+  try {
+    await recordOpsEmailEvent({
+      logicalEmailId: messageId,
+      providerMessageId: messageId,
+      subsystem: "resend-webhook",
+      eventType: mapped,
+      recipient,
+      idempotencyKey: "resend-webhook:" + id,
+      metadata: { providerEventType: eventType, webhookId: id, createdAt: event?.created_at ?? null },
+    });
+    return res.status(200).json({ received: true });
+  } catch {
+    return res.status(500).json({ success: false, message: "Unable to persist delivery event." });
+  }
 });
 
 router.get("/reports", async (_req, res) => {
