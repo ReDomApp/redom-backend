@@ -42,6 +42,7 @@ WORKER_TOKEN = os.environ["REDOM_VIDEO_WORKER_TOKEN"]
 QUEUE = os.getenv("REDOM_VIDEO_QUEUE", "redom:video:jobs")
 FPS = 24
 SEGMENT_SECONDS = 5
+REDOM_VIDEO_MAX_SECONDS = 59
 
 app = FastAPI(title="ReDom-v2.8—Video Native Worker")
 redis = Redis.from_url(REDIS_URL, decode_responses=True)
@@ -69,7 +70,7 @@ class VideoJob(BaseModel):
     model: str = MODEL_NAME
     operation: str = "generate"
     prompt: str = Field(min_length=5, max_length=8000)
-    durationSeconds: int = Field(ge=4, le=300)
+    durationSeconds: int = Field(ge=4, le=REDOM_VIDEO_MAX_SECONDS)
     resolution: str = "720p"
     aspectRatio: str = "16:9"
     callbackUrl: str
@@ -492,8 +493,8 @@ async def callback(job: VideoJob, status: str, storage_key: str | None = None, e
 async def process(job: VideoJob):
     if job.runtime != RUNTIME_NAME or job.model != MODEL_NAME:
         raise ValueError("Unsupported ReDom video runtime.")
-    if job.durationSeconds > 300:
-        raise ValueError("Video duration exceeds the ReDom maximum.")
+    if job.durationSeconds > REDOM_VIDEO_MAX_SECONDS:
+        raise ValueError("ReDom Video maximum duration is 59 seconds (00:59).")
     if job.format not in ALLOWED_FORMATS:
         raise ValueError("Unsupported ReDom video format.")
 
