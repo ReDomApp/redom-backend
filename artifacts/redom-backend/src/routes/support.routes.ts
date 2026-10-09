@@ -9,6 +9,7 @@ import { generatePolicyAwareSupportReply } from "../services/support/policy-awar
 import { sendGeneratedSupportEmail } from "../services/support/supportEmail.service";
 import { processRefundSupportEmail } from "../services/refund/refund.service";
 import { buildSupportEmailActions } from "../services/support/supportWebLinks.service";
+import { getSupportEmailGrantForVerification, issueSupportEmailChallenge, verifyAndConsumeSupportEmailChallenge } from "../services/support/supportEmailAccess.service";
 
 const router = Router();
 const resend = new Resend(env.email.resend.apiKey);
@@ -268,6 +269,70 @@ router.post("/feedback", authMiddleware, async (req, res) => {
   }
 });
 router.get("/cases", authMiddleware, async (req, res) => { try { return res.status(200).json({ success: true, cases: await listOwnedSupportCases(req.user!.userId) }); } catch (error) { req.log?.error?.({ err: error }, "Support case list failed"); return res.status(500).json({ success: false, message: "Unable to load your support history." }); } });
+router.post("/cases/:caseNumber/email/:token/challenge", async (req, res) => {
+  const caseNumber = String(req.params.caseNumber ?? "").toUpperCase();
+  const token = String(req.params.token ?? "");
+  if (!/^R\d{11}$/.test(caseNumber)) return res.status(400).json({ success: false, message: "Invalid support link." });
+  try {
+    const grant = await getSupportEmailGrantForVerification(token);
+    const supportCase = await getSupportCase(caseNumber);
+    if (!grant || !supportCase || grant.caseId !== supportCase.id || grant.purpose !== "view_case") {
+      return res.status(404).json({ success: false, message: "This support link is invalid or expired." });
+    }
+    const challenge = await issueSupportEmailChallenge(grant.id);
+    if (!challenge) return res.status(410).json({ success: false, message: "This support link is no longer available." });
+    const { error } = await resend.emails.send({
+      from: env.email.securityFrom,
+      to: [challenge.recipientEmail],
+      subject: "ReDom Support — Verify your email",
+      text: "Your ReDom support access verification code is " + challenge.code + ". It expires in 10 minutes. If you did not request this, ignore this email. Do not share this code.",
+      html: '<!doctype html><html lang="en"><body style="margin:0;padding:24px;background:#f0f2f5;font-family:Arial,sans-serif;color:#1c1e21"><main style="max-width:560px;margin:auto;background:#fff;border:1px solid #dadde1;padding:28px"><strong style="font-size:24px;color:#1877f2">ReDom</strong><h1 style="font-size:22px">Verify support access</h1><p>Enter this code on the ReDom page you opened:</p><p style="font-size:32px;letter-spacing:8px;font-weight:bold;text-align:center">' + challenge.code + '</p><p>This code expires in 10 minutes. Never share it with anyone.</p></main></body></html>',
+    });
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ success: true, message: "A verification code was sent to the email address originally associated with this support link." });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "Temporary support access challenge failed");
+    return res.status(500).json({ success: false, message: "Unable to verify this support link right now." });
+  }
+});
+
+router.post("/cases/:caseNumber/email/:token/verify", async (req, res) => {
+  const caseNumber = String(req.params.caseNumber ?? "").toUpperCase();
+  const token = String(req.params.token ?? "");
+  const code = String(req.body?.code ?? "").trim();
+  if (!/^R\d{11}$/.test(caseNumber) || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({ success: false, message: "Invalid verification request." });
+  }
+  try {
+    const grant = await getSupportEmailGrantForVerification(token);
+    const supportCase = await getSupportCase(caseNumber);
+    if (!grant || !supportCase || grant.caseId !== supportCase.id || grant.purpose !== "view_case") {
+      return res.status(404).json({ success: false, message: "This support link is invalid, expired, or already used." });
+    }
+    const verified = await verifyAndConsumeSupportEmailChallenge({ grantId: grant.id, code });
+    if (!verified || verified.caseId !== supportCase.id || verified.recipientEmail.toLowerCase() !== String(supportCase.requesterEmail ?? "").toLowerCase()) {
+      return res.status(403).json({ success: false, message: "Recipient verification failed or the link has expired." });
+    }
+    const messages = await getSupportCaseMessages(supportCase.id, 50);
+    return res.status(200).json({
+      success: true,
+      case: {
+        caseNumber: supportCase.caseNumber,
+        subject: supportCase.subject,
+        category: supportCase.category,
+        status: supportCase.status,
+        createdAt: supportCase.createdAt,
+        updatedAt: supportCase.updatedAt,
+      },
+      messages,
+      access: { oneTime: true, consumed: true },
+    });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "Temporary support access verification failed");
+    return res.status(500).json({ success: false, message: "Unable to open this support case right now." });
+  }
+});
+
 router.get("/cases/:caseNumber", authMiddleware, async (req, res) => { const caseNumber = String(req.params.caseNumber).toUpperCase(); if (!/^R\d{11}$/.test(caseNumber)) return res.status(400).json({ success: false, message: "Invalid Case Number." }); try { const supportCase = await getOwnedSupportCase(req.user!.userId, caseNumber); if (!supportCase) return res.status(404).json({ success: false, message: "Support case not found." }); return res.status(200).json({ success: true, case: supportCase, messages: await getSupportCaseMessages(supportCase.id, 50) }); } catch (error) { req.log?.error?.({ err: error }, "Support case read failed"); return res.status(500).json({ success: false, message: "Unable to load this support case." }); } });
 
 router.post("/email/webhook", async (req, res) => {
