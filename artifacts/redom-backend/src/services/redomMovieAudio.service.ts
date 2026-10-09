@@ -99,7 +99,7 @@ export async function createReDomMovieMusicAsset(input: MusicInput): Promise<Aud
     input.instrumental === false ? "Include original sung vocals where lyrics are supplied; do not imitate any existing recording or known singer." : "Instrumental score only; no vocals.",
     input.vocalStyle ? "Singer profile: " + input.vocalStyle + ". This is a stylistic direction, not a guarantee of matching a spoken character voice." : "",
     "Create an original, professionally arranged cinematic soundtrack with intentional dynamics, emotional phrasing, clear transitions and a polished mix.",
-  ].filter(Boolean).join("\\n").slice(0, 4000);
+  ].filter(Boolean).join("\n").slice(0, 4000);
   const body: Record<string, unknown> = {
     model_id: env.redomMovieAudio.musicModel,
     music_length_ms: durationSeconds * 1000,
@@ -107,7 +107,7 @@ export async function createReDomMovieMusicAsset(input: MusicInput): Promise<Aud
   if (input.instrumental === false && input.lyrics?.trim()) {
     body.composition_plan = {
       chunks: [{
-        text: "[Verse]\\n" + input.lyrics.trim().slice(0, 3000),
+        text: "[Verse]\n" + input.lyrics.trim().slice(0, 3000),
         durationMs: durationSeconds * 1000,
         positiveStyles: ["cinematic musical theatre", "clear lead vocal", "emotional storytelling", ...(input.vocalStyle ? [input.vocalStyle] : [])],
         negativeStyles: ["soundalike", "imitating a known singer"],
