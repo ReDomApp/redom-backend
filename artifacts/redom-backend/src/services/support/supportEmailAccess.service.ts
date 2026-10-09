@@ -1,5 +1,20 @@
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { env } from "../../config/env";
 import { pool } from "../../database/db";
+
+const encryptionKey = createHash("sha256").update(env.authentication.sessionSecret).digest();
+function encryptToken(token: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey, iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), encrypted.toString("base64url")].join(".");
+}
+function decryptToken(value: string): string {
+  const [iv, tag, encrypted] = value.split(".");
+  const decipher = createDecipheriv("aes-256-gcm", encryptionKey, Buffer.from(iv, "base64url"));
+  decipher.setAuthTag(Buffer.from(tag, "base64url"));
+  return Buffer.concat([decipher.update(Buffer.from(encrypted, "base64url")), decipher.final()]).toString("utf8");
+}
 
 export function hashSupportAccessToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -31,27 +46,25 @@ export async function createOrReuseSupportEmailAccessGrant(input: {
       "UPDATE support_email_access_grants SET status='expired' WHERE status='active' AND expires_at <= now()",
     );
     const existing = await client.query(
-      `SELECT id, expires_at FROM support_email_access_grants
+      `SELECT token_ciphertext, expires_at FROM support_email_access_grants
        WHERE case_id=$1 AND lower(recipient_email)=lower($2) AND purpose=$3
          AND status='active' AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > now()
        ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
       [input.caseId, recipientEmail, purpose],
     );
     if (existing.rows[0]) {
-      // Raw tokens are intentionally never stored, so a previously created
-      // grant cannot be re-embedded: callers must keep the issued URL with the
-      // email record. A fresh token is issued only when no reusable raw token
-      // is available to the caller.
+      const token = decryptToken(String(existing.rows[0].token_ciphertext));
+      const expiresAt = new Date(existing.rows[0].expires_at);
       await client.query("COMMIT");
-      throw new Error("ACTIVE_GRANT_EXISTS_BUT_RAW_TOKEN_IS_NOT_RECOVERABLE");
+      return { token, expiresAt };
     }
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await client.query(
       `INSERT INTO support_email_access_grants
-       (case_id, recipient_email, purpose, token_hash, status, expires_at)
-       VALUES ($1,$2,$3,$4,'active',$5)`,
-      [input.caseId, recipientEmail, purpose, hashSupportAccessToken(token), expiresAt],
+       (case_id, recipient_email, purpose, token_hash, token_ciphertext, status, expires_at)
+       VALUES ($1,$2,$3,$4,$5,'active',$6)`,
+      [input.caseId, recipientEmail, purpose, hashSupportAccessToken(token), encryptToken(token), expiresAt],
     );
     await client.query("COMMIT");
     return { token, expiresAt };
