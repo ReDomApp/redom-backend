@@ -210,12 +210,12 @@ function makePdf(pages: string[][]): Buffer {
     const contentParts = ["BT", "/F1 10 Tf", "48 790 Td", "14 TL"];
     for (const line of lines) contentParts.push("(" + pdfEscape(line) + ") Tj", "T*");
     contentParts.push("ET");
-    pageContents.push(contentParts.join("\\n"));
+    pageContents.push(contentParts.join("\n"));
   }
   const contentIds: number[] = [];
   for (const stream of pageContents) {
     contentIds.push(objects.length + 1);
-    objects.push("<< /Length " + Buffer.byteLength(stream, "ascii") + " >>\\nstream\\n" + stream + "\\nendstream");
+    objects.push("<< /Length " + Buffer.byteLength(stream, "ascii") + " >>\nstream\n" + stream + "\nendstream");
   }
   const pageStartId = objects.length + 1;
   const pageIds = pages.map((_, index) => pageStartId + index);
@@ -225,13 +225,13 @@ function makePdf(pages: string[][]): Buffer {
   }
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   objects[1] = "<< /Type /Pages /Kids [" + pageIds.map(id => id + " 0 R").join(" ") + "] /Count " + pageIds.length + " >>";
-  let pdf = "%PDF-1.4\\n";
+  let pdf = "%PDF-1.4\n";
   const offsets = [0];
-  objects.forEach((obj, index) => { offsets.push(Buffer.byteLength(pdf, "ascii")); pdf += (index + 1) + " 0 obj\\n" + obj + "\\nendobj\\n"; });
+  objects.forEach((obj, index) => { offsets.push(Buffer.byteLength(pdf, "ascii")); pdf += (index + 1) + " 0 obj\n" + obj + "\nendobj\n"; });
   const xref = Buffer.byteLength(pdf, "ascii");
-  pdf += "xref\\n0 " + (objects.length + 1) + "\\n0000000000 65535 f \\n";
-  for (let i = 1; i < offsets.length; i++) pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \\n";
-  pdf += "trailer\\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\\nstartxref\\n" + xref + "\\n%%EOF";
+  pdf += "xref\n0 " + (objects.length + 1) + "\n0000000000 65535 f \n";
+  for (let i = 1; i < offsets.length; i++) pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+  pdf += "trailer\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF";
   return Buffer.from(pdf, "ascii");
 }
 function reportPages(m: Metrics, a: Record<string, any>): string[][] {
