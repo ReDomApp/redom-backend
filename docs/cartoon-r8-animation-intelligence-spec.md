@@ -246,3 +246,10 @@ A registry entry, model name, cinematic prompt, successful build or upscaled 720
 - Trailer previews remain 15-25 seconds.
 
 These limits apply at project composition, not to an individual model-generation call. Each diffusion job remains limited to 59 seconds and long-form projects must be assembled from short, validated shots. The API rejects project durations above the format-specific limit; the Studio worker checks composition duration and probes the final export. The duration contract does not itself prove complete shot coverage, continuous soundtrack generation, or successful feature-length GPU rendering. Those remain release gates requiring actual render and recovery tests.
+
+
+## Whole-movie episodic runtime contract
+
+A full Studio—Ultron 8.0R movie is one project with a maximum total runtime of 7,200 seconds (120 minutes) across all episodes combined. Trailer preview and creator approval happen before the full movie project is created. The Movie Director/Planner must create at least four episodes for a full movie (and may choose more when story pacing calls for it), assign each episode an explicit target runtime, and allocate those episode runtimes so their sum equals the approved whole-project runtime exactly. The requested runtime is never a per-episode allowance. Each episode is further divided into scenes and short generation shots; no diffusion call should attempt to render a whole episode or movie. The backend normalizes episode runtime allocations to the whole-project target and rejects plans with fewer than four episodes or empty episodes. Episode planning is limited to 24 episodes per project.
+
+Example: a 120-minute project can be split into four 30-minute episodes or six 20-minute episodes. The planner chooses the structure that best supports the story, while the sum stays at 120 minutes or less.
