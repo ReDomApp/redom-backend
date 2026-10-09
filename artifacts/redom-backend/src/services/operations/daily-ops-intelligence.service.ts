@@ -86,7 +86,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const prevStart = new Date(now.getTime() - 172800000);
   const yearStart = new Date(now.getTime() - 365 * 86400000);
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const [email, annual, firstEvent, support, messages, incidents, database] = await Promise.all([
+  const [email, annual, firstEvent, support, messages, incidents, resolvedIncidents, database] = await Promise.all([
     pool.query(`SELECT
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
@@ -121,11 +121,12 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     pool.query(`SELECT
       count(*) FILTER (WHERE created_at >= $1)::int AS currentMessages,
       count(*) FILTER (WHERE created_at >= $2 AND created_at < $1)::int AS previousMessages
-      FROM support_messages WHERE created_at >= $2`, [start, prevStart]),
+      FROM support_case_messages WHERE created_at >= $2`, [start, prevStart]),
     pool.query(`SELECT id, incident_key, title, subsystem, severity, status, description, root_cause, resolution,
       verification_evidence, first_seen_at, last_seen_at, resolved_at, verified_at
       FROM redom_ops_incidents WHERE status NOT IN ('closed','resolved') ORDER BY
       CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'warning' THEN 3 ELSE 4 END, last_seen_at DESC LIMIT 30`),
+    pool.query(`SELECT count(*)::int AS resolved FROM redom_ops_incidents WHERE status IN ('resolved','closed') AND resolved_at >= $1`, [start]),
     pool.query("SELECT 1 AS ok"),
   ]);
   const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {};
