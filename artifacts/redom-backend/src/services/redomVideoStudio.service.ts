@@ -15,7 +15,7 @@ import {
 } from "../database/reDomVideoStudio";
 import { reDomAiVideos } from "../database/reDomAiVideos";
 import { enforceReDomVideoPromptSecurity } from "./redomVideoSecurity.service";
-import { REDOM_VIDEO_MAX_SECONDS } from "./redomVideoEngine.service";
+import { REDOM_VIDEO_MAX_SECONDS, prepareReDomVideoLanguage } from "./redomVideoEngine.service";
 
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
 const MODEL = "ReDom-v2.8—Video";
@@ -338,7 +338,7 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
       estimatedRuntimeSeconds: plan.estimatedRuntimeSeconds || project.targetDurationSeconds,
       episodeCount: plan.episodeCount || plan.episodes.length,
     },
-    research: { entries: plan.research || [], plannedBy: MODEL },
+    research: { ...(project.research || {}), entries: plan.research || [], plannedBy: MODEL },
     state: "ready",
     continuityVersion: project.continuityVersion + 1,
     updatedAt: new Date(),
@@ -348,6 +348,8 @@ async function persistPlan(projectId: string, project: typeof reDomAiVideoProjec
 export async function createReDomMovieProject(userId: string, input: { prompt: string; referenceImageDataUri?: string; durationSeconds: number; quality?: string; style?: string; aspectRatio?: string; audio?: boolean; voice?: boolean; title?: string; format?: "movie" | "cartoon" }) {
   await requirePaid(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
+  const format = input.format || "movie";
+  const language = await prepareReDomVideoLanguage(input.prompt, format === "cartoon" ? "cartoon" : "movie");
   const durationSeconds = safeDuration(input.durationSeconds);
   const referenceMatch = input.referenceImageDataUri?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/) || null;
   if (input.referenceImageDataUri && !referenceMatch) throw Object.assign(new Error("Reference image must be a PNG, JPEG, or WebP data URI."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
@@ -357,7 +359,7 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     userId,
     title: input.title?.trim().slice(0, 240) || "Untitled ReDom Movie",
     prompt: input.prompt.trim(),
-    format: input.format || "movie",
+    format,
     targetDurationSeconds: durationSeconds,
     quality: input.quality || "high",
     style: input.format === "cartoon" ? "cartoon animation, " + (input.style || "cinematic") : (input.style || "cinematic"),
@@ -365,14 +367,14 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     audioEnabled: input.audio !== false,
     voiceEnabled: input.voice !== false,
     state: "planning",
-    research: { securityRequestId: security.requestId },
+    research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption },
   }).returning();
   if (!project) throw new Error("Could not create ReDom movie project.");
   if (referenceMatch && referenceBytes) {
     const extension = referenceMatch[1] === "jpeg" ? "jpg" : referenceMatch[1];
     const referenceAssetKey = `redom-ai/video-references/${userId}/movie-project-${project.id}/reference.${extension}`;
     await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey, Body: referenceBytes, ContentType: "image/" + referenceMatch[1], CacheControl: "private, max-age=900" }));
-    await db.update(reDomAiVideoProjects).set({ research: { securityRequestId: security.requestId, referenceAssetKey } }).where(eq(reDomAiVideoProjects.id, project.id));
+    await db.update(reDomAiVideoProjects).set({ research: { securityRequestId: security.requestId, languageName: language.languageName, languageCode: language.languageCode, captionText: language.caption, referenceAssetKey } }).where(eq(reDomAiVideoProjects.id, project.id));
   }
   return { projectId: project.id, state: project.state, model: MODEL, maxDurationSeconds: REDOM_VIDEO_MAX_SECONDS };
 }
@@ -512,7 +514,6 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       model: MODEL,
       operation: "generate",
       securityRequestId: typeof project.research?.securityRequestId === "string" ? project.research.securityRequestId : undefined,
-      startedAt: new Date(),
     });
   }
 
@@ -530,6 +531,9 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       watermark: false,
       referenceAssetKey,
       cleanupReferenceAsset: false,
+      languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined,
+      languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined,
+      generationDirection: "Use " + String(project.research?.languageName || "the language detected from the creator prompt") + " for visible text and story details; preserve consistent character names and dialogue direction.",
       prompt: shot.generationPrompt,
       durationSeconds: shot.durationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
@@ -564,6 +568,19 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
   await db.update(reDomAiVideoJobs).set({ status: "completed", outputAssetKey: storageKey, completedAt: new Date() }).where(eq(reDomAiVideoJobs.id, job.id));
   if (job.shotId) await db.update(reDomAiVideoShots).set({ status: "completed", outputAssetKey: storageKey }).where(eq(reDomAiVideoShots.id, job.shotId));
 
+  if (job.kind === "final_composition") {
+    const project = (await db.select().from(reDomAiVideoProjects).where(eq(reDomAiVideoProjects.id, job.projectId)).limit(1))[0];
+    if (!project) throw new Error("Movie project disappeared before finalization.");
+    await db.update(reDomAiVideoProjects).set({ state: "completed", updatedAt: new Date() }).where(eq(reDomAiVideoProjects.id, job.projectId));
+    await db.update(reDomAiVideos).set({
+      status: "completed",
+      storageKey,
+      completedAt: new Date(),
+      generationMs: Date.now() - project.createdAt.getTime(),
+    }).where(eq(reDomAiVideos.jobId, "movie_project_" + job.projectId));
+    return true;
+  }
+
   const remaining = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs).where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.status, "queued")));
   const processing = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs).where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.status, "processing")));
   const composerAlreadyQueued = await db.select({ id: reDomAiVideoJobs.id }).from(reDomAiVideoJobs).where(and(eq(reDomAiVideoJobs.projectId, job.projectId), eq(reDomAiVideoJobs.kind, "final_composition")));
@@ -575,7 +592,7 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
     const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
-    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
+    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
   }

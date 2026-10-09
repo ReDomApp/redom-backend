@@ -98,32 +98,32 @@ router.post("/video/projects", rateLimit({ windowMs: 60_000, max: 5, standardHea
 
 router.post("/video/projects/:projectId/plan", authMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
-  try { return res.status(200).json({ success: true, ...(await planReDomMovieProject(req.user.userId, req.params.projectId)) }); }
+  try { return res.status(200).json({ success: true, ...(await planReDomMovieProject(req.user.userId, String(req.params.projectId))) }); }
   catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message: error instanceof Error ? error.message : "Movie planning failed." }); }
 });
 
 router.post("/video/projects/:projectId/revise", authMiddleware, async (req, res) => {
   const parsed = movieRevisionSchema.safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid ReDom Movie Studio revision." });
-  try { return res.status(200).json({ success: true, ...(await reviseReDomMovieProject(req.user.userId, req.params.projectId, parsed.data.instruction)) }); }
+  try { return res.status(200).json({ success: true, ...(await reviseReDomMovieProject(req.user.userId, String(req.params.projectId), parsed.data.instruction)) }); }
   catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, code: (error as { code?: string })?.code, message: error instanceof Error ? error.message : "Movie revision failed." }); }
 });
 
 router.get("/video/projects/:projectId", authMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
-  try { return res.status(200).json({ success: true, ...(await getReDomMovieProject(req.user.userId, req.params.projectId)) }); }
+  try { return res.status(200).json({ success: true, ...(await getReDomMovieProject(req.user.userId, String(req.params.projectId))) }); }
   catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 404; return res.status(status).json({ success: false, message: error instanceof Error ? error.message : "Movie project not found." }); }
 });
 
 router.post("/video/projects/:projectId/continuity/check", authMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
-  try { return res.status(200).json({ success: true, ...(await runReDomMovieContinuityCheck(req.user.userId, req.params.projectId)) }); }
+  try { return res.status(200).json({ success: true, ...(await runReDomMovieContinuityCheck(req.user.userId, String(req.params.projectId))) }); }
   catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message: error instanceof Error ? error.message : "Continuity check failed." }); }
 });
 
 router.post("/video/projects/:projectId/produce", rateLimit({ windowMs: 60_000, max: 2, standardHeaders: true, legacyHeaders: false }), authMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
-  try { return res.status(202).json({ success: true, ...(await startReDomMovieProduction(req.user.userId, req.params.projectId)) }); }
+  try { return res.status(202).json({ success: true, ...(await startReDomMovieProduction(req.user.userId, String(req.params.projectId))) }); }
   catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 502; return res.status(status >= 400 && status < 600 ? status : 502).json({ success: false, message: error instanceof Error ? error.message : "Movie production could not start." }); }
 });
 
@@ -142,7 +142,7 @@ router.post("/video", rateLimit({ windowMs: 60_000, max: 3, standardHeaders: tru
 
 router.get("/video/:jobId", authMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
-  try { return res.status(200).json({ success: true, ...(await getReDomVideoJob(req.user.userId, req.params.jobId)) }); }
+  try { return res.status(200).json({ success: true, ...(await getReDomVideoJob(req.user.userId, String(req.params.jobId))) }); }
   catch (error) { const status = typeof (error as { status?: unknown })?.status === "number" ? Number((error as { status?: unknown }).status) : 404; return res.status(status).json({ success: false, message: error instanceof Error ? error.message : "Video job not found." }); }
 });
 
@@ -188,7 +188,7 @@ router.get("/video/:jobId/download", async (req, res) => {
   const token = typeof req.query.token === "string" ? req.query.token : "";
   if (!token) return res.status(401).send("Missing download token.");
   const hash = createHash("sha256").update(token).digest("hex");
-  const rows = await db.select().from(reDomAiVideos).where(and(eq(reDomAiVideos.jobId, req.params.jobId), eq(reDomAiVideos.downloadTokenHash, hash), gt(reDomAiVideos.downloadTokenExpiresAt, new Date()))).limit(1);
+  const rows = await db.select().from(reDomAiVideos).where(and(eq(reDomAiVideos.jobId, String(req.params.jobId)), eq(reDomAiVideos.downloadTokenHash, hash), gt(reDomAiVideos.downloadTokenExpiresAt, new Date()))).limit(1);
   const row = rows[0];
   if (!row?.storageKey) return res.status(404).send("Video is unavailable.");
   try {
@@ -197,8 +197,8 @@ router.get("/video/:jobId/download", async (req, res) => {
     res.setHeader("Content-Type", "video/mp4");
     if (object.ContentLength) res.setHeader("Content-Length", String(object.ContentLength));
     res.setHeader("Cache-Control", "private, max-age=900");
-    if (object.Body) object.Body.pipe(res);
-    else res.end();
+    if (object.Body) return res.end(Buffer.from(await object.Body.transformToByteArray()));
+    return res.end();
   } catch { return res.status(404).send("Video is unavailable."); }
 });
 

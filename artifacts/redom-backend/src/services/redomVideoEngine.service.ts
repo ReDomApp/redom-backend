@@ -7,6 +7,7 @@ import { verificationSubscriptions } from "../database/verificationSubscriptions
 import { env } from "../config/env";
 import { enforceReDomVideoPromptSecurity, enforceReDomVideoOutputSecurity } from "./redomVideoSecurity.service";
 import { r2 } from "../lib/r2";
+import { openai } from "../lib/openai";
 
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
 export const REDOM_VIDEO_MODEL = "ReDom-v2.8—Video";
@@ -27,17 +28,47 @@ async function requirePaidVideoEntitlement(userId: string) {
   }
 }
 
+
+export async function prepareReDomVideoLanguage(prompt: string, format: "video" | "movie" | "cartoon") {
+  const response = await openai.responses.create({
+    model: "gpt-5.6-luna",
+    instructions: [
+      "You are ReDom's multilingual video language and social-caption director.",
+      "Detect the language actually used by the creator in the prompt. Do not default to English.",
+      "Return JSON only: {\"languageName\": string, \"languageCode\": string, \"caption\": string, \"generationDirection\": string}.",
+      "caption must be a concise, engaging post caption for the resulting video, written in the detected prompt language, not a translation of these instructions. Avoid hashtags unless natural for the language.",
+      "generationDirection must instruct the video model to preserve the detected language for any visible text, dialogue direction and story details; do not fabricate audio or claim speech was generated if it was not.",
+      "Do not translate proper names unless the language convention requires it."
+    ].join("\n"),
+    input: "Format: " + format + "\nCreator prompt:\n" + prompt,
+    safety_identifier: "redom-video-language",
+  });
+  let parsed: { languageName?: string; languageCode?: string; caption?: string; generationDirection?: string };
+  try { parsed = JSON.parse(response.output_text || "{}"); } catch { throw Object.assign(new Error("ReDom could not reliably determine the prompt language."), { code: "VIDEO_LANGUAGE_DETECTION_FAILED", status: 502 }); }
+  if (!parsed.languageName || !parsed.languageCode || !parsed.caption || !parsed.generationDirection) {
+    throw Object.assign(new Error("ReDom could not prepare a localized video caption."), { code: "VIDEO_CAPTION_GENERATION_FAILED", status: 502 });
+  }
+  return {
+    languageName: parsed.languageName.slice(0, 80),
+    languageCode: parsed.languageCode.slice(0, 16),
+    caption: parsed.caption.slice(0, 500),
+    generationDirection: parsed.generationDirection.slice(0, 1000),
+  };
+}
+
+
 export async function createReDomVideoJob(
   userId: string,
-  input: { prompt: string; referenceImageDataUri?: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi"; format?: "video" | "movie" | "cartoon"; watermark?: boolean },
+  input: { prompt: string; referenceImageDataUri?: string; languageName?: string; languageCode?: string; caption?: string; generationDirection?: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi"; format?: "video" | "movie" | "cartoon"; watermark?: boolean },
 ) {
   await requirePaidVideoEntitlement(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
+  const format = input.format ?? "video";
+  const language = await prepareReDomVideoLanguage(input.prompt, format);
   const target = Math.max(4, Math.min(REDOM_VIDEO_MAX_SECONDS, Math.floor(input.durationSeconds ?? 30)));
   const resolution = input.resolution ?? "720p";
   const aspectRatio = input.aspectRatio ?? "16:9";
   const operation = input.operation ?? "generate";
-  const format = input.format ?? "video";
   const watermark = input.watermark !== false;
   const jobId = "vid_" + randomUUID().replace(/-/g, "");
   let referenceAssetKey: string | undefined;
@@ -81,12 +112,17 @@ export async function createReDomVideoJob(
       operation,
       format,
       watermark,
+      languageName: language.languageName,
+      languageCode: language.languageCode,
+      captionText: language.caption,
+      generationDirection: language.generationDirection,
       referenceAssetKey,
       prompt: input.prompt.trim(),
       durationSeconds: target,
       resolution,
+      quality: resolution === "1080p" ? "pro" : "high",
       aspectRatio,
-      callbackUrl: env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback",
+      callbackUrl: env.redomBackendUrl.replace(/\/$/, "") + "/ai/video/callback",
       callbackToken: env.redomVideoEngine.token,
     }),
     signal: AbortSignal.timeout(env.redomVideoEngine.timeoutMs),
