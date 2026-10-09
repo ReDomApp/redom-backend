@@ -1,6 +1,7 @@
 import { env } from "../../config/env";
 import { pool } from "../../database/db";
 import type { SupportAccountContext } from "./support.service";
+import { createOrReuseSupportEmailAccessGrant } from "./supportEmailAccess.service";
 
 export type SupportEmailResolvedAction = {
   label: string;
@@ -286,15 +287,23 @@ export async function buildSupportEmailActions(input: {
   // ReDom account. The account must be the same account that owns the resource.
   if (input.account?.accountStatus === "active" && input.account.userId) {
     const supportCase = await pool.query(
-      "SELECT 1 FROM support_cases WHERE case_number=$1 AND user_id=$2 LIMIT 1",
+      "SELECT id, requester_email FROM support_cases WHERE case_number=$1 AND user_id=$2 LIMIT 1",
       [input.caseNumber.toUpperCase(), input.account.userId],
     );
     if (supportCase.rows[0] && (wantsLink || /\b(?:case|status|conversation|ticket)\b/i.test(input.message))) {
-      const viewCase = action(
-        "View Your Support Case",
-        redomUrl("/support/cases/" + encodeURIComponent(input.caseNumber)),
-      );
-      if (viewCase) actions.push(viewCase);
+      const recipientEmail = String(supportCase.rows[0].requester_email ?? input.account.email ?? "").trim().toLowerCase();
+      if (recipientEmail) {
+        const grant = await createOrReuseSupportEmailAccessGrant({
+          caseId: String(supportCase.rows[0].id),
+          recipientEmail,
+          purpose: "view_case",
+        });
+        const viewCase = action(
+          "View Your Support Case",
+          redomUrl("/support/cases/" + encodeURIComponent(input.caseNumber) + "/email/" + encodeURIComponent(grant.token)),
+        );
+        if (viewCase) actions.push(viewCase);
+      }
     }
 
     if (paymentRelated && wantsInvoice) {
