@@ -121,6 +121,13 @@ def render_project(job: VideoJob, output: Path):
 
     with tempfile.TemporaryDirectory(prefix="redom-video-") as work:
         workdir = Path(work)
+        if job.referenceAssetKey:
+            if not job.referenceAssetKey.startswith("redom-ai/video-references/") or ".." in job.referenceAssetKey:
+                raise ValueError("Invalid ReDom reference asset key.")
+            reference_path = workdir / "reference-image"
+            s3.download_file(os.environ["R2_BUCKET_NAME"], job.referenceAssetKey, str(reference_path))
+            with Image.open(reference_path) as reference_image:
+                reference = reference_image.convert("RGB").copy()
         while remaining > 0:
             scene_index += 1
             seconds = min(SEGMENT_SECONDS, remaining)
