@@ -18,6 +18,7 @@ CREATE INDEX IF NOT EXISTS redom_ops_email_events_logical_idx ON redom_ops_email
 CREATE INDEX IF NOT EXISTS redom_ops_email_events_subsystem_idx ON redom_ops_email_events(subsystem, occurred_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS redom_ops_email_events_idempotency_idx ON redom_ops_email_events(idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS redom_ops_email_events_provider_idx ON redom_ops_email_events(provider_message_id) WHERE provider_message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS redom_ops_email_events_case_idx ON redom_ops_email_events(case_id, occurred_at DESC) WHERE case_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS redom_ops_incidents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
