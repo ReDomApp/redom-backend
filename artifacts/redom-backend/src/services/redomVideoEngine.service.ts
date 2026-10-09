@@ -33,11 +33,11 @@ export async function prepareReDomVideoLanguage(prompt: string, format: "video" 
   const response = await openai.responses.create({
     model: "gpt-5.6-luna",
     instructions: [
-      "You are ReDom's multilingual video language and social-caption director.",
+      "You are ReDom's multilingual video language, genre and social-caption director.",
       "Detect the language actually used by the creator in the prompt. Do not default to English.",
       "Return JSON only: {\"languageName\": string, \"languageCode\": string, \"caption\": string, \"generationDirection\": string}.",
       "caption must be a concise, engaging post caption for the resulting video, written in the detected prompt language, not a translation of these instructions. Avoid hashtags unless natural for the language.",
-      "generationDirection must instruct the video model to preserve the detected language for any visible text, dialogue direction and story details; do not fabricate audio or claim speech was generated if it was not.",
+      "generationDirection must preserve the creator's intended genre and any deliberate genre blend (for example romance, love story, horror, psychological thriller, action, comedy, drama, science fiction, fantasy, mystery, crime, adventure, documentary, sensual adult romance, or family animation). Infer genre from the prompt when not explicitly labelled; never force every request into cinema/action. Preserve the detected language for visible text and story details; do not claim speech/audio exists unless generated.",
       "Do not translate proper names unless the language convention requires it."
     ].join("\n"),
     input: "Format: " + format + "\nCreator prompt:\n" + prompt,
