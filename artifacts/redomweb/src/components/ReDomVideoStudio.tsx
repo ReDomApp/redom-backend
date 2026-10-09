@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 
 type Mode = "video" | "movie" | "cartoon";
 type VideoJob = { jobId: string; status: string; downloadUrl?: string | null; error?: string | null; model?: string };
-type Project = { projectId: string; state: string; title?: string; episodes?: Array<{title:string;synopsis:string}>; model?: string; status?: string; shotCount?: number };
+type Project = { projectId: string; state: string; title?: string; project?: { title?: string; state?: string }; episodes?: Array<{title:string;synopsis:string}>; model?: string; status?: string; shotCount?: number };
 
 const css = `
 .redom-video-studio{max-width:920px;margin:0 auto;padding:24px;color:var(--text-primary,#17202a)}
@@ -63,7 +63,7 @@ export default function ReDomVideoStudio() {
         const result=await api<Project>("/ai/video/projects",{method:"POST",body:JSON.stringify({prompt:prompt.trim(),referenceImageDataUri:reference||undefined,format:mode,duration:Number(duration),quality,aspectRatio:aspect,audio,voice})});
         setProject(result);setStatus("Project created. Building the story plan and character/scene structure…");
         const planned=await api<Project & {success?:boolean;episodes?:Array<{title:string;synopsis:string}>}>(`/ai/video/projects/${result.projectId}/plan`,{method:"POST",body:JSON.stringify({})});
-        setProject(planned);setPlanReady(true);setStatus("Plan ready for review. Start production when you are satisfied with the story structure.");
+        setProject({...planned,title:planned.project?.title||planned.title});setPlanReady(true);setStatus("Plan ready for review. Start production when you are satisfied with the story structure.");
       }
     }catch(e){setError(e instanceof Error?e.message:"Could not start this ReDom production.");setStatus("");}
     finally{setBusy(false);}
@@ -83,10 +83,28 @@ export default function ReDomVideoStudio() {
     setStatus("Rendering is still in progress. You can return to this project and check its status later.");
   };
 
-  const produce=async()=>{
+
+  const pollProject=async(projectId:string)=>{
+    for(let i=0;i<180;i++){
+      await new Promise(resolve=>setTimeout(resolve,5000));
+      try{
+        const current=await api<any>(`/ai/video/projects/${encodeURIComponent(projectId)}`);
+        const state=String(current.project?.state||current.state||"producing");
+        setProject(previous=>previous?{...previous,state,title:current.project?.title||previous.title}:previous);
+        if(state==="completed"){
+          const output=await api<VideoJob>(`/ai/video/${encodeURIComponent("movie_project_"+projectId)}`);
+          setJob(output);setStatus("Production complete. The final movie or cartoon has its localized caption and ReDom watermark.");return;
+        }
+        if(state==="failed"||state==="blocked"){setError("Production "+state+". Review the project status and try revising the plan.");setStatus("");return;}
+        setStatus("Production in progress. ReDom is rendering shots and assembling the final episode…");
+      }catch(e){if(i===179)setError(e instanceof Error?e.message:"Could not check production status.");}
+    }
+    setStatus("Production is still running. Reopen this project to check again.");
+  };
+\n  const produce=async()=>{
     if(!project?.projectId)return;
     setBusy(true);setError("");setStatus("Submitting the approved production to the GPU worker…");
-    try{const result=await api<Project>(`/ai/video/projects/${project.projectId}/produce`,{method:"POST",body:JSON.stringify({})});setProject({...project,...result});setStatus("Production started. ReDom is generating shots and will assemble the final branded episode.");}
+    try{const result=await api<Project>(`/ai/video/projects/${project.projectId}/produce`,{method:"POST",body:JSON.stringify({})});setProject({...project,...result});setStatus("Production started. ReDom is generating shots and will assemble the final branded episode.");void pollProject(project.projectId);}
     catch(e){setError(e instanceof Error?e.message:"Could not start production.");setStatus("");}
     finally{setBusy(false);}
   };
@@ -112,7 +130,7 @@ export default function ReDomVideoStudio() {
       <button className="rvs-button" disabled={busy} onClick={()=>void create()}>{busy?"Working…":mode==="video"?"Generate video":mode==="movie"?"Create movie plan":"Create cartoon plan"}</button>
       {status&&<div className="rvs-status" role="status">{status}</div>}
       {error&&<div className="rvs-error" role="alert">{error}</div>}
-      {planReady&&project&&<div className="rvs-result"><h2 style={{margin:"4px 0"}}>{project.title||"Production plan ready"}</h2><p className="rvs-muted">Review the story plan in your project before starting GPU generation. The production remains editable until rendering begins.</p><button className="rvs-button" disabled={busy} onClick={()=>void produce()}>Start production</button></div>}
+      {planReady&&project&&<div className="rvs-result"><h2 style={{margin:"4px 0"}}>{project.title||project.project?.title||"Production plan ready"}</h2><p className="rvs-muted">Review the story plan in your project before starting GPU generation. The production remains editable until rendering begins.</p><button className="rvs-button" disabled={busy} onClick={()=>void produce()}>Start production</button></div>}
       {job?.downloadUrl&&job.status==="completed"&&<div className="rvs-result"><a className="rvs-button" href={job.downloadUrl}>Open completed video</a></div>}
       {project?.projectId&&<div className="rvs-muted">Project ID: {project.projectId}</div>}
       {job?.jobId&&<div className="rvs-muted">Generation job: {job.jobId} · Status: {job.status}</div>}
