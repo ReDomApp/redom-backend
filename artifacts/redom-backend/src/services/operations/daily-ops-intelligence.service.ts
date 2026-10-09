@@ -72,6 +72,31 @@ export async function recordOpsEmailEvent(input: {
     input.providerMessageId ?? null, input.caseId ?? null, input.idempotencyKey ?? null, JSON.stringify(input.metadata ?? {})]);
 }
 
+export async function recordOpsIncident(input: {
+  key: string;
+  title: string;
+  subsystem: string;
+  severity?: "info" | "warning" | "high" | "critical";
+  description: string;
+  evidence?: Record<string, unknown>;
+}): Promise<void> {
+  const incidentKey = input.key.trim().slice(0, 180);
+  if (!incidentKey) return;
+  await pool.query(`INSERT INTO redom_ops_incidents
+    (incident_key,title,subsystem,severity,status,description,evidence)
+    VALUES ($1,$2,$3,$4,'open',$5,$6::jsonb)
+    ON CONFLICT (incident_key) DO UPDATE SET
+      title=EXCLUDED.title, subsystem=EXCLUDED.subsystem,
+      severity=CASE WHEN redom_ops_incidents.status IN ('resolved','closed') THEN EXCLUDED.severity
+                    WHEN redom_ops_incidents.severity='critical' THEN 'critical'
+                    ELSE EXCLUDED.severity END,
+      status=CASE WHEN redom_ops_incidents.status IN ('resolved','closed') THEN 'open' ELSE redom_ops_incidents.status END,
+      description=EXCLUDED.description,evidence=EXCLUDED.evidence,
+      last_seen_at=now(),updated_at=now(),resolved_at=NULL,verified_at=NULL`,
+    [incidentKey, input.title.slice(0, 240), input.subsystem.slice(0, 100), input.severity ?? "high",
+      input.description.slice(0, 2000), JSON.stringify(input.evidence ?? {})]);
+}
+
 type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
   email: { current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null };
