@@ -115,7 +115,7 @@ export async function recordOpsIncident(input: {
 type Metrics = {
   generatedAt: string; periodStart: string; periodEnd: string; timezone: string;
   email: { rolling365Start: string; rolling365End: string; current24h: Record<string, number>; previous24h: Record<string, number>; changePct: Record<string, number | null>; last365d: Record<string, number>; dailyLimit: number | null; monthlyLimit: number | null; dailyLimitUsedPct: number | null; monthlyLimitUsedPct: number | null; monthlySent: number; ledgerCoverageStart: string | null; monthlyTrend: Array<{ month: string; attempts: number; sendAttempts: number; accepted: number; delivered: number; failed: number; bounced: number; rejected: number; deliveryRatePct: number | null; outcomeCoveragePct: number | null }> };
-  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidatedOrRecycled: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSenders30d: Array<{ email: string; messages: number; cases: number }>; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
+  support: { created24h: number; createdPrevious24h: number; changePct: number | null; open: number; awaitingSupport: number; awaitingUser: number; closed: number; invalidatedOrRecycled: number; created365d: number; closed365d: number; activeCaseNumbers: string[]; createdCaseNumbers24h: string[]; invalidCaseNumbers: string[]; monthlyTrend: Array<{ month: string; created: number; closed: number }>; messages24h: number; messagesPrevious24h: number; messagesChangePct: number | null; averageMessagesPerCase: number | null; emailsConsumedByNewCases24h: number; caseLinkedEmailAttempts24h: number; caseEmailBreakdown: Array<{ caseNumber: string; attempts: number; accepted: number; delivered: number; failed: number }>; repeatContactSenders30d: Array<{ email: string; messages: number; cases: number }>; topTopics30d: Array<{ topic: string; count: number }>; topQuestions30d: Array<{ question: string; count: number }> };
   fraud: { reviewedSignals: Array<{ email: string; risk: string; score: number; indicators: string[]; caseNumbers: string[]; count: number }>; signalCount30d: number; warning: string };
   geography: { topCountries: Array<{ country: string; signups: number }>; topCities: Array<{ city: string; country: string; signups: number }>; source: string };
   incidents: { open: Array<Record<string, unknown>>; resolved24h: number | null; criticalOpen: number; resolved365d: number; created365d: number };
@@ -132,7 +132,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   const monthSeriesStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
   const monthSeriesEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, geography, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
+  const [email, annual, monthlyTrend, firstEvent, support, messages, caseEmails, caseLists, repeatSenders, topics, questions, fraudSignals, fraudCount, geography, supportMonthly, incidents, resolvedIncidents, annualIncidents, database] = await Promise.all([
     pool.query(`SELECT
       count(DISTINCT logical_email_id) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS uniqueEmails,\n      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
@@ -242,6 +242,14 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       JOIN support_cases c ON c.id=e.case_id
       WHERE c.created_at >= $1 AND e.occurred_at >= $1
       GROUP BY c.case_number ORDER BY count(*) FILTER (WHERE e.event_type='attempted') DESC, c.case_number LIMIT 20`, [start]),
+    pool.query(`WITH months AS (
+      SELECT generate_series(date_trunc('month',$1::timestamptz), date_trunc('month',$2::timestamptz) - interval '1 month', interval '1 month') AS month_start
+    )
+    SELECT to_char(months.month_start,'YYYY-MM') AS month,
+      count(sc.id) FILTER (WHERE sc.created_at >= months.month_start AND sc.created_at < months.month_start + interval '1 month')::int AS created,
+      count(sc.id) FILTER (WHERE sc.closed_at >= months.month_start AND sc.closed_at < months.month_start + interval '1 month')::int AS closed
+    FROM months LEFT JOIN support_cases sc ON sc.created_at >= months.month_start AND sc.created_at < months.month_start + interval '1 month'
+    GROUP BY months.month_start ORDER BY months.month_start`, [monthSeriesStart,monthSeriesEnd]),
     pool.query(`WITH locations AS (
       SELECT COALESCE(NULLIF(memory->'networkSecurity'->>'country',''),NULLIF(ip_country_code,''),NULLIF(phone_lookup_country_code,''),'Unknown') AS country,
         COALESCE(NULLIF(memory->'networkSecurity'->>'city',''),'Unknown') AS city
@@ -291,6 +299,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       activeCaseNumbers: Array.isArray(lifecycle.active_numbers) ? lifecycle.active_numbers.map(String).slice(0,100) : [],
       createdCaseNumbers24h: Array.isArray(lifecycle.created_numbers) ? lifecycle.created_numbers.map(String).filter((n: string) => n && n !== "").slice(0,100) : [],
       invalidCaseNumbers: Array.isArray(lifecycle.invalid_numbers) ? lifecycle.invalid_numbers.map(String).slice(0,100) : [],
+      monthlyTrend: supportMonthly.rows.map((row: Record<string, unknown>) => ({ month: String(row.month), created: num(row.created), closed: num(row.closed) })),
       messages24h: num(m.currentmessages), messagesPrevious24h: num(m.previousmessages), messagesChangePct: pct(num(m.currentmessages), num(m.previousmessages)),
       averageMessagesPerCase: cases ? Math.round((num(m.currentmessages) / cases) * 100) / 100 : null,
       emailsConsumedByNewCases24h: caseEmails.rows.reduce((sum: number, row: Record<string, unknown>) => sum + num(row.attempts), 0),
@@ -484,6 +493,8 @@ function reportPages(m: Metrics, a: Record<string, any>, stamp: { reportKey: str
     "Invalidated or marked-invalid cases total: " + moneyless(m.support.invalidatedOrRecycled),
     "Most repeated contacts in the past 30 days (repeat contact is not proof of abuse):",
     ...m.support.repeatContactSenders30d.slice(0,10).map((r) => r.email + ": " + r.messages + " user messages across " + r.cases + " cases"),
+    "Support case trend — last 12 calendar months (created / closed):",
+    ...m.support.monthlyTrend.map((r) => r.month + ": " + r.created + " created / " + r.closed + " closed"),
     "Top support categories, past 30 days:",
     ...m.support.topTopics30d.slice(0,8).map((r) => r.topic + ": " + r.count),
     "Most common submitted subjects/questions, past 30 days:",
