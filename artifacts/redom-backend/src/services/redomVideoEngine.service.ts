@@ -29,7 +29,7 @@ async function requirePaidVideoEntitlement(userId: string) {
 
 export async function createReDomVideoJob(
   userId: string,
-  input: { prompt: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi" },
+  input: { prompt: string; durationSeconds?: number; resolution?: "720p" | "1080p"; aspectRatio?: "16:9" | "9:16" | "1:1"; operation?: "generate" | "cgi"; contentType?: "video" | "movie" | "cartoon" },
 ) {
   await requirePaidVideoEntitlement(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
@@ -37,6 +37,7 @@ export async function createReDomVideoJob(
   const resolution = input.resolution ?? "720p";
   const aspectRatio = input.aspectRatio ?? "16:9";
   const operation = input.operation ?? "generate";
+  const contentType = input.contentType ?? "video";
   const jobId = "vid_" + randomUUID().replace(/-/g, "");
 
   await db.insert(reDomAiVideos).values({
@@ -66,6 +67,8 @@ export async function createReDomVideoJob(
       runtime: REDOM_VIDEO_RUNTIME,
       model: REDOM_VIDEO_MODEL,
       operation,
+      contentType,
+      watermarkEnabled: true,
       prompt: input.prompt.trim(),
       durationSeconds: target,
       resolution,
