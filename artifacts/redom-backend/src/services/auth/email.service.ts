@@ -1,4 +1,6 @@
 import { resend } from "../../lib/resend";
+import { createHash } from "node:crypto";
+import { recordOpsEmailEvent } from "../operations/daily-ops-intelligence.service";
 import { checkIP } from "../../lib/ipapi";
 import { db } from "../../database/db";
 import { registrationFlowReservations } from "../../database/registration-flow-reservations.schema";
@@ -20,13 +22,19 @@ export class EmailService {
     const email = this.validate(params.email);
     const subject = this.getSubject(params.purpose);
     const expiresAtText = params.expiresAt.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+    const logicalEmailId = createHash("sha256").update(email.toLowerCase() + "|" + params.purpose + "|" + params.expiresAt.toISOString()).digest("hex");
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "attempted", recipient: email }).catch(() => undefined);
     const result = await resend.emails.send({
       from: this.sender,
       to: email,
       subject,
       html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h2>${params.firstName ? `Hello ${this.escapeHtml(params.firstName)},` : "Hello,"}</h2><p>Your ReDom verification code is:</p><div style="font-size:40px;font-weight:bold;letter-spacing:10px;text-align:center;margin:30px 0">${this.escapeHtml(params.code)}</div><p>This code expires at <strong>${this.escapeHtml(expiresAtText)}</strong>.</p><p>Never share this code with anyone.</p><p>If you did not request this, you can safely ignore this message.</p></div>`,
     });
-    if (result.error) throw new Error(`Resend failed to deliver the verification email: ${result.error.message}`);
+    if (result.error) {
+      await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "failed", recipient: email, metadata: { error: result.error.message } }).catch(() => undefined);
+      throw new Error(`Resend failed to deliver the verification email: ${result.error.message}`);
+    }
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "authentication", eventType: "accepted", recipient: email, providerMessageId: result.data?.id ?? null }).catch(() => undefined);
     return { provider: "resend", providerReference: result.data?.id };
   }
 
