@@ -456,14 +456,86 @@ async function schedulerTick(): Promise<void> {
   } finally { inProcess = false; }
 }
 
+let alertTimer: NodeJS.Timeout | undefined;
+const alertBuckets = new Set<string>();
+
+async function criticalAlertTick(): Promise<void> {
+  const hourBucket = Math.floor(Date.now() / 3_600_000);
+  try {
+    const [incidents, failures] = await Promise.all([
+      pool.query(`SELECT incident_key,title,subsystem,severity,status,description,last_seen_at
+        FROM redom_ops_incidents
+        WHERE severity IN ('critical','high') AND status IN ('open','investigating')
+          AND last_seen_at >= now() - interval '15 minutes'
+        ORDER BY CASE severity WHEN 'critical' THEN 0 ELSE 1 END,last_seen_at DESC LIMIT 10`),
+      pool.query(`SELECT count(*)::int AS failures FROM redom_ops_email_events
+        WHERE event_type IN ('failed','bounced','rejected') AND occurred_at >= now() - interval '15 minutes'`),
+    ]);
+    const incidentRows = incidents.rows as Array<Record<string, unknown>>;
+    const failureCount = num(failures.rows[0]?.failures);
+    const alerts: Array<{ key: string; title: string; detail: string; severity: string }> = incidentRows.map((row) => ({
+      key: String(row.incident_key),
+      title: String(row.title),
+      detail: String(row.description),
+      severity: String(row.severity),
+    }));
+    if (failureCount >= 3) alerts.push({
+      key: "email-failure-burst",
+      title: "Email delivery failure burst",
+      detail: failureCount + " email failures, bounces, or rejections were recorded in the last 15 minutes.",
+      severity: failureCount >= 10 ? "critical" : "high",
+    });
+    for (const alert of alerts) {
+      const bucketKey = alert.key + ":" + hourBucket;
+      if (alertBuckets.has(bucketKey)) continue;
+      const idempotencyKey = "redom-ops-alert-" + createHash("sha256").update(bucketKey).digest("hex").slice(0, 40);
+      const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#F0F2F5;font-family:Arial,sans-serif;color:#1C1E21"><div style="max-width:640px;margin:auto;background:white;border:1px solid #DADDE1"><div style="background:#1877F2;color:white;padding:22px"><strong>ReDom · Operations Alert</strong></div><div style="padding:24px"><div style="font-size:12px;font-weight:bold;color:#B42318">${esc(alert.severity.toUpperCase())} PRIORITY</div><h1 style="font-size:22px">${esc(alert.title)}</h1><p style="line-height:1.6">${esc(alert.detail)}</p><p style="font-size:12px;color:#65676B">Observed at ${esc(new Date().toISOString())}. This alert is separate from the scheduled daily report.</p></div></div></body></html>`;
+      try {
+        const sent = await resend.emails.send({
+          from: REPORT_FROM,
+          to: [RECIPIENT],
+          subject: `[ReDom ${alert.severity.toUpperCase()}] ${alert.title}`,
+          html,
+          text: `${alert.severity.toUpperCase()}: ${alert.title}\n\n${alert.detail}\n\nObserved at ${new Date().toISOString()}.`,
+          headers: { "X-ReDom-Alert-Key": idempotencyKey },
+        }, { idempotencyKey });
+        if (sent.error) throw new Error(sent.error.message);
+        alertBuckets.add(bucketKey);
+        await recordOpsEmailEvent({
+          logicalEmailId: idempotencyKey,
+          subsystem: "operations-alert",
+          eventType: "accepted",
+          recipient: RECIPIENT,
+          providerMessageId: sent.data?.id ?? null,
+          idempotencyKey: "ops-alert-ledger:" + idempotencyKey,
+          metadata: { alertKey: alert.key, severity: alert.severity },
+        });
+        logger.warn({ alertKey: alert.key, severity: alert.severity, providerMessageId: sent.data?.id ?? null }, "ReDom operations alert submitted");
+      } catch (error) {
+        logger.error({ alertKey: alert.key, error: error instanceof Error ? error.message : String(error) }, "Unable to deliver ReDom operations alert");
+      }
+    }
+    // Keep the in-memory suppression set bounded; provider/database idempotency
+    // remains authoritative across process restarts.
+    if (alertBuckets.size > 500) alertBuckets.clear();
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, "Critical operations watch tick failed");
+  }
+}
+
 export function startDailyOpsIntelligence(): void {
   if (timer) return;
   timer = setInterval(() => { void schedulerTick(); }, 60_000);
   timer.unref();
+  alertTimer = setInterval(() => { void criticalAlertTick(); }, 5 * 60_000);
+  alertTimer.unref();
   void schedulerTick();
-  logger.info({ recipient: RECIPIENT, sender: REPORT_FROM, timezone: REPORT_TIMEZONE }, "Daily operations intelligence scheduler started");
+  void criticalAlertTick();
+  logger.info({ recipient: RECIPIENT, sender: REPORT_FROM, timezone: REPORT_TIMEZONE }, "Daily operations intelligence and critical alert watchers started");
 }
 export function stopDailyOpsIntelligence(): void {
   if (timer) clearInterval(timer);
+  if (alertTimer) clearInterval(alertTimer);
   timer = undefined;
+  alertTimer = undefined;
 }
