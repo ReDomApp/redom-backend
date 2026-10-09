@@ -101,7 +101,8 @@ export default function ReDomVideoStudio() {
     }
     setStatus("Production is still running. Reopen this project to check again.");
   };
-\n  const produce=async()=>{
+
+  const produce=async()=>{
     if(!project?.projectId)return;
     setBusy(true);setError("");setStatus("Submitting the approved production to the GPU worker…");
     try{const result=await api<Project>(`/ai/video/projects/${project.projectId}/produce`,{method:"POST",body:JSON.stringify({})});setProject({...project,...result});setStatus("Production started. ReDom is generating shots and will assemble the final branded episode.");void pollProject(project.projectId);}
