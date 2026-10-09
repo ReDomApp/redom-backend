@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import { createHash } from "node:crypto";
 import { recordOpsEmailEvent } from "../operations/daily-ops-intelligence.service";
 import { env } from "../../config/env";
+import { pool } from "../../database/db";
 import { isAllowedSupportEmailUrl, buildSupportEmailActions, renderSupportInlineLinkTokens } from "./supportWebLinks.service";
 import { getAccountContextByEmail } from "./support.service";
 
@@ -181,10 +182,10 @@ export async function sendGeneratedSupportEmail(input: {
     },
   }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
   if (error) {
-    await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "failed", recipient: input.to, metadata: { error: error.message } }).catch(() => undefined);
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "failed", recipient: input.to, caseId, metadata: { error: error.message } }).catch(() => undefined);
     throw new Error(`Support email could not be sent: ${error.message}`);
   }
-  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "accepted", recipient: input.to, providerMessageId: data?.id ?? null }).catch(() => undefined);
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "accepted", recipient: input.to, caseId, providerMessageId: data?.id ?? null }).catch(() => undefined);
 }
 
 
