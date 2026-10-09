@@ -621,7 +621,7 @@ async function prepareReDomMovieAudio(userId: string, project: typeof reDomAiVid
     ].join(" "),
   });
   const musicTracks: Array<Record<string, unknown>> = [{ assetKey: score.key, startSeconds: 0, volume: 0.24, kind: "score" }];
-  const songConcepts = project.voiceEnabled && research.singingEnabled !== false && Array.isArray(research.songConcepts)
+  const songConcepts = research.singingEnabled !== false && Array.isArray(research.songConcepts)
     ? research.songConcepts.slice(0, 2)
     : [];
   let songIndex = 0;
@@ -696,7 +696,7 @@ async function prepareReDomMovieAudio(userId: string, project: typeof reDomAiVid
         generatedAt: new Date().toISOString(),
         dialogueShotCount: [...shotTracks.values()].filter((tracks) => tracks.length > 0).length,
         generatedDialogueClipCount: [...shotTracks.values()].reduce((total, tracks) => total + tracks.length, 0),
-        singingEnabled: project.voiceEnabled && research.singingEnabled !== false,
+        singingEnabled: research.singingEnabled !== false,
         lipSyncStatus: "requires_configured_redom_lipsync_service",
       },
     },
@@ -817,7 +817,7 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     if (!project || !shotKeys.length) return true;
     const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
-    const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
+    const callbackUrl = env.redomBackendUrl.replace(/\/$/, "") + "/ai/video/callback";
     const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, audioEnabled: project.audioEnabled, musicTracks: Array.isArray(project.research?.musicTracks) ? project.research.musicTracks : [], lipSyncEnabled: false, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
