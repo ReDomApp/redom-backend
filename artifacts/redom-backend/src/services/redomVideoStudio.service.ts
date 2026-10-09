@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "../database/db";
 import { redis } from "../lib/redis";
+import { r2 } from "../lib/r2";
 import { openai } from "../lib/openai";
 import { env } from "../config/env";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
@@ -344,6 +346,10 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
   await requirePaid(userId);
   const security = await enforceReDomVideoPromptSecurity(userId, input.prompt);
   const durationSeconds = safeDuration(input.durationSeconds);
+  const referenceMatch = input.referenceImageDataUri?.match(/^data:image\\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/) || null;
+  if (input.referenceImageDataUri && !referenceMatch) throw Object.assign(new Error("Reference image must be a PNG, JPEG, or WebP data URI."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
+  const referenceBytes = referenceMatch ? Buffer.from(referenceMatch[2], "base64") : undefined;
+  if (referenceBytes && (referenceBytes.length < 32 || referenceBytes.length > 15 * 1024 * 1024)) throw Object.assign(new Error("Reference image is outside the supported size range."), { code: "INVALID_VIDEO_REFERENCE_IMAGE", status: 400 });
   const [project] = await db.insert(reDomAiVideoProjects).values({
     userId,
     title: input.title?.trim().slice(0, 240) || "Untitled ReDom Movie",
@@ -359,6 +365,12 @@ export async function createReDomMovieProject(userId: string, input: { prompt: s
     research: { securityRequestId: security.requestId },
   }).returning();
   if (!project) throw new Error("Could not create ReDom movie project.");
+  if (referenceMatch && referenceBytes) {
+    const extension = referenceMatch[1] === "jpeg" ? "jpg" : referenceMatch[1];
+    const referenceAssetKey = `redom-ai/video-references/${userId}/movie-project-${project.id}/reference.${extension}`;
+    await r2.send(new PutObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey, Body: referenceBytes, ContentType: "image/" + referenceMatch[1], CacheControl: "private, max-age=900" }));
+    await db.update(reDomAiVideoProjects).set({ research: { securityRequestId: security.requestId, referenceAssetKey } }).where(eq(reDomAiVideoProjects.id, project.id));
+  }
   return { projectId: project.id, state: project.state, model: MODEL, maxDurationSeconds: REDOM_VIDEO_MAX_SECONDS };
 }
 
@@ -512,6 +524,8 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       operation: "generate",
       format: project.format === "cartoon" ? "cartoon" : "movie",
       watermark: false,
+      referenceAssetKey,
+      cleanupReferenceAsset: false,
       prompt: shot.generationPrompt,
       durationSeconds: shot.durationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
@@ -556,7 +570,7 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     if (!project || !shotKeys.length) return true;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
     const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
-    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
+    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
   }
