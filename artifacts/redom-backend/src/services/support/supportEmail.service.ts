@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { createHash } from "node:crypto";
+import { recordOpsEmailEvent } from "../operations/daily-ops-intelligence.service";
 import { env } from "../../config/env";
 import { isAllowedSupportEmailUrl, buildSupportEmailActions, renderSupportInlineLinkTokens } from "./supportWebLinks.service";
 import { getAccountContextByEmail } from "./support.service";
@@ -163,7 +164,9 @@ export async function sendGeneratedSupportEmail(input: {
     }
   });
   const html = await generateSupportEmailHtml({ ...input, actions });
-  const { error } = await resend.emails.send({
+  const logicalEmailId = createHash("sha256").update(input.idempotencyKey ?? (input.to.toLowerCase() + "|" + input.subject + "|" + input.caseNumber)).digest("hex");
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "attempted", recipient: input.to, caseId: null }).catch(() => undefined);
+  const { data, error } = await resend.emails.send({
     from: env.email.supportFrom,
     to: [input.to],
     subject: input.subject,
@@ -177,7 +180,11 @@ export async function sendGeneratedSupportEmail(input: {
       } : {}),
     },
   }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
-  if (error) throw new Error(`Support email could not be sent: ${error.message}`);
+  if (error) {
+    await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "failed", recipient: input.to, metadata: { error: error.message } }).catch(() => undefined);
+    throw new Error(`Support email could not be sent: ${error.message}`);
+  }
+  await recordOpsEmailEvent({ logicalEmailId, subsystem: "support", eventType: "accepted", recipient: input.to, providerMessageId: data?.id ?? null }).catch(() => undefined);
 }
 
 
