@@ -74,13 +74,13 @@ export function resolveReDomModelRuntime(modelId: string, requestedRuntime?: str
   const runtimeUrl = process.env[model.runtimeUrlEnv];
   const checkpointPath = process.env[model.checkpointEnv];
   const enabled = process.env[model.statusEnv] === "true";
-  const configured = Boolean(runtimeUrl && checkpointPath && enabled);
+  const configured = Boolean(runtimeUrl && enabled);
 
   return {
     ...model,
     configured,
     runtimeUrl: runtimeUrl || null,
-    checkpointPathConfigured: Boolean(checkpointPath),
+    checkpointProvisionedAtWorker: Boolean(checkpointPath),
     enabled,
     readiness: configured ? "configured_unprobed" as const : "not_configured" as const,
     // Do not silently route to another model if this runtime is unavailable.
@@ -118,7 +118,7 @@ export function assertReDomModelSupports(modelId: string, operation: string, for
   if (!runtime.dispatchable) {
     const missing = [
       !runtime.runtimeUrl && model.runtimeUrlEnv,
-      !runtime.checkpointPathConfigured && model.checkpointEnv,
+      
       !runtime.enabled && model.statusEnv + "=true",
     ].filter(Boolean);
     const error = new Error(
