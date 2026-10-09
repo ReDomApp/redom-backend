@@ -509,7 +509,6 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
       prompt: project.prompt,
       targetDurationSeconds: project.targetDurationSeconds,
       resolution: project.quality === "pro" ? "1080p" : "720p",
-      quality: project.quality,
       aspectRatio: project.aspectRatio,
       runtime: "redom-v2.8-native",
       model: MODEL,
