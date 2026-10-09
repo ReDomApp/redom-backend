@@ -158,8 +158,8 @@ function plannerInstructions(durationSeconds: number, style: string, quality: st
   ].join("\n");
 }
 
-async function generatePlan(seed: string, durationSeconds: number, style: string, quality: string, aspectRatio: string, revisionContext = ""): Promise<MoviePlan> {
-  const instructions = plannerInstructions(durationSeconds, style, quality, aspectRatio);
+async function generatePlan(seed: string, durationSeconds: number, style: string, quality: string, aspectRatio: string, revisionContext = "", requestedEpisodeCount?: number): Promise<MoviePlan> {
+  const instructions = plannerInstructions(durationSeconds, style, quality, aspectRatio, requestedEpisodeCount);
   const input = seed + (revisionContext ? "\n\nCURRENT PROJECT STATE AND USER REVISION:\n" + revisionContext : "") +
     "\n\nTarget duration: " + durationSeconds + " seconds.";
   const response = await openai.responses.create({
