@@ -140,7 +140,8 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='accepted')::int AS accepted,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $1 AND event_type='delivered')::int AS delivered,
-      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='failed')::int AS failed,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='failed' AND NOT (subsystem='daily-operations-report' AND provider_message_id IS NULL))::int AS failed,
+      count(*) FILTER (WHERE occurred_at >= $1 AND event_type='failed' AND subsystem='daily-operations-report' AND provider_message_id IS NULL)::int AS reportGenerationFailures24h,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='bounced')::int AS bounced,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='rejected')::int AS rejected,
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='deferred')::int AS deferred,
@@ -148,7 +149,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE occurred_at >= $1 AND event_type='duplicate_delivery')::int AS duplicateDelivery,
       count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='attempted')::int AS previousAttempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='delivered')::int AS previousDelivered,
-      count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='failed')::int AS previousFailed,
+      count(*) FILTER (WHERE occurred_at >= $2 AND occurred_at < $1 AND event_type='failed' AND NOT (subsystem='daily-operations-report' AND provider_message_id IS NULL))::int AS previousFailed,
       count(*) FILTER (WHERE occurred_at >= $3 AND event_type='attempted')::int AS monthlyAttempts
       FROM redom_ops_email_events`, [start, prevStart, monthStart]),
     pool.query(`SELECT
@@ -156,7 +157,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE event_type='attempted')::int AS attempts,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE event_type='accepted')::int AS accepted,
       count(DISTINCT COALESCE(provider_message_id, logical_email_id)) FILTER (WHERE event_type='delivered')::int AS delivered,
-      count(*) FILTER (WHERE event_type='failed')::int AS failed,
+      count(*) FILTER (WHERE event_type='failed' AND NOT (subsystem='daily-operations-report' AND provider_message_id IS NULL))::int AS failed,
       count(*) FILTER (WHERE event_type='bounced')::int AS bounced,
       count(*) FILTER (WHERE event_type='duplicate_suppressed')::int AS duplicateSuppressed
       FROM redom_ops_email_events WHERE occurred_at >= $1`, [yearStart]),
@@ -168,7 +169,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
         count(*) FILTER (WHERE event_type='attempted')::int AS send_attempts,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='accepted')::int AS accepted,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='delivered')::int AS delivered,
-        count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='failed')::int AS failed,
+        count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='failed' AND NOT (subsystem='daily-operations-report' AND provider_message_id IS NULL))::int AS failed,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='bounced')::int AS bounced,
         count(DISTINCT COALESCE(provider_message_id,logical_email_id)) FILTER (WHERE event_type='rejected')::int AS rejected
       FROM redom_ops_email_events WHERE occurred_at >= $3 AND occurred_at < $4 GROUP BY 1
@@ -317,7 +318,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
     generatedAt: iso(now), periodStart: iso(start), periodEnd: iso(now), timezone: REPORT_TIMEZONE,
     email: {
       rolling365Start: iso(yearStart), rolling365End: iso(now),
-      current24h: { uniqueEmails: num(e.uniqueemails), attempts, accepted: num(e.accepted), delivered, failed, bounced: num(e.bounced), rejected: num(e.rejected), deferred: num(e.deferred), duplicateSuppressed: num(e.duplicatesuppressed), duplicateDelivery: num(e.duplicatedelivery) },
+      current24h: { uniqueEmails: num(e.uniqueemails), attempts, accepted: num(e.accepted), delivered, failed, internalReportGenerationFailures: num(e.reportgenerationfailures24h), bounced: num(e.bounced), rejected: num(e.rejected), deferred: num(e.deferred), duplicateSuppressed: num(e.duplicatesuppressed), duplicateDelivery: num(e.duplicatedelivery) },
       previous24h: { attempts: previousAttempts, delivered: num(e.previousdelivered), failed: num(e.previousfailed) },
       changePct: { attempts: pct(attempts, previousAttempts), delivered: pct(delivered, num(e.previousdelivered)), failed: pct(failed, num(e.previousfailed)) },
       last365d: { uniqueEmails: num(y.uniqueemails), sendAttempts: num(y.attempts), accepted: num(y.accepted), delivered: num(y.delivered), failed: num(y.failed), bounced: num(y.bounced), duplicateSuppressed: num(y.duplicatesuppressed) },
@@ -388,7 +389,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       caseFailureStatus: "The support_cases status constraint contains awaiting_support, awaiting_user, and closed only; there is no failed-case status. Failed email deliveries and failed tracked incidents are reported separately.",
       applicationLogs: "Not connected to a queryable centralized log aggregation source in this reporting service.",
       providerDeliveryEvents: "Only events ingested into the ReDom operations email ledger are counted.",
-      emailOutcomeCoverage: "Outcome coverage is capped at 100%; provider events can exceed instrumented send attempts while legacy send paths remain uninstrumented, so email counts are not yet fully reconciled.",
+      emailOutcomeCoverage: "Outcome coverage is capped at 100%; provider events can exceed instrumented send attempts while legacy send paths remain uninstrumented, so email counts are not yet fully reconciled. Failed internal report-generation attempts are separated from actual email delivery failures.",
       limits: DAILY_LIMIT || MONTHLY_LIMIT ? "Only configured REDOM_EMAIL_DAILY_LIMIT / REDOM_EMAIL_MONTHLY_LIMIT values are shown." : "Provider quotas are not yet connected; no quota value is assumed.",
     },
     forecast: {
@@ -709,7 +710,7 @@ function htmlReport(m: Metrics, a: Record<string, any>, pdfHash: string, stamp: 
 
 async function generateReport(now: Date): Promise<void> {
   const dayKey = Math.floor(now.getTime() / 86400000);
-  const reportKey = "daily-ops-" + dayKey + "-v4";
+  const reportKey = "daily-ops-" + dayKey + "-v5";
   const client = await pool.connect();
   let runId: string | null = null;
   try {
@@ -817,7 +818,7 @@ async function schedulerTick(): Promise<void> {
   try {
     const latest = await pool.query("SELECT report_key, period_end FROM redom_ops_report_runs WHERE status='sent' ORDER BY period_end DESC LIMIT 1");
     const latestKey = String(latest.rows[0]?.report_key ?? "");
-    const revisionUpgradeDue = Boolean(latest.rows[0]) && !latestKey.endsWith("-v4");
+    const revisionUpgradeDue = Boolean(latest.rows[0]) && !latestKey.endsWith("-v5");
     const due = !latest.rows[0] || revisionUpgradeDue || Date.now() - new Date(latest.rows[0].period_end).getTime() >= 86400000;
     if (due) await generateReport(new Date());
   } catch (error) {
