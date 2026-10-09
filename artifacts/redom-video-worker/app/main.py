@@ -113,6 +113,12 @@ def render_project(job: VideoJob, output: Path):
             seconds = min(SEGMENT_SECONDS, remaining)
             frames = seconds * FPS + 1
             prompt = job.prompt.strip()
+            if job.contentType == "movie":
+                prompt += "\\nReDom Movie Studio: naturalistic emotional performances, subtle micro-expressions, motivated blocking, lens-aware depth of field, coherent shot/reverse-shot, motivated lighting, and strict wardrobe/prop/character continuity."
+            elif job.contentType == "cartoon":
+                prompt += "\\nReDom Cartoon: polished original animation, expressive acting, consistent character proportions and silhouettes, readable staging, purposeful camera angles, coherent motion arcs, appealing color design, and genre-appropriate timing."
+            else:
+                prompt += "\\nReDom Videos: concise short-form storytelling, immediate visual hook, clear scene beats, deliberate camera movement, stable subject continuity, and a clean ending."
             if job.operation == "cgi":
                 prompt += (
                     "\nCGI production brief: physically based materials, coherent geometry, "
@@ -196,7 +202,7 @@ def apply_brand_watermark(source: Path, output: Path, job: VideoJob, workdir: Pa
     font_path = os.getenv("REDOM_WATERMARK_FONT_PATH")
     try:
         font = ImageFont.truetype(font_path, 29) if font_path else ImageFont.load_default()
-    except OSError:
+    except (OSError, TypeError):
         font = ImageFont.load_default()
     draw.rounded_rectangle((2, 2, 618, 90), radius=18, fill=(8, 18, 36, 170), outline=(255, 255, 255, 125), width=2)
     logo_path = os.getenv("REDOM_BRAND_LOGO_PATH")
