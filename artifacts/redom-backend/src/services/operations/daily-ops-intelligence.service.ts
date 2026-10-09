@@ -253,18 +253,36 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       last365d: { attempts: num(y.attempts), delivered: num(y.delivered), failed: num(y.failed), bounced: num(y.bounced), duplicateSuppressed: num(y.duplicatesuppressed) },
       dailyLimit: DAILY_LIMIT, monthlyLimit: MONTHLY_LIMIT, dailyLimitUsedPct: dailyUsedPct, monthlyLimitUsedPct: monthlyUsedPct, monthlySent,
       ledgerCoverageStart: firstEvent.rows[0]?.first_at ? iso(new Date(firstEvent.rows[0].first_at)) : null,
+      monthlyTrend: monthlyTrend.rows.map((row: Record<string, unknown>) => ({ month: String(row.month), attempts: num(row.attempts), accepted: num(row.accepted), delivered: num(row.delivered), failed: num(row.failed), bounced: num(row.bounced), rejected: num(row.rejected), deliveryRatePct: row.delivery_rate_pct === null ? null : num(row.delivery_rate_pct), outcomeCoveragePct: row.outcome_coverage_pct === null ? null : num(row.outcome_coverage_pct) })),
     },
     support: {
       created24h: supportCreated, createdPrevious24h: previousSupport, changePct: pct(supportCreated, previousSupport),
       open: num(s.open), awaitingSupport: num(s.awaitingsupport), awaitingUser: num(s.awaitinguser), closed: num(s.closed),
+      invalidatedOrRecycled: num(lifecycle.invalidated), created365d: num(lifecycle.created365d), closed365d: num(lifecycle.closed365d),
+      activeCaseNumbers: Array.isArray(lifecycle.active_numbers) ? lifecycle.active_numbers.map(String).slice(0,100) : [],
+      createdCaseNumbers24h: Array.isArray(lifecycle.created_numbers) ? lifecycle.created_numbers.map(String).filter((n: string) => n && n !== "").slice(0,100) : [],
+      invalidCaseNumbers: Array.isArray(lifecycle.invalid_numbers) ? lifecycle.invalid_numbers.map(String).slice(0,100) : [],
       messages24h: num(m.currentmessages), messagesPrevious24h: num(m.previousmessages), messagesChangePct: pct(num(m.currentmessages), num(m.previousmessages)),
       averageMessagesPerCase: cases ? Math.round((num(m.currentmessages) / cases) * 100) / 100 : null,
       emailsConsumedByNewCases24h: caseEmails.rows.reduce((sum: number, row: Record<string, unknown>) => sum + num(row.attempts), 0),
       caseLinkedEmailAttempts24h: caseEmails.rows.reduce((sum: number, row: Record<string, unknown>) => sum + num(row.attempts), 0),
       caseEmailBreakdown: caseEmails.rows.map((row: Record<string, unknown>) => ({ caseNumber: String(row.case_number), attempts: num(row.attempts), accepted: num(row.accepted), delivered: num(row.delivered), failed: num(row.failed) })),
+      repeatContactSenders30d: repeatSenders.rows.map((row: Record<string, unknown>) => ({ email: String(row.email), messages: num(row.messages), cases: num(row.cases) })),
+      topTopics30d: topics.rows.map((row: Record<string, unknown>) => ({ topic: String(row.topic), count: num(row.count) })),
+      topQuestions30d: questions.rows.map((row: Record<string, unknown>) => ({ question: redactSensitiveText(String(row.question)).slice(0,180), count: num(row.count) })),
+    },
+    fraud: {
+      reviewedSignals: fraudSignals.rows.map((row: Record<string, unknown>) => {
+        const indicators = [row.credential_or_bypass ? "Requests involving API keys, credentials, or security/payment bypass" : null, row.payment_integrity ? "Potential payment/refund integrity manipulation language" : null].filter(Boolean) as string[];
+        const score = Math.min(95, (row.credential_or_bypass ? 55 : 0) + (row.payment_integrity ? 40 : 0) + Math.min(20, Math.max(0, num(row.count) - 1) * 5));
+        return { email: String(row.email), risk: score >= 75 ? "high-review-priority" : score >= 50 ? "manual-review" : "low-confidence-signal", score, indicators, caseNumbers: Array.isArray(row.cases) ? row.cases.map(String).slice(0,10) : [], count: num(row.count) };
+      }),
+      signalCount30d: num(fraudCount.rows[0]?.senders),
+      warning: "These are heuristic review signals, not findings of fraud. Human security review is required. Do not automatically suspend, block, deny refunds, or alter an account based on this report.",
     },
     incidents: {
       open: openIncidents, resolved24h: num(resolvedIncidents.rows[0]?.resolved), criticalOpen: openIncidents.filter(i => i.severity === "critical").length,
+      resolved365d: num(annualIncidents.rows[0]?.resolved), created365d: num(annualIncidents.rows[0]?.created),
     },
     dataCoverage: {
       emailLedger: firstEvent.rows[0]?.first_at ? "Available from " + iso(new Date(firstEvent.rows[0].first_at)) + "; only instrumented senders and ingested provider webhook events are represented, so this is not yet a complete platform-wide lifetime ledger." : "No email events recorded yet; email totals are unavailable until send paths and provider webhooks are instrumented.",
@@ -282,12 +300,20 @@ async function collectMetrics(now: Date): Promise<Metrics> {
   };
 }
 
+function redactSensitiveText(value: string): string {
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email redacted]")
+    .replace(/\b(?:sk|pk|rk|api)[-_](?:live|test|prod)?[-_][A-Za-z0-9_-]{12,}\b/gi, "[credential redacted]")
+    .replace(/\b(?:password|secret|token|api[_ -]?key)\s*[:=]\s*\S+/gi, "$1=[redacted]")
+    .replace(/\b\d{12,}\b/g, "[long number redacted]");
+}
+
 function buildAnalysisPrompt(metrics: Metrics): string {
   return [
     "You are ReDom's evidence-bound operations analyst. Analyze only the JSON facts supplied. Do not invent counts, incidents, fixes, provider limits, causes, or successful deployments.",
     "Return valid JSON with keys: status (healthy|degraded|critical|unknown), executiveSummary (string), keyChanges (array of strings), findings (array of objects with severity, title, evidence, impact, confidence, recommendation), resolvedIssues (array of strings), pendingRisks (array of strings), nextActions (array of objects with priority, action, rationale, verification), forecastCommentary (string), limitations (array of strings).",
     "Separate confirmed facts from hypotheses. If logs are not available, say root-cause analysis is limited. Mark missing or partial email ledger coverage prominently. Do not call a metric zero when telemetry is missing.",
-    JSON.stringify(metrics),
+    JSON.stringify({ ...metrics, support: { ...metrics.support, repeatContactSenders30d: metrics.support.repeatContactSenders30d.map((x) => ({ email: "[redacted]", messages: x.messages, cases: x.cases })) }, fraud: { ...metrics.fraud, reviewedSignals: metrics.fraud.reviewedSignals.map((x) => ({ ...x, email: "[redacted]" })) } }),
   ].join("\n\n");
 }
 
