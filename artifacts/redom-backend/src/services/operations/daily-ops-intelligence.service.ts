@@ -725,6 +725,9 @@ async function generateReport(now: Date): Promise<void> {
   if (!runId) return;
 
   try {
+    if (!REPORT_SIGNING_KEY || REPORT_SIGNING_KEY.length < 32) {
+      throw new Error("REDOM_OPS_REPORT_SIGNING_KEY must be configured with at least 32 characters; refusing to issue an unsigned executive report.");
+    }
     const metrics = await collectMetrics(now);
     let analysis: Record<string, any>;
     try { analysis = await analyzeWithGemini(metrics); }
