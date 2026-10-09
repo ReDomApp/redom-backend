@@ -15,7 +15,8 @@ import {
 } from "../database/reDomVideoStudio";
 import { reDomAiVideos } from "../database/reDomAiVideos";
 import { enforceReDomVideoPromptSecurity } from "./redomVideoSecurity.service";
-import { REDOM_VIDEO_MAX_SECONDS, createReDomVideoJob, prepareReDomVideoLanguage } from "./redomVideoEngine.service";\nimport { createReDomMovieMusicAsset, createReDomMovieSpeechAsset } from "./redomMovieAudio.service";
+import { REDOM_VIDEO_MAX_SECONDS, createReDomVideoJob, prepareReDomVideoLanguage } from "./redomVideoEngine.service";
+import { createReDomMovieMusicAsset, createReDomMovieSpeechAsset } from "./redomMovieAudio.service";
 
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
 const MODEL = "ReDom-v2.8—Video";
@@ -447,7 +448,8 @@ export async function createReDomMovieTrailerPreview(userId: string, input: { pr
       episodeCount,
       trailerBeats: Array.isArray(proposal.trailerBeats) ? proposal.trailerBeats.slice(0, 12) : [],
       soundtrackDirection: proposal.soundtrackDirection || input.soundtrackStyle || "Original cinematic score",
-      narrationDirection: proposal.narrationDirection || "Optional trailer narration",\n      narrationText: typeof proposal.narrationText === "string" ? proposal.narrationText.slice(0, 1200) : undefined,
+      narrationDirection: proposal.narrationDirection || "Optional trailer narration",
+      narrationText: typeof proposal.narrationText === "string" ? proposal.narrationText.slice(0, 1200) : undefined,
       songConcepts: Array.isArray(proposal.songConcepts) ? proposal.songConcepts.slice(0, 8) : [],
       language: proposal.language || language.languageName,
       audioRenderingStatus: narrationTrack ? "original_score_and_narration_generated" : "original_score_generated_narration_not_configured",
