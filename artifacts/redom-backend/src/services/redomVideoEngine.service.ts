@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
-import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { db } from "../database/db";
 import { reDomAiVideos } from "../database/reDomAiVideos";
 import { verificationSubscriptions } from "../database/verificationSubscriptions";
@@ -66,6 +66,7 @@ export async function createReDomVideoJob(
   });
 
   if (!env.redomVideoEngine.url || !env.redomVideoEngine.token) {
+    if (referenceAssetKey) await r2.send(new DeleteObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey }));
     await failReDomVideoJob(jobId, "ReDom-v2.8—Video native GPU runtime is not configured.");
     throw Object.assign(new Error("ReDom-v2.8—Video is temporarily unavailable."), { status: 503 });
   }
@@ -92,6 +93,7 @@ export async function createReDomVideoJob(
   });
 
   if (!response.ok) {
+    if (referenceAssetKey) await r2.send(new DeleteObjectCommand({ Bucket: env.cloudflare.r2.bucketName, Key: referenceAssetKey }));
     await failReDomVideoJob(jobId, "ReDom native video worker rejected the job.");
     throw Object.assign(new Error("ReDom-v2.8—Video is temporarily unavailable."), { status: 503 });
   }
