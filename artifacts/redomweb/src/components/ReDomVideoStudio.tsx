@@ -37,6 +37,7 @@ export default function ReDomVideoStudio() {
   const [prompt,setPrompt]=useState("");
   const [reference,setReference]=useState("");
   const [duration,setDuration]=useState("20");
+  const [storyMode,setStoryMode]=useState<"standalone"|"series">("standalone");
   const [aspect,setAspect]=useState("16:9");
   const [resolution,setResolution]=useState("720p");
   const [quality,setQuality]=useState("high");
@@ -60,7 +61,7 @@ export default function ReDomVideoStudio() {
         const result=await api<VideoJob & {success?:boolean}>("/ai/video",{method:"POST",body:JSON.stringify({prompt:prompt.trim(),referenceImageDataUri:reference||undefined,format:"video",durationSeconds:Number(duration),resolution,aspectRatio:aspect,watermark:true})});
         setJob(result);setStatus("Generation queued. ReDom is rendering and will burn your localized caption into the final video.");void pollVideo(result.jobId);
       }else{
-        const result=await api<Project>("/ai/video/projects",{method:"POST",body:JSON.stringify({prompt:prompt.trim(),referenceImageDataUri:reference||undefined,format:mode,duration:Number(duration),quality,aspectRatio:aspect,audio,voice})});
+        const result=await api<Project>("/ai/video/projects",{method:"POST",body:JSON.stringify({prompt:prompt.trim()+"\\n\\nProduction structure: "+(storyMode==="series"?"episodic series with recurring characters and a clear episode arc":"one-time standalone story with a complete ending"),referenceImageDataUri:reference||undefined,format:mode,duration:Number(duration),quality,aspectRatio:aspect,audio,voice})});
         setProject(result);setStatus("Project created. Building the story plan and character/scene structure…");
         const planned=await api<Project & {success?:boolean;episodes?:Array<{title:string;synopsis:string}>}>(`/ai/video/projects/${result.projectId}/plan`,{method:"POST",body:JSON.stringify({})});
         setProject({...planned,title:planned.project?.title||planned.title});setPlanReady(true);setStatus("Plan ready for review. Start production when you are satisfied with the story structure.");
@@ -131,7 +132,7 @@ export default function ReDomVideoStudio() {
       <button className="rvs-button" disabled={busy} onClick={()=>void create()}>{busy?"Working…":mode==="video"?"Generate video":mode==="movie"?"Create movie plan":"Create cartoon plan"}</button>
       {status&&<div className="rvs-status" role="status">{status}</div>}
       {error&&<div className="rvs-error" role="alert">{error}</div>}
-      {planReady&&project&&<div className="rvs-result"><h2 style={{margin:"4px 0"}}>{project.title||project.project?.title||"Production plan ready"}</h2><p className="rvs-muted">Review the story plan in your project before starting GPU generation. The production remains editable until rendering begins.</p><button className="rvs-button" disabled={busy} onClick={()=>void produce()}>Start production</button></div>}
+      {planReady&&project&&<div className="rvs-result"><h2 style={{margin:"4px 0"}}>{project.title||project.project?.title||"Production plan ready"}</h2><p className="rvs-muted">Review the story plan in your project before starting GPU generation. The production remains editable until rendering begins.</p>{project.episodes?.length ? <ol style={{paddingLeft:22,display:"grid",gap:10}}>{project.episodes.slice(0,12).map((episode,index)=><li key={index}><strong>{episode.title}</strong><div className="rvs-muted">{episode.synopsis}</div></li>)}</ol> : null}<button className="rvs-button" disabled={busy} onClick={()=>void produce()}>Start production</button></div>}
       {job?.downloadUrl&&job.status==="completed"&&<div className="rvs-result"><a className="rvs-button" href={job.downloadUrl}>Open completed video</a></div>}
       {project?.projectId&&<div className="rvs-muted">Project ID: {project.projectId}</div>}
       {job?.jobId&&<div className="rvs-muted">Generation job: {job.jobId} · Status: {job.status}</div>}
