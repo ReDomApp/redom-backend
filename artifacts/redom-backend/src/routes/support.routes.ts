@@ -354,9 +354,12 @@ router.post("/email/webhook", async (req, res) => {
         },
         history: [],
       });
-      const policyReply = policyResult.is_safe && policyResult.support_reply
+      const policyReply = (policyResult.is_safe && policyResult.support_reply
         ? policyResult.support_reply
-        : "I can explain ReDom's refund rules, but I don't want to guess at policy details. Please tell me which part you want clarified: eligibility, deadlines, or the review process. Asking about policy does not create a refund case. If you want to request a refund, say so explicitly and we will guide you through transaction and account verification.";
+        : "I can explain ReDom's refund rules, but I don't want to guess at policy details. Please tell me which part you want clarified: eligibility, deadlines, or the review process. Asking about policy does not create a refund case. If you want to request a refund, say so explicitly and we will guide you through transaction and account verification.")
+        .replace(/^Case Number:\\s*R\\d{11}\\s*/i, "")
+        .replace(/R00000000000/g, "")
+        .trim();
       await sendSupportEmail(
         senderEmail,
         "ReDom Refund Policy Information",
