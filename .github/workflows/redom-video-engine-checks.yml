@@ -1,0 +1,44 @@
+name: ReDom Video Engine Checks
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/redom-backend/src/routes/ai.routes.ts"
+      - "artifacts/redom-backend/src/services/redomVideoEngine.service.ts"
+      - "artifacts/redom-backend/src/services/redomVideoSecurity.service.ts"
+      - "artifacts/redom-backend/src/services/redomVideoStudio.service.ts"
+      - "artifacts/redom-video-worker/**"
+      - ".github/workflows/redom-video-engine-checks.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "artifacts/redom-backend/src/routes/ai.routes.ts"
+      - "artifacts/redom-backend/src/services/redomVideoEngine.service.ts"
+      - "artifacts/redom-backend/src/services/redomVideoSecurity.service.ts"
+      - "artifacts/redom-backend/src/services/redomVideoStudio.service.ts"
+      - "artifacts/redom-video-worker/**"
+
+jobs:
+  backend-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/redom-backend run typecheck
+
+  worker-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: python -m py_compile artifacts/redom-video-worker/app/main.py
