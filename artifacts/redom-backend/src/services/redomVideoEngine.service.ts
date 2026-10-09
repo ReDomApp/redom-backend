@@ -12,7 +12,7 @@ import { openai } from "../lib/openai";
 const PAID_PLANS = new Set(["standard", "standard_plus", "plus", "creator", "business", "corporate"]);
 export const REDOM_VIDEO_MODEL = "ReDom-v2.8—Video";
 export const REDOM_VIDEO_RUNTIME = "redom-v2.8-native";
-export const REDOM_VIDEO_MAX_SECONDS = 300;
+export const REDOM_VIDEO_MAX_SECONDS = 59;
 
 async function requirePaidVideoEntitlement(userId: string) {
   const now = new Date();
@@ -33,11 +33,16 @@ export async function prepareReDomVideoLanguage(prompt: string, format: "video" 
   const response = await openai.responses.create({
     model: "gpt-5.6-luna",
     instructions: [
-      "You are ReDom's multilingual video language, genre and social-caption director.",
+      "You are ReDom's multilingual video language and social-caption director.",
       "Detect the language actually used by the creator in the prompt. Do not default to English.",
       "Return JSON only: {\"languageName\": string, \"languageCode\": string, \"caption\": string, \"generationDirection\": string}.",
       "caption must be a concise, engaging post caption for the resulting video, written in the detected prompt language, not a translation of these instructions. Avoid hashtags unless natural for the language.",
-      "generationDirection must preserve the creator's intended genre and any deliberate genre blend (for example romance, love story, horror, psychological thriller, action, comedy, drama, science fiction, fantasy, mystery, crime, adventure, documentary, sensual adult romance, or family animation). Infer genre from the prompt when not explicitly labelled; never force every request into cinema/action. Preserve the detected language for visible text and story details; do not claim speech/audio exists unless generated.",
+      "generationDirection must instruct the video model to preserve the detected language for any visible text, dialogue direction and story details; do not fabricate audio or claim speech was generated if it was not.",
+      ...(format === "cartoon" ? [
+        "CARTOON—R8.0: create an authored animated shot, not live-action footage with a filter. Preserve a consistent human, animal or creature model sheet, silhouette, face, proportions, markings, costume, palette and scale across frames. Use the requested original animation language (2D, stylized 3D, anime, cel-shaded, painterly or hybrid) and coherent character acting, readable posing, anticipation, arcs, weight, contact, overlap/follow-through, expression timing and genre-appropriate exaggeration.",
+        "Keep the animated environment spatially coherent and alive through layered backgrounds, parallax, weather, particles and motivated lighting. Avoid anatomy drift, morphing, extra limbs, flicker, texture crawl, foot sliding and inconsistent eye-lines. Maintain the creator's chosen language, dialect, pronunciation, vocal delivery and subtitles when those assets are supported by the runtime.",
+        "If a named anime or studio is referenced, use web-grounded high-level style analysis to create an original direction; do not duplicate protected characters, exact frames, costumes, logos, dialogue or scene sequences without rights context."
+      ] : []),
       "Do not translate proper names unless the language convention requires it."
     ].join("\n"),
     input: "Format: " + format + "\nCreator prompt:\n" + prompt,
@@ -128,7 +133,10 @@ export async function createReDomVideoJob(
       captionText: language.caption,
       generationDirection: language.generationDirection,
       referenceAssetKey,
-      prompt: input.prompt.trim(),
+      prompt: format === "cartoon" ? [
+        input.prompt.trim(),
+        "Cartoon—R8.0 animation direction: create original, polished animation in the requested 2D, stylized 3D, anime, cel-shaded or painterly language. Keep recurring human, animal and creature designs, proportions, markings, colors and scale consistent throughout the shot. Use clear silhouettes, readable posing, expressive face acting, anticipation, coherent arcs, weight, contact, overlap and follow-through, and believable species-specific locomotion. Animate the environment with restrained layered background motion and motivated lighting. Avoid morphing, anatomy drift, extra limbs, flicker, texture crawl and foot sliding. Preserve requested spoken language and dialect; do not claim audio or lip-sync unless generated."
+      ].join("\n") : input.prompt.trim(),
       durationSeconds: target,
       resolution,
       quality: resolution === "1080p" ? "pro" : "high",
