@@ -320,12 +320,12 @@ router.post("/email/webhook", async (req, res) => {
     }
 
     const refundIntentText = String(email.subject ?? "") + "\n" + message;
+    const clearRefundRequest = /\b(?:i want to request|i'd like to request|i would like to request|i am requesting|i'm requesting|please refund|refund me|initiate|process|start|submit)\b.{0,40}\b(?:refund|money back)\b/i.test(refundIntentText)
+      || /\b(?:refund|return)\s+(?:my|this|the)\s+(?:payment|purchase|transaction|order)\b/i.test(refundIntentText)
+      || /\b(?:i want|i need|i'd like|i would like)\s+(?:a|the|my)\s+refund\b/i.test(refundIntentText);
     const policyQuestion = /\b(refund|refunds|money back)\b/i.test(refundIntentText)
       && /\b(policy|policies|rule|rules|eligible|eligibility|allowed|terms|conditions|how does|how do|what is|what are|explain|tell me about|information|window|deadline|time limit|requirement|requirements)\b/i.test(refundIntentText)
-      && !/\b(?:i want|i need|please|can you|could you|initiate|process|submit|request|claim|file|apply for)\b.{0,45}\b(?:refund|money back)\b/i.test(refundIntentText);
-    const clearRefundRequest = /\b(?:i want|i need|please|can you|could you|initiate|process|submit|request|claim|file|apply for|start)\b.{0,55}\b(?:a |the |my )?(?:refund|money back|return my payment)\b/i.test(refundIntentText)
-      || /\b(?:refund|return)\s+(?:my|this|the)\s+(?:payment|purchase|transaction|order)\b/i.test(refundIntentText)
-      || /\b(?:please refund|refund me|i am requesting a refund|i'm requesting a refund)\b/i.test(refundIntentText);
+      && !clearRefundRequest;
 
     // Policy questions are informational, not refund applications. Never create a case here.
     if (policyQuestion) {
