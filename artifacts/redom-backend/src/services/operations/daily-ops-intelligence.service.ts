@@ -274,7 +274,7 @@ async function collectMetrics(now: Date): Promise<Metrics> {
       count(*) FILTER (WHERE created_at >= $1)::int AS created FROM redom_ops_incidents`, [yearStart]),
     pool.query("SELECT 1 AS ok"),
   ]);
-  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {};
+  const e = email.rows[0] ?? {}, y = annual.rows[0] ?? {}, s = support.rows[0] ?? {}, m = messages.rows[0] ?? {}, lifecycle = caseLists.rows[0] ?? {};
   const attempts = num(e.attempts), previousAttempts = num(e.previousattempts), delivered = num(e.delivered), failed = num(e.failed);
   const monthlySent = num(e.monthlyattempts);
   const supportCreated = num(s.created), previousSupport = num(s.previouscreated);
