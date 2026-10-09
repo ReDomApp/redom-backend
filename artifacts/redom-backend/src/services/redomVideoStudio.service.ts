@@ -585,6 +585,126 @@ export async function runReDomMovieContinuityCheck(userId: string, projectId: st
   return { projectId, continuityVersion: nextVersion, blockingWarnings: warnings.filter((w) => w.type === "knowledge_leak"), warnings };
 }
 
+async function generateOriginalSongLyrics(projectTitle: string, concept: string, languageName: string, characters: string[]) {
+  const response = await openai.responses.create({
+    model: "gpt-5.6-luna",
+    instructions: [
+      "Write original, singable lyrics for a fictional movie character song.",
+      "Use a clear verse and chorus, short lines, memorable emotional imagery, and a natural vocal rhythm.",
+      "Do not imitate a named singer, copy existing lyrics, or refer to copyrighted songs.",
+      "Return only the lyrics, with section labels such as [Verse 1] and [Chorus].",
+    ].join("\\n"),
+    input: JSON.stringify({ projectTitle, concept, language: languageName, characters }),
+    safety_identifier: "redom-movie-original-song-lyrics",
+  });
+  const lyrics = (response.output_text || "").trim();
+  if (lyrics.length < 40) throw Object.assign(new Error("ReDom could not prepare original song lyrics."), { status: 502, code: "MOVIE_SONG_LYRICS_FAILED" });
+  return lyrics.slice(0, 3000);
+}
+
+async function prepareReDomMovieAudio(userId: string, project: typeof reDomAiVideoProjects.$inferSelect, shotRows: Array<{ redom_ai_video_shots: typeof reDomAiVideoShots.$inferSelect }>) {
+  const shotTracks = new Map<string, Array<Record<string, unknown>>>();
+  if (!project.audioEnabled) return { shotTracks, musicTracks: [] as Array<Record<string, unknown>>, audioStatus: "disabled" };
+  const research = (project.research || {}) as Record<string, any>;
+  const score = await createReDomMovieMusicAsset({
+    userId,
+    projectId: project.id,
+    trackName: "original-score",
+    durationSeconds: project.targetDurationSeconds,
+    instrumental: true,
+    prompt: [
+      "Original feature-film score for " + project.title + ".",
+      String(research.soundtrackDirection || research.soundtrackStyle || "A beautiful, emotionally rich cinematic orchestral score."),
+      "Shape a coherent musical journey with warm themes, wonder, romance, suspense, action and a satisfying emotional resolution where the story calls for them.",
+      "Use original melodies and motifs, dynamic orchestration, clear scene transitions, tasteful silence, and professional film-score mixing.",
+      "Avoid imitating existing movie soundtracks, known composers, or recognizable melodies.",
+    ].join(" "),
+  });
+  const musicTracks: Array<Record<string, unknown>> = [{ assetKey: score.key, startSeconds: 0, volume: 0.24, kind: "score" }];
+  const songConcepts = project.voiceEnabled && research.singingEnabled !== false && Array.isArray(research.songConcepts)
+    ? research.songConcepts.slice(0, 2)
+    : [];
+  let songIndex = 0;
+  for (const rawConcept of songConcepts) {
+    songIndex += 1;
+    const concept = typeof rawConcept === "string" ? rawConcept : JSON.stringify(rawConcept);
+    const details = rawConcept && typeof rawConcept === "object" ? rawConcept as Record<string, unknown> : {};
+    const lyrics = typeof details.lyrics === "string" && details.lyrics.trim()
+      ? details.lyrics.trim().slice(0, 3000)
+      : await generateOriginalSongLyrics(project.title, concept, String(research.languageName || "the story's primary language"), []);
+    const songDuration = Math.max(15, Math.min(60, Number(details.durationSeconds) || 40));
+    const song = await createReDomMovieMusicAsset({
+      userId,
+      projectId: project.id,
+      trackName: "character-song-" + songIndex,
+      durationSeconds: songDuration,
+      instrumental: false,
+      lyrics,
+      vocalStyle: String(research.singingVoiceStyle || "expressive, warm musical-theatre lead vocal with clear diction"),
+      prompt: "Original character song for " + project.title + ". Story purpose: " + concept + ". Use a distinct, expressive lead vocal and memorable original melody.",
+    });
+    const requestedStart = Number(details.startSeconds);
+    musicTracks.push({
+      assetKey: song.key,
+      startSeconds: Number.isFinite(requestedStart) ? Math.max(0, Math.min(project.targetDurationSeconds - 1, requestedStart)) : Math.max(0, Math.min(project.targetDurationSeconds - songDuration, 20 + (songIndex - 1) * 70)),
+      volume: 0.9,
+      kind: "song",
+      singerIdentityNote: "Music-model vocal style is not guaranteed to match a character's spoken voice.",
+    });
+  }
+
+  const voiceAssignments = research.voiceAssignments && typeof research.voiceAssignments === "object" ? research.voiceAssignments as Record<string, unknown> : {};
+  const resolveVoice = (character: string) => {
+    const match = Object.entries(voiceAssignments).find(([name]) => name.trim().toLowerCase() === character.trim().toLowerCase());
+    const assigned = match && typeof match[1] === "string" ? match[1].trim() : "";
+    return assigned || env.redomMovieAudio.defaultVoiceId;
+  };
+  if (project.voiceEnabled) {
+    for (const item of shotRows) {
+      const shot = item.redom_ai_video_shots;
+      const lines = Array.isArray(shot.dialogue) ? shot.dialogue as Array<Record<string, unknown>> : [];
+      const tracks: Array<Record<string, unknown>> = [];
+      let cursor = 0;
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const text = [line.text, line.line, line.dialogue].find((value) => typeof value === "string" && value.trim()) as string | undefined;
+        if (!text) continue;
+        const character = String(line.speaker || line.character || line.characterName || "Narrator").trim().slice(0, 120);
+        const voiceId = resolveVoice(character);
+        if (!voiceId) throw Object.assign(new Error("Assign a ReDom Voices voice ID to character '" + character + "' or set REDOM_DEFAULT_VOICE_ID before production."), { status: 503, code: "MOVIE_CHARACTER_VOICE_NOT_ASSIGNED" });
+        const clip = await createReDomMovieSpeechAsset({
+          userId, projectId: project.id, shotId: shot.id, lineIndex: index + 1,
+          text, voiceId, languageCode: typeof research.languageCode === "string" ? research.languageCode : undefined,
+          previousText: index > 0 ? String(lines[index - 1].text || lines[index - 1].line || "") : undefined,
+          nextText: index + 1 < lines.length ? String(lines[index + 1].text || lines[index + 1].line || "") : undefined,
+        });
+        const requestedStart = Number(line.startSeconds);
+        const startSeconds = Number.isFinite(requestedStart) ? Math.max(0, requestedStart) : cursor;
+        tracks.push({ assetKey: clip.key, startSeconds, characterName: character, voiceId, durationSeconds: clip.durationSeconds, alignment: clip.alignment });
+        cursor = startSeconds + clip.durationSeconds;
+      }
+      shotTracks.set(shot.id, tracks);
+    }
+  }
+  await db.update(reDomAiVideoProjects).set({
+    research: {
+      ...research,
+      musicTracks,
+      audioProduction: {
+        provider: "elevenlabs",
+        status: "assets_generated",
+        generatedAt: new Date().toISOString(),
+        dialogueShotCount: [...shotTracks.values()].filter((tracks) => tracks.length > 0).length,
+        generatedDialogueClipCount: [...shotTracks.values()].reduce((total, tracks) => total + tracks.length, 0),
+        singingEnabled: project.voiceEnabled && research.singingEnabled !== false,
+        lipSyncStatus: "requires_configured_redom_lipsync_service",
+      },
+    },
+    updatedAt: new Date(),
+  }).where(eq(reDomAiVideoProjects.id, project.id));
+  return { shotTracks, musicTracks, audioStatus: "assets_generated" };
+}
+
 export async function startReDomMovieProduction(userId: string, projectId: string) {
   await requirePaid(userId);
   const project = (await db.select().from(reDomAiVideoProjects).where(and(eq(reDomAiVideoProjects.id, projectId), eq(reDomAiVideoProjects.userId, userId))).limit(1))[0];
@@ -599,7 +719,7 @@ export async function startReDomMovieProduction(userId: string, projectId: strin
     .innerJoin(reDomAiVideoEpisodes, eq(reDomAiVideoScenes.episodeId, reDomAiVideoEpisodes.id))
     .where(eq(reDomAiVideoEpisodes.projectId, projectId))
     .orderBy(asc(reDomAiVideoEpisodes.episodeNumber), asc(reDomAiVideoScenes.sceneNumber), asc(reDomAiVideoShots.shotNumber));
-  if (!shots.length) throw Object.assign(new Error("The movie has no planned shots."), { status: 409 });
+  if (!shots.length) throw Object.assign(new Error("The movie has no planned shots."), { status: 409 });\n\n  const audioPlan = await prepareReDomMovieAudio(userId, project, shots);
 
   const existing = await db.select({ id: reDomAiVideos.id }).from(reDomAiVideos).where(eq(reDomAiVideos.jobId, "movie_project_" + projectId)).limit(1);
   if (!existing.length) {
@@ -693,7 +813,7 @@ export async function registerReDomMovieJobCallback(jobId: string, status: strin
     const referenceAssetKey = typeof project.research?.referenceAssetKey === "string" ? project.research.referenceAssetKey : undefined;
     const composeJobId = "movie_compose_" + randomUUID().replace(/-/g, "");
     const callbackUrl = env.email.webBaseUrl.replace(/\/$/, "") + "/api/ai/video/callback";
-    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
+    const payload = { jobId: composeJobId, runtime: "redom-v2.8-native", model: MODEL, operation: "compose", format: project.format === "cartoon" ? "cartoon" : "movie", watermark: true, audioEnabled: project.audioEnabled, musicTracks: Array.isArray(project.research?.musicTracks) ? project.research.musicTracks : [], lipSyncEnabled: false, referenceAssetKey, cleanupReferenceAsset: true, languageName: typeof project.research?.languageName === "string" ? project.research.languageName : undefined, languageCode: typeof project.research?.languageCode === "string" ? project.research.languageCode : undefined, captionText: typeof project.research?.captionText === "string" ? project.research.captionText : undefined, generationDirection: "Preserve language " + String(project.research?.languageName || "detected from the creator prompt") + " in visible text and story details.", prompt: project.title, durationSeconds: project.targetDurationSeconds, resolution: project.quality === "pro" ? "1080p" : "720p", quality: project.quality, aspectRatio: project.aspectRatio, shotKeys, callbackUrl, callbackToken: env.redomVideoEngine.token };
     await db.insert(reDomAiVideoJobs).values({ projectId: job.projectId, kind: "final_composition", jobId: composeJobId, status: "queued", priority: 10, payload });
     await redis.lpush(JOB_QUEUE, JSON.stringify(payload));
   }
