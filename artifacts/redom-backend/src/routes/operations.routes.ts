@@ -115,7 +115,9 @@ router.get("/reports", requireAdmin, async (_req, res) => {
   }
 });
 
-router.get("/reports/:reportKey/verify", requireAdmin, async (req, res) => {
+router.get("/reports/:reportKey/verify", async (req, res) => {
+  // Public, read-only verification endpoint: expose integrity status only, never report metrics or admin records.
+  res.setHeader("Cache-Control", "no-store");
   const reportKey = String(req.params.reportKey ?? "");
   if (!/^daily-ops-\d{1,12}(?:-v\d{1,3})?$/.test(reportKey)) return res.status(400).json({ success: false, message: "Invalid report key." });
   try {
