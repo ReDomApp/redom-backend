@@ -6,6 +6,8 @@ import {
   twilioSmsProvider,
 } from "../../lib/providers/sms/twilio-sms-provider";
 
+import { metaWhatsAppCloudProvider } from "../../lib/providers/sms/meta-whatsapp-cloud-provider";
+
 import type {
   SmsDeliveryRequest,
   SmsDeliveryResult,
@@ -90,13 +92,12 @@ export class PhoneService {
         params.expiresAt,
     };
 
-    // WhatsApp remains on the provider that currently supports
-    // ReDom's WhatsApp delivery channel.
-    if (
-      request.channel === "whatsapp"
-    ) {
-      return twilioSmsProvider
-        .sendOtp(request);
+    // Meta Cloud API is the only official WhatsApp delivery provider. Never fall back to Twilio.
+    if (request.channel === "whatsapp") {
+      if (!metaWhatsAppCloudProvider.supportsChannel("whatsapp")) {
+        throw new Error("Meta WhatsApp Cloud API is not configured; WhatsApp delivery is unavailable.");
+      }
+      return metaWhatsAppCloudProvider.sendOtp(request);
     }
 
     // SMS provider order: ReDom 1 (MSG91) first, ReDom 2 (Twilio) only as fallback.
@@ -128,8 +129,7 @@ export class PhoneService {
     if (
       channel === "whatsapp"
     ) {
-      return twilioSmsProvider
-        .supportsChannel(channel);
+      return metaWhatsAppCloudProvider.supportsChannel(channel);
     }
 
     return (
