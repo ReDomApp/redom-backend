@@ -93,8 +93,8 @@ type VerificationResult = {
 
 type DeliveryResult = {
   provider: string;
-
   providerReference?: string;
+  channel?: OtpChannel;
 };
 
 export class VerificationService {
@@ -398,7 +398,7 @@ export class VerificationService {
       normalizedTarget,
 
       channel:
-        params.channel,
+        params.channel === "email" ? "email" : (params.channel === "whatsapp" && !phoneService.supportsChannel("whatsapp") ? "sms" : params.channel),
 
       codeLength,
 
@@ -1091,11 +1091,9 @@ export class VerificationService {
       });
 
     return {
-      provider:
-        result.provider,
-
-      providerReference:
-        result.providerReference,
+      provider: result.provider,
+      providerReference: result.providerReference,
+      channel: result.channel,
     };
   }
 
