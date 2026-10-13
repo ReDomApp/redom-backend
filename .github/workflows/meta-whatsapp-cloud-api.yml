@@ -1,0 +1,33 @@
+name: Meta WhatsApp Cloud API validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "artifacts/redom-backend/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/meta-whatsapp-cloud-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck backend
+        run: pnpm --dir artifacts/redom-backend run typecheck
+      - name: Build backend
+        run: pnpm --dir artifacts/redom-backend run build
