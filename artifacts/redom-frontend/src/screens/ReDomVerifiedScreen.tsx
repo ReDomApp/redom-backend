@@ -158,7 +158,7 @@ export function ReDomVerifiedScreen({navigation}:Props){
 
     </ScrollView>
 
-    <View style={[s.bottom,{paddingBottom:Math.max(12,insets.bottom+8)]}>
+    <View style={[s.bottom,{paddingBottom:Math.max(12,insets.bottom+8)}]}>
       <Text style={s.eligibility}>ReDom Verified is available for eligible profiles.</Text>
       <Pressable onPress={unlock} disabled={!selectedPlan} accessibilityRole="button" accessibilityLabel={selectedPlan?`Unlock ${selectedPlan.name} benefits`:"Unlock benefits"} style={[s.cta,!selectedPlan&&{opacity:.6}]}>
         <Text style={s.ctaText}>Unlock benefits</Text>
