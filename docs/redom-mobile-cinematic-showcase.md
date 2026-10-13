@@ -7,7 +7,7 @@
 - The screen appears as the first intro for unauthenticated installs without a locally recognized account. Existing authenticated sessions and recognized-account selection continue through their existing routes.
 - The existing startup/security check is not replaced or bypassed.
 - The scene uses the already-installed `expo-video` package for a muted looping walking clip, React Native `Animated` for layered card movement, and `PanResponder` for optional swipes. No new dependency was added.
-- Cards present Sign In, Home Feed, and Profile previews using the existing ReDom logo and home-feed SVG assets, the established ReDom blue (`#1877F2`), and portrait/feed imagery. They are visual previews composed for the showcase, not screenshots of live authenticated screens; production auth, feed, and profile screens remain unchanged.
+- Cards present Sign In, Home Feed, and Mr. Herpes Profile previews modeled on familiar Facebook-style social app screen conventions: a concise login form, stories/composer/feed with Like/Comment/Share actions and bottom navigation, and a cover/avatar/profile header with friend actions and profile tabs. All visible identity is ReDom: the existing ReDom logo and home-feed SVG assets, ReDom blue (`#1877F2`), and ReDom copy replace Facebook branding. These are showcase preview compositions—not copied Facebook assets or screenshots of live authenticated screens—and the real ReDom login, feed, and profile implementations remain unchanged.
 - The visitor can pause/resume automatic motion, swipe between cards, select a dot, continue to Login, or go to Registration Welcome.
 
 ## Background media
