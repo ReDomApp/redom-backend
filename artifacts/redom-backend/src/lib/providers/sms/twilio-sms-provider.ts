@@ -30,13 +30,8 @@ export class TwilioSmsProvider
       return true;
     }
 
-    if (
-      channel === "whatsapp"
-    ) {
-      return Boolean(
-        env.twilio
-          .whatsappFrom,
-      );
+    if (channel === "whatsapp") {
+      return false;
     }
 
     return false;
@@ -59,13 +54,7 @@ export class TwilioSmsProvider
       `Your ReDom verification code is ${request.code}. ` +
       `This code expires at ${request.expiresAt.toISOString()}.`;
 
-    const from =
-      request.channel ===
-      "whatsapp"
-        ? env.twilio
-            .whatsappFrom
-        : env.twilio
-            .phoneNumber;
+    const from = env.twilio.phoneNumber;
 
     if (!from) {
       throw new Error(
@@ -73,22 +62,14 @@ export class TwilioSmsProvider
       );
     }
 
-    const destination =
-      request.channel ===
-      "whatsapp"
-        ? `whatsapp:${request.to}`
-        : request.to;
+    const destination = request.to;
 
     const message =
       await twilioClient.messages.create(
         {
           body,
 
-          from:
-            request.channel ===
-            "whatsapp"
-              ? `whatsapp:${from}`
-              : from,
+          from,
 
           to:
             destination,
