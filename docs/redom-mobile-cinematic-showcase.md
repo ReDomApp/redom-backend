@@ -30,3 +30,7 @@ The video is remote rather than bundled so the repository does not gain a large 
 - [ ] Existing recognized-account, login, registration, and authenticated Home Feed routes still work.
 - [ ] Confirm reduced-motion/accessibility behavior and performance on a lower-end Android device.
 - [ ] Review mobile data use for the remote video. Consider a lower-resolution asset/CDN delivery before broad production rollout.
+
+## Retired screen cleanup
+
+`artifacts/redom-frontend/src/screens/ReDomVerifiedScreen.tsx` has been deleted from this branch. Its `ReDomVerified` route type and navigator registration, the ReDom Verified upgrade card in `ReDomMenuDrawer.tsx`, and the associated embedded badge image constant were removed together so there is no navigation path to a deleted screen. Other device, login two-factor, and registration verification flows remain separate.
