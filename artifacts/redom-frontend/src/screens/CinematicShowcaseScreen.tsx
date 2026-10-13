@@ -368,7 +368,7 @@ export function CinematicShowcaseScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#07111F", overflow: "hidden" },
   safeArea: { flex: 1, justifyContent: "space-between" },
-  videoShade: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(4, 12, 25, 0.58)" },
+  videoShade: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(4, 12, 25, 0.58)" },
   blueGlow: {
     position: "absolute",
     width: 460,
@@ -469,7 +469,7 @@ const styles = StyleSheet.create({
   profileTopTitle: { color: "#1B2635", fontSize: 11, fontWeight: "800" },
   profileCover: { height: 100, backgroundColor: "#DCE8F5", overflow: "hidden" },
   coverImage: { width: "100%", height: "100%" },
-  coverTint: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(12,41,75,0.18)" },
+  coverTint: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(12,41,75,0.18)" },
   profileIdentity: { paddingHorizontal: 11, paddingTop: 0, flexDirection: "row", alignItems: "center", marginTop: -24 },
   profileAvatar: { width: 65, height: 65, borderRadius: 33, borderWidth: 3, borderColor: "#FFFFFF", backgroundColor: "#E7EDF5" },
   profileNameBlock: { flex: 1, paddingTop: 24, paddingLeft: 8 },
