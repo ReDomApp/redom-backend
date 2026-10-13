@@ -3,7 +3,7 @@ import { registrationVerificationService } from "../services/auth/registration-v
 import { z } from "zod";
 
 const paramsSchema = z.object({ verificationChallengeId: z.string().uuid() });
-const resendSchema = z.object({ reservationId: z.string().uuid().optional(), flowId: z.string().regex(/^\d{6,16}$/), deviceId: z.string().trim().min(1).max(255).optional() });
+const resendSchema = z.object({ reservationId: z.string().uuid().optional(), flowId: z.string().regex(/^\d{6,16}$/), deviceId: z.string().trim().min(1).max(255).optional(), channel: z.enum(["sms", "whatsapp", "email"]).optional() });
 const switchSchema = resendSchema.extend({ contactType: z.enum(["phone", "email"]), target: z.string().trim().min(3).max(320) });
 function verificationId(req: Request) { return paramsSchema.parse(req.params).verificationChallengeId; }
 export class RegistrationVerificationController {
