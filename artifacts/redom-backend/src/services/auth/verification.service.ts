@@ -317,10 +317,10 @@ export class VerificationService {
     }
 
     /**
-     * Deliver the plaintext OTP.
-     *
-     * The plaintext remains outside the database.
+     * Deliver the plaintext OTP. A phone delivery may fall back from WhatsApp
+     * to SMS while preserving this exact challenge, code hash and expiry.
      */
+    let deliveredChannel: OtpChannel = params.channel;
     try {
       const delivery =
         await this.deliverOtp({
@@ -340,11 +340,13 @@ export class VerificationService {
             params.firstName,
         });
 
+      deliveredChannel = delivery.channel ?? params.channel;
       await db
         .update(
           verifications,
         )
         .set({
+          channel: deliveredChannel,
           provider:
             delivery.provider,
 
@@ -397,8 +399,7 @@ export class VerificationService {
 
       normalizedTarget,
 
-      channel:
-        params.channel === "email" ? "email" : (params.channel === "whatsapp" && !phoneService.supportsChannel("whatsapp") ? "sms" : params.channel),
+      channel: deliveredChannel,
 
       codeLength,
 
