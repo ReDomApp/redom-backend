@@ -94,10 +94,27 @@ export class PhoneService {
 
     // Meta Cloud API is the only official WhatsApp delivery provider. Never fall back to Twilio.
     if (request.channel === "whatsapp") {
-      if (!metaWhatsAppCloudProvider.supportsChannel("whatsapp")) {
-        throw new Error("Meta WhatsApp Cloud API is not configured; WhatsApp delivery is unavailable.");
+      // Attempt Meta WhatsApp first. If Meta rejects the request or delivery cannot
+      // be initiated, fall back to SMS using the SAME code and expiry.
+      try {
+        if (!metaWhatsAppCloudProvider.supportsChannel("whatsapp")) {
+          throw new Error("Meta WhatsApp Cloud API is not configured.");
+        }
+        return await metaWhatsAppCloudProvider.sendOtp(request);
+      } catch (whatsAppError) {
+        console.warn("WhatsApp OTP delivery failed; attempting SMS fallback.", whatsAppError);
+        const smsRequest: SmsDeliveryRequest = { ...request, channel: "sms" };
+        try {
+          return await msg91SmsProvider.sendOtp(smsRequest);
+        } catch (msg91Error) {
+          console.warn("Primary SMS fallback failed; attempting secondary SMS provider.", msg91Error);
+          try {
+            return await twilioSmsProvider.sendOtp(smsRequest);
+          } catch (twilioError) {
+            throw new Error(`WhatsApp delivery failed; ReDom 1 SMS: ${providerErrorMessage(msg91Error)}; ReDom 2 SMS fallback: ${providerErrorMessage(twilioError)}`);
+          }
+        }
       }
-      return metaWhatsAppCloudProvider.sendOtp(request);
     }
 
     // SMS provider order: ReDom 1 (MSG91) first, ReDom 2 (Twilio) only as fallback.
