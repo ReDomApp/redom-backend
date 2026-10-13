@@ -8,6 +8,7 @@ const switchSchema = resendSchema.extend({ contactType: z.enum(["phone", "email"
 function verificationId(req: Request) { return paramsSchema.parse(req.params).verificationChallengeId; }
 export class RegistrationVerificationController {
   async resend(req: Request, res: Response) { try { const body = resendSchema.parse(req.body); res.status(200).json(await registrationVerificationService.resend({ verificationChallengeId: verificationId(req), ...body })); } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to resend the verification code." }); } }
+  async cancel(req: Request, res: Response) { try { const body = resendSchema.omit({ channel: true }).parse(req.body); res.status(200).json(await registrationVerificationService.cancel({ verificationChallengeId: verificationId(req), ...body })); } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to cancel registration verification." }); } }
   async switchContact(req: Request, res: Response) { try { const body = switchSchema.parse(req.body); res.status(200).json(await registrationVerificationService.switchContact({ verificationChallengeId: verificationId(req), ...body })); } catch (error) { res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to send a verification code to the new contact." }); } }
 }
 export const registrationVerificationController = new RegistrationVerificationController();
