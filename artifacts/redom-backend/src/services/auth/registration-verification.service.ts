@@ -26,12 +26,12 @@ async function activeReservation(reservationId: string | undefined, flowId: stri
   return reservation;
 }
 
-async function saveVerificationToFlow(reservationId: string, flowId: string, verification: { challengeId: string; channel: "sms" | "email"; target: string; expiresAt: Date | string }) {
+async function saveVerificationToFlow(reservationId: string, flowId: string, verification: { challengeId: string; channel: "sms" | "whatsapp" | "email"; target: string; expiresAt: Date | string }) {
   const current = await db.query.registrationFlowReservations.findFirst({ where: and(eq(registrationFlowReservations.id, reservationId), eq(registrationFlowReservations.flowId, flowId), eq(registrationFlowReservations.status, "active"), gt(registrationFlowReservations.expiresAt, new Date())) });
   if (!current) throw new Error("Registration Flow ID is invalid or expired.");
   const memory = { ...((current.memory ?? {}) as Record<string, any>) };
   memory.flow = { ...(memory.flow ?? {}), flowId: current.flowId, reservationId: current.id, status: current.status, expiresAt: current.expiresAt.toISOString() };
-  memory.verification = { challengeId: verification.challengeId, channel: verification.channel, target: verification.target, maskedTarget: maskTarget(verification.target, verification.channel === "sms" ? "phone" : "email"), expiresAt: verification.expiresAt instanceof Date ? verification.expiresAt.toISOString() : verification.expiresAt, status: "pending", updatedAt: new Date().toISOString() };
+  memory.verification = { challengeId: verification.challengeId, channel: verification.channel, target: verification.target, maskedTarget: maskTarget(verification.target, verification.channel === "sms" || verification.channel === "whatsapp" ? "phone" : "email"), expiresAt: verification.expiresAt instanceof Date ? verification.expiresAt.toISOString() : verification.expiresAt, status: "pending", updatedAt: new Date().toISOString() };
   const registeredTables = [...new Set([...(current.registeredTables ?? []), "registration_flow_reservations", "verifications"])] as string[];
   const [updated] = await db.update(registrationFlowReservations).set({ memory: memory as any, registeredTables }).where(and(eq(registrationFlowReservations.id, current.id), eq(registrationFlowReservations.flowId, flowId), gt(registrationFlowReservations.expiresAt, new Date()))).returning();
   if (!updated) throw new Error("Unable to update verification details inside the Registration Flow ID.");
@@ -39,21 +39,23 @@ async function saveVerificationToFlow(reservationId: string, flowId: string, ver
 }
 
 export class RegistrationVerificationService {
-  async resend(params: { verificationChallengeId: string; reservationId?: string; flowId: string; deviceId?: string }) {
+  async resend(params: { verificationChallengeId: string; reservationId?: string; flowId: string; deviceId?: string; channel?: "sms" | "whatsapp" | "email" }) {
     const reservation = await activeReservation(params.reservationId, params.flowId, params.deviceId);
     const old = await db.query.verifications.findFirst({ where: eq(verifications.id, params.verificationChallengeId) });
     if (!old) throw new Error("Verification challenge not found.");
     const registrationChallenge = old.sessionId ? await db.query.registrationChallenges.findFirst({ where: eq(registrationChallenges.id, old.sessionId) }) : null;
+    const requestedChannel = old.purpose === "EMAIL_VERIFICATION" ? "email" : (params.channel === "email" ? "sms" : (params.channel ?? (old.channel === "whatsapp" ? "whatsapp" : "sms")));
     const result = await verificationService.resendVerification({
       challengeId: params.verificationChallengeId,
+      channel: requestedChannel,
       deviceId: params.deviceId,
       firstName: registrationChallenge?.firstName ?? undefined,
       requestIp: registrationChallenge?.requestIp ?? undefined,
       userAgent: registrationChallenge?.userAgent ?? undefined,
       sessionId: old.sessionId ?? undefined,
     });
-    const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, { challengeId: result.challengeId, channel: result.channel === "sms" ? "sms" : "email", target: result.target, expiresAt: result.expiresAt });
-    const contactType: ContactType = result.channel === "sms" ? "phone" : "email";
+    const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, { challengeId: result.challengeId, channel: result.channel === "sms" || result.channel === "whatsapp" ? result.channel : "email", target: result.target, expiresAt: result.expiresAt });
+    const contactType: ContactType = result.channel === "sms" || result.channel === "whatsapp" ? "phone" : "email";
     return { success: true, verificationChallengeId: result.challengeId, flowId: maskFlowId(updated.flowId), rawFlowId: updated.flowId, channel: result.channel, maskedTarget: maskTarget(result.target, contactType), expiresAt: result.expiresAt.toISOString() };
   }
 
@@ -68,7 +70,7 @@ export class RegistrationVerificationService {
     if (!registrationChallenge && !user) throw new Error("Registration verification state could not be found.");
 
     let normalizedTarget: string;
-    let channel: "sms" | "email";
+    let channel: "sms" | "whatsapp" | "email";
 
     if (params.contactType === "email") {
       normalizedTarget = emailService.validate(params.target);
@@ -101,14 +103,14 @@ export class RegistrationVerificationService {
       } else if (user) {
         await db.update(users).set({ phoneNumber: normalizedTarget, phoneVerified: false, updatedAt: new Date() }).where(eq(users.id, user.id));
       }
-      channel = "sms";
+      channel = "whatsapp";
     }
 
     await db.update(verifications).set({ status: "invalidated", updatedAt: new Date() }).where(and(eq(verifications.id, verification.id), eq(verifications.status, "pending")));
     const purpose = channel === "sms" ? "PHONE_VERIFICATION" : "EMAIL_VERIFICATION";
     const created = await verificationService.createVerification({ userId: user?.id ?? null, purpose, target: normalizedTarget, channel, requestedLength: 6, firstName: registrationChallenge?.firstName ?? user?.firstName ?? undefined, requestIp: registrationChallenge?.requestIp ?? undefined, userAgent: registrationChallenge?.userAgent ?? undefined, deviceId: params.deviceId, sessionId: registrationChallenge?.id ?? verification.sessionId ?? reservation.id });
-    const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, { challengeId: created.challengeId, channel: created.channel === "sms" ? "sms" : "email", target: created.target, expiresAt: created.expiresAt });
-    return { success: true, verificationChallengeId: created.challengeId, flowId: maskFlowId(updated.flowId), rawFlowId: updated.flowId, channel, maskedTarget: maskTarget(normalizedTarget, params.contactType as ContactType), expiresAt: created.expiresAt.toISOString() };
+    const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, { challengeId: created.challengeId, channel: created.channel === "sms" || created.channel === "whatsapp" ? created.channel : "email", target: created.target, expiresAt: created.expiresAt });
+    return { success: true, verificationChallengeId: created.challengeId, flowId: maskFlowId(updated.flowId), rawFlowId: updated.flowId, channel: created.channel, maskedTarget: maskTarget(normalizedTarget, params.contactType as ContactType), expiresAt: created.expiresAt.toISOString() };
   }
 }
 
