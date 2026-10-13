@@ -27,7 +27,7 @@ export const env = {
   payments: { paystack: { secretKey: required("PAYSTACK_SECRET_KEY"), publicKey: required("PAYSTACK_PUBLIC_KEY") } },
   stripe: { secretKey: required("STRIPE_SECRET_KEY"), publishableKey: required("STRIPE_PUBLISHABLE_KEY"), webhookSecret: required("STRIPE_WEBHOOK_SECRET") },
   refunds: { enabled: optionalBoolean("REDOM_REFUNDS_ENABLED", false), from: optional("REFUND_EMAIL_FROM") ?? "refunds@wnncompany.com" },
-  twilio: { accountSid: required("TWILIO_ACCOUNT_SID"), authToken: required("TWILIO_AUTH_TOKEN"), verifyServiceSid: required("TWILIO_VERIFY_SERVICE_SID"), phoneNumber: required("TWILIO_PHONE_NUMBER"), whatsappFrom: optional("TWILIO_WHATSAPP_FROM") },
+  twilio: { accountSid: required("TWILIO_ACCOUNT_SID"), authToken: required("TWILIO_AUTH_TOKEN"), verifyServiceSid: required("TWILIO_VERIFY_SERVICE_SID"), phoneNumber: required("TWILIO_PHONE_NUMBER") },
   whatsappCloud: {
     accessToken: optional("WHATSAPP_ACCESS_TOKEN"),
     phoneNumberId: optional("WHATSAPP_PHONE_NUMBER_ID"),
