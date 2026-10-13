@@ -28,20 +28,15 @@ export type OtpChannel =
 
 /**
  * OTP lifetime is determined by channel.
- *
- * Email:
- * 10 minutes
- *
- * SMS / WhatsApp:
- * 5 minutes
+ * Registration email, SMS, and WhatsApp codes all expire after ten minutes.
  */
 export const OTP_EXPIRATION_MINUTES: Record<
   OtpChannel,
   number
 > = {
   email: 10,
-  sms: 5,
-  whatsapp: 5,
+  sms: 10,
+  whatsapp: 10,
 };
 
 /**
