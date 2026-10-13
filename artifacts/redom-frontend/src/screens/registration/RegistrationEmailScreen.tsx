@@ -2,9 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import ReDomLogo from "../../assets/brand/redom-logo.svg";
-import LockedKey from "../../assets/auth/locked-key.svg";
 import EmailIcon from "../../assets/auth/email.svg";
-import { useLanguage } from "../../i18n/LanguageProvider";
 import { authService } from "../../auth/service";
 import { detectPublicIp } from "../../auth/publicIp";
 import { REGISTRATION_EMAIL_PROVIDERS, getRegistrationEmailProvider, normalizeRegistrationEmail } from "../../data/registrationEmailProviders";
@@ -16,7 +14,7 @@ const BLUE = "#1877F2", TEXT = "#1C1E21", MUTED = "#65676B", BORDER = "#CCD0D5",
 const flowMask = (value: string) => `${value.slice(0, 4)}${"•".repeat(Math.max(0, value.length - 4))}√`;
 
 export function RegistrationEmailScreen({ navigation, route }: Props) {
-  const { flowId } = route.params; const { t } = useLanguage(); const [email, setEmail] = useState(""); const [focused, setFocused] = useState(false); const [busy, setBusy] = useState(false); const [success, setSuccess] = useState(false); const [error, setError] = useState<string | null>(null); const [phase, setPhase] = useState("Ready to save"); const spin = useRef(new Animated.Value(0)).current;
+  const { flowId } = route.params; const [email, setEmail] = useState(""); const [focused, setFocused] = useState(false); const [busy, setBusy] = useState(false); const [success, setSuccess] = useState(false); const [error, setError] = useState<string | null>(null); const [phase, setPhase] = useState("Ready to save"); const spin = useRef(new Animated.Value(0)).current;
   const provider = useMemo(() => getRegistrationEmailProvider(email), [email]); const canContinue = email.trim().length >= 5 && !busy && !success; const allowedText = REGISTRATION_EMAIL_PROVIDERS.map((item) => `${item.name}: ${item.domains.join(", ")}`).join("  •  ");
 
   async function continueWithEmail() {
