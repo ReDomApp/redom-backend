@@ -37,6 +37,7 @@ router.patch("/register/challenge/:challengeId", registrationRateLimit, registra
 router.post("/register/challenge/:challengeId/complete", registrationRateLimit, registrationChallengeController.complete.bind(registrationChallengeController));
 router.post("/register/verification/:verificationChallengeId/verify", registrationVerificationRateLimit, registrationChallengeController.verify.bind(registrationChallengeController));
 router.post("/register/verification/:verificationChallengeId/resend", registrationVerificationRateLimit, registrationVerificationController.resend.bind(registrationVerificationController));
+router.post("/register/verification/:verificationChallengeId/cancel", registrationVerificationRateLimit, registrationVerificationController.cancel.bind(registrationVerificationController));
 router.post("/register/verification/:verificationChallengeId/switch-contact", registrationVerificationRateLimit, registrationVerificationController.switchContact.bind(registrationVerificationController));
 router.post("/register/initialize", registrationRateLimit, registrationInitializationController.initialize.bind(registrationInitializationController));
 router.post("/pending-registration/options", passwordResetRateLimit, pendingRegistrationController.options.bind(pendingRegistrationController));
