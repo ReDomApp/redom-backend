@@ -61,15 +61,15 @@ function MiniLoginScreen() {
   return (
     <View style={styles.screenCanvas}>
       <View style={styles.miniHeader}>
-        <ReDomLogo width={98} height={30} />
+        <ReDomLogo width={112} height={34} />
         <Text style={styles.miniHeaderLink}>Help</Text>
       </View>
       <View style={styles.loginIntro}>
-        <Text style={styles.miniTitle}>Welcome back</Text>
-        <Text style={styles.miniMuted}>Connect with your world.</Text>
+        <Text style={styles.miniTitle}>Connect with your world.</Text>
+        <Text style={styles.miniMuted}>See what friends are sharing and discover your community on ReDom.</Text>
       </View>
       <View style={styles.inputMock}>
-        <Text style={styles.inputLabel}>Email or phone number</Text>
+        <Text style={styles.inputLabel}>Email address or phone number</Text>
         <Text style={styles.inputValue}>you@example.com</Text>
       </View>
       <View style={styles.inputMock}>
@@ -84,7 +84,7 @@ function MiniLoginScreen() {
       <View style={styles.createButton}>
         <Text style={styles.createButtonText}>Create new account</Text>
       </View>
-      <Text style={styles.miniFooter}>Your people. Your world. ReDom.</Text>
+      <Text style={styles.miniFooter}>Meet people. Share moments. Be ReDom.</Text>
     </View>
   );
 }
@@ -97,12 +97,14 @@ function MiniFeedScreen() {
         <View style={styles.feedTopActions}>
           <View style={styles.smallCircle}><Text style={styles.circleGlyph}>⌕</Text></View>
           <View style={styles.smallCircle}><Text style={styles.circleGlyph}>＋</Text></View>
+          <View style={styles.smallCircle}><Text style={styles.circleGlyph}>☏</Text></View>
         </View>
       </View>
       <View style={styles.feedTabs}>
-        <Text style={styles.feedTabActive}>For you</Text>
-        <Text style={styles.feedTab}>Following</Text>
-        <Text style={styles.feedTab}>Discover</Text>
+        <Text style={styles.feedTabActive}>Home</Text>
+        <Text style={styles.feedTab}>Friends</Text>
+        <Text style={styles.feedTab}>Video</Text>
+        <Text style={styles.feedTab}>Groups</Text>
       </View>
       <View style={styles.storyRow}>
         {["Your story", "Amara", "Jordan", "Maya"].map((name, index) => (
@@ -118,20 +120,27 @@ function MiniFeedScreen() {
           </View>
         ))}
       </View>
+      <View style={styles.feedComposer}>
+        <Image source={{ uri: PROFILE_PHOTO }} style={styles.postAvatar} />
+        <View style={styles.composerPrompt}>
+          <Text style={styles.composerPromptText}>What's on your mind?</Text>
+        </View>
+        <Text style={styles.composerPhoto}>▧</Text>
+      </View>
       <View style={styles.postHeader}>
         <Image source={{ uri: PROFILE_PHOTO }} style={styles.postAvatar} />
         <View style={styles.postIdentity}>
           <Text style={styles.postName}>Jordan Williams</Text>
-          <Text style={styles.postMeta}>Suggested for you · 12 min</Text>
+          <Text style={styles.postMeta}>Suggested for you · 12 min · Public</Text>
         </View>
         <Text style={styles.moreGlyph}>•••</Text>
       </View>
-      <Image source={{ uri: FEED_PHOTO }} style={styles.feedPhoto} resizeMode="cover" />
+      <Image source={{ uri: FEED_PHOTO }} style={[styles.feedPhoto, { height: 108 }]} resizeMode="cover" />
       <Text style={styles.postCaption}>Little moments, lasting memories.</Text>
       <View style={styles.postEngagement}>
-        <Text style={styles.engagementText}>♡  2.4K</Text>
-        <Text style={styles.engagementText}>◯  184</Text>
-        <Text style={styles.engagementText}>↗  Share</Text>
+        <Text style={styles.engagementText}>👍  2.4K</Text>
+        <Text style={styles.engagementText}>Comment 184</Text>
+        <Text style={styles.engagementText}>Share</Text>
       </View>
       <View style={styles.miniBottomNav}>
         {[HomeIcon, VideoIcon, MarketplaceIcon, NotificationsIcon, ProfilePlaceholder].map((Icon, index) => (
@@ -149,7 +158,7 @@ function MiniProfileScreen() {
     <View style={styles.screenCanvas}>
       <View style={styles.profileTopBar}>
         <Text style={styles.backGlyph}>‹</Text>
-        <Text style={styles.profileTopTitle}>Profile</Text>
+        <Text style={styles.profileTopTitle}>ReDom profile</Text>
         <Text style={styles.moreGlyph}>•••</Text>
       </View>
       <View style={styles.profileCover}>
@@ -160,24 +169,34 @@ function MiniProfileScreen() {
         <Image source={{ uri: PROFILE_PHOTO }} style={styles.profileAvatar} />
         <View style={styles.profileNameBlock}>
           <Text style={styles.profileName}>Mr. Herpes</Text>
-          <Text style={styles.profileHandle}>@mr.herpes</Text>
+          <Text style={styles.profileHandle}>@mr.herpes · 1.8K friends</Text>
           <Text style={styles.profileBio}>Making memories. Sharing my world.</Text>
         </View>
       </View>
       <View style={styles.profileStats}>
         <View style={styles.profileStat}><Text style={styles.statNumber}>248</Text><Text style={styles.statLabel}>Posts</Text></View>
-        <View style={styles.profileStat}><Text style={styles.statNumber}>18.6K</Text><Text style={styles.statLabel}>Followers</Text></View>
+        <View style={styles.profileStat}><Text style={styles.statNumber}>1.8K</Text><Text style={styles.statLabel}>Friends</Text></View>
         <View style={styles.profileStat}><Text style={styles.statNumber}>612</Text><Text style={styles.statLabel}>Following</Text></View>
       </View>
       <View style={styles.profileActions}>
-        <View style={styles.followButton}><Text style={styles.followButtonText}>Follow</Text></View>
+        <View style={styles.followButton}><Text style={styles.followButtonText}>＋ Add friend</Text></View>
         <View style={styles.messageButton}><Text style={styles.messageButtonText}>Message</Text></View>
       </View>
       <View style={styles.profileSectionTabs}>
         <Text style={styles.profileSectionActive}>Posts</Text>
+        <Text style={styles.profileSection}>About</Text>
         <Text style={styles.profileSection}>Photos</Text>
-        <Text style={styles.profileSection}>Videos</Text>
+        <Text style={styles.profileSection}>Friends</Text>
       </View>
+      <View style={styles.postHeader}>
+        <Image source={{ uri: PROFILE_PHOTO }} style={styles.postAvatar} />
+        <View style={styles.postIdentity}>
+          <Text style={styles.postName}>Mr. Herpes</Text>
+          <Text style={styles.postMeta}>Just now · Friends</Text>
+        </View>
+        <Text style={styles.moreGlyph}>•••</Text>
+      </View>
+      <Text style={styles.postCaption}>Welcome to my ReDom world ✨</Text>
       <View style={styles.profileGrid}>
         <Image source={{ uri: FEED_PHOTO }} style={styles.gridPhoto} />
         <Image source={{ uri: PROFILE_PHOTO }} style={styles.gridPhoto} />
@@ -442,6 +461,10 @@ const styles = StyleSheet.create({
   smallCircle: { width: 25, height: 25, borderRadius: 13, backgroundColor: "#F0F4F9", alignItems: "center", justifyContent: "center" },
   circleGlyph: { color: "#26374C", fontSize: 19, lineHeight: 21 },
   feedTabs: { flexDirection: "row", gap: 16, paddingHorizontal: 12, paddingTop: 11, paddingBottom: 7 },
+  feedComposer: { minHeight: 40, flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#E7EBF0" },
+  composerPrompt: { flex: 1, borderWidth: 1, borderColor: "#E0E5EC", borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 },
+  composerPromptText: { color: "#687386", fontSize: 8 },
+  composerPhoto: { color: "#269B59", fontSize: 17, fontWeight: "800", paddingHorizontal: 3 },
   feedTabActive: { color: REDOM_BLUE, fontSize: 9, fontWeight: "800", borderBottomWidth: 2, borderBottomColor: REDOM_BLUE, paddingBottom: 5 },
   feedTab: { color: "#7C8796", fontSize: 9, fontWeight: "600", paddingBottom: 5 },
   storyRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#EEF1F5" },
