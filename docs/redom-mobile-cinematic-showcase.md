@@ -24,7 +24,7 @@ The video is remote rather than bundled so the repository does not gain a large 
 - [ ] Android build opens and plays the background clip (or gracefully shows the dark fallback).
 - [ ] iOS build opens and plays the background clip (or gracefully shows the dark fallback).
 - [ ] Auto-advance, pause/resume, swipe direction, and dot selection work.
-- [ ] Continue to Login and Create an account navigate to the existing flows.
+- [ ] After StartupScreen completes, existing login, registration, recognized-account, and authenticated routes remain intact.
 - [ ] Intro appears before StartupScreen, then automatically transitions to the startup security check after about 16.2 seconds.
 - [ ] Continue to startup and Skip intro both advance to StartupScreen without bypassing the security check.
 - [ ] Existing recognized-account, login, registration, and authenticated Home Feed routes still work.
