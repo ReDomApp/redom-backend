@@ -40,7 +40,17 @@ function hasBlockingNetworkRisk(security: RegistrationFlowNetworkSecurity): bool
 
 export function RegistrationPhoneScreen({ navigation, route }: Props) {
   const { t } = useLanguage();
-  const { reservationId, flowId, expiresAt } = route.params;
+  // Normalize legacy/nested navigation params before they reach the API. A reservation object
+  // accidentally passed as reservationId previously became "[object Object]" in SQL parameters.
+  const rawRouteParams = route.params as unknown as Record<string, unknown>;
+  const nestedReservation = rawRouteParams.reservationId && typeof rawRouteParams.reservationId === "object"
+    ? rawRouteParams.reservationId as Record<string, unknown>
+    : rawRouteParams;
+  const reservationId = typeof nestedReservation.reservationId === "string" ? nestedReservation.reservationId : "";
+  const flowId = typeof rawRouteParams.flowId === "string" ? rawRouteParams.flowId
+    : typeof nestedReservation.flowId === "string" ? nestedReservation.flowId : "";
+  const expiresAt = typeof rawRouteParams.expiresAt === "string" ? rawRouteParams.expiresAt
+    : typeof nestedReservation.expiresAt === "string" ? nestedReservation.expiresAt : "";
   const [country, setCountry] = useState<Country>(COUNTRIES.find((c) => c.code === "NG") ?? COUNTRIES[0]!);
   const [phone, setPhone] = useState("");
   const [countryOpen, setCountryOpen] = useState(false);
@@ -119,7 +129,7 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
     try {
       await authService.consentRegistrationFlowSecurity({ reservationId, flowId, deviceId, ip: publicIp });
       setSecurityOpen(false);
-      navigation.replace("RegistrationPassword", route.params);
+      navigation.replace("RegistrationPassword", { reservationId, flowId, expiresAt });
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save network security details."); }
     finally { setChecking(false); }
   }
