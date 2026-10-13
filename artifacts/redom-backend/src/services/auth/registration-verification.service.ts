@@ -43,6 +43,7 @@ export class RegistrationVerificationService {
     const reservation = await activeReservation(params.reservationId, params.flowId, params.deviceId);
     const old = await db.query.verifications.findFirst({ where: eq(verifications.id, params.verificationChallengeId) });
     if (!old) throw new Error("Verification challenge not found.");
+    if (old.createdAt && Date.now() - old.createdAt.getTime() < 60_000) throw new Error("Please wait 1:00 before requesting another verification code.");
     const registrationChallenge = old.sessionId ? await db.query.registrationChallenges.findFirst({ where: eq(registrationChallenges.id, old.sessionId) }) : null;
     const requestedChannel = old.purpose === "EMAIL_VERIFICATION" ? "email" : (params.channel === "email" ? "sms" : (params.channel ?? (old.channel === "whatsapp" ? "whatsapp" : "sms")));
     const result = await verificationService.resendVerification({
@@ -59,12 +60,26 @@ export class RegistrationVerificationService {
     return { success: true, verificationChallengeId: result.challengeId, flowId: maskFlowId(updated.flowId), rawFlowId: updated.flowId, channel: result.channel, maskedTarget: maskTarget(result.target, contactType), expiresAt: result.expiresAt.toISOString() };
   }
 
+  async cancel(params: { verificationChallengeId: string; reservationId?: string; flowId: string; deviceId?: string }) {
+    const reservation = await activeReservation(params.reservationId, params.flowId, params.deviceId);
+    const verification = await db.query.verifications.findFirst({ where: eq(verifications.id, params.verificationChallengeId) });
+    if (!verification) throw new Error("Verification challenge not found.");
+    const now = new Date();
+    await db.update(verifications).set({ status: "invalidated", updatedAt: now }).where(and(eq(verifications.id, verification.id), eq(verifications.status, "pending")));
+    if (verification.sessionId) {
+      await db.update(registrationChallenges).set({ status: "cancelled", updatedAt: now }).where(and(eq(registrationChallenges.id, verification.sessionId), eq(registrationChallenges.status, "pending")));
+    }
+    await db.update(registrationFlowReservations).set({ status: "cancelled", memory: {} as any, registeredTables: [] }).where(and(eq(registrationFlowReservations.id, reservation.id), eq(registrationFlowReservations.flowId, reservation.flowId), eq(registrationFlowReservations.status, "active")));
+    return { success: true, message: "Registration verification was cancelled." };
+  }
+
   async switchContact(params: { verificationChallengeId: string; reservationId?: string; flowId: string; deviceId?: string; contactType: ContactType; target: string }) {
     const reservation = await activeReservation(params.reservationId, params.flowId, params.deviceId);
     const verification = await db.query.verifications.findFirst({ where: eq(verifications.id, params.verificationChallengeId) });
     if (!verification) throw new Error("Verification challenge not found.");
     if (!["EMAIL_VERIFICATION", "PHONE_VERIFICATION"].includes(verification.purpose)) throw new Error("Verification challenge is invalid for registration.");
 
+    if (verification.createdAt && Date.now() - verification.createdAt.getTime() < 60_000) throw new Error("Please wait 1:00 before changing your verification destination.");
     const registrationChallenge = verification.sessionId ? await db.query.registrationChallenges.findFirst({ where: eq(registrationChallenges.id, verification.sessionId) }) : null;
     const user = verification.userId ? await db.query.users.findFirst({ where: eq(users.id, verification.userId) }) : null;
     if (!registrationChallenge && !user) throw new Error("Registration verification state could not be found.");
