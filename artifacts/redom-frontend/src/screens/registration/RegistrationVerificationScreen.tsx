@@ -33,7 +33,7 @@ export function RegistrationVerificationScreen({ route, navigation }: Props) {
   const backdrop = useRef(new Animated.Value(0)).current;
   const countdown = useMemo(() => formatTimer(seconds), [seconds]);
   const codeExpired = clock >= new Date(expiresAt).getTime();
-  const canVerify = code.length > 0 && !busy && !verified && !codeExpired;
+  const canVerify = code.length === 6 && !busy && !verified && !codeExpired;
 
   useEffect(() => {
     const timer = setInterval(() => { setSeconds(v => Math.max(0, v - 1)); setClock(Date.now()); }, 1000);
@@ -146,7 +146,7 @@ export function RegistrationVerificationScreen({ route, navigation }: Props) {
       <Text style={s.description}>{verified ? "Your contact has been verified. ReDom is preparing your account." : <>To confirm your account, enter the code we sent to <Text style={s.target}>{maskedTarget}</Text>.</>}</Text>
       {!verified ? <>
         <View style={[s.field, code.length > 0 && s.fieldFilled, !!error && s.fieldError]}>
-          <TextInput value={code} onChangeText={v => { setCode(v.replace(/\D/g, "").slice(0, 9)); setError(null); }} keyboardType="number-pad" maxLength={9} autoFocus style={s.input} placeholder="Confirmation code" placeholderTextColor="#777B80" editable={!busy && !codeExpired} returnKeyType="done" onSubmitEditing={() => void verify()} accessibilityLabel="Confirmation code" />
+          <TextInput value={code} onChangeText={v => { setCode(v.replace(/\D/g, "").slice(0, 6)); setError(null); }} keyboardType="number-pad" maxLength={6} autoFocus style={s.input} placeholder="6-digit confirmation code" placeholderTextColor="#777B80" editable={!busy && !codeExpired} returnKeyType="done" onSubmitEditing={() => void verify()} accessibilityLabel="Confirmation code" />
           {code.length > 0 ? <Pressable accessibilityLabel="Clear code" onPress={() => { setCode(""); setError(null); }} style={s.clearCode}><Text style={s.clearGlyph}>×</Text></Pressable> : null}
         </View>
         {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
