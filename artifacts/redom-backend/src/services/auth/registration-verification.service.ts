@@ -122,7 +122,7 @@ export class RegistrationVerificationService {
     }
 
     await db.update(verifications).set({ status: "invalidated", updatedAt: new Date() }).where(and(eq(verifications.id, verification.id), eq(verifications.status, "pending")));
-    const purpose = channel === "sms" ? "PHONE_VERIFICATION" : "EMAIL_VERIFICATION";
+    const purpose = params.contactType === "phone" ? "PHONE_VERIFICATION" : "EMAIL_VERIFICATION";
     const created = await verificationService.createVerification({ userId: user?.id ?? null, purpose, target: normalizedTarget, channel, requestedLength: 6, firstName: registrationChallenge?.firstName ?? user?.firstName ?? undefined, requestIp: registrationChallenge?.requestIp ?? undefined, userAgent: registrationChallenge?.userAgent ?? undefined, deviceId: params.deviceId, sessionId: registrationChallenge?.id ?? verification.sessionId ?? reservation.id });
     const updated = await saveVerificationToFlow(reservation.id, reservation.flowId, { challengeId: created.challengeId, channel: created.channel === "sms" || created.channel === "whatsapp" ? created.channel : "email", target: created.target, expiresAt: created.expiresAt });
     return { success: true, verificationChallengeId: created.challengeId, flowId: maskFlowId(updated.flowId), rawFlowId: updated.flowId, channel: created.channel, maskedTarget: maskTarget(normalizedTarget, params.contactType as ContactType), expiresAt: created.expiresAt.toISOString() };
