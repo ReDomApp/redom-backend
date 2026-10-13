@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import ReDomLogo from "../../assets/brand/redom-logo.svg";
-import LockedKey from "../../assets/auth/locked-key.svg";
 import { ReDomScreen } from "../../layout/ReDomScreen";
 import { authService } from "../../auth/service";
 import { getDeviceId } from "../../utils/device";
@@ -10,7 +9,7 @@ import { useLanguage } from "../../i18n/LanguageProvider";
 import type { RootStackParamList } from "../../routing/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "RegistrationIdentity">;
-const BLUE = "#1877F2"; const TEXT = "#1C1E21"; const MUTED = "#65676B"; const BORDER = "#CCD0D5";
+const BLUE = "#1877F2"; const TEXT = "#1C1E21"; const MUTED = "#65676B"; const BORDER = "#DADDE1";
 const NAME_PATTERN = /^[\p{L}][\p{L}\s.,'-]*$/u;
 const JUNK_NAMES = new Set(["test", "testing", "asdf", "qwerty", "admin", "name", "firstname", "lastname", "unknown", "none", "null"]);
 function sanitizeName(value: string) { return value.normalize("NFC").replace(/[^\p{L}\s.,'-]/gu, "").replace(/\s+/g, " "); }
@@ -27,32 +26,59 @@ function maskedFlowId(flowId: string) { const visible = flowId.slice(0, 4); retu
 
 export function RegistrationIdentityScreen({ navigation, route }: Props) {
   const { t, uiMessage } = useLanguage(); const { reservationId, flowId, expiresAt } = route.params;
-  const [firstName, setFirstName] = useState(""); const [lastName, setLastName] = useState(""); const [focused, setFocused] = useState<"first" | "last" | null>(null); const [error, setError] = useState<string | null>(null); const [saved, setSaved] = useState(false); const [loading, setLoading] = useState(false);
+  const [firstName, setFirstName] = useState(""); const [lastName, setLastName] = useState(""); const [focused, setFocused] = useState<"first" | "last" | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
   const remainingMinutes = useMemo(() => Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 60000)), [expiresAt]);
   async function continueRegistration() {
     if (loading) return;
     const firstError = validateName(firstName, t("firstName"), uiMessage); const lastError = validateName(lastName, t("lastName"), uiMessage);
     if (firstError || lastError) { setError(firstError ?? lastError); return; }
-    setLoading(true); setError(null); setSaved(false);
+    setLoading(true); setError(null);
     try {
       await authService.saveRegistrationFlowName({ reservationId, flowId, deviceId: await getDeviceId(), firstName: firstName.trim().replace(/\s+/g, " "), lastName: lastName.trim().replace(/\s+/g, " ") });
-      setSaved(true);
       navigation.replace("RegistrationBirthday", { reservationId, flowId, expiresAt });
     } catch (e) { setError(e instanceof Error ? e.message : uiMessage("nameSaveFailed")); }
     finally { setLoading(false); }
   }
-  const footer = <View style={styles.footerContent}><View style={styles.loginRow}><Text style={styles.muted}>{t("alreadyAccount")} </Text><Pressable onPress={() => navigation.navigate("Login")} disabled={loading}><Text style={styles.link}>{t("login")}</Text></Pressable></View><View style={styles.companyRow}><ReDomLogo width={72} height={20} /><Text style={styles.company}>{t("company")}</Text></View></View>;
-  return <ReDomScreen footer={footer}><View style={styles.content}>
-    <View style={styles.logo}><ReDomLogo width={150} height={42} /></View>
-    <View style={styles.flowHeader}><View style={styles.flowRow}><LockedKey width={20} height={20} /><Text style={styles.flowText}>{t("flowId", { flowId: maskedFlowId(flowId) })}</Text></View><Text style={styles.expiry}>{remainingMinutes} min</Text></View>
-    <Text style={styles.title}>{t("whatsName")}</Text><Text style={styles.description}>{t("realName")}</Text><Text style={styles.helper}>{t("everydayName")}</Text>
+  const footer = <View style={styles.footerContent}>
+    <View style={styles.loginRow}><Text style={styles.muted}>{t("alreadyAccount")} </Text><Pressable accessibilityRole="link" onPress={() => navigation.navigate("Login")} disabled={loading} hitSlop={8}><Text style={styles.link}>{t("login")}</Text></Pressable></View>
+    <View style={styles.footerBottom}><ReDomLogo width={66} height={19} /><View style={styles.flowMeta}><Text numberOfLines={1} style={styles.flowMetaText}>Flow ID: {maskedFlowId(flowId)}</Text><Text style={styles.flowExpiry}>{remainingMinutes} min left</Text></View></View>
+  </View>;
+  return <ReDomScreen footer={footer} backgroundColor="#FFFFFF"><View style={styles.content}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backButton} hitSlop={10}><Text style={styles.backArrow}>‹</Text></Pressable>
+    <View style={styles.headingBlock}><Text style={styles.title}>{t("whatsName")}</Text><Text style={styles.description}>{t("realName")}</Text></View>
     <View style={styles.nameRow}>
-      <View style={styles.fieldWrap}><TextInput value={firstName} onChangeText={(v) => { setFirstName(sanitizeName(v)); setError(null); setSaved(false); }} onFocus={() => setFocused("first")} onBlur={() => setFocused(null)} style={[styles.input, focused === "first" && styles.inputFocused]} textContentType="givenName" autoComplete="name-given" autoCapitalize="words" autoCorrect={false} spellCheck={false} keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"} editable={!loading} maxLength={100} accessibilityLabel={t("firstName")} /><Text style={[styles.floatingLabel, (focused === "first" || firstName.length > 0) && styles.floatingLabelActive]}>{t("firstName")}</Text></View>
-      <View style={styles.fieldWrap}><TextInput value={lastName} onChangeText={(v) => { setLastName(sanitizeName(v)); setError(null); setSaved(false); }} onFocus={() => setFocused("last")} onBlur={() => setFocused(null)} style={[styles.input, focused === "last" && styles.inputFocused]} textContentType="familyName" autoComplete="name-family" autoCapitalize="words" autoCorrect={false} spellCheck={false} keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"} editable={!loading} maxLength={100} accessibilityLabel={t("lastName")} /><Text style={[styles.floatingLabel, (focused === "last" || lastName.length > 0) && styles.floatingLabelActive]}>{t("lastName")}</Text></View>
+      <View style={styles.fieldWrap}><TextInput value={firstName} onChangeText={(v) => { setFirstName(sanitizeName(v)); setError(null); }} onFocus={() => setFocused("first")} onBlur={() => setFocused(null)} style={[styles.input, focused === "first" && styles.inputFocused, error && styles.inputError]} placeholder={t("firstName")} placeholderTextColor={MUTED} textContentType="givenName" autoComplete="name-given" autoCapitalize="words" autoCorrect={false} spellCheck={false} keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"} returnKeyType="next" onSubmitEditing={() => { /* keep the next field reachable without changing the registration flow */ }} editable={!loading} maxLength={100} accessibilityLabel={t("firstName")} /></View>
+      <View style={styles.fieldWrap}><TextInput value={lastName} onChangeText={(v) => { setLastName(sanitizeName(v)); setError(null); }} onFocus={() => setFocused("last")} onBlur={() => setFocused(null)} style={[styles.input, focused === "last" && styles.inputFocused, error && styles.inputError]} placeholder={t("lastName")} placeholderTextColor={MUTED} textContentType="familyName" autoComplete="name-family" autoCapitalize="words" autoCorrect={false} spellCheck={false} keyboardType={Platform.OS === "ios" ? "ascii-capable" : "visible-password"} returnKeyType="done" onSubmitEditing={() => void continueRegistration()} editable={!loading} maxLength={100} accessibilityLabel={t("lastName")} /></View>
     </View>
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{saved ? <Text style={styles.saved}>{uiMessage("nameSaved")}</Text> : null}
-    <Pressable accessibilityRole="button" onPress={() => void continueRegistration()} disabled={loading} style={[styles.button, loading && styles.disabled]}>{loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t("continue")}</Text>}</Pressable>
-    <View style={styles.progress} accessibilityLabel={uiMessage("progress2")}>{[0,1,2,3,4,5].map((step) => <View key={step} style={[styles.dot, step <= 1 && styles.dotActive]} />)}</View>
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    <Pressable accessibilityRole="button" onPress={() => void continueRegistration()} disabled={loading} style={({ pressed }) => [styles.button, loading && styles.disabled, pressed && !loading && styles.buttonPressed]}>{loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t("continue")}</Text>}</Pressable>
+    <Text style={styles.privacyHint}>Use the name people know you by in everyday life.</Text>
   </View></ReDomScreen>;
 }
-const styles = StyleSheet.create({ content:{flex:1,width:"100%",maxWidth:420,alignSelf:"center",justifyContent:"flex-start",paddingTop:20,paddingBottom:0},logo:{alignItems:"center",marginBottom:12},flowHeader:{marginBottom:18},flowRow:{flexDirection:"row",alignItems:"center",justifyContent:"center",gap:7},flowText:{color:BLUE,fontSize:13,fontWeight:"800",letterSpacing:.3},expiry:{color:MUTED,fontSize:11.5,textAlign:"center",marginTop:5},title:{color:TEXT,fontSize:27,lineHeight:33,fontWeight:"800",textAlign:"center",marginBottom:7},description:{color:TEXT,fontSize:15,lineHeight:22,textAlign:"center"},helper:{color:MUTED,fontSize:13,lineHeight:19,textAlign:"center",marginTop:4,marginBottom:20},nameRow:{flexDirection:"row",gap:10,width:"100%"},fieldWrap:{flex:1,position:"relative",minWidth:0},input:{height:58,borderWidth:1,borderColor:BORDER,borderRadius:12,paddingHorizontal:14,paddingTop:7,color:TEXT,fontSize:16,backgroundColor:"#FFFFFF"},inputFocused:{borderColor:BLUE,borderWidth:1.5},floatingLabel:{position:"absolute",left:11,top:19,paddingHorizontal:4,color:MUTED,fontSize:15,backgroundColor:"#FFFFFF"},floatingLabelActive:{top:-8,color:BLUE,fontSize:11.5,fontWeight:"700"},error:{color:"#E41E3F",fontSize:13,lineHeight:19,fontWeight:"600",marginTop:12,textAlign:"center"},saved:{color:"#18794E",fontSize:13,lineHeight:19,fontWeight:"600",marginTop:12,textAlign:"center"},button:{height:54,borderRadius:13,backgroundColor:BLUE,alignItems:"center",justifyContent:"center",marginTop:17,width:"100%"},buttonText:{color:"#FFFFFF",fontSize:17,fontWeight:"800"},disabled:{opacity:.7},progress:{flexDirection:"row",justifyContent:"center",gap:8,marginTop:22},dot:{width:8,height:8,borderRadius:4,backgroundColor:"#D8DCE1"},dotActive:{width:24,backgroundColor:BLUE},footerContent:{width:"100%",alignItems:"center"},loginRow:{flexDirection:"row",justifyContent:"center",alignItems:"center"},muted:{color:MUTED,fontSize:14},link:{color:BLUE,fontSize:14,fontWeight:"800"},companyRow:{flexDirection:"row",alignItems:"center",justifyContent:"center",gap:7,marginTop:9},company:{color:MUTED,fontSize:12}});
+const styles = StyleSheet.create({
+  content:{flex:1,width:"100%",maxWidth:520,alignSelf:"center",paddingTop:8,paddingBottom:28},
+  backButton:{width:42,height:42,justifyContent:"center",alignItems:"flex-start",marginBottom:25},
+  backArrow:{fontSize:43,lineHeight:44,fontWeight:"300",color:"#111111",marginTop:-4},
+  headingBlock:{marginBottom:28},
+  title:{color:"#111111",fontSize:30,lineHeight:37,fontWeight:"800",letterSpacing:-0.7,marginBottom:9},
+  description:{color:TEXT,fontSize:17,lineHeight:25,fontWeight:"400"},
+  nameRow:{flexDirection:"row",gap:12,width:"100%"},
+  fieldWrap:{flex:1,minWidth:0},
+  input:{height:66,borderWidth:1.3,borderColor:"#E0E0E0",borderRadius:19,paddingHorizontal:16,color:TEXT,fontSize:16,backgroundColor:"#FFFFFF"},
+  inputFocused:{borderColor:BLUE,borderWidth:1.7},
+  inputError:{borderColor:"#C43D58"},
+  error:{color:"#B4233B",fontSize:13.5,lineHeight:20,fontWeight:"500",marginTop:12},
+  button:{height:58,borderRadius:30,backgroundColor:BLUE,alignItems:"center",justifyContent:"center",marginTop:24,width:"100%",shadowColor:BLUE,shadowOpacity:0.14,shadowRadius:8,shadowOffset:{width:0,height:3},elevation:2},
+  buttonText:{color:"#FFFFFF",fontSize:17,fontWeight:"700",letterSpacing:0.1},
+  buttonPressed:{opacity:0.86,transform:[{scale:0.995}]},
+  disabled:{opacity:0.7},
+  privacyHint:{color:"#73777D",fontSize:12.5,lineHeight:18,marginTop:12},
+  footerContent:{width:"100%",alignItems:"stretch",gap:16},
+  loginRow:{flexDirection:"row",justifyContent:"center",alignItems:"center",paddingBottom:1},
+  muted:{color:MUTED,fontSize:14},
+  link:{color:"#2167B2",fontSize:14,fontWeight:"700"},
+  footerBottom:{width:"100%",flexDirection:"row",alignItems:"center",justifyContent:"space-between",minHeight:22},
+  flowMeta:{alignItems:"flex-end",flexShrink:1,maxWidth:"68%"},
+  flowMetaText:{color:"#A0A4AA",fontSize:8,lineHeight:10,letterSpacing:0.1},
+  flowExpiry:{color:"#A0A4AA",fontSize:8,lineHeight:10}
+});
