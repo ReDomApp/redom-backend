@@ -21,7 +21,10 @@ import NotificationsIcon from "../assets/home-feed/notifications.svg";
 import ProfilePlaceholder from "../assets/home-feed/profile-placeholder.svg";
 import type { RootStackParamList } from "../routing/types";
 
-type Props = NativeStackScreenProps<RootStackParamList, "CinematicShowcase">;
+type Props = {
+  navigation?: NativeStackScreenProps<RootStackParamList, "CinematicShowcase">["navigation"];
+  onComplete?: () => void;
+};
 
 const REDOM_BLUE = "#1877F2";
 const WALKING_VIDEO =
@@ -212,10 +215,11 @@ function MiniScreen({ screen }: { screen: ScreenKey }) {
   return <MiniProfileScreen />;
 }
 
-export function CinematicShowcaseScreen({ navigation }: Props) {
+export function CinematicShowcaseScreen({ navigation, onComplete }: Props) {
   const { width, height } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(1);
   const [motionEnabled, setMotionEnabled] = useState(true);
+  const completionCalled = useRef(false);
   const motions = useRef(SCREENS.map(() => makeMotion())).current;
   const cardWidth = Math.min(width * 0.74, 322);
   const cardHeight = Math.min(height * 0.49, 448);
@@ -229,6 +233,22 @@ export function CinematicShowcaseScreen({ navigation }: Props) {
   const moveTo = (next: number) => {
     setActiveIndex((current) => (next + SCREENS.length) % SCREENS.length);
   };
+
+  const finishIntro = () => {
+    if (completionCalled.current) return;
+    completionCalled.current = true;
+    onComplete?.();
+  };
+
+  useEffect(() => {
+    if (!onComplete) return;
+    const timer = setTimeout(() => {
+      if (completionCalled.current) return;
+      completionCalled.current = true;
+      onComplete();
+    }, 16200);
+    return () => clearTimeout(timer);
+  }, [onComplete]);
 
   useEffect(() => {
     if (!motionEnabled) return;
@@ -364,20 +384,20 @@ export function CinematicShowcaseScreen({ navigation }: Props) {
         <View style={styles.bottomContent}>
           <Pressable
             accessibilityRole="button"
-            onPress={() => navigation.navigate("Login")}
+            onPress={() => (onComplete ? finishIntro() : navigation?.navigate("Login"))}
             style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
           >
-            <Text style={styles.primaryButtonText}>Continue to ReDom</Text>
+            <Text style={styles.primaryButtonText}>{onComplete ? "Continue to startup" : "Continue to ReDom"}</Text>
             <Text style={styles.primaryArrow}>→</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            onPress={() => navigation.navigate("RegistrationWelcome")}
+            onPress={() => (onComplete ? finishIntro() : navigation?.navigate("RegistrationWelcome"))}
             style={styles.secondaryButton}
           >
-            <Text style={styles.secondaryButtonText}>Create an account</Text>
+            <Text style={styles.secondaryButtonText}>{onComplete ? "Skip intro" : "Create an account"}</Text>
           </Pressable>
-          <Text style={styles.footnote}>A more connected world starts here.</Text>
+          <Text style={styles.footnote}>{onComplete ? "Opening ReDom startup automatically…" : "A more connected world starts here."}</Text>
         </View>
       </SafeAreaView>
     </View>
