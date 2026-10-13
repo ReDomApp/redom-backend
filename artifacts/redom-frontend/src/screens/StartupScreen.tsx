@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Easing, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalLink } from "../utils/openExternalLink";
 import StartupArtwork from "../assets/brand/startup.svg";
 import WarningBlack from "../assets/auth/warning-black.svg";
@@ -74,8 +74,8 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.artworkContainer}>
-        <StartupArtwork width={343} height={768} />
+      <View pointerEvents="none" style={styles.artworkContainer}>
+        <StartupArtwork width="100%" height="100%" />
         <Animated.View pointerEvents="none" style={[styles.spinner, { transform: [{ rotate: rotation.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] }) }] }]}>
           <View style={styles.spinnerTrack}><View style={styles.spinnerArc} /></View>
         </Animated.View>
@@ -123,26 +123,26 @@ export function StartupScreen({ onComplete }: { onComplete: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
-  artworkContainer: { width: 343, height: 768, alignItems: "center", justifyContent: "center", position: "relative" },
-  spinner: { position: "absolute", top: 277, left: 0, right: 0, height: 24, alignItems: "center", justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: "#061226" },
+  artworkContainer: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  spinner: { position: "absolute", top: "44%", left: 0, right: 0, height: 24, alignItems: "center", justifyContent: "center" },
   spinnerTrack: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: "rgba(255,255,255,0.35)", alignItems: "center", justifyContent: "center" },
   spinnerArc: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderTopColor: "#FFFFFF", borderRightColor: "transparent", borderBottomColor: "transparent", borderLeftColor: "transparent", position: "absolute" },
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.52)", alignItems: "center", justifyContent: "center", padding: 20 },
-  card: { width: "100%", maxWidth: 420, borderRadius: 18, backgroundColor: "#FFFFFF", padding: 22, elevation: 8 },
-  iconCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", marginBottom: 12 },
-  title: { fontSize: 20, fontWeight: "700", color: "#1C1E21", marginBottom: 6 },
-  subtitle: { fontSize: 14, lineHeight: 20, color: "#65676B", marginBottom: 14 },
+  card: { width: "100%", maxWidth: 420, borderRadius: 24, backgroundColor: "#F8FBFF", padding: 22, borderWidth: 1, borderColor: "rgba(24,119,242,0.24)", elevation: 16, shadowColor: "#1877F2", shadowOpacity: 0.22, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } },
+  iconCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#E8F2FF", alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  title: { fontSize: 20, fontWeight: "800", color: "#102746", marginBottom: 6 },
+  subtitle: { fontSize: 14, lineHeight: 20, color: "#50627A", marginBottom: 14 },
   warning: { flexDirection: "row", gap: 10, alignItems: "flex-start", backgroundColor: "#FFF4E5", borderRadius: 12, padding: 12, marginBottom: 14 },
   warningText: { flex: 1, fontSize: 14, lineHeight: 20, color: "#7A4B00", fontWeight: "600" },
-  rows: { borderTopWidth: 1, borderTopColor: "#E4E6EB" },
-  row: { flexDirection: "row", justifyContent: "space-between", gap: 16, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#E4E6EB" },
-  label: { color: "#65676B", fontSize: 14 },
-  value: { color: "#1C1E21", fontSize: 14, fontWeight: "600", flexShrink: 1, textAlign: "right" },
-  embeddedNotice: { marginTop: 12, fontSize: 12, lineHeight: 17, color: "#65676B" },
-  terms: { marginTop: 14, padding: 12, borderWidth: 1, borderColor: "#CCD0D5", borderRadius: 10 },
-  termsText: { color: "#1877F2", fontSize: 14, fontWeight: "700" },
-  urlText: { color: "#65676B", fontSize: 11, marginTop: 4 },
+  rows: { borderTopWidth: 1, borderTopColor: "#DCE8F7" },
+  row: { flexDirection: "row", justifyContent: "space-between", gap: 16, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#DCE8F7" },
+  label: { color: "#61738B", fontSize: 14 },
+  value: { color: "#152A45", fontSize: 14, fontWeight: "700", flexShrink: 1, textAlign: "right" },
+  embeddedNotice: { marginTop: 12, fontSize: 12, lineHeight: 17, color: "#61738B" },
+  terms: { marginTop: 14, padding: 12, borderWidth: 1, borderColor: "#C5D9F2", borderRadius: 12, backgroundColor: "#EEF6FF" },
+  termsText: { color: "#1267D5", fontSize: 14, fontWeight: "700" },
+  urlText: { color: "#61738B", fontSize: 11, marginTop: 4 },
   button: { marginTop: 16, backgroundColor: "#1877F2", borderRadius: 10, paddingVertical: 13, alignItems: "center" },
   checkingButton: { marginTop: 16, backgroundColor: "#1877F2", borderRadius: 10, paddingVertical: 13, alignItems: "center", justifyContent: "center", gap: 7 },
   buttonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
