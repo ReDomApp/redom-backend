@@ -3,7 +3,6 @@ import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, 
 import { getLocales } from "expo-localization";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import ReDomLogo from "../../assets/brand/redom-logo.svg";
-import LockedKey from "../../assets/auth/locked-key.svg";
 import SecurityShield from "../../assets/auth/security-shield.svg";
 import InfoBlack from "../../assets/auth/info-black.svg";
 import CheckWhite from "../../assets/auth/check-white.svg";
@@ -127,13 +126,12 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
 
   const rows: Array<[string, string]> = security ? [["Your IP", maskIp(security.ip)], ["Connection", security.connection || "Unknown"], ["Country", security.country || security.countryCode || "Unknown"], ["Region", security.region || "Unknown"], ["City", security.city || "Unknown"], ["Organization", security.organization || "Unknown"], ["Company type", security.companyType || "Unknown"], ["ASN", security.asn ? `AS${security.asn}` : "Unknown"], ["Datacenter", security.datacenter || "None detected"], ["Fraud risk", `${security.fraudScore}% (${security.fraudLevel || "low"})`], ["Company abuse", `${security.companyAbuserScore ?? 0}%`], ["ASN abuse", `${security.asnAbuserScore ?? 0}%`]] : [];
 
-  return <ReDomScreen footer={<View style={styles.footer}><Text style={styles.muted}>{t("alreadyAccount")} <Text onPress={() => navigation.navigate("Login")} style={styles.link}>{t("login")}</Text></Text><View style={styles.company}><ReDomLogo width={72} height={20} /></View></View>}>
+  return <ReDomScreen backgroundColor="#FFFFFF" footer={<View style={styles.footer}><Text style={styles.muted}>{t("alreadyAccount")} <Text onPress={() => navigation.navigate("Login")} style={styles.link}>{t("login")}</Text></Text><View style={styles.footerBottom}><ReDomLogo width={66} height={19} /><View style={styles.flowMeta}><Text numberOfLines={1} style={styles.flowMetaText}>Flow ID: {flowMask(flowId)}</Text><Text style={styles.flowExpiry}>{countdown} remaining</Text></View></View></View>}>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <ReDomLogo width={150} height={42} />
-      <View style={styles.flow}><LockedKey width={20} height={20} /><Text style={styles.flowText}>{t("flowId", { flowId: flowMask(flowId) })}</Text><Text style={styles.expiry}>{countdown}</Text></View>
-      <Text style={styles.title}><AIText context="ReDom signup phone title">What's Your Mobile Number?</AIText></Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backButton} hitSlop={10}><Text style={styles.backArrow}>‹</Text></Pressable>
+      <View style={styles.headingBlock}><Text style={styles.title}><AIText context="ReDom signup phone title">What's your mobile number?</AIText></Text>
       <Text style={styles.description}><AIText context="ReDom signup phone description">Enter the mobile number where you can be contacted.</AIText></Text>
-      <Text style={styles.small}>Nobody will see this on your profile.</Text>
+      <Text style={styles.small}>Nobody will see this on your profile.</Text></View>
       <Pressable onPress={() => setCountryOpen(true)} disabled={checking || saved} style={styles.field}><Text style={styles.caption}>Country</Text><Text style={styles.fieldValue}>{country.name} <Text style={styles.blue}>{country.dialCode}</Text></Text></Pressable>
       <View style={[styles.field, styles.phoneField]}><Text style={styles.caption}>Phone Number</Text><TextInput value={phone} onChangeText={(v) => { setPhone(v); setSaved(false); setSecurity(null); setError(null); }} placeholder="Mobile number" placeholderTextColor="#8A8D91" keyboardType="phone-pad" style={styles.input} editable={!checking && !saved} maxLength={24} /></View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -172,14 +170,70 @@ export function RegistrationPhoneScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  content:{flexGrow:1,width:"100%",maxWidth:420,alignSelf:"center",alignItems:"center",paddingTop:20,paddingBottom:20},
-  flow:{alignItems:"center",marginVertical:14,gap:4},flowText:{color:BLUE,fontSize:13,fontWeight:"800"},expiry:{color:MUTED,fontSize:13},
-  title:{color:TEXT,fontSize:27,fontWeight:"800",textAlign:"center",marginTop:8},description:{color:TEXT,fontSize:15,textAlign:"center",marginTop:8},small:{color:MUTED,fontSize:13,marginTop:4,marginBottom:18},
-  field:{width:"100%",minHeight:64,borderWidth:1.5,borderColor:BORDER,borderRadius:13,padding:13,justifyContent:"center"},phoneField:{marginTop:10},caption:{color:MUTED,fontSize:11,fontWeight:"700"},fieldValue:{color:TEXT,fontSize:15,fontWeight:"700",marginTop:3},blue:{color:BLUE},input:{color:TEXT,fontSize:16,height:28,padding:0,marginTop:3},
-  error:{color:ERROR,fontSize:13,fontWeight:"600",textAlign:"center",marginTop:10},button:{width:"100%",height:54,borderRadius:13,backgroundColor:BLUE,alignItems:"center",justifyContent:"center",marginTop:16},buttonText:{color:"#FFF",fontSize:17,fontWeight:"800"},disabled:{opacity:.5},email:{alignItems:"center",marginTop:13,gap:2},muted:{color:MUTED,fontSize:13},link:{color:BLUE,fontSize:13,fontWeight:"800"},
-  progress:{flexDirection:"row",justifyContent:"center",gap:8,marginTop:20},dot:{width:8,height:8,borderRadius:4,backgroundColor:"#D8DCE1"},activeDot:{width:24,backgroundColor:BLUE},
-  footer:{width:"100%",alignItems:"center",paddingBottom:8},company:{marginTop:8},overlay:{flex:1,backgroundColor:"rgba(0,0,0,.42)",justifyContent:"flex-end"},countrySheet:{height:"78%",backgroundColor:"#FFF",borderTopLeftRadius:24,borderTopRightRadius:24,padding:20},sheetHead:{flexDirection:"row",alignItems:"center",justifyContent:"space-between"},sheetTitle:{color:TEXT,fontSize:21,fontWeight:"800"},search:{height:48,borderWidth:1,borderColor:BORDER,borderRadius:12,flexDirection:"row",alignItems:"center",paddingHorizontal:12,gap:8,marginVertical:14},searchInput:{flex:1,color:TEXT,fontSize:15},countryRow:{height:52,borderBottomWidth:1,borderBottomColor:"#EEF0F2",flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
-  checkOverlay:{flex:1,backgroundColor:"rgba(0,0,0,.38)",alignItems:"center",justifyContent:"center",padding:24},checkCard:{width:"100%",maxWidth:360,backgroundColor:"#FFF",borderRadius:22,padding:26,alignItems:"center"},checkTitle:{color:TEXT,fontSize:20,fontWeight:"800",textAlign:"center",marginTop:16},checkBody:{color:MUTED,fontSize:14,lineHeight:21,textAlign:"center",marginTop:8},
-  securitySheet:{maxHeight:"91%",backgroundColor:"#FFF",borderTopLeftRadius:24,borderTopRightRadius:24},securityContent:{padding:22,paddingBottom:34,alignItems:"center"},securityTitle:{color:TEXT,fontSize:23,fontWeight:"800",textAlign:"center",marginTop:8},securitySubtitle:{color:MUTED,fontSize:14,lineHeight:21,textAlign:"center",marginTop:6,marginBottom:14},risk:{width:"100%",borderRadius:15,backgroundColor:"#F4F7FB",padding:14,marginBottom:12},riskTitle:{color:TEXT,fontSize:16,fontWeight:"800"},riskBody:{color:MUTED,fontSize:12,lineHeight:18,marginTop:4},rows:{width:"100%",borderTopWidth:1,borderTopColor:"#E4E6E9"},row:{minHeight:48,borderBottomWidth:1,borderBottomColor:"#E4E6E9",flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:16,paddingVertical:8},value:{flex:1,textAlign:"right",color:TEXT,fontSize:13,fontWeight:"700"},signalBox:{width:"100%",backgroundColor:"#F7F8FA",borderRadius:14,padding:14,marginTop:14},signalTitle:{color:TEXT,fontSize:14,fontWeight:"800",marginBottom:6},signal:{color:MUTED,fontSize:12,lineHeight:19},raw:{width:"100%",marginTop:14,borderWidth:1,borderColor:BORDER,borderRadius:14,padding:12},rawTitle:{color:TEXT,fontSize:14,fontWeight:"800",marginBottom:8},rawText:{color:"#34373B",fontSize:10,lineHeight:15,fontFamily:"monospace"},consent:{width:"100%",flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:16},checkbox:{width:24,height:24,borderRadius:6,borderWidth:2,borderColor:BORDER,alignItems:"center",justifyContent:"center"},checked:{backgroundColor:BLUE,borderColor:BLUE},consentText:{flex:1,color:TEXT,fontSize:12,lineHeight:18},note:{width:"100%",color:MUTED,fontSize:11,lineHeight:17,marginTop:10},
-  riskOverlay:{flex:1,backgroundColor:"rgba(0,0,0,.50)",alignItems:"center",justifyContent:"center",padding:24},riskBlockCard:{width:"100%",maxWidth:380,backgroundColor:"#FFF",borderRadius:24,padding:26,alignItems:"center",shadowColor:"#000",shadowOpacity:.18,shadowRadius:20,shadowOffset:{width:0,height:8},elevation:12},infoIconCircle:{width:72,height:72,borderRadius:36,backgroundColor:"#F1F3F6",alignItems:"center",justifyContent:"center",marginBottom:16},riskBlockTitle:{color:TEXT,fontSize:22,lineHeight:28,fontWeight:"800",textAlign:"center"},riskBlockBody:{color:MUTED,fontSize:14,lineHeight:21,textAlign:"center",marginTop:10},redirectText:{color:BLOCK_RED,fontSize:13,fontWeight:"800",marginTop:18}
+  content:{flexGrow:1,width:"100%",maxWidth:520,alignSelf:"center",alignItems:"stretch",paddingTop:4,paddingBottom:24},
+  backButton:{width:42,height:42,justifyContent:"center",alignItems:"flex-start",marginBottom:24},
+  backArrow:{fontSize:43,lineHeight:44,fontWeight:"300",color:"#111111",marginTop:-4},
+  headingBlock:{marginBottom:25},
+  title:{color:"#111111",fontSize:30,lineHeight:37,fontWeight:"800",textAlign:"left",letterSpacing:-.7},
+  description:{color:TEXT,fontSize:17,lineHeight:25,textAlign:"left",marginTop:9},
+  small:{color:MUTED,fontSize:14,lineHeight:21,textAlign:"left",marginTop:7},
+  field:{width:"100%",minHeight:68,borderWidth:1.4,borderColor:"#DADDE1",borderRadius:18,paddingHorizontal:16,paddingVertical:12,justifyContent:"center",backgroundColor:"#FFFFFF"},
+  phoneField:{marginTop:12,minHeight:76},
+  caption:{color:MUTED,fontSize:12,fontWeight:"700",marginBottom:3},
+  fieldValue:{color:TEXT,fontSize:17,fontWeight:"700",marginTop:1},
+  blue:{color:BLUE},
+  input:{color:TEXT,fontSize:17,height:34,padding:0,marginTop:1},
+  error:{color:ERROR,fontSize:13,lineHeight:19,fontWeight:"600",textAlign:"left",marginTop:12},
+  button:{width:"100%",height:58,borderRadius:30,backgroundColor:BLUE,alignItems:"center",justifyContent:"center",marginTop:24,shadowColor:BLUE,shadowOpacity:.14,shadowRadius:8,shadowOffset:{width:0,height:3},elevation:2},
+  buttonText:{color:"#FFFFFF",fontSize:17,fontWeight:"700",letterSpacing:.1},
+  disabled:{opacity:.5},
+  email:{alignItems:"center",marginTop:17,gap:4,paddingVertical:5},
+  muted:{color:MUTED,fontSize:14},
+  link:{color:"#2167B2",fontSize:14,fontWeight:"700"},
+  progress:{flexDirection:"row",justifyContent:"center",gap:8,marginTop:24},
+  dot:{width:8,height:8,borderRadius:4,backgroundColor:"#D8DCE1"},
+  activeDot:{width:24,backgroundColor:BLUE},
+  footer:{width:"100%",alignItems:"stretch",gap:16,paddingBottom:2},
+  footerBottom:{width:"100%",flexDirection:"row",alignItems:"center",justifyContent:"space-between",minHeight:22},
+  flowMeta:{alignItems:"flex-end",flexShrink:1,maxWidth:"68%"},
+  flowMetaText:{color:"#A0A4AA",fontSize:8,lineHeight:10,letterSpacing:.1},
+  flowExpiry:{color:"#A0A4AA",fontSize:8,lineHeight:10},
+  overlay:{flex:1,backgroundColor:"rgba(0,0,0,.42)",justifyContent:"flex-end"},
+  countrySheet:{height:"78%",backgroundColor:"#FFF",borderTopLeftRadius:24,borderTopRightRadius:24,padding:20},
+  sheetHead:{flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+  sheetTitle:{color:TEXT,fontSize:21,fontWeight:"800"},
+  search:{height:48,borderWidth:1,borderColor:BORDER,borderRadius:12,flexDirection:"row",alignItems:"center",paddingHorizontal:12,gap:8,marginVertical:14},
+  searchInput:{flex:1,color:TEXT,fontSize:15},
+  countryRow:{height:52,borderBottomWidth:1,borderBottomColor:"#EEF0F2",flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+  checkOverlay:{flex:1,backgroundColor:"rgba(0,0,0,.38)",alignItems:"center",justifyContent:"center",padding:24},
+  checkCard:{width:"100%",maxWidth:360,backgroundColor:"#FFF",borderRadius:22,padding:26,alignItems:"center"},
+  checkTitle:{color:TEXT,fontSize:20,fontWeight:"800",textAlign:"center",marginTop:16},
+  checkBody:{color:MUTED,fontSize:14,lineHeight:21,textAlign:"center",marginTop:8},
+  securitySheet:{maxHeight:"91%",backgroundColor:"#FFF",borderTopLeftRadius:24,borderTopRightRadius:24},
+  securityContent:{padding:22,paddingBottom:34,alignItems:"center"},
+  securityTitle:{color:TEXT,fontSize:23,fontWeight:"800",textAlign:"center",marginTop:8},
+  securitySubtitle:{color:MUTED,fontSize:14,lineHeight:21,textAlign:"center",marginTop:6,marginBottom:14},
+  risk:{width:"100%",borderRadius:15,backgroundColor:"#F4F7FB",padding:14,marginBottom:12},
+  riskTitle:{color:TEXT,fontSize:16,fontWeight:"800"},
+  riskBody:{color:MUTED,fontSize:12,lineHeight:18,marginTop:4},
+  rows:{width:"100%",borderTopWidth:1,borderTopColor:"#E4E6E9"},
+  row:{minHeight:48,borderBottomWidth:1,borderBottomColor:"#E4E6E9",flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:16,paddingVertical:8},
+  value:{flex:1,textAlign:"right",color:TEXT,fontSize:13,fontWeight:"700"},
+  signalBox:{width:"100%",backgroundColor:"#F7F8FA",borderRadius:14,padding:14,marginTop:14},
+  signalTitle:{color:TEXT,fontSize:14,fontWeight:"800",marginBottom:6},
+  signal:{color:MUTED,fontSize:12,lineHeight:19},
+  raw:{width:"100%",marginTop:14,borderWidth:1,borderColor:BORDER,borderRadius:14,padding:12},
+  rawTitle:{color:TEXT,fontSize:14,fontWeight:"800",marginBottom:8},
+  rawText:{color:"#34373B",fontSize:10,lineHeight:15,fontFamily:"monospace"},
+  consent:{width:"100%",flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:16},
+  checkbox:{width:24,height:24,borderRadius:6,borderWidth:2,borderColor:BORDER,alignItems:"center",justifyContent:"center"},
+  checked:{backgroundColor:BLUE,borderColor:BLUE},
+  consentText:{flex:1,color:TEXT,fontSize:12,lineHeight:18},
+  note:{width:"100%",color:MUTED,fontSize:11,lineHeight:17,marginTop:10},
+  riskOverlay:{flex:1,backgroundColor:"rgba(0,0,0,.50)",alignItems:"center",justifyContent:"center",padding:24},
+  riskBlockCard:{width:"100%",maxWidth:380,backgroundColor:"#FFF",borderRadius:24,padding:26,alignItems:"center",shadowColor:"#000",shadowOpacity:.18,shadowRadius:20,shadowOffset:{width:0,height:8},elevation:12},
+  infoIconCircle:{width:72,height:72,borderRadius:36,backgroundColor:"#F1F3F6",alignItems:"center",justifyContent:"center",marginBottom:16},
+  riskBlockTitle:{color:TEXT,fontSize:22,lineHeight:28,fontWeight:"800",textAlign:"center"},
+  riskBlockBody:{color:MUTED,fontSize:14,lineHeight:21,textAlign:"center",marginTop:10},
+  redirectText:{color:BLOCK_RED,fontSize:13,fontWeight:"800",marginTop:18}
 });
