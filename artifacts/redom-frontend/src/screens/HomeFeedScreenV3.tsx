@@ -125,19 +125,7 @@ export function HomeFeedScreenV3() {
         </ScrollView>
       </View>
 
-      {suggestions.length > 0 ? <View style={ui.discoverySection}>
-        <View style={ui.sectionHeader}>
-          <View><Text style={ui.sectionEyebrow}>GROW YOUR CIRCLE</Text><Text style={ui.sectionTitle}>People you may know</Text></View>
-          <Pressable onPress={() => navigation.navigate("Friends")} accessibilityRole="button"><Text style={ui.seeAll}>See all</Text></Pressable>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ui.suggestionRail}>
-          {suggestions.map((profile: HomeFeedProfileSuggestion) => <Pressable key={profile.userId} style={ui.suggestionCard} onPress={() => navigation.navigate("Profile", { userId: profile.userId })} accessibilityRole="button" accessibilityLabel={"Open " + profile.firstName + " " + profile.lastName}>
-            <Avatar uri={profile.profilePhoto} size={52}/>
-            <View style={ui.suggestionCopy}><Text style={ui.suggestionName} numberOfLines={1}>{profile.firstName} {profile.lastName}</Text><Text style={ui.suggestionHandle} numberOfLines={1}>@{profile.username.replace(/^@/, "")}</Text><Text style={ui.suggestionMeta}>{profile.friendCount} connections</Text></View>
-            <Text style={ui.profileArrow}>View profile</Text>
-          </Pressable>)}
-        </ScrollView>
-      </View> : null}
+
 
       <View style={ui.feedHeading}>
         <View><Text style={ui.sectionEyebrow}>FOR YOUR WORLD</Text><Text style={ui.sectionTitle}>Home Feed</Text></View>
@@ -147,6 +135,19 @@ export function HomeFeedScreenV3() {
       {error ? <View style={ui.errorCard}><Text style={ui.errorTitle}>Your feed couldn't load</Text><Text style={ui.errorText}>{error}</Text><Pressable style={ui.retryButton} onPress={() => void refreshFeed()}><Text style={ui.retryText}>Try again</Text></Pressable></View> : null}
       {initialLoading ? <View style={ui.loadingCard}><ActivityIndicator color="#1877F2" size="small"/><Text style={ui.loadingTitle}>Bringing your world together</Text><Text style={ui.loadingText}>Loading posts and recommendations for you.</Text><View style={ui.skeletonLine}/><View style={[ui.skeletonLine, ui.skeletonShort]}/><View style={ui.skeletonMedia}/></View> : null}
       {!initialLoading && !error && posts.map((post: HomeFeedPost) => <PostCardV3 key={post.id} post={post} onHidden={id => setPosts(current => current.filter(item => item.id !== id))} onUnhidden={() => undefined} />)}
+      {suggestions.length > 0 ? <View style={ui.discoverySection}>
+        <View style={ui.sectionHeader}>
+          <View><Text style={ui.sectionEyebrow}>GROW YOUR CIRCLE</Text><Text style={ui.sectionTitle}>People you may know</Text></View>
+          <Pressable onPress={() => navigation.navigate("Friends", {})} accessibilityRole="button"><Text style={ui.seeAll}>See all</Text></Pressable>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ui.suggestionRail}>
+          {suggestions.map((profile: HomeFeedProfileSuggestion) => <Pressable key={profile.userId} style={ui.suggestionCard} onPress={() => navigation.navigate("Profile", { userId: profile.userId })} accessibilityRole="button" accessibilityLabel={"Open " + profile.firstName + " " + profile.lastName}>
+            <Avatar uri={profile.profilePhoto} size={52}/>
+            <View style={ui.suggestionCopy}><Text style={ui.suggestionName} numberOfLines={1}>{profile.firstName} {profile.lastName}</Text><Text style={ui.suggestionHandle} numberOfLines={1}>@{profile.username.replace(/^@/, "")}</Text><Text style={ui.suggestionMeta}>{profile.friendCount} connections</Text></View>
+            <Text style={ui.profileArrow}>View profile</Text>
+          </Pressable>)}
+        </ScrollView>
+      </View> : null}
       {!initialLoading && !error && !posts.length ? <View style={ui.emptyCard}>
         <View style={ui.emptyMark}><ReDomLogo width={84} height={25}/></View>
         <Text style={ui.emptyEyebrow}>A NEW CHAPTER STARTS HERE</Text>
