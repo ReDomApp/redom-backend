@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
-import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useNavigation } from "@react-navigation/native";
@@ -130,7 +130,7 @@ export function HomeFeedScreenV3() {
 
 
       {error ? <View style={ui.errorCard}><Text style={ui.errorTitle}>Your feed couldn't load</Text><Text style={ui.errorText}>{error}</Text><Pressable style={ui.retryButton} onPress={() => void refreshFeed()}><Text style={ui.retryText}>Try again</Text></Pressable></View> : null}
-      {initialLoading ? <View style={ui.loadingCard}><ActivityIndicator color="#1877F2" size="small"/><Text style={ui.loadingTitle}>Bringing your world together</Text><Text style={ui.loadingText}>Loading posts and recommendations for you.</Text><View style={ui.skeletonLine}/><View style={[ui.skeletonLine, ui.skeletonShort]}/><View style={ui.skeletonMedia}/></View> : null}
+      {initialLoading ? <View style={ui.loadingCard} accessibilityLabel="Loading Home Feed"><View style={ui.loadingHeader}><View style={ui.skeletonAvatar}/><View style={ui.loadingIdentity}><View style={[ui.skeletonLine, ui.skeletonName]}/><View style={[ui.skeletonLine, ui.skeletonMeta]}/></View></View><View style={ui.skeletonLine}/><View style={[ui.skeletonLine, ui.skeletonShort]}/><View style={ui.skeletonMedia}/></View> : null}
       {!initialLoading && !error && posts.map((post: HomeFeedPost) => <PostCardV3 key={post.id} post={post} onHidden={id => setPosts(current => current.filter(item => item.id !== id))} onUnhidden={() => undefined} />)}
 
       {!initialLoading && !error && !posts.length ? <View style={ui.emptyCard}>
@@ -152,7 +152,6 @@ export function HomeFeedScreenV3() {
           </Pressable>)}
         </ScrollView>
       </View> : null}
-      <View style={ui.feedFooter}><Text style={ui.footerTitle}>Made for your world.</Text><Text style={ui.footerText}>Discover, connect and create with ReDom.</Text></View>
     </ScrollView>
     <ReDomMenuDrawer visible={menuOpen} onClose={() => setMenuOpen(false)} />
   </SafeAreaView>;
@@ -213,12 +212,15 @@ function makeStyles(compact: boolean, colors: ReturnType<typeof useTheme>["color
     feedHeading: { paddingHorizontal: 15, paddingVertical: 15, backgroundColor: "#F0F2F5", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     refreshButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: "#DCE7F6", backgroundColor: "#FFFFFF" },
     refreshText: { color: blue, fontSize: 11, fontWeight: "800" },
-    loadingCard: { marginHorizontal: 10, marginBottom: 10, borderRadius: 16, backgroundColor: "#FFFFFF", padding: 18, borderWidth: 1, borderColor: "#E5EBF4", alignItems: "center" },
-    loadingTitle: { color: colors.text, fontSize: 14, fontWeight: "800", marginTop: 10 },
-    loadingText: { color: "#7B879A", fontSize: 11, textAlign: "center", marginTop: 5 },
-    skeletonLine: { alignSelf: "stretch", height: 8, borderRadius: 5, backgroundColor: "#EDF2F9", marginTop: 18 },
-    skeletonShort: { width: "58%", alignSelf: "flex-start", marginTop: 8 },
-    skeletonMedia: { alignSelf: "stretch", height: 135, borderRadius: 12, backgroundColor: "#E7EFFB", marginTop: 14 },
+    loadingCard: { marginBottom: 8, paddingHorizontal: 13, paddingTop: 14, paddingBottom: 12, backgroundColor: "#FFFFFF", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#D9DDE3", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#D9DDE3" },
+    loadingHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 13 },
+    skeletonAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#E4E6EB" },
+    loadingIdentity: { flex: 1, gap: 7 },
+    skeletonName: { width: "42%", height: 10, marginTop: 0 },
+    skeletonMeta: { width: "27%", height: 7, marginTop: 0 },
+    skeletonLine: { alignSelf: "stretch", height: 8, borderRadius: 4, backgroundColor: "#E4E6EB", marginTop: 8 },
+    skeletonShort: { width: "64%", alignSelf: "flex-start", marginTop: 8 },
+    skeletonMedia: { alignSelf: "stretch", aspectRatio: 1.7, borderRadius: 2, backgroundColor: "#E4E6EB", marginTop: 13 },
     errorCard: { marginHorizontal: 10, marginBottom: 10, padding: 17, borderRadius: 15, borderWidth: 1, borderColor: "#FFD0D8", backgroundColor: "#FFF5F6" },
     errorTitle: { color: "#A61B35", fontSize: 14, fontWeight: "800" },
     errorText: { color: "#6D2938", fontSize: 12, lineHeight: 17, marginTop: 6 },
@@ -234,8 +236,5 @@ function makeStyles(compact: boolean, colors: ReturnType<typeof useTheme>["color
     primaryActionText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
     secondaryAction: { minHeight: 35, borderRadius: 7, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
     secondaryActionText: { color: blue, fontSize: 11, fontWeight: "800" },
-    feedFooter: { alignItems: "center", paddingVertical: 25 },
-    footerTitle: { color: "#52627A", fontSize: 12, fontWeight: "800" },
-    footerText: { color: "#8995A8", fontSize: 10, marginTop: 4 },
   });
 }
