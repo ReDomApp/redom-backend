@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
-import { ActivityIndicator, Image, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Image, Platform, Pressable, RefreshControl, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
@@ -67,7 +67,7 @@ export function HomeFeedScreenV3() {
   }, [navigation]);
   const openSearch = useCallback(() => navigation.push("Search"), [navigation]);
 
-  return <SafeAreaView style={ui.root}>
+  return <SafeAreaView style={[ui.root, Platform.OS === "android" ? { paddingTop: StatusBar.currentHeight ?? 0 } : null]}>
     <View style={ui.topHeader}>
       <View style={ui.brandRow}>
         <Pressable style={ui.menuButton} onPress={() => setMenuOpen(true)} accessibilityRole="button" accessibilityLabel="Open ReDom menu"><MenuIcon width={23} height={23} /></Pressable>
@@ -135,6 +135,14 @@ export function HomeFeedScreenV3() {
       {error ? <View style={ui.errorCard}><Text style={ui.errorTitle}>Your feed couldn't load</Text><Text style={ui.errorText}>{error}</Text><Pressable style={ui.retryButton} onPress={() => void refreshFeed()}><Text style={ui.retryText}>Try again</Text></Pressable></View> : null}
       {initialLoading ? <View style={ui.loadingCard}><ActivityIndicator color="#1877F2" size="small"/><Text style={ui.loadingTitle}>Bringing your world together</Text><Text style={ui.loadingText}>Loading posts and recommendations for you.</Text><View style={ui.skeletonLine}/><View style={[ui.skeletonLine, ui.skeletonShort]}/><View style={ui.skeletonMedia}/></View> : null}
       {!initialLoading && !error && posts.map((post: HomeFeedPost) => <PostCardV3 key={post.id} post={post} onHidden={id => setPosts(current => current.filter(item => item.id !== id))} onUnhidden={() => undefined} />)}
+
+      {!initialLoading && !error && !posts.length ? <View style={ui.emptyCard}>
+        <View style={ui.emptyMark}><ReDomLogo width={65} height={20}/></View>
+        <Text style={ui.emptyEyebrow}>WELCOME TO YOUR WORLD</Text>
+        <Text style={ui.emptyTitle}>Your feed is getting started.</Text>
+        <Text style={ui.emptyText}>Posts from people and creators you connect with will show up here.</Text>
+        <View style={ui.emptyActions}><Pressable style={ui.primaryAction} onPress={() => navigation.navigate("Friends", {})}><Text style={ui.primaryActionText}>Find people</Text></Pressable><Pressable style={ui.secondaryAction} onPress={() => openComposer("Help me draft a post for my ReDom Home Feed.")}><Text style={ui.secondaryActionText}>Create a post</Text></Pressable></View>
+      </View> : null}
       {suggestions.length > 0 ? <View style={ui.discoverySection}>
         <View style={ui.sectionHeader}>
           <View><Text style={ui.sectionEyebrow}>GROW YOUR CIRCLE</Text><Text style={ui.sectionTitle}>People you may know</Text></View>
@@ -147,13 +155,6 @@ export function HomeFeedScreenV3() {
             <Text style={ui.profileArrow}>View profile</Text>
           </Pressable>)}
         </ScrollView>
-      </View> : null}
-      {!initialLoading && !error && !posts.length ? <View style={ui.emptyCard}>
-        <View style={ui.emptyMark}><ReDomLogo width={84} height={25}/></View>
-        <Text style={ui.emptyEyebrow}>A NEW CHAPTER STARTS HERE</Text>
-        <Text style={ui.emptyTitle}>Your ReDom world starts here.</Text>
-        <Text style={ui.emptyText}>As you connect with people and discover creators, your Home Feed will bring their posts and shared moments together.</Text>
-        <View style={ui.emptyActions}><Pressable style={ui.primaryAction} onPress={() => navigation.navigate("Friends", {})}><Text style={ui.primaryActionText}>Discover people</Text></Pressable><Pressable style={ui.secondaryAction} onPress={() => openComposer("Help me explore video creation on ReDom.")}><Text style={ui.secondaryActionText}>Explore creation</Text></Pressable></View>
       </View> : null}
       <View style={ui.feedFooter}><Text style={ui.footerTitle}>Made for your world.</Text><Text style={ui.footerText}>Discover, connect and create with ReDom.</Text></View>
     </ScrollView>
@@ -201,9 +202,9 @@ function makeStyles(compact: boolean, colors: ReturnType<typeof useTheme>["color
     storyAccent: { position: "absolute", width: 25, height: 25, borderRadius: 13, backgroundColor: "#BBD6FF", right: 16, top: 16 },
     storyName: { color: colors.text, fontSize: 12, fontWeight: "800" },
     storySub: { color: "#7B879A", fontSize: 9, marginTop: 4 },
-    storyEmpty: { width: 190, justifyContent: "center", paddingHorizontal: 10 },
-    storyEmptyTitle: { color: colors.text, fontSize: 11, fontWeight: "800" },
-    storyEmptyText: { color: "#7B879A", fontSize: 10, lineHeight: 14, marginTop: 5 },
+    storyEmpty: { width: 155, justifyContent: "center", paddingHorizontal: 8 },
+    storyEmptyTitle: { color: colors.text, fontSize: 10, fontWeight: "800" },
+    storyEmptyText: { color: "#7B879A", fontSize: 9, lineHeight: 13, marginTop: 4 },
     discoverySection: { backgroundColor: colors.surface, marginBottom: 9, paddingVertical: 14 },
     suggestionRail: { paddingHorizontal: 13, gap: 9 },
     suggestionCard: { width: 230, flexDirection: "row", alignItems: "center", gap: 10, padding: 11, backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1, borderColor: "#E4EAF3" },
@@ -226,16 +227,16 @@ function makeStyles(compact: boolean, colors: ReturnType<typeof useTheme>["color
     errorText: { color: "#6D2938", fontSize: 12, lineHeight: 17, marginTop: 6 },
     retryButton: { alignSelf: "flex-start", marginTop: 11, borderRadius: 10, paddingHorizontal: 15, paddingVertical: 9, backgroundColor: blue },
     retryText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-    emptyCard: { marginHorizontal: 10, marginTop: 2, borderRadius: 18, backgroundColor: "#FFFFFF", paddingHorizontal: 21, paddingVertical: 25, alignItems: "center", borderWidth: 1, borderColor: "#E3EAF4" },
-    emptyMark: { width: 100, height: 45, alignItems: "center", justifyContent: "center", backgroundColor: "#EFF5FF", borderRadius: 13, marginBottom: 15 },
-    emptyEyebrow: { color: blue, fontSize: 8, fontWeight: "900", letterSpacing: 1.3 },
-    emptyTitle: { color: colors.text, fontSize: 20, lineHeight: 26, fontWeight: "900", textAlign: "center", marginTop: 7 },
-    emptyText: { color: "#697991", fontSize: 12, lineHeight: 19, textAlign: "center", marginTop: 8, maxWidth: 340 },
-    emptyActions: { flexDirection: compact ? "column" : "row", alignSelf: "stretch", gap: 9, marginTop: 17 },
-    primaryAction: { flex: 1, minHeight: 42, borderRadius: 11, backgroundColor: blue, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
-    primaryActionText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-    secondaryAction: { flex: 1, minHeight: 42, borderRadius: 11, backgroundColor: "#EEF4FE", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
-    secondaryActionText: { color: blue, fontSize: 12, fontWeight: "800" },
+    emptyCard: { marginHorizontal: 10, marginTop: 2, marginBottom: 10, borderRadius: 14, backgroundColor: "#FFFFFF", paddingHorizontal: 17, paddingVertical: 17, alignItems: "flex-start", borderWidth: 1, borderColor: "#E3EAF4" },
+    emptyMark: { width: 78, height: 34, alignItems: "center", justifyContent: "center", backgroundColor: "#EFF5FF", borderRadius: 9, marginBottom: 10 },
+    emptyEyebrow: { color: blue, fontSize: 8, fontWeight: "900", letterSpacing: 1.05 },
+    emptyTitle: { color: colors.text, fontSize: 17, lineHeight: 22, fontWeight: "800", textAlign: "left", marginTop: 5 },
+    emptyText: { color: "#697991", fontSize: 11, lineHeight: 16, textAlign: "left", marginTop: 5, maxWidth: 340 },
+    emptyActions: { flexDirection: "row", alignSelf: "stretch", gap: 8, marginTop: 13 },
+    primaryAction: { flex: 1, minHeight: 38, borderRadius: 9, backgroundColor: blue, alignItems: "center", justifyContent: "center", paddingHorizontal: 9 },
+    primaryActionText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+    secondaryAction: { flex: 1, minHeight: 38, borderRadius: 9, backgroundColor: "#EEF4FE", alignItems: "center", justifyContent: "center", paddingHorizontal: 9 },
+    secondaryActionText: { color: blue, fontSize: 11, fontWeight: "800" },
     feedFooter: { alignItems: "center", paddingVertical: 25 },
     footerTitle: { color: "#52627A", fontSize: 12, fontWeight: "800" },
     footerText: { color: "#8995A8", fontSize: 10, marginTop: 4 },
