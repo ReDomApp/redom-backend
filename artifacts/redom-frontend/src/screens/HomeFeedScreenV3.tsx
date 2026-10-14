@@ -153,7 +153,7 @@ export function HomeFeedScreenV3() {
         <Text style={ui.emptyEyebrow}>A NEW CHAPTER STARTS HERE</Text>
         <Text style={ui.emptyTitle}>Your ReDom world starts here.</Text>
         <Text style={ui.emptyText}>As you connect with people and discover creators, your Home Feed will bring their posts and shared moments together.</Text>
-        <View style={ui.emptyActions}><Pressable style={ui.primaryAction} onPress={() => navigation.navigate("Friends")}><Text style={ui.primaryActionText}>Discover people</Text></Pressable><Pressable style={ui.secondaryAction} onPress={() => openComposer("Help me explore video creation on ReDom.", true)}><Text style={ui.secondaryActionText}>Explore creation</Text></Pressable></View>
+        <View style={ui.emptyActions}><Pressable style={ui.primaryAction} onPress={() => navigation.navigate("Friends", {})}><Text style={ui.primaryActionText}>Discover people</Text></Pressable><Pressable style={ui.secondaryAction} onPress={() => openComposer("Help me explore video creation on ReDom.", true)}><Text style={ui.secondaryActionText}>Explore creation</Text></Pressable></View>
       </View> : null}
       <View style={ui.feedFooter}><Text style={ui.footerTitle}>Made for your world.</Text><Text style={ui.footerText}>Discover, connect and create with ReDom.</Text></View>
     </ScrollView>
