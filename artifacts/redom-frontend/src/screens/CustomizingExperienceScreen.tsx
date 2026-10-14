@@ -9,19 +9,21 @@ import { getDeviceId } from "../utils/device";
 import type { RootStackParamList } from "../routing/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CustomizingExperience">;
-const MINIMUM_MS = 62_000;
-const SLIDE_MS = 6_200;
+const MINIMUM_MS = 65_000;
+const SLIDE_MS = 5_000;
 const SHOWCASE = [
   { category: "YOUR SOCIAL WORLD", title: "Your profile. Your story.", body: "Meet people, share moments and let your profile reflect who you are.", tag: "PROFILE EXPERIENCE", kind: "profile" },
-  { category: "A NEW WAY TO CREATE", title: "Make your movie now.", body: "ReDom Movie Studio helps shape an idea into a planned cinematic project, scene by scene.", tag: "MOVIE STUDIO", kind: "movie" },
-  { category: "ANIMATION, REIMAGINED", title: "Cartoon worlds come alive.", body: "Explore expressive cartoon and animation experiences with character-led visual storytelling.", tag: "REDOM CARTOON", kind: "cartoon" },
+  { category: "YOUR NEXT BIG IDEA", title: "Make your episodes now.", body: "Build a movie project with a planned story, episode structure and scenes that work together.", tag: "MOVIE STUDIO", kind: "movie" },
+  { category: "A NEW CARTOON MODEL", title: "Meet Cartoon—8.0R.", body: "Your cartoon world, brought to life. Explore expressive characters, animation and visual storytelling with ReDom Cartoon.", tag: "CARTOON—8.0R", kind: "cartoon" },
+  { category: "YOUR VIDEO, A MASTERPIECE", title: "Your video in a masterpiece.", body: "ReDom-v2.8—Video is designed for cinematic clips, social videos and documentary-style scenes.", tag: "REDOM-V2.8—VIDEO", kind: "movie" },
+  { category: "THE STUDIO JUST LEVELLED UP", title: "Meet Studio—Ultron 8.0R.", body: "Plan your movie before production: story direction, episode structure, scripts, shot lists and a coherent creative vision.", tag: "STUDIO—ULTRON 8.0R", kind: "movie" },
   { category: "PAYMENTS, BUILT FOR TRUST", title: "Your secure payment gateway.", body: "ReDom Pay brings payment methods and transaction activity together behind protected account checks.", tag: "REDOM PAY", kind: "pay" },
   { category: "CONVERSATIONS THAT CONNECT", title: "Keep the conversation moving.", body: "Stay connected with messaging experiences designed to make conversations feel natural.", tag: "MESSAGING", kind: "messages" },
   { category: "A FEED THAT FEELS YOURS", title: "Discover what matters to you.", body: "Posts, profiles and shared moments come together in your personalized Home Feed.", tag: "HOME FEED", kind: "feed" },
   { category: "CREATE AND SHARE", title: "Turn your ideas into moments.", body: "Bring your creativity into your social world and share the things you care about.", tag: "CREATOR EXPERIENCE", kind: "create" },
   { category: "PEOPLE AND COMMUNITIES", title: "Find your people.", body: "Build connections around interests, conversations and communities across ReDom.", tag: "COMMUNITY", kind: "people" },
   { category: "PROTECTION BY DESIGN", title: "Security is part of the experience.", body: "Registration verification, protected sessions and security checks help safeguard account access.", tag: "REDOM SECURITY", kind: "security" },
-  { category: "ONE CONNECTED EXPERIENCE", title: "More of ReDom, all together.", body: "Social experiences, creative tools and payment features are part of one evolving platform.", tag: "WELCOME TO REDOM", kind: "welcome" },
+  { category: "ONE CONNECTED EXPERIENCE", title: "Oh my God. This is ReDom.", body: "Social, creative production, animation, messaging and payment experiences come together in one evolving platform.", tag: "WELCOME TO REDOM", kind: "welcome" },
 ];
 const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
