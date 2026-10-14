@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
-import { ActivityIndicator, Image, Platform, Pressable, RefreshControl, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../routing/types";
@@ -67,7 +69,8 @@ export function HomeFeedScreenV3() {
   }, [navigation]);
   const openSearch = useCallback(() => navigation.push("Search"), [navigation]);
 
-  return <SafeAreaView style={[ui.root, Platform.OS === "android" ? { paddingTop: StatusBar.currentHeight ?? 0 } : null]}>
+  return <SafeAreaView style={ui.root} edges={["top", "left", "right"]}>
+    <StatusBar style="dark" backgroundColor="#FFFFFF" />
     <View style={ui.topHeader}>
       <View style={ui.brandRow}>
         <Pressable style={ui.menuButton} onPress={() => setMenuOpen(true)} accessibilityRole="button" accessibilityLabel="Open ReDom menu"><MenuIcon width={23} height={23} /></Pressable>
@@ -91,58 +94,51 @@ export function HomeFeedScreenV3() {
     <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={ui.feed} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshFeed} tintColor="#1877F2" colors={["#1877F2"]} />}>
       <View style={ui.composerSection}>
         <View style={ui.composerTop}>
-          <Avatar uri={avatar} size={42} />
+          <Avatar uri={avatar} size={40} />
           <Pressable style={ui.composerInput} onPress={() => openComposer("Help me draft a post for my ReDom Home Feed.")} accessibilityRole="button" accessibilityLabel="Create a post">
-            <Text style={ui.composerEyebrow}>YOUR REDOM WORLD</Text>
-            <Text style={ui.composerText}>Share something with your world{firstName ? ", " + firstName : ""}.</Text>
+            <Text style={ui.composerText}>What's happening in your world{firstName ? ", " + firstName : ""}?</Text>
           </Pressable>
+          <Pressable style={ui.composerImageButton} onPress={() => openComposer("Help me prepare a photo post for my ReDom Home Feed.", true)} accessibilityRole="button" accessibilityLabel="Add a photo"><AddMediaIcon width={23} height={23}/></Pressable>
         </View>
         <View style={ui.composerActions}>
-          <Pressable style={ui.composerAction} onPress={() => openComposer("Help me prepare a photo post for my ReDom Home Feed.", true)}><AddMediaIcon width={20} height={20}/><Text style={ui.composerActionText}>Photo</Text></Pressable>
+          <Pressable style={ui.composerAction} onPress={() => openComposer("Help me prepare a photo post for my ReDom Home Feed.", true)}><AddMediaIcon width={19} height={19}/><Text style={ui.composerActionText}>Photo</Text></Pressable>
           <View style={ui.actionDivider}/>
           <Pressable style={ui.composerAction} onPress={() => openComposer("Help me plan a video post for my ReDom Home Feed.")}><VideoIcon width={20} height={20}/><Text style={ui.composerActionText}>Video</Text></Pressable>
           <View style={ui.actionDivider}/>
-          <Pressable style={ui.composerAction} onPress={() => openComposer("Help me plan a ReDom Story.", true)}><UploadStoryIcon width={20} height={20}/><Text style={ui.composerActionText}>Story</Text></Pressable>
+          <Pressable style={ui.composerAction} onPress={() => openComposer("Help me plan a ReDom Story.", true)}><UploadStoryIcon width={19} height={19}/><Text style={ui.composerActionText}>Story</Text></Pressable>
         </View>
       </View>
 
       <View style={ui.section}>
         <View style={ui.sectionHeader}>
-          <View><Text style={ui.sectionEyebrow}>SHARE MOMENTS</Text><Text style={ui.sectionTitle}>Stories</Text></View>
-          <Text style={ui.sectionCount}>{stories.length ? stories.length + " available" : "Your circle"}</Text>
+          <Text style={ui.sectionTitle}>Stories</Text>
+          <Pressable onPress={() => navigation.navigate("Friends", {})} accessibilityRole="button"><Text style={ui.seeAll}>See all</Text></Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ui.storyRail}>
           <Pressable style={ui.createStoryCard} onPress={() => openComposer("Help me plan a ReDom Story.", true)} accessibilityRole="button" accessibilityLabel="Create a Story">
-            <View style={ui.createStoryArt}><Avatar uri={avatar} size={57}/><View style={ui.storyPlus}><CreateIcon width={14} height={14}/></View></View>
-            <Text style={ui.createStoryTitle}>Create a Story</Text><Text style={ui.storySub}>Share a moment</Text>
+            <View style={ui.createStoryArt}><Avatar uri={avatar} size={52}/><View style={ui.storyPlus}><CreateIcon width={13} height={13}/></View></View>
+            <Text style={ui.createStoryTitle}>Create Story</Text><Text style={ui.storySub}>Share a moment</Text>
           </Pressable>
           {stories.map((story: HomeFeedFriendStory) => <View key={story.id} style={ui.storyCard}>
-            <View style={ui.storyArt}><View style={ui.storyRing}><Avatar uri={story.profilePhoto} size={54}/></View><View style={ui.storyAccent}/></View>
+            <View style={ui.storyArt}><View style={ui.storyRing}><Avatar uri={story.profilePhoto} size={48}/></View></View>
             <Text style={ui.storyName} numberOfLines={1}>{story.firstName} {story.lastName}</Text>
-            <Text style={ui.storySub}>ReDom Story</Text>
+            <Text style={ui.storySub} numberOfLines={2}>{story.storyText || "Shared a moment"}</Text>
           </View>)}
-          {!stories.length ? <View style={ui.storyEmpty}><Text style={ui.storyEmptyTitle}>Your people, their moments</Text><Text style={ui.storyEmptyText}>Stories from your connections will appear here.</Text></View> : null}
         </ScrollView>
       </View>
 
 
-
-      <View style={ui.feedHeading}>
-        <View><Text style={ui.sectionEyebrow}>FOR YOUR WORLD</Text><Text style={ui.sectionTitle}>Home Feed</Text></View>
-        <Pressable style={ui.refreshButton} onPress={() => void refreshFeed()} accessibilityRole="button" accessibilityLabel="Refresh Home Feed"><Text style={ui.refreshText}>Refresh</Text></Pressable>
-      </View>
 
       {error ? <View style={ui.errorCard}><Text style={ui.errorTitle}>Your feed couldn't load</Text><Text style={ui.errorText}>{error}</Text><Pressable style={ui.retryButton} onPress={() => void refreshFeed()}><Text style={ui.retryText}>Try again</Text></Pressable></View> : null}
       {initialLoading ? <View style={ui.loadingCard}><ActivityIndicator color="#1877F2" size="small"/><Text style={ui.loadingTitle}>Bringing your world together</Text><Text style={ui.loadingText}>Loading posts and recommendations for you.</Text><View style={ui.skeletonLine}/><View style={[ui.skeletonLine, ui.skeletonShort]}/><View style={ui.skeletonMedia}/></View> : null}
       {!initialLoading && !error && posts.map((post: HomeFeedPost) => <PostCardV3 key={post.id} post={post} onHidden={id => setPosts(current => current.filter(item => item.id !== id))} onUnhidden={() => undefined} />)}
 
       {!initialLoading && !error && !posts.length ? <View style={ui.emptyCard}>
-        <View style={ui.emptyMark}><ReDomLogo width={65} height={20}/></View>
-        <Text style={ui.emptyEyebrow}>WELCOME TO YOUR WORLD</Text>
-        <Text style={ui.emptyTitle}>Your feed is getting started.</Text>
-        <Text style={ui.emptyText}>Posts from people and creators you connect with will show up here.</Text>
+        <Text style={ui.emptyTitle}>Your feed is quiet for now</Text>
+        <Text style={ui.emptyText}>Connect with people to see their updates here.</Text>
         <View style={ui.emptyActions}><Pressable style={ui.primaryAction} onPress={() => navigation.navigate("Friends", {})}><Text style={ui.primaryActionText}>Find people</Text></Pressable><Pressable style={ui.secondaryAction} onPress={() => openComposer("Help me draft a post for my ReDom Home Feed.")}><Text style={ui.secondaryActionText}>Create a post</Text></Pressable></View>
       </View> : null}
+
       {suggestions.length > 0 ? <View style={ui.discoverySection}>
         <View style={ui.sectionHeader}>
           <View><Text style={ui.sectionEyebrow}>GROW YOUR CIRCLE</Text><Text style={ui.sectionTitle}>People you may know</Text></View>
