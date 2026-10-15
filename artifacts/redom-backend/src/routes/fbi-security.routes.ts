@@ -124,7 +124,7 @@ router.get("/cases", async (req, res) => {
     args.push(limit);
     const where = clauses.length ? "WHERE " + clauses.join(" AND ") : "";
     const result = await pool.query(
-      `SELECT id, source_id, agency, title, category, source_url, published_at, retrieved_at,
+      `SELECT id, case_number, source_id, agency, title, category, source_url, published_at, retrieved_at,
        content_sha256, summary, reward_advertised, reward_amount_text, reward_exact_wording,
        reward_conditions, tip_url, review_status
        FROM redom_fbi_security_cases ${where} ORDER BY retrieved_at DESC LIMIT $${args.length}`,
@@ -179,6 +179,7 @@ router.get("/cases/:caseId/report", async (req, res) => {
       "## Case",
       `- Agency: ${c.agency}`,
       `- Title: ${c.title}`,
+      `- Case number: ${c.case_number ?? "Not assigned"}`,
       `- Record ID: ${c.id}`,
       `- Review status: ${c.review_status}`,
       `- Published: ${c.published_at ?? "Not available"}`,
