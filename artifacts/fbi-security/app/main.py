@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -11,13 +12,22 @@ from .db import audit, get_case, init_db, list_cases
 from .ingest import ingest_registry_homepages, ingest_url, registry
 from .reporting import render_markdown
 from .security import require_admin
+from .scheduler import poll_loop
 
 BASE = Path(__file__).resolve().parents[1]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    yield
+    task = asyncio.create_task(poll_loop(), name="official-source-polling")
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 app = FastAPI(title="FBI Security Intel — Public Source Monitor", version="0.1.0",
               description="Independent public-source notice monitoring and evidence-linked reporting. Not an official government service.",
