@@ -86,10 +86,14 @@ const OFFICIAL_HOSTS: Record<string, { id: string; agency: string; tipUrl: strin
   "www.ftc.gov": { id: "ftc_news", agency: "Federal Trade Commission", tipUrl: "https://reportfraud.ftc.gov/" },
   "reportfraud.ftc.gov": { id: "ftc_report", agency: "Federal Trade Commission", tipUrl: "https://reportfraud.ftc.gov/" },
   "www.usmarshals.gov": { id: "us_marshals_fugitives", agency: "U.S. Marshals Service", tipUrl: "https://www.usmarshals.gov/what-we-do/fugitive-investigations" },
+  "www.consumerfinance.gov": { id: "cfpb_enforcement", agency: "Consumer Financial Protection Bureau", tipUrl: "https://www.consumerfinance.gov/complaint/" },
+  "www.cftc.gov": { id: "cftc_enforcement", agency: "Commodity Futures Trading Commission", tipUrl: "https://www.cftc.gov/complaint" },
+  "www.fdic.gov": { id: "fdic_consumer", agency: "Federal Deposit Insurance Corporation", tipUrl: "https://ask.fdic.gov/fdicinformationandsupportcenter/s/" },
 };
 
 async function pollConfiguredOfficialUrls(): Promise<number> {
-  const configured = (process.env.FBI_SECURITY_MONITOR_URLS ?? "").split(",").map((v) => v.trim()).filter(Boolean).slice(0, 20);
+  const defaults = ["https://www.fbi.gov/wanted", "https://www.justice.gov/news", "https://www.sec.gov/litigation/litreleases", "https://www.ftc.gov/news-events/news/press-releases", "https://www.usmarshals.gov/what-we-do/fugitive-investigations", "https://www.consumerfinance.gov/enforcement/", "https://www.cftc.gov/PressRoom/PressReleases", "https://www.fdic.gov/consumer-resource-center"];
+  const configured = [...new Set((process.env.FBI_SECURITY_MONITOR_URLS ?? defaults.join(",")).split(",").map((v) => v.trim()).filter(Boolean))].slice(0, 20);
   let imported = 0;
   for (const rawUrl of configured) {
     let url: URL;
