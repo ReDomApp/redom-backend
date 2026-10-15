@@ -66,6 +66,12 @@ async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now(),
       UNIQUE(tip_id, source_url)
     );
+    ALTER TABLE redom_fbi_security_tip_sources ADD COLUMN IF NOT EXISTS publisher text;
+    ALTER TABLE redom_fbi_security_tip_sources ADD COLUMN IF NOT EXISTS headline text;
+    ALTER TABLE redom_fbi_security_tip_sources ADD COLUMN IF NOT EXISTS excerpt text NOT NULL DEFAULT '';
+    ALTER TABLE redom_fbi_security_tip_sources ADD COLUMN IF NOT EXISTS verification_status text NOT NULL DEFAULT 'unverified';
+    ALTER TABLE redom_fbi_security_tip_sources ADD COLUMN IF NOT EXISTS retrieved_at timestamptz;
+    ALTER TABLE redom_fbi_security_tip_sources ADD COLUMN IF NOT EXISTS content_sha256 text;
     CREATE INDEX IF NOT EXISTS redom_fbi_security_tip_sources_tip_idx ON redom_fbi_security_tip_sources(tip_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS redom_fbi_security_audit_events (
       id bigserial PRIMARY KEY,
@@ -209,6 +215,130 @@ router.post("/admin/tips/:tipId/sources", requireAdmin, async (req, res) => {
     return res.status(201).json({ success: true, sources: saved, message: "Source references attached. The URLs have not been fetched or independently verified." });
   } catch {
     return res.status(500).json({ success: false, message: "Unable to attach public sources." });
+  }
+});
+
+
+function extractMeta(html: string, key: string): string {
+  const escaped = key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\
+export default router;");
+  const patterns = [
+    new RegExp('<meta[^>]+(?:property|name)=["\\']' + escaped + '["\\'][^>]+content=["\\']([^"\\']*)["\\'][^>]*>', "i"),
+    new RegExp('<meta[^>]+content=["\\']([^"\\']*)["\\'][^>]+(?:property|name)=["\\']' + escaped + '["\\'][^>]*>', "i")
+  ];
+  for (const re of patterns) { const match = html.match(re); if (match?.[1]) return cleanMarkup(match[1], 1500); }
+  return "";
+}
+function cleanMarkup(text: string, max: number): string {
+  return text.replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
+    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/\\s+/g, " ").trim().slice(0, max);
+}
+
+/**
+ * Verify only URLs explicitly attached to this tip. No name-based search,
+ * person matching, or discovery of additional personal records is performed.
+ */
+router.post("/admin/tips/:tipId/verify-sources", requireAdmin, async (req, res) => {
+  const id = Number(req.params.tipId);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ success: false, message: "Invalid tip ID." });
+  const timeoutMs = 8000;
+  try {
+    await ensureSchema();
+    const exists = await pool.query("SELECT id,reference FROM redom_fbi_security_tips WHERE id=$1", [id]);
+    if (!exists.rows[0]) return res.status(404).json({ success: false, message: "Tip not found." });
+    const sources = await pool.query("SELECT id,source_url,source_label FROM redom_fbi_security_tip_sources WHERE tip_id=$1 ORDER BY id ASC LIMIT 20", [id]);
+    if (!sources.rows.length) return res.status(400).json({ success: false, message: "Attach public-source URLs before running verification." });
+    const results = [];
+    for (const source of sources.rows) {
+      const checkedUrl = sourceUrl(source.source_url);
+      if (!checkedUrl || checkedUrl !== source.source_url) {
+        await pool.query("UPDATE redom_fbi_security_tip_sources SET verification_status='rejected_url',retrieved_at=now() WHERE id=$1 AND tip_id=$2", [source.id,id]);
+        results.push({ sourceId: source.id, status: "rejected_url" });
+        continue;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(checkedUrl, {
+          method: "GET", redirect: "manual", signal: controller.signal,
+          headers: { "User-Agent": "ReDom-FBI-Security-PublicSourceReview/1.0", "Accept": "text/html,application/xhtml+xml" }
+        });
+        if (response.status >= 300 && response.status < 400) {
+          await pool.query("UPDATE redom_fbi_security_tip_sources SET verification_status='redirect_rejected',retrieved_at=now() WHERE id=$1 AND tip_id=$2", [source.id,id]);
+          results.push({ sourceId: source.id, status: "redirect_rejected" });
+          continue;
+        }
+        if (!response.ok) {
+          await pool.query("UPDATE redom_fbi_security_tip_sources SET verification_status=$3,retrieved_at=now() WHERE id=$1 AND tip_id=$2", [source.id,id,"http_" + response.status]);
+          results.push({ sourceId: source.id, status: "http_error", httpStatus: response.status });
+          continue;
+        }
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!/text\\/html|application\\/xhtml\\+xml/i.test(contentType) || !response.body) {
+          await pool.query("UPDATE redom_fbi_security_tip_sources SET verification_status='unsupported_content_type',retrieved_at=now() WHERE id=$1 AND tip_id=$2", [source.id,id]);
+          results.push({ sourceId: source.id, status: "unsupported_content_type" });
+          continue;
+        }
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        let tooLarge = false;
+        while (true) {
+          const part = await reader.read();
+          if (part.done) break;
+          size += part.value.byteLength;
+          if (size > 1_000_000) { tooLarge = true; await reader.cancel(); break; }
+          chunks.push(part.value);
+        }
+        if (tooLarge) {
+          await pool.query("UPDATE redom_fbi_security_tip_sources SET verification_status='size_limit_exceeded',retrieved_at=now() WHERE id=$1 AND tip_id=$2", [source.id,id]);
+          results.push({ sourceId: source.id, status: "size_limit_exceeded" });
+          continue;
+        }
+        const html = new TextDecoder().decode(Buffer.concat(chunks));
+        const headline = extractMeta(html,"og:title") || cleanMarkup(html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1] ?? "",500);
+        const publisher = extractMeta(html,"og:site_name") || new URL(checkedUrl).hostname.replace(/^www\\./,"");
+        const excerpt = extractMeta(html,"og:description") || extractMeta(html,"description");
+        const digest = createHash("sha256").update([checkedUrl,headline,publisher,excerpt].join("\\n"),"utf8").digest("hex");
+        const status = headline ? "retrieved_needs_review" : "retrieved_no_headline";
+        await pool.query(
+          "UPDATE redom_fbi_security_tip_sources SET publisher=$3,headline=$4,excerpt=$5,content_sha256=$6,source_sha256=$6,verification_status=$7,retrieved_at=now() WHERE id=$1 AND tip_id=$2",
+          [source.id,id,publisher,headline,excerpt,digest,status]
+        );
+        results.push({ sourceId: source.id, status, publisher, headline, excerpt, contentSha256: digest, sourceUrl: checkedUrl });
+      } catch (error) {
+        const status = error instanceof Error && error.name === "AbortError" ? "timeout" : "fetch_failed";
+        await pool.query("UPDATE redom_fbi_security_tip_sources SET verification_status=$3,retrieved_at=now() WHERE id=$1 AND tip_id=$2", [source.id,id,status]);
+        results.push({ sourceId: source.id, status });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    await audit("tip_public_sources_verified", String(id), { reference: exists.rows[0].reference, sourceCount: results.length, successfulCount: results.filter((x: any) => String(x.status).startsWith("retrieved_")).length });
+    return res.setHeader("Cache-Control","no-store").json({
+      success: true, tip: exists.rows[0], results,
+      warning: "Verification confirms only that allowlisted pages were retrieved and metadata was extracted. It does not prove identity, ownership, allegations, or a match to the tip subject. An analyst must confirm relevance and record uncertainty."
+    });
+  } catch {
+    return res.status(500).json({ success: false, message: "Unable to verify public-source references." });
+  }
+});
+
+router.get("/admin/tips/:tipId/sources", requireAdmin, async (req,res) => {
+  const id = Number(req.params.tipId);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({success:false,message:"Invalid tip ID."});
+  try {
+    await ensureSchema();
+    const exists = await pool.query("SELECT id,reference FROM redom_fbi_security_tips WHERE id=$1",[id]);
+    if (!exists.rows[0]) return res.status(404).json({success:false,message:"Tip not found."});
+    const rows = await pool.query("SELECT id,source_url,source_label,source_sha256,publisher,headline,excerpt,verification_status,content_sha256,retrieved_at,created_at FROM redom_fbi_security_tip_sources WHERE tip_id=$1 ORDER BY created_at DESC LIMIT 100",[id]);
+    await audit("tip_public_sources_viewed",String(id),{count:rows.rows.length});
+    return res.setHeader("Cache-Control","no-store").json({success:true,tip:exists.rows[0],sources:rows.rows});
+  } catch {
+    return res.status(500).json({success:false,message:"Unable to retrieve public-source verification results."});
   }
 });
 
