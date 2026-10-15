@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import { createHash } from "node:crypto";
 import { pool } from "../../database/db";
 import { logger } from "../../lib/logger";
+import { env } from "../../config/env";
 
 /**
  * FBI Security scheduled review digest.
@@ -12,15 +13,14 @@ import { logger } from "../../lib/logger";
  * full scraped text, private identifiers, financial data, or analyst notes.
  */
 const WORKER_ENABLED = () => process.env.FBI_SECURITY_WORKER_ENABLED === "true";
-const INTERVAL_MS = 60_000;
+const INTERVAL_MS = 60 * 60_000;
 const LOCK_KEY = 741_820_611;
 let timer: ReturnType<typeof setInterval> | undefined;
 let running = false;
 
 function recipients(): string[] {
-  return [...new Set((process.env.FBI_SECURITY_ADMIN_EMAILS ?? "")
-    .split(",").map((s) => s.trim().toLowerCase())
-    .filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)))];
+  const configured = process.env.FBI_SECURITY_ADMIN_EMAILS ?? process.env.BUG_REPORT_RECIPIENTS ?? env.email.bugReportRecipients.join(",");
+  return [...new Set(configured.split(",").map((s) => s.trim().toLowerCase()).filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)))];
 }
 
 function publicBaseUrl(): string {
@@ -38,6 +38,7 @@ async function ensureDigestSchema(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS redom_fbi_security_cases (
       id text PRIMARY KEY,
+      case_number text,
       source_id text NOT NULL,
       agency text NOT NULL,
       title text NOT NULL,
