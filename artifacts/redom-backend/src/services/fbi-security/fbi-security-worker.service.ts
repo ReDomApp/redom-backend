@@ -71,8 +71,10 @@ async function ensureDigestSchema(): Promise<void> {
       cases_count integer NOT NULL DEFAULT 0,
       details jsonb NOT NULL DEFAULT '{}'::jsonb
     );
-    CREATE INDEX IF NOT EXISTS redom_fbi_security_worker_runs_started_idx
-      ON redom_fbi_security_worker_runs (started_at DESC);
+    ALTER TABLE redom_fbi_security_cases ADD COLUMN IF NOT EXISTS case_number text;
+    UPDATE redom_fbi_security_cases SET case_number = 'FBI-' || to_char(COALESCE(published_at, retrieved_at, now()), 'YYYY') || '-' || upper(substr(md5(id), 1, 12)) WHERE case_number IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS redom_fbi_security_cases_case_number_idx ON redom_fbi_security_cases(case_number) WHERE case_number IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS redom_fbi_security_worker_runs_started_idx ON redom_fbi_security_worker_runs (started_at DESC);
   `);
 }
 
@@ -162,10 +164,9 @@ async function runDigest(): Promise<void> {
 
     const day = new Date().toISOString().slice(0, 10);
     const runKey = `daily-public-intelligence:${day}`;
+    const importedCount = await pollConfiguredOfficialUrls();
     const existing = await client.query("SELECT id,status FROM redom_fbi_security_worker_runs WHERE run_key=$1", [runKey]);
     if (existing.rows[0]?.status === "sent" || existing.rows[0]?.status === "skipped") return;
-
-    const importedCount = await pollConfiguredOfficialUrls();
     const inserted = await client.query(
       `INSERT INTO redom_fbi_security_worker_runs(run_key,status)
        VALUES($1,'running') ON CONFLICT(run_key) DO UPDATE SET status='running',started_at=now()
