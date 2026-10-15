@@ -378,6 +378,18 @@ router.post("/admin/cases/:caseId/notes", requireFbiSecurityAdmin, async (req, r
   }
 });
 
+router.get("/admin/cases/:caseId/notes", requireFbiSecurityAdmin, async (req, res) => {
+  const id = String(req.params.caseId ?? "").slice(0, 80);
+  try {
+    await ensureSchema();
+    const result = await pool.query("SELECT id,case_id,analyst_label,note,created_at FROM redom_fbi_security_analyst_notes WHERE case_id=$1 ORDER BY id DESC LIMIT 100", [id]);
+    await audit("analyst_notes_viewed", id, { count: result.rowCount ?? result.rows.length });
+    return res.json({ success: true, notes: result.rows });
+  } catch {
+    return res.status(500).json({ success: false, message: "Unable to retrieve analyst notes." });
+  }
+});
+
 router.get("/admin/audit", requireFbiSecurityAdmin, async (req, res) => {
   try {
     await ensureSchema();
