@@ -32,8 +32,14 @@ No extra Render service, standalone Python API, separate UI, or SQLite store sho
 - `PATCH /admin/cases/:caseId/status` — update analyst-review status.
 - `POST /admin/cases/:caseId/notes` and `GET /admin/cases/:caseId/notes` — add and read minimized analyst notes.
 - `GET /admin/audit` — audit history.
+- `POST /admin/tips` — submit a structured tip to an AES-256-GCM encrypted staging queue. Requires the admin key and a configured `FBI_SECURITY_TIP_ENCRYPTION_KEY`; this endpoint is not an unauthenticated public tip form.
+- `GET /admin/tips?status=pending_review&limit=50` — list queue metadata without decrypting tip contents.
+- `GET /admin/tips/:tipId` — decrypt one tip for an authorized administrator and return its public-source references; access is audited.
+- `PATCH /admin/tips/:tipId` — update review status and analyst note.
+- `POST /admin/tips/:tipId/sources` — attach up to 20 HTTPS source references from the explicit allowlist; this stores references and hashes but does not fetch or verify the pages.
+- Tip payloads are encrypted with AES-256-GCM using a 32-byte key supplied as 64 hex characters or base64 in `FBI_SECURITY_TIP_ENCRYPTION_KEY`. Generate a dedicated key outside the repository, store it only in the existing Render service's secret environment, and maintain a protected backup/recovery procedure. Losing the key makes stored tip payloads unreadable. SHA-256 hashes are integrity fingerprints, not anonymization.
 
-Admin routes require `REDOM_FBI_SECURITY_ADMIN_KEY` with at least 32 random characters in the existing Render backend environment. Keep the value out of Git and logs. If it is not configured, admin actions remain disabled.
+Admin routes require `REDOM_FBI_SECURITY_ADMIN_KEY` with at least 32 random characters in the existing Render backend environment. Encrypted tip intake additionally requires `FBI_SECURITY_TIP_ENCRYPTION_KEY` (32-byte AES key encoded as hex or base64). Keep both values out of Git and logs. If the relevant secret is not configured, the associated admin actions remain disabled.
 
 ## Current limits and release checklist
 
