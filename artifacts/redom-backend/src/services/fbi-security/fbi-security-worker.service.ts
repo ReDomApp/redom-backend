@@ -159,12 +159,12 @@ async function runDigest(): Promise<void> {
     locked = lock.rows[0]?.locked === true;
     if (!locked) return;
 
-    const importedCount = await pollConfiguredOfficialUrls();
     const day = new Date().toISOString().slice(0, 10);
     const runKey = `daily-public-intelligence:${day}`;
     const existing = await client.query("SELECT id,status FROM redom_fbi_security_worker_runs WHERE run_key=$1", [runKey]);
     if (existing.rows[0]?.status === "sent" || existing.rows[0]?.status === "skipped") return;
 
+    const importedCount = await pollConfiguredOfficialUrls();
     const inserted = await client.query(
       `INSERT INTO redom_fbi_security_worker_runs(run_key,status)
        VALUES($1,'running') ON CONFLICT(run_key) DO UPDATE SET status='running',started_at=now()
