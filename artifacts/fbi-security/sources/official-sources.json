@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "description": "Seed registry of official public sources. Confirm each URL and permitted access method before enabling automated polling.",
+  "sources": [
+    {
+      "id": "fbi_wanted",
+      "agency": "Federal Bureau of Investigation",
+      "jurisdiction": "United States",
+      "homepage": "https://www.fbi.gov/wanted",
+      "tip_url": "https://tips.fbi.gov/",
+      "access_method": "public_web_page",
+      "categories": ["wanted_persons", "fraud", "public_rewards"],
+      "enabled": true,
+      "notes": "Use official case pages and their exact reward wording; confirm case-specific reporting instructions."
+    },
+    {
+      "id": "justice_press",
+      "agency": "U.S. Department of Justice",
+      "jurisdiction": "United States",
+      "homepage": "https://www.justice.gov/news",
+      "tip_url": null,
+      "access_method": "public_web_page",
+      "categories": ["indictments", "convictions", "enforcement", "fraud"],
+      "enabled": true,
+      "notes": "Press releases are public case announcements, not necessarily reward offers. Use case-specific agency instructions."
+    },
+    {
+      "id": "sec_litigation",
+      "agency": "U.S. Securities and Exchange Commission",
+      "jurisdiction": "United States",
+      "homepage": "https://www.sec.gov/litigation",
+      "tip_url": "https://www.sec.gov/tcr",
+      "access_method": "public_web_page",
+      "categories": ["securities_fraud", "enforcement", "whistleblower"],
+      "enabled": true,
+      "notes": "Reward/award eligibility depends on official SEC whistleblower program rules; do not treat every enforcement action as a reward case."
+    },
+    {
+      "id": "ftc_news",
+      "agency": "Federal Trade Commission",
+      "jurisdiction": "United States",
+      "homepage": "https://www.ftc.gov/news-events/news",
+      "tip_url": "https://reportfraud.ftc.gov/",
+      "access_method": "public_web_page",
+      "categories": ["consumer_fraud", "scams", "enforcement"],
+      "enabled": true,
+      "notes": "The FTC reporting portal is for consumer fraud reports; it is not a general reward-claim form."
+    },
+    {
+      "id": "us_marshals_fugitives",
+      "agency": "U.S. Marshals Service",
+      "jurisdiction": "United States",
+      "homepage": "https://www.usmarshals.gov/what-we-do/fugitive-investigations",
+      "tip_url": "https://www.usmarshals.gov/what-we-do/fugitive-investigations",
+      "access_method": "public_web_page",
+      "categories": ["fugitives", "public_rewards"],
+      "enabled": true,
+      "notes": "Validate specific fugitive and reward instructions on current official page before reporting."
+    }
+  ]
+}

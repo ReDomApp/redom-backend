@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/fbi-security/case-record.schema.json",
+  "title": "Public Enforcement Case Record",
+  "description": "Normalized record for information published by an official agency. Not a private-person dossier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "case_id",
+    "agency",
+    "title",
+    "source_url",
+    "retrieved_at",
+    "claims",
+    "reward",
+    "reporting"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "agency": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "official_case_number": {
+      "type": ["string", "null"],
+      "maxLength": 200
+    },
+    "category": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "uniqueItems": true
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "published_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "retrieved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "content_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "classification", "source_url"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 3000
+          },
+          "classification": {
+            "enum": [
+              "official_source",
+              "corroborated_public_source",
+              "user_submitted_unverified",
+              "analyst_inference",
+              "unknown"
+            ]
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "source_published_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "confidence_rationale": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          }
+        }
+      }
+    },
+    "reward": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["advertised", "exact_wording", "conditions"],
+      "properties": {
+        "advertised": {
+          "type": "boolean"
+        },
+        "amount_text": {
+          "type": ["string", "null"],
+          "maxLength": 200
+        },
+        "currency": {
+          "type": ["string", "null"],
+          "maxLength": 10
+        },
+        "exact_wording": {
+          "type": ["string", "null"],
+          "maxLength": 3000
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "deadline": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
+    },
+    "reporting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["official_tip_url", "requires_human_review"],
+      "properties": {
+        "official_tip_url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "instructions_url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "requires_human_review": {
+          "const": true
+        }
+      }
+    },
+    "review_status": {
+      "enum": ["new", "in_review", "verified", "rejected", "stale"]
+    }
+  }
+}
