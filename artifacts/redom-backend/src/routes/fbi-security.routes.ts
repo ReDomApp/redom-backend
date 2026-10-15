@@ -116,8 +116,8 @@ router.get("/cases", async (req, res) => {
     const clauses: string[] = [];
     const args: unknown[] = [];
     if (search) {
-      args.push("%" + likeEscape(search) + "%");
-      clauses.push(`(title ILIKE $${args.length} ESCAPE '\\\\' OR agency ILIKE $${args.length} ESCAPE '\\\\' OR summary ILIKE $${args.length} ESCAPE '\\\\')`);
+      args.push(search.toLocaleLowerCase("en-US"));
+      clauses.push(`(position($${args.length} in lower(title)) > 0 OR position($${args.length} in lower(agency)) > 0 OR position($${args.length} in lower(summary)) > 0)`);
     }
     if (rewardOnly) clauses.push("reward_advertised = true");
     args.push(limit);
