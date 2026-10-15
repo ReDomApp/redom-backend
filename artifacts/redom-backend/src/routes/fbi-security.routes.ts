@@ -34,9 +34,6 @@ function boundedLimit(value: unknown, fallback = 50): number {
   return Number.isInteger(n) ? Math.max(1, Math.min(MAX_LIMIT, n)) : fallback;
 }
 
-function likeEscape(value: string): string {
-  return value.replace(/[\\%_]/g, "\\$&");
-}
 
 async function audit(eventType: string, recordId: string | null, metadata: Record<string, unknown> = {}): Promise<void> {
   await pool.query(
@@ -230,6 +227,69 @@ router.get("/correlations", async (req, res) => {
     return res.json({ success: true, candidates, warning: "Candidate correlation only; not proof of identity, conduct, or guilt." });
   } catch {
     return res.status(500).json({ success: false, message: "Unable to correlate public notices." });
+  }
+});
+
+router.post("/admin/ingest-url", requireFbiSecurityAdmin, async (req, res) => {
+  const rawUrl = String(req.body?.url ?? "").trim();
+  let url: URL;
+  try { url = new URL(rawUrl); } catch { return res.status(400).json({ success: false, message: "Invalid source URL." }); }
+  const sources: Record<string, { id: string; agency: string; tipUrl: string }> = {
+    "www.fbi.gov": { id: "fbi_wanted", agency: "Federal Bureau of Investigation", tipUrl: "https://tips.fbi.gov/" },
+    "tips.fbi.gov": { id: "fbi_tips", agency: "Federal Bureau of Investigation", tipUrl: "https://tips.fbi.gov/" },
+    "www.justice.gov": { id: "doj_news", agency: "U.S. Department of Justice", tipUrl: "https://www.justice.gov/" },
+    "www.sec.gov": { id: "sec_litigation", agency: "U.S. Securities and Exchange Commission", tipUrl: "https://www.sec.gov/tcr" },
+    "www.ftc.gov": { id: "ftc_news", agency: "Federal Trade Commission", tipUrl: "https://reportfraud.ftc.gov/" },
+    "reportfraud.ftc.gov": { id: "ftc_report", agency: "Federal Trade Commission", tipUrl: "https://reportfraud.ftc.gov/" },
+    "www.usmarshals.gov": { id: "us_marshals_fugitives", agency: "U.S. Marshals Service", tipUrl: "https://www.usmarshals.gov/what-we-do/fugitive-investigations" }
+  };
+  const source = sources[url.hostname.toLowerCase()];
+  if (url.protocol !== "https:" || !source || url.username || url.password || url.port) {
+    return res.status(400).json({ success: false, message: "Only HTTPS URLs on registered official source hosts are accepted." });
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(url.toString(), {
+      method: "GET", redirect: "manual", signal: controller.signal,
+      headers: { "user-agent": "ReDom-Public-Notice-Monitor/1.0", "accept": "text/html,application/xhtml+xml,application/xml,text/plain" }
+    });
+    if (response.status >= 300 && response.status < 400) return res.status(400).json({ success: false, message: "Official source redirected. Verify the destination manually before importing." });
+    if (!response.ok) return res.status(502).json({ success: false, message: "Official source returned HTTP " + response.status + "." });
+    const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (!/(text\/html|application\/xhtml\+xml|application\/(?:rss\+xml|atom\+xml|xml)|text\/plain)/.test(contentType)) return res.status(415).json({ success: false, message: "Unsupported source content type." });
+    const announcedSize = Number(response.headers.get("content-length") ?? 0);
+    if (announcedSize > 2_000_000) return res.status(413).json({ success: false, message: "Source response exceeds the 2 MB limit." });
+    const raw = await response.text();
+    if (Buffer.byteLength(raw, "utf8") > 2_000_000) return res.status(413).json({ success: false, message: "Source response exceeds the 2 MB limit." });
+    const safeMarkup = raw.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|iframe|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
+    const textFrom = (value: string) => value.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim();
+    const titleMatch = safeMarkup.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
+    const title = (titleMatch ? textFrom(titleMatch[1]) : url.hostname + " official public notice").slice(0, 500);
+    const summary = textFrom(safeMarkup).slice(0, 10000);
+    if (summary.length < 40) return res.status(422).json({ success: false, message: "No usable text extracted. Import a case-specific official notice URL." });
+    const rewardMatch = summary.match(/.{0,160}(?:reward|up to\s*\$\s?[0-9][0-9,]*).{0,240}/i);
+    const exact = rewardMatch ? rewardMatch[0].trim().slice(0, 600) : null;
+    const amount = exact?.match(/(?:up to\s*)?\$\s?[0-9][0-9,]*(?:\.\d{2})?/i)?.[0]?.trim() ?? null;
+    const rewardAdvertised = Boolean(exact && amount && /reward|offering|offers/i.test(exact));
+    const canonicalUrl = url.toString().split("#")[0];
+    const id = createHash("sha256").update(source.id + "|" + canonicalUrl).digest("hex").slice(0, 24);
+    const contentHash = createHash("sha256").update(summary, "utf8").digest("hex");
+    await ensureSchema();
+    const result = await pool.query(
+      `INSERT INTO redom_fbi_security_cases (id,source_id,agency,title,category,source_url,retrieved_at,content_sha256,summary,reward_advertised,reward_amount_text,reward_exact_wording,reward_conditions,tip_url,review_status)
+       VALUES ($1,$2,$3,$4,'[]'::jsonb,$5,now(),$6,$7,$8,$9,$10,'[]'::jsonb,$11,'new')
+       ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,retrieved_at=now(),content_sha256=EXCLUDED.content_sha256,summary=EXCLUDED.summary,reward_advertised=EXCLUDED.reward_advertised,reward_amount_text=EXCLUDED.reward_amount_text,reward_exact_wording=EXCLUDED.reward_exact_wording,tip_url=EXCLUDED.tip_url
+       RETURNING id,source_id,agency,title,source_url,retrieved_at,content_sha256,reward_advertised,reward_amount_text,review_status`,
+      [id, source.id, source.agency, title, canonicalUrl, contentHash, summary, rewardAdvertised, amount, exact, source.tipUrl]
+    );
+    await audit("official_source_url_ingested", id, { sourceId: source.id, sourceUrl: canonicalUrl, contentType, contentSha256: contentHash });
+    return res.status(201).json({ success: true, case: result.rows[0], warnings: ["Reward extraction is heuristic; verify original official wording.", "No identity or guilt conclusion is made by this tool."] });
+  } catch (error) {
+    const aborted = error instanceof Error && error.name === "AbortError";
+    return res.status(aborted ? 504 : 502).json({ success: false, message: aborted ? "Official source request timed out." : "Unable to ingest the official source." });
+  } finally {
+    clearTimeout(timer);
   }
 });
 
