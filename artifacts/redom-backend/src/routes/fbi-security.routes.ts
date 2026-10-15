@@ -47,6 +47,7 @@ async function ensureSchema(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS redom_fbi_security_cases (
       id text PRIMARY KEY,
+      case_number text,
       source_id text NOT NULL,
       agency text NOT NULL,
       title text NOT NULL,
@@ -63,6 +64,9 @@ async function ensureSchema(): Promise<void> {
       tip_url text,
       review_status text NOT NULL DEFAULT 'new' CHECK (review_status IN ('new','under_review','verified_public_source','submitted_by_human','closed'))
     );
+    ALTER TABLE redom_fbi_security_cases ADD COLUMN IF NOT EXISTS case_number text;
+    UPDATE redom_fbi_security_cases SET case_number = 'FBI-' || to_char(COALESCE(published_at, retrieved_at, now()), 'YYYY') || '-' || upper(substr(md5(id), 1, 12)) WHERE case_number IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS redom_fbi_security_cases_case_number_idx ON redom_fbi_security_cases(case_number) WHERE case_number IS NOT NULL;
     CREATE INDEX IF NOT EXISTS redom_fbi_security_cases_retrieved_idx ON redom_fbi_security_cases (retrieved_at DESC);
     CREATE INDEX IF NOT EXISTS redom_fbi_security_cases_reward_idx ON redom_fbi_security_cases (reward_advertised, retrieved_at DESC);
     CREATE TABLE IF NOT EXISTS redom_fbi_security_audit_events (
@@ -130,6 +134,19 @@ router.get("/cases", async (req, res) => {
     return res.json({ success: true, count: result.rowCount ?? result.rows.length, cases: result.rows });
   } catch {
     return res.status(500).json({ success: false, message: "Unable to retrieve public case notices." });
+  }
+});
+
+router.get("/cases/number/:caseNumber", async (req, res) => {
+  try {
+    await ensureSchema();
+    const caseNumber = String(req.params.caseNumber ?? "").trim().toUpperCase().slice(0, 40);
+    const result = await pool.query("SELECT * FROM redom_fbi_security_cases WHERE upper(case_number)=$1 LIMIT 1", [caseNumber]);
+    if (!result.rows[0]) return res.status(404).json({ success: false, message: "Case number not found." });
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, case: result.rows[0], reportUrl: "/redom-backend/fbi-security/cases/" + encodeURIComponent(result.rows[0].id) + "/report" });
+  } catch {
+    return res.status(500).json({ success: false, message: "Unable to retrieve case number." });
   }
 });
 
