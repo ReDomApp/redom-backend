@@ -142,6 +142,15 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
   return imported;
 }
 
+async function sendImmediateNoticeAlert(to: string[], importedCount: number, day: string): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  const from = process.env.FBI_SECURITY_EMAIL_FROM?.trim() || process.env.REDOM_OPS_REPORT_FROM?.trim() || "admin@wnncompany.com";
+  if (!apiKey || !from || importedCount < 1) return;
+  const base = publicBaseUrl();
+  const html = "<h1>FBI Security notice update</h1><p>" + importedCount + " new official public notice record(s) were detected during hourly polling.</p><p><a href=\"" + base + "/cases\">Review case records</a></p><p>Official public-source information only. Verify source facts before action. No identity or guilt conclusion is implied.</p>";
+  const sent = await new Resend(apiKey).emails.send({ from, to, subject: "FBI Security — new public notices detected (" + day + ")", html });
+  if (sent.error) throw new Error(sent.error.message || "Unable to send new-notice alert");
+}
 function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -166,7 +175,7 @@ async function runDigest(): Promise<void> {
     const runKey = `daily-public-intelligence:${day}`;
     const importedCount = await pollConfiguredOfficialUrls();
     const existing = await client.query("SELECT id,status FROM redom_fbi_security_worker_runs WHERE run_key=$1", [runKey]);
-    if (existing.rows[0]?.status === "sent" || existing.rows[0]?.status === "skipped") return;
+    if (existing.rows[0]?.status === "sent" || existing.rows[0]?.status === "skipped") { if (importedCount > 0) await sendImmediateNoticeAlert(to, importedCount, day); return; }
     const inserted = await client.query(
       `INSERT INTO redom_fbi_security_worker_runs(run_key,status)
        VALUES($1,'running') ON CONFLICT(run_key) DO UPDATE SET status='running',started_at=now()
