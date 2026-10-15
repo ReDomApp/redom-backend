@@ -13,6 +13,7 @@ from .ingest import ingest_registry_homepages, ingest_url, registry
 from .reporting import render_markdown
 from .security import require_admin
 from .scheduler import poll_loop
+from .correlation import correlate_cases
 
 BASE = Path(__file__).resolve().parents[1]
 
@@ -29,7 +30,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title="FBI Security Intel — Public Source Monitor", version="0.1.0",
+app = FastAPI(title="FBI Security Intel — Public Source Monitor", version="0.2.0",
               description="Independent public-source notice monitoring and evidence-linked reporting. Not an official government service.",
               docs_url=None if os.getenv("APP_ENV") == "production" else "/docs",
               redoc_url=None, lifespan=lifespan)
@@ -73,6 +74,13 @@ def report(case_id: str):
         return render_markdown(case_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Case not found")
+
+@app.get("/api/correlations")
+def correlations(limit: int = Query(default=500, ge=1, le=500)):
+    """Candidate links among public notices; every result requires human review."""
+    groups = correlate_cases(list_cases(limit=limit))
+    return {"count": len(groups), "groups": groups,
+            "warning": "Correlation candidates are not proof of shared identity, conduct, or guilt."}
 
 @app.post("/api/admin/ingest", dependencies=[Depends(require_admin)])
 def admin_ingest(body: IngestRequest):
