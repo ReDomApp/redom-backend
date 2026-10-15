@@ -225,7 +225,7 @@ async function runDigest(): Promise<void> {
       <hr><p style="font-size:12px;color:#596579">Public-source data only. Reward detection is heuristic and must be checked against the original notice. Human review is required before any official submission. Do not add restricted identity, tax, financial, credential, or private-account information.</p>
       </body></html>`;
     const apiKey = process.env.RESEND_API_KEY?.trim();
-    const from = process.env.FBI_SECURITY_EMAIL_FROM?.trim();
+    const from = process.env.FBI_SECURITY_EMAIL_FROM?.trim() || process.env.REDOM_OPS_REPORT_FROM?.trim() || env.email.reportsFrom;
     if (!apiKey || !from) {
       await client.query("UPDATE redom_fbi_security_worker_runs SET status='skipped',finished_at=now(),details=$2::jsonb WHERE id=$1", [runId, JSON.stringify({ reason: "Missing RESEND_API_KEY or FBI_SECURITY_EMAIL_FROM; no email sent." })]);
       return;
