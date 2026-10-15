@@ -1,16 +1,17 @@
-# Architecture correction: ReDom-native feature
+# ReDom-native architecture
 
-FBI Security reporting is a feature within the existing ReDom backend, not a standalone product/service.
+FBI Security reporting is a feature of the existing ReDom backend. It is not a standalone project, API server, or Render service.
 
-- Source of truth repository: `ReDomApp/redom-backend`.
-- Backend application: `artifacts/redom-backend` (existing TypeScript/Express API).
-- Existing deployment: Render service `redom-backend`, attached to this repository. The feature should deploy through this existing service after the feature branch is reviewed and merged into the deployed branch.
-- API prefix: `/redom-backend/fbi-security/*` and compatibility mount `/fbi-security/*` because the existing backend router is mounted under both paths.
-- Persistence: existing Neon/PostgreSQL through the backend `pg` pool, using namespaced `redom_fbi_security_*` tables. No SQLite database or separate database service is used by the integration.
-- New route module: `artifacts/redom-backend/src/routes/fbi-security.routes.ts`, mounted by `artifacts/redom-backend/src/routes/index.ts`.
+- **Source of truth:** `ReDomApp/redom-backend`.
+- **Runtime:** `artifacts/redom-backend`, TypeScript/Express.
+- **Render endpoint:** the existing `redom-backend` service.
+- **Database:** the existing Neon PostgreSQL database via the backend `pool` in `src/database/db.ts`.
+- **Route module:** `artifacts/redom-backend/src/routes/fbi-security.routes.ts`.
+- **Route registration:** `artifacts/redom-backend/src/routes/index.ts`.
+- **Canonical API path:** `/redom-backend/fbi-security/*`; this works through the existing `/redom-backend` mount.
 
-The earlier Python/FastAPI proof-of-concept under this feature directory is not the deployment target. It should be treated as prototype/reference code only; do not create a separate Render service for it. Use the ReDom TypeScript route and shared backend database as the source of truth.
+The earlier standalone Python/FastAPI scaffold, SQLite configuration, and standalone dashboard were removed from this feature branch. Do not provision a separate service or database for this feature.
 
-This integration currently exposes public-source cases, source registry, report drafts, conservative correlation candidates, analyst review status/notes, and audit events. It does not yet implement a complete automated feed poller. An authorized import process can submit a publicly available notice through the protected admin API. External official-source API integrations must use documented endpoints and the permissions applicable to them.
+The integrated API now provides a public agency/source registry, public-notice list/detail, Markdown report drafting, conservative candidate correlations, protected manual notice imports, review-status changes, analyst notes, and audit events. Automatic official feed polling remains unfinished. Source records must come from current official public notices and verified documented APIs; the feature does not query restricted private systems or auto-submit reports.
 
-Before production release, run `pnpm --filter @workspace/redom-backend run typecheck` and the backend build from the repository root, review the SQL schema against existing migration/bootstrap patterns, confirm the admin secret in Render, inspect logs, and verify the deployed endpoint only after merging to the branch tracked by Render. No Render service is created by this feature branch and no deployment is claimed.
+Before release, typecheck/build the existing backend, review schema permissions and migration behavior, configure the admin secret in the existing Render service, and confirm the deployment after merge to the service's configured branch. Feature-branch commits are not live deployments.
