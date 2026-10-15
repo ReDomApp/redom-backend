@@ -21,6 +21,37 @@ function requireAdmin(req: any, res: any, next: any): void {
 }
 async function ensureSchema(): Promise<void> {
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS redom_fbi_security_cases (
+      id text PRIMARY KEY,
+      case_number text,
+      source_id text NOT NULL,
+      agency text NOT NULL,
+      title text NOT NULL,
+      category jsonb NOT NULL DEFAULT '[]'::jsonb,
+      source_url text NOT NULL UNIQUE,
+      published_at timestamptz,
+      retrieved_at timestamptz NOT NULL DEFAULT now(),
+      content_sha256 text,
+      summary text NOT NULL DEFAULT '',
+      reward_advertised boolean NOT NULL DEFAULT false,
+      reward_amount_text text,
+      reward_exact_wording text,
+      reward_conditions jsonb NOT NULL DEFAULT '[]'::jsonb,
+      tip_url text,
+      review_status text NOT NULL DEFAULT 'new' CHECK (review_status IN ('new','under_review','verified_public_source','submitted_by_human','closed'))
+    );
+    ALTER TABLE redom_fbi_security_cases ADD COLUMN IF NOT EXISTS case_number text;
+    UPDATE redom_fbi_security_cases SET case_number = 'FBI-' || to_char(COALESCE(published_at, retrieved_at, now()), 'YYYY') || '-' || upper(substr(md5(id), 1, 12)) WHERE case_number IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS redom_fbi_security_cases_case_number_idx ON redom_fbi_security_cases(case_number) WHERE case_number IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS redom_fbi_security_audit_events (
+      id bigserial PRIMARY KEY,
+      event_type text NOT NULL,
+      record_id text,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS redom_fbi_security_corroborations (
       id bigserial PRIMARY KEY,
       case_id text NOT NULL REFERENCES redom_fbi_security_cases(id) ON DELETE CASCADE,
