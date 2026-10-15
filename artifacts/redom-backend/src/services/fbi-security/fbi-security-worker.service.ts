@@ -125,8 +125,9 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const canonical = url.toString().split("#")[0];
       const id = createHash("sha256").update(source.id + "|" + canonical).digest("hex").slice(0, 24);
       const hash = createHash("sha256").update(text, "utf8").digest("hex");
-      const previous = await pool.query("SELECT content_sha256 FROM redom_fbi_security_cases WHERE id=$1", [id]);
-      const isNewOrChanged = !previous.rows[0] || previous.rows[0].content_sha256 !== hash;
+      const previous = await pool.query("SELECT content_sha256,review_status FROM redom_fbi_security_cases WHERE id=$1", [id]);
+      const isNewOrChanged = (!previous.rows[0] || previous.rows[0].content_sha256 !== hash) && (!previous.rows[0] || previous.rows[0].review_status !== "closed");
+      const relevantRiskNotice = /fraud|scam|wire fraud|money laundering|financial crime|payment fraud|bribery|embezzlement|securities fraud|consumer restitution|reward|valuable information|tip line|enforcement action/i.test(text);
       const result = await pool.query(
         `INSERT INTO redom_fbi_security_cases(id,source_id,agency,title,category,source_url,retrieved_at,content_sha256,summary,reward_advertised,reward_amount_text,reward_exact_wording,reward_conditions,tip_url,review_status)
          VALUES($1,$2,$3,$4,'[]'::jsonb,$5,now(),$6,$7,$8,$9,$10,'[]'::jsonb,$11,'new')
@@ -136,7 +137,7 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       );
       const caseNumber = "FBI-" + new Date().getUTCFullYear() + "-" + createHash("sha256").update(id).digest("hex").slice(0, 12).toUpperCase();
       await pool.query("UPDATE redom_fbi_security_cases SET case_number=$1 WHERE id=$2 AND case_number IS NULL", [caseNumber, id]);
-      if (isNewOrChanged) imported++;
+      if (isNewOrChanged && relevantRiskNotice) imported++;
       await pool.query(
         `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at) VALUES('scheduled_official_url_polled',$1,$2::jsonb,now())`,
         [id, JSON.stringify({ sourceId: source.id, sourceUrl: canonical, contentSha256: hash, changed: isNewOrChanged ? "new_or_changed" : "unchanged" })],
