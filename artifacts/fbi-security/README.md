@@ -37,6 +37,8 @@ No extra Render service, standalone Python API, separate UI, or SQLite store sho
 - `GET /admin/tips/:tipId` — decrypt one tip for an authorized administrator and return its public-source references; access is audited.
 - `PATCH /admin/tips/:tipId` — update review status and analyst note.
 - `POST /admin/tips/:tipId/sources` — attach up to 20 HTTPS source references from the explicit allowlist; this stores references and hashes but does not fetch or verify the pages.
+- `POST /admin/tips/:tipId/verify-sources` — fetch only the URLs already attached to that tip, up to 20 sources, with an 8-second timeout, no redirects, HTTPS host allowlisting, HTML-only responses, and a 1 MB per-source cap; extract publisher/headline/description metadata and store a SHA-256 fingerprint for review.
+- `GET /admin/tips/:tipId/sources` — view attached sources, retrieval status, extracted metadata, and content hashes.
 - Tip payloads are encrypted with AES-256-GCM using a 32-byte key supplied as 64 hex characters or base64 in `FBI_SECURITY_TIP_ENCRYPTION_KEY`. Generate a dedicated key outside the repository, store it only in the existing Render service's secret environment, and maintain a protected backup/recovery procedure. Losing the key makes stored tip payloads unreadable. SHA-256 hashes are integrity fingerprints, not anonymization.
 
 Admin routes require `REDOM_FBI_SECURITY_ADMIN_KEY` with at least 32 random characters in the existing Render backend environment. Encrypted tip intake additionally requires `FBI_SECURITY_TIP_ENCRYPTION_KEY` (32-byte AES key encoded as hex or base64). Keep both values out of Git and logs. If the relevant secret is not configured, the associated admin actions remain disabled.
