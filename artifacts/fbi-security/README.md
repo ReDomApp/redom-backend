@@ -20,6 +20,11 @@ No extra Render service, standalone Python API, separate UI, or SQLite store sho
 - `GET /cases?q=...&reward_only=true&limit=50` — searchable public records.
 - `GET /cases/:caseId` — record details.
 - `GET /cases/number/:caseNumber` — retrieve a persistent record using its unique `FBI-YYYY-XXXXXXXXXXXX` case number.
+- `POST /admin/cases/:caseId/corroborations` — fetch and store metadata from allowlisted official/news sources; requires the existing `x-redom-fbi-security-key` admin key.
+- `GET /cases/:caseId/corroborations` — view corroboration sources for one exact case.
+- `PATCH /admin/cases/:caseId/corroborations/:corroborationId` — record an analyst assessment (`supports_notice`, `contradicts_notice`, `unrelated`, or `needs_review`) with case-scoped matching.
+- `GET /cases/:caseId/verification-report` — evidence-linked verification draft with source URLs, publisher/headline/date, SHA-256 hashes, analyst assessments, and uncertainties.
+- Corroboration sources are limited to an explicit HTTPS host allowlist, fetched without following redirects, capped at 1.5 MB and 10 seconds, and stored under a foreign key to one case. Retrieved metadata is not treated as proof; analyst review is mandatory.
 - `GET /cases/:caseId/report` — evidence-linked Markdown draft.
 - `GET /correlations` — duplicate/cross-notice candidates; human review required.
 - `POST /admin/ingest-url` — fetch and import a public page from the exact official-host allowlist, with HTTPS-only, redirect rejection, timeout, content-type and size limits.
