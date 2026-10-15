@@ -220,9 +220,9 @@ router.post("/admin/tips/:tipId/sources", requireAdmin, async (req, res) => {
 
 
 function extractMeta(html: string, key: string): string {
-  for (const tag of html.match(/<meta\\b[^>]*>/gi) ?? []) {
-    const keyMatch = tag.match(/(?:property|name)\\s*=\\s*["']([^"']+)["']/i);
-    const valueMatch = tag.match(/content\\s*=\\s*["']([^"']*)["']/i);
+  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
+    const keyMatch = tag.match(/(?:property|name)\s*=\s*["']([^"']+)["']/i);
+    const valueMatch = tag.match(/content\s*=\s*["']([^"']*)["']/i);
     if (keyMatch?.[1]?.toLowerCase() === key.toLowerCase() && valueMatch?.[1]) {
       return cleanMarkup(valueMatch[1], 1500);
     }
@@ -230,11 +230,11 @@ function extractMeta(html: string, key: string): string {
   return "";
 }
 function cleanMarkup(text: string, max: number): string {
-  return text.replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
-    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+  return text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/\\s+/g, " ").trim().slice(0, max);
+    .replace(/\s+/g, " ").trim().slice(0, max);
 }
 
 /**
@@ -277,7 +277,7 @@ router.post("/admin/tips/:tipId/verify-sources", requireAdmin, async (req, res) 
           continue;
         }
         const contentType = response.headers.get("content-type") ?? "";
-        if (!/text\\/html|application\\/xhtml\\+xml/i.test(contentType) || !response.body) {
+        if (!/text\/html|application\/xhtml\+xml/i.test(contentType) || !response.body) {
           await pool.query("UPDATE redom_fbi_security_tip_sources SET verification_status='unsupported_content_type',retrieved_at=now() WHERE id=$1 AND tip_id=$2", [source.id,id]);
           results.push({ sourceId: source.id, status: "unsupported_content_type" });
           continue;
@@ -299,10 +299,10 @@ router.post("/admin/tips/:tipId/verify-sources", requireAdmin, async (req, res) 
           continue;
         }
         const html = new TextDecoder().decode(Buffer.concat(chunks));
-        const headline = extractMeta(html,"og:title") || cleanMarkup(html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1] ?? "",500);
-        const publisher = extractMeta(html,"og:site_name") || new URL(checkedUrl).hostname.replace(/^www\\./,"");
+        const headline = extractMeta(html,"og:title") || cleanMarkup(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "",500);
+        const publisher = extractMeta(html,"og:site_name") || new URL(checkedUrl).hostname.replace(/^www\./,"");
         const excerpt = extractMeta(html,"og:description") || extractMeta(html,"description");
-        const digest = createHash("sha256").update([checkedUrl,headline,publisher,excerpt].join("\\n"),"utf8").digest("hex");
+        const digest = createHash("sha256").update([checkedUrl,headline,publisher,excerpt].join("\n"),"utf8").digest("hex");
         const status = headline ? "retrieved_needs_review" : "retrieved_no_headline";
         await pool.query(
           "UPDATE redom_fbi_security_tip_sources SET publisher=$3,headline=$4,excerpt=$5,content_sha256=$6,source_sha256=$6,verification_status=$7,retrieved_at=now() WHERE id=$1 AND tip_id=$2",
