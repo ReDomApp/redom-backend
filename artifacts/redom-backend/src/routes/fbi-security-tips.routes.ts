@@ -220,13 +220,13 @@ router.post("/admin/tips/:tipId/sources", requireAdmin, async (req, res) => {
 
 
 function extractMeta(html: string, key: string): string {
-  const escaped = key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\
-export default router;");
-  const patterns = [
-    new RegExp('<meta[^>]+(?:property|name)=["\\']' + escaped + '["\\'][^>]+content=["\\']([^"\\']*)["\\'][^>]*>', "i"),
-    new RegExp('<meta[^>]+content=["\\']([^"\\']*)["\\'][^>]+(?:property|name)=["\\']' + escaped + '["\\'][^>]*>', "i")
-  ];
-  for (const re of patterns) { const match = html.match(re); if (match?.[1]) return cleanMarkup(match[1], 1500); }
+  for (const tag of html.match(/<meta\\b[^>]*>/gi) ?? []) {
+    const keyMatch = tag.match(/(?:property|name)\\s*=\\s*["']([^"']+)["']/i);
+    const valueMatch = tag.match(/content\\s*=\\s*["']([^"']*)["']/i);
+    if (keyMatch?.[1]?.toLowerCase() === key.toLowerCase() && valueMatch?.[1]) {
+      return cleanMarkup(valueMatch[1], 1500);
+    }
+  }
   return "";
 }
 function cleanMarkup(text: string, max: number): string {
