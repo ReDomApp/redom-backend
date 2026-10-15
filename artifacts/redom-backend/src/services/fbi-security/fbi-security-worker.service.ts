@@ -35,6 +35,31 @@ function publicBaseUrl(): string {
 
 async function ensureDigestSchema(): Promise<void> {
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS redom_fbi_security_cases (
+      id text PRIMARY KEY,
+      source_id text NOT NULL,
+      agency text NOT NULL,
+      title text NOT NULL,
+      category jsonb NOT NULL DEFAULT '[]'::jsonb,
+      source_url text NOT NULL UNIQUE,
+      published_at timestamptz,
+      retrieved_at timestamptz NOT NULL DEFAULT now(),
+      content_sha256 text,
+      summary text NOT NULL DEFAULT '',
+      reward_advertised boolean NOT NULL DEFAULT false,
+      reward_amount_text text,
+      reward_exact_wording text,
+      reward_conditions jsonb NOT NULL DEFAULT '[]'::jsonb,
+      tip_url text,
+      review_status text NOT NULL DEFAULT 'new' CHECK (review_status IN ('new','under_review','verified_public_source','submitted_by_human','closed'))
+    );
+    CREATE TABLE IF NOT EXISTS redom_fbi_security_audit_events (
+      id bigserial PRIMARY KEY,
+      event_type text NOT NULL,
+      record_id text,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
     CREATE TABLE IF NOT EXISTS redom_fbi_security_worker_runs (
       id bigserial PRIMARY KEY,
       run_key text NOT NULL UNIQUE,
