@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { createHash } from "node:crypto";
 import { pool } from "../../database/db";
 import { logger } from "../../lib/logger";
 
