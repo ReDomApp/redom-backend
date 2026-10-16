@@ -59,3 +59,21 @@ Before production release, run `pnpm --filter @workspace/redom-backend run typec
 - `FBI_SECURITY_RESEARCH_ROUNDS` is clamped to 1–3. Each hourly run has a 55-minute maximum and a 12-case research cap; the report is sent after the pass finishes or the budget is reached.
 - Results and provider errors are stored with case ID, provider, run key, and extracted source URLs in `redom_fbi_security_research_runs`. The email includes research output for review. A provider error is recorded, not treated as a clean search result.
 - Configure provider keys only as secrets in the existing Render service. Never commit API keys. OpenAI/Gemini availability, model access, rate limits, and billing depend on the configured accounts.
+
+### Approved records API adapter (case-scoped)
+
+The feature branch adds a disabled-by-default REST adapter in `src/routes/fbi-security-authorized-records.routes.ts`, mounted at `/redom-backend/fbi-security` in the existing backend. It is a generic integration contract, not a claim that any government database is connected. A specific provider must be selected and its documented API contract mapped before production use.
+
+Configure these only as secrets/environment values on the existing Render backend:
+- `FBI_SECURITY_AUTHORIZED_RECORDS_API_URL`: the provider's exact HTTPS API endpoint.
+- `FBI_SECURITY_AUTHORIZED_RECORDS_API_TOKEN`: provider-issued bearer token with least-privilege scope.
+- `FBI_SECURITY_AUTHORIZED_RECORDS_ALLOWED_HOSTS`: comma-separated exact hostnames; endpoint host must match one exactly and must use HTTPS on the default port.
+
+Admin endpoints (all require `x-redom-fbi-security-key`):
+- `GET /admin/authorized-records/status` — reports configured/disabled state without exposing credentials.
+- `POST /admin/cases/:caseId/authorized-records-query` with JSON `{"purpose":"case_corroboration"}` — sends the existing case number/title/agency and official source URL to the configured provider, asking only for case/docket metadata and public record links.
+- `PATCH /admin/authorized-record-results/:resultId/review` with `{"status":"needs_review|supports_case|contradicts_case|unrelated","note":"..." }` — records a human review.
+
+The expected provider response is JSON shaped as `{"records":[{"case_number":"...","docket_number":"...","agency":"...","court":"...","case_status":"...","filing_date":"...","disposition":"...","public_record_url":"https://...","record_title":"...","record_date":"...","public_summary":"..."}]}`. Map the actual provider's documented response format before enabling. The adapter uses a 12-second timeout, rejects redirects, caps responses at 100 KB and 25 records, stores results in `redom_fbi_security_authorized_record_results`, and audits success/failure and analyst review. Results start at `needs_review`; they are leads, not identity proof.
+
+This adapter intentionally does not request or store SSNs, tax identifiers, dates of birth, home addresses, personal contact details, financial/account data, relatives, or private-account data. It fails closed if a returned record includes a prohibited sensitive field. It is not configured or active until the actual approved provider endpoint, exact host, and provider-issued token are supplied. Do not invent an endpoint or place credentials in Git. Confirm provider terms, legal authority, least-privilege scopes, retention rules, and provider-specific API requirements before setting secrets.
