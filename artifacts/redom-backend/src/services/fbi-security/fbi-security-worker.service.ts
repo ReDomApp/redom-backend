@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { pool } from "../../database/db";
 import { logger } from "../../lib/logger";
 import { env } from "../../config/env";
+import { parseFbiWantedProfileHtml, FBI_FRAUDSTERS_INDEX } from "./fbi-wanted-profile";
+import { buildCaseResearchPlan, buildResearchInstructions } from "./case-research-planner";
 
 /**
  * FBI Security hourly public-source review report.
@@ -77,26 +79,6 @@ async function ensureDigestSchema(): Promise<void> {
     UPDATE redom_fbi_security_cases SET case_number = 'FBI-' || to_char(COALESCE(published_at, retrieved_at, now()), 'YYYY') || '-' || upper(substr(md5(id), 1, 12)) WHERE case_number IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS redom_fbi_security_cases_case_number_idx ON redom_fbi_security_cases(case_number) WHERE case_number IS NOT NULL;
     CREATE INDEX IF NOT EXISTS redom_fbi_security_worker_runs_started_idx ON redom_fbi_security_worker_runs (started_at DESC);
-    -- Retire known general/index pages that were previously misclassified as case notices.
-    UPDATE redom_fbi_security_cases
-       SET source_id='excluded_index', review_status='closed', reward_advertised=false,
-           reward_amount_text=NULL, reward_exact_wording=NULL, reward_conditions='[]'::jsonb
-     WHERE regexp_replace(source_url, '/+$', '') IN (
-       'https://www.ftc.gov/enforcement/penalty-offenses',
-       'https://www.ftc.gov/enforcement/refunds',
-       'https://www.ftc.gov/enforcement/criminal-liaison-unit',
-       'https://www.ftc.gov/enforcement/consumer-sentinel-network',
-       'https://www.ftc.gov/enforcement/competition-consumer-protection-guidance-documents',
-       'https://www.ftc.gov/enforcement/hisa',
-       'https://www.ftc.gov/enforcement/rulemaking',
-       'https://www.ftc.gov/enforcement/anticompetitive-practices',
-       'https://www.ftc.gov/enforcement/merger-review',
-       'https://www.ftc.gov/enforcement/premerger-notification-program',
-       'https://www.ftc.gov/news-events/news/press-releases',
-       'https://www.fdic.gov/consumer-resource-center',
-       'https://www.consumerfinance.gov/enforcement/',
-       'https://www.usmarshals.gov/what-we-do/fugitive-investigations'
-     );
   `);
 }
 
@@ -118,6 +100,11 @@ const RESEARCH_MAX_MS = 55 * 60_000;
 const RESEARCH_MAX_CASES = 12;
 const RESEARCH_MAX_ROUNDS = 3;
 const RESEARCH_MAX_BYTES = 30_000;
+const PROVIDER_COOLDOWN_MS = 30 * 60_000;
+const providerCooldownUntil = new Map<string, number>();
+function providerCoolingDown(name: string): boolean { return (providerCooldownUntil.get(name) ?? 0) > Date.now(); }
+function cooldownProvider(name: string, durationMs = PROVIDER_COOLDOWN_MS): void { providerCooldownUntil.set(name, Date.now() + durationMs); }
+function providerCooldownError(name: string): Error { return new Error(name + " provider is in cooldown after a recent quota/model error; retry after " + new Date(providerCooldownUntil.get(name) ?? Date.now()).toISOString()); }
 
 async function boundedJsonFetch(url: string, init: RequestInit, timeoutMs = 90_000): Promise<any> {
   const controller = new AbortController();
@@ -125,7 +112,14 @@ async function boundedJsonFetch(url: string, init: RequestInit, timeoutMs = 90_0
   try {
     const response = await fetch(url, { ...init, signal: controller.signal, redirect: "error" });
     const text = await response.text();
-    if (!response.ok) throw new Error("Research provider returned HTTP " + response.status);
+    if (!response.ok) {
+      const detail = text.replace(/\\s+/g, " ").slice(0, 300);
+      const error = new Error("Research provider returned HTTP " + response.status + (detail ? ": " + detail : "")) as Error & { status?: number; retryAfterMs?: number };
+      error.status = response.status;
+      const retryAfter = Number(response.headers.get("retry-after"));
+      if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = Math.min(retryAfter * 1000, 10 * 60_000);
+      throw error;
+    }
     if (Buffer.byteLength(text, "utf8") > RESEARCH_MAX_BYTES) throw new Error("Research provider response exceeded size limit");
     return JSON.parse(text);
   } finally { clearTimeout(timeout); }
@@ -139,29 +133,64 @@ function extractOpenAiText(payload: any): string {
 }
 
 async function researchWithOpenAI(prompt: string): Promise<{provider:string;text:string}> {
+  const name = "OpenAI";
+  if (providerCoolingDown(name)) throw providerCooldownError(name);
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) throw new Error("OPENAI_API_KEY is not configured");
-  const payload = await boundedJsonFetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { authorization: "Bearer " + key, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: process.env.FBI_SECURITY_OPENAI_MODEL?.trim() || "gpt-5",
-      tools: [{ type: "web_search", search_context_size: "high" }],
-      tool_choice: "required",
-      background: false,
-      input: prompt,
-    }),
-  }, 180_000);
+  let payload: any;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      payload = await boundedJsonFetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { authorization: "Bearer " + key, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: process.env.FBI_SECURITY_OPENAI_MODEL?.trim() || "gpt-5",
+          tools: [{ type: "web_search", search_context_size: "high" }],
+          tool_choice: "required",
+          background: false,
+          input: prompt,
+        }),
+      }, 180_000);
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const status = (error as Error & { status?: number }).status;
+      if (status === 429 || /HTTP 429|insufficient_quota|rate limit/i.test(message)) {
+        if (/insufficient_quota|current quota|billing hard limit|quota exceeded/i.test(message)) {
+          cooldownProvider(name, 6 * 60 * 60_000);
+          throw new Error("OpenAI account quota/billing limit reached; automated calls paused for six hours. Check API billing/quota before retrying. " + message.slice(0, 220));
+        }
+        if (attempt < 2) {
+          const retryAfter = (error as Error & { retryAfterMs?: number }).retryAfterMs;
+          await new Promise((resolve) => setTimeout(resolve, retryAfter ?? 1000 * (2 ** attempt)));
+          continue;
+        }
+        cooldownProvider(name, (error as Error & { retryAfterMs?: number }).retryAfterMs ?? PROVIDER_COOLDOWN_MS);
+      }
+      throw error;
+    }
+  }
+  if (lastError) throw lastError;
   const text = extractOpenAiText(payload);
   if (!text) throw new Error("OpenAI returned no research text");
   return { provider: "OpenAI web_search", text };
 }
 
-async function researchWithGemini(prompt: string): Promise<{provider:string;text:string}> {
-  const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GEMINI_API_KEY?.trim();
-  if (!key) throw new Error("GEMINI_API_KEY is not configured");
-  const model = process.env.FBI_SECURITY_GEMINI_MODEL?.trim() || "gemini-2.5-pro";
-  const payload = await boundedJsonFetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(key), {
+async function listAvailableGeminiModels(key: string): Promise<string[]> {
+  const payload = await boundedJsonFetch("https://generativelanguage.googleapis.com/v1beta/models?key=" + encodeURIComponent(key), {
+    method: "GET", headers: { accept: "application/json" },
+  }, 20_000);
+  return (payload?.models ?? [])
+    .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+    .map((m: any) => String(m.name ?? "").replace(/^models\//, ""))
+    .filter((name: string) => /^gemini-[a-z0-9.-]+$/i.test(name));
+}
+
+async function callGeminiModel(key: string, model: string, prompt: string): Promise<any> {
+  return boundedJsonFetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(key), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -170,9 +199,56 @@ async function researchWithGemini(prompt: string): Promise<{provider:string;text
       generationConfig: { temperature: 0.1, maxOutputTokens: 6000 },
     }),
   }, 180_000);
+}
+
+async function researchWithGemini(prompt: string): Promise<{provider:string;text:string}> {
+  const name = "Gemini";
+  if (providerCoolingDown(name)) throw providerCooldownError(name);
+  const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GEMINI_API_KEY?.trim();
+  if (!key) throw new Error("GEMINI_API_KEY is not configured");
+  const configuredModel = process.env.FBI_SECURITY_GEMINI_MODEL?.trim();
+  let model = configuredModel || "gemini-2.5-pro";
+  let payload: any;
+  try {
+    payload = await callGeminiModel(key, model, prompt);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = (error as Error & { status?: number }).status;
+    if (status === 404 || /HTTP 404|not found/i.test(message)) {
+      let available: string[];
+      try {
+        available = await listAvailableGeminiModels(key);
+      } catch (listError) {
+        cooldownProvider(name);
+        const detail = listError instanceof Error ? listError.message : String(listError);
+        throw new Error("Gemini model returned 404 and model discovery failed; provider paused to avoid repeated failures. " + detail.slice(0, 220));
+      }
+      const preferred = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"];
+      const fallback = preferred.find((candidate) => available.includes(candidate))
+        ?? available.find((candidate) => /flash/i.test(candidate))
+        ?? available[0];
+      if (!fallback || fallback === model) {
+        cooldownProvider(name);
+        throw new Error("Gemini model returned 404 and no alternate generateContent model was available for this API key.");
+      }
+      model = fallback;
+      try {
+        payload = await callGeminiModel(key, model, prompt);
+      } catch (fallbackError) {
+        const fallbackStatus = (fallbackError as Error & { status?: number }).status;
+        if (fallbackStatus === 404 || fallbackStatus === 429) cooldownProvider(name);
+        throw fallbackError;
+      }
+    } else if (status === 429 || /HTTP 429|quota|rate limit/i.test(message)) {
+      cooldownProvider(name, (error as Error & { retryAfterMs?: number }).retryAfterMs ?? PROVIDER_COOLDOWN_MS);
+      throw error;
+    } else {
+      throw error;
+    }
+  }
   const text = (payload?.candidates?.[0]?.content?.parts ?? []).map((p: any) => typeof p.text === "string" ? p.text : "").join("\n").slice(0, 20_000);
   if (!text) throw new Error("Gemini returned no research text");
-  return { provider: "Gemini Google Search", text };
+  return { provider: "Gemini Google Search (" + model + ")", text };
 }
 
 async function ensureResearchSchema(): Promise<void> {
@@ -193,7 +269,7 @@ async function ensureResearchSchema(): Promise<void> {
   `);
 }
 
-function researchPrompt(title: string, officialUrl: string, officialText: string, round: number, prior: string): string {
+function researchPrompt(title: string, officialUrl: string, officialText: string, round: number, prior: string, casePlanInstructions: string): string {
   return [
     "Produce a useful, case-specific, source-cited public intelligence brief about the individual explicitly named in this official U.S. federal wanted/enforcement notice. Do not return a generic directory summary.",
     "Starting official notice: " + officialUrl,
@@ -201,6 +277,7 @@ function researchPrompt(title: string, officialUrl: string, officialText: string
     "Official notice excerpt: " + officialText.slice(0, 6500),
     "Research round: " + round + " of " + RESEARCH_MAX_ROUNDS + ".",
     "Previously discovered leads and findings: " + (prior || "No earlier research results; begin from the official notice."),
+    "STRUCTURED CASE-SCOPED RESEARCH PLAN AND EVIDENCE RULES:\\n" + casePlanInstructions,
     "Research the named subject and this exact case across the public web. Follow relevant links and pursue promising leads, prioritizing official FBI/DOJ/USMS/court/regulator records and reputable independent news. Search disclosed aliases only when the official notice or reliable case sources connect them. Prioritize cases announced or materially updated in 2026, but include older public records when they directly explain this same case. Check the official notice's current status and latest dated update.",
     "REQUIRED OUTPUT, using these exact headings: SUBJECT AND CASE; WHAT WAS FOUND; PUBLIC CASE TIMELINE; CASE STATUS; REWARD VERIFICATION; SOURCE-BY-SOURCE COMPARISON; UNRESOLVED DISCREPANCIES; NEXT PUBLIC SOURCES TO CHECK.",
     "SUBJECT AND CASE: identify only the subject as named in the official notice, relevant disclosed aliases, official case/reference numbers, agency, alleged conduct as described by sources, and clear identity-match reasoning. Give a useful descriptive summary of the publicly documented case, not generic filler.",
@@ -212,21 +289,7 @@ function researchPrompt(title: string, officialUrl: string, officialText: string
   ].join("\n\n");
 }
 
-
-async function providerCooldownReason(provider: string): Promise<string | null> {
-  const latest = await pool.query(
-    "SELECT error_message, created_at FROM redom_fbi_security_research_runs WHERE provider=$1 AND status='failed' ORDER BY created_at DESC LIMIT 1",
-    [provider],
-  );
-  const row = latest.rows[0];
-  if (!row?.error_message || !row?.created_at) return null;
-  const message = String(row.error_message);
-  const cooldownMs = /HTTP 429/.test(message) ? 6 * 60 * 60_000 : /HTTP 404/.test(message) ? 24 * 60 * 60_000 : 0;
-  if (!cooldownMs || Date.now() - new Date(row.created_at).getTime() >= cooldownMs) return null;
-  return "Temporarily skipped after provider HTTP " + (/HTTP 429/.test(message) ? "429 rate/quota limit" : "404 model/endpoint not found") + "; retry window has not elapsed.";
-}
-
-async function runCaseResearch(caseId: string, title: string, officialUrl: string, officialText: string, runKey: string): Promise<number> {
+async function runCaseResearch(caseId: string, title: string, officialUrl: string, officialText: string, runKey: string, casePlanInstructions: string): Promise<number> {
   await ensureResearchSchema();
   const enabled = Boolean(process.env.OPENAI_API_KEY?.trim()) || Boolean((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim());
   if (!enabled) {
@@ -235,32 +298,19 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
   }
   const started = Date.now();
   let completed = 0;
+  let failedProviderRuns = 0;
   let prior = "";
   const maxRounds = Math.max(1, Math.min(RESEARCH_MAX_ROUNDS, Number(process.env.FBI_SECURITY_RESEARCH_ROUNDS ?? RESEARCH_MAX_ROUNDS) || RESEARCH_MAX_ROUNDS));
   for (let round = 1; round <= maxRounds && Date.now() - started < RESEARCH_MAX_MS; round++) {
-    const prompt = researchPrompt(title, officialUrl, officialText, round, prior);
-    const configuredProviders: Array<{ name: string; run: () => Promise<{provider:string;text:string}> }> = [
-      ...(process.env.OPENAI_API_KEY?.trim() ? [{ name: "OpenAI web_search", run: () => researchWithOpenAI(prompt) }] : []),
-      ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? [{ name: "Gemini Google Search", run: () => researchWithGemini(prompt) }] : []),
+    const prompt = researchPrompt(title, officialUrl, officialText, round, prior, casePlanInstructions);
+    const providers = [
+      ...(process.env.OPENAI_API_KEY?.trim() ? [() => researchWithOpenAI(prompt)] : []),
+      ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? [() => researchWithGemini(prompt)] : []),
     ];
-    const providers: Array<{ name: string; run: () => Promise<{provider:string;text:string}> }> = [];
-    for (const provider of configuredProviders) {
-      const cooldown = await providerCooldownReason(provider.name);
-      if (cooldown) {
-        await pool.query(
-          `INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,error_message)
-           VALUES($1,$2,$3,'skipped',$4)
-           ON CONFLICT(case_id,provider,run_key) DO UPDATE SET status='skipped',error_message=EXCLUDED.error_message,created_at=now()`,
-          [caseId, provider.name, runKey + ":round-" + round, cooldown],
-        );
-      } else {
-        providers.push(provider);
-      }
-    }
-    const results = await Promise.allSettled(providers.map((provider) => provider.run()));
+    const results = await Promise.allSettled(providers.map((run) => run()));
     const texts: string[] = [];
     for (let i = 0; i < results.length; i++) {
-      const providerName = providers[i].name;
+      const providerName = i === 0 && process.env.OPENAI_API_KEY?.trim() ? "OpenAI web_search" : "Gemini Google Search";
       const result = results[i];
       if (result.status === "fulfilled") {
         const item = result.value;
@@ -274,6 +324,7 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
         );
         completed++;
       } else {
+        failedProviderRuns++;
         await pool.query(
           `INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,error_message)
            VALUES($1,$2,$3,'failed',$4)
@@ -289,69 +340,25 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
   }
   await pool.query(
     `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at)
-     VALUES('ai_public_web_research_completed',$1,$2::jsonb,now())`,
-    [caseId, JSON.stringify({ providers: [...(process.env.OPENAI_API_KEY?.trim() ? ["OpenAI"] : []), ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? ["Gemini"] : [])], rounds: maxRounds, completedProviderRuns: completed, elapsedMs: Date.now() - started })],
+     VALUES($3,$1,$2::jsonb,now())`,
+    [caseId, JSON.stringify({ providers: [...(process.env.OPENAI_API_KEY?.trim() ? ["OpenAI"] : []), ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? ["Gemini"] : [])], rounds: maxRounds, completedProviderRuns: completed, failedProviderRuns, researchStatus: completed > 0 && failedProviderRuns === 0 ? "provider_calls_completed_not_independently_verified" : completed > 0 ? "partial_provider_failure" : "failed_or_incomplete", elapsedMs: Date.now() - started }), completed > 0 && failedProviderRuns === 0 ? "ai_public_web_research_completed" : completed > 0 ? "ai_public_web_research_partial" : "ai_public_web_research_failed_or_incomplete"],
   );
   return completed;
 }
 
-/**
- * Only case-level pages should enter the case table. Indexes and general
- * programme pages are discovery pages, not individual subjects/cases.
- */
-function isIndividualNoticeUrl(url: URL): boolean {
-  const host = url.hostname.toLowerCase();
-  const path = url.pathname.replace(/\/+$/, "").toLowerCase();
-  const segments = path.split("/").filter(Boolean);
-  const isSlug = (value: string | undefined) => Boolean(value && !/^(index|index\.html?|press-releases|news|enforcement|litigation|fugitives|wanted|refunds|penalty-offenses|criminal-liaison-unit|consumer-sentinel-network|rulemaking|merger-review|premerger-notification-program|consumer-resource-center)$/i.test(value));
-  if (host === "www.fbi.gov") {
-    const i = segments.indexOf("wanted");
-    return i >= 0 && segments.length >= i + 3 && isSlug(segments[segments.length - 1]);
-  }
-  if (host === "www.justice.gov") {
-    return (/^\/opa\/(pr|press-release)\/[^/]+$/.test(path)
-      || /^\/usao-[^/]+\/(pr|press-release)\/[^/]+$/.test(path))
-      && isSlug(segments[segments.length - 1]);
-  }
-  if (host === "www.sec.gov") {
-    return /^\/litigation\/litreleases\/(?:\d{4}\/)?[^/]+$/.test(path)
-      && isSlug(segments[segments.length - 1]);
-  }
-  if (host === "www.ftc.gov") {
-    return /^\/news-events\/news\/press-releases\/[^/]+$/.test(path)
-      && isSlug(segments[segments.length - 1]);
-  }
-  if (host === "www.usmarshals.gov") {
-    return (/^\/news\/press-releases\/[^/]+$/.test(path)
-      || /^\/what-we-do\/fugitive-investigations\/[^/]+$/.test(path))
-      && isSlug(segments[segments.length - 1]);
-  }
-  if (host === "www.consumerfinance.gov") {
-    return /^\/enforcement\/(?:actions|orders|consent-orders)\/[^/]+$/.test(path)
-      && isSlug(segments[segments.length - 1]);
-  }
-  if (host === "www.cftc.gov") {
-    return /^\/pressroom\/pressreleases\/[^/]+$/.test(path)
-      && isSlug(segments[segments.length - 1]);
-  }
-  if (host === "www.fdic.gov") {
-    return /^\/news\/press-releases\/[^/]+$/.test(path)
-      && isSlug(segments[segments.length - 1]);
-  }
-  return false;
-}
-
 async function pollConfiguredOfficialUrls(): Promise<number> {
-  const defaults = ["https://www.fbi.gov/wanted", "https://www.justice.gov/news", "https://www.sec.gov/litigation/litreleases", "https://www.ftc.gov/news-events/news/press-releases", "https://www.usmarshals.gov/what-we-do/fugitive-investigations", "https://www.consumerfinance.gov/enforcement/", "https://www.cftc.gov/PressRoom/PressReleases", "https://www.fdic.gov/consumer-resource-center"];
-  const configured = [...new Set((process.env.FBI_SECURITY_MONITOR_URLS ?? defaults.join(",")).split(",").map((v) => v.trim()).filter(Boolean))].slice(0, 20);
+  // FBI-only discovery: this exact category index is the only seed. External public sources are researched only after an individual profile is parsed.
+  const configured = [FBI_FRAUDSTERS_INDEX];
   const queued = new Set(configured);
   let imported = 0;
   for (const rawUrl of configured) {
-    if (Date.now() - currentRunStartedAt >= RESEARCH_MAX_MS || researchedCasesThisRun >= RESEARCH_MAX_CASES) break;
+    if (Date.now() - currentRunStartedAt >= RESEARCH_MAX_MS) break;
     let url: URL;
     try { url = new URL(rawUrl); } catch { continue; }
-    const source = OFFICIAL_HOSTS[url.hostname.toLowerCase()];
-    if (url.protocol !== "https:" || !source || url.username || url.password || url.port) continue;
+    const source = url.hostname.toLowerCase() === "www.fbi.gov" && url.pathname.toLowerCase().startsWith("/wanted/")
+      ? { id: "fbi_wanted", agency: "Federal Bureau of Investigation", tipUrl: "https://tips.fbi.gov/" }
+      : undefined;
+    if (url.protocol !== "https:" || !source || url.username || url.password || url.port || url.pathname.split("/").filter(Boolean)[0] !== "wanted") continue;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12_000);
     try {
@@ -366,7 +373,7 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       if (announced > 2_000_000) continue;
       const raw = await response.text();
       // Discover a bounded set of individual public notices from this official page.
-      if (configured.length < 60) {
+      if (url.pathname.toLowerCase() === "/wanted/most-wanted-fraudsters" && configured.length < 60) {
         const anchors = raw.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi);
         for (const match of anchors) {
           if (configured.length >= 60) break;
@@ -374,28 +381,37 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
             const link = new URL(match[1], url);
             const host = link.hostname.toLowerCase();
             const path = link.pathname.toLowerCase();
-            const individual = isIndividualNoticeUrl(link);
-            // Follow case-relevant links across known federal-agency domains only.
-            // The fetch loop revalidates each queued URL against OFFICIAL_HOSTS.
-            if (link.protocol === "https:" && OFFICIAL_HOSTS[host] && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
+            const individual = host === "www.fbi.gov"
+              && /^\/wanted\/(?:[^/]+\/){1,4}[^/]+\/?$/i.test(path)
+              && !/\/(?:index|search|most-wanted-fraudsters|ten-most-wanted-fugitives|fugitives)\/?$/i.test(path);
+            // Discovery never leaves the official FBI fraudsters index.
+            if (link.protocol === "https:" && host === "www.fbi.gov" && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
               queued.add(link.toString());
               configured.push(link.toString());
             }
           } catch { /* Ignore malformed links. */ }
         }
+        // Rotate the profile order each hourly run so the per-run research cap
+        // cannot permanently starve the last entries in the FBI category.
+        const discoveredProfiles = configured.splice(1);
+        if (discoveredProfiles.length > 0) {
+          const offset = Math.floor(Date.now() / INTERVAL_MS) % discoveredProfiles.length;
+          configured.push(...discoveredProfiles.slice(offset), ...discoveredProfiles.slice(0, offset));
+        }
       }
       if (Buffer.byteLength(raw, "utf8") > 2_000_000) continue;
-      const clean = raw.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|iframe|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
-      const text = clean.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim().slice(0, 10_000);
-      if (text.length < 40) continue;
-      const individualNotice = isIndividualNoticeUrl(url);
-      const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
-      const title = (titleMatch?.[1] ?? url.hostname + " official public notice").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
-      // Do not misclassify penalty ceilings, civil penalties, or refund totals as rewards.
-      const rewardMatch = text.match(/.{0,180}\b(?:reward|rewarded|reward offer|offering a reward|offers a reward)\b.{0,260}/i);
-      const rewardText = rewardMatch?.[0]?.trim().slice(0, 600) ?? null;
-      const amount = rewardText?.match(/(?:reward(?: of| up to| totaling)?\s*)?(?:up to\s*)?\$\s?[0-9][0-9,]*(?:\.\d{2})?/i)?.[0]?.trim() ?? null;
-      const reward = Boolean(rewardText && amount && /\breward\b/i.test(rewardText));
+      // The index is only a discovery page, never a case record.
+      const individualNotice = /^\/wanted\/(?:[^/]+\/){1,4}[^/]+\/?$/i.test(url.pathname)
+        && !/^\/wanted\/most-wanted-fraudsters\/?$/i.test(url.pathname)
+        && !/\/(?:index|search|ten-most-wanted-fugitives|fugitives)\/?$/i.test(url.pathname);
+      if (!individualNotice) continue;
+      const parsedProfile = parseFbiWantedProfileHtml(raw, url.toString());
+      const title = parsedProfile.title.slice(0, 500);
+      const text = parsedProfile.fullVisibleText.slice(0, 20_000);
+      if (text.length < 100 || !title || title.split(/\s+/).length < 2 || parsedProfile.extractionWarnings.some((warning) => warning.includes("Person-name title"))) continue;
+      const rewardText = parsedProfile.reward.exactText;
+      const amount = parsedProfile.reward.amountText;
+      const reward = Boolean(rewardText && amount);
       const canonical = url.toString().split("#")[0];
       const id = createHash("sha256").update(source.id + "|" + canonical).digest("hex").slice(0, 24);
       const hash = createHash("sha256").update(text, "utf8").digest("hex");
@@ -412,10 +428,12 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const caseNumber = "FBI-" + new Date().getUTCFullYear() + "-" + createHash("sha256").update(id).digest("hex").slice(0, 12).toUpperCase();
       await pool.query("UPDATE redom_fbi_security_cases SET case_number=$1 WHERE id=$2 AND case_number IS NULL", [caseNumber, id]);
       if (isNewOrChanged && relevantRiskNotice) imported++;
-      if (individualNotice && relevantRiskNotice && researchedCasesThisRun < RESEARCH_MAX_CASES && Date.now() - currentRunStartedAt < RESEARCH_MAX_MS) {
+      if (individualNotice && researchedCasesThisRun < RESEARCH_MAX_CASES && Date.now() - currentRunStartedAt < RESEARCH_MAX_MS) {
         researchedCasesThisRun++;
         try {
-          await runCaseResearch(id, title, canonical, text, new Date().toISOString().slice(0, 13));
+          const researchPlan = buildCaseResearchPlan(parsedProfile);
+          const casePlanInstructions = buildResearchInstructions(parsedProfile, researchPlan);
+          await runCaseResearch(id, title, canonical, text, new Date().toISOString().slice(0, 13), casePlanInstructions);
         } catch (researchError) {
           logger.warn({ caseId: id, error: researchError instanceof Error ? researchError.message : String(researchError) }, "FBI Security AI-assisted public-web research failed");
         }
@@ -483,15 +501,26 @@ async function runDigest(): Promise<void> {
              count(*) FILTER (WHERE reward_advertised)::int AS reward_count,
              count(*) FILTER (WHERE review_status='new')::int AS new_count,
              count(*) FILTER (WHERE retrieved_at >= now() - interval '1 hour')::int AS last_hour
-      FROM redom_fbi_security_cases WHERE source_id <> 'excluded_index'
+      FROM redom_fbi_security_cases
     `);
     const recent = await client.query(`
       SELECT c.id,c.agency,c.title,c.source_url,c.retrieved_at,c.reward_advertised,c.reward_amount_text,c.review_status,
              (SELECT string_agg(r.provider || ': ' || left(r.research_text, 3500), E'\\n\\n' ORDER BY r.created_at DESC)
               FROM redom_fbi_security_research_runs r
-              WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary
+              WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary,
+             (SELECT CASE
+                WHEN count(*) FILTER (WHERE r.status='completed') > 0 AND count(*) FILTER (WHERE r.status='failed') = 0 THEN 'provider_calls_completed'
+                WHEN count(*) FILTER (WHERE r.status='completed') > 0 AND count(*) FILTER (WHERE r.status='failed') > 0 THEN 'partial_provider_failure'
+                WHEN count(*) FILTER (WHERE r.status='failed') > 0 THEN 'provider_calls_failed'
+                ELSE 'not_run'
+              END
+              FROM redom_fbi_security_research_runs r
+              WHERE r.case_id=c.id AND r.created_at >= now() - interval '1 hour') AS research_status,
+             (SELECT string_agg(r.provider || ': ' || left(COALESCE(r.error_message,'provider error'), 300), E'\\n' ORDER BY r.created_at DESC)
+              FROM redom_fbi_security_research_runs r
+              WHERE r.case_id=c.id AND r.status='failed' AND r.created_at >= now() - interval '1 hour') AS research_errors
       FROM redom_fbi_security_cases c
-      WHERE c.source_id <> 'excluded_index' AND c.retrieved_at >= now() - interval '1 hour'
+      WHERE c.retrieved_at >= now() - interval '1 hour'
       ORDER BY c.retrieved_at DESC LIMIT 50
     `);
     const c = counts.rows[0] ?? { total: 0, reward_count: 0, new_count: 0, last_hour: 0 };
@@ -501,11 +530,20 @@ async function runDigest(): Promise<void> {
       const reward = item.reward_advertised
         ? `<p><strong>Reward lead — NOT YET VERIFIED:</strong> ${escapeHtml(item.reward_amount_text ?? "The page contains reward-related wording but no safely extracted amount.")}. The research section must compare the official wording against independent reliable sources; do not treat the extracted amount as confirmed.</p>`
         : `<p><strong>Reward check:</strong> No reward amount was extracted from this page. This does not prove no reward exists; see the source-by-source research check.</p>`;
-      const research = item.research_summary
-        ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>`
-        : item.research_failures
-          ? `<p><strong>AI-assisted research failed:</strong> ${escapeHtml(item.research_failures).replace(/\\n/g, "<br>")}. No findings were produced; this is a provider failure, not a case finding.</p>`
-          : "<p><strong>AI-assisted research:</strong> No completed research results are stored for this notice yet. This is a failed/incomplete research state, not a finding that no related information exists.</p>";
+      const researchHeading = item.research_status === "provider_calls_completed"
+        ? "AI-assisted source research — provider calls completed; findings still require source verification and human review"
+        : item.research_status === "partial_provider_failure"
+          ? "PARTIAL RESEARCH — some provider calls failed; this is not a complete research result"
+          : item.research_status === "provider_calls_failed"
+            ? "RESEARCH FAILED — provider calls failed; no completed findings are available"
+            : "RESEARCH INCOMPLETE — no completed research runs are stored";
+      const researchBody = item.research_summary
+        ? `<p><strong>${researchHeading}:</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>`
+        : `<p><strong>${researchHeading}.</strong> A missing result is not evidence that no related public information exists.</p>`;
+      const researchErrors = item.research_errors
+        ? `<p><strong>Provider errors (diagnostic):</strong><br>${escapeHtml(item.research_errors).replace(/\\n/g, "<br>")}</p>`
+        : "";
+      const research = researchBody + researchErrors;
       return `<li style="margin:0 0 22px"><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.agency)} · status: ${escapeHtml(item.review_status)}</span>${reward}${research}<br><a href="${escapeHtml(item.source_url)}">Open official source</a> · <a href="${escapeHtml(base + "/cases/" + encodeURIComponent(item.id) + "/report")}">Open draft report</a></li>`;
     }).join("");
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
