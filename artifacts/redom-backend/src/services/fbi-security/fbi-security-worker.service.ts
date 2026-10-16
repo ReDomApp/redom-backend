@@ -175,15 +175,20 @@ async function ensureResearchSchema(): Promise<void> {
 
 function researchPrompt(title: string, officialUrl: string, officialText: string, round: number, prior: string): string {
   return [
-    "Conduct careful, source-cited public-web research on this specific publicly announced U.S. federal wanted/enforcement case.",
+    "Produce a useful, case-specific, source-cited public intelligence brief about the individual explicitly named in this official U.S. federal wanted/enforcement notice. Do not return a generic directory summary.",
     "Starting official notice: " + officialUrl,
     "Notice title: " + title,
-    "Official notice excerpt: " + officialText.slice(0, 5500),
+    "Official notice excerpt: " + officialText.slice(0, 6500),
     "Research round: " + round + " of " + RESEARCH_MAX_ROUNDS + ".",
-    "Prior leads from the previous research round: " + (prior || "None."),
-    "Search the wider public Internet for relevant official court filings, DOJ/FBI/USMS releases, regulator enforcement records, and reputable news coverage. Follow promising source links and search additional names/aliases only when explicitly disclosed in the official notice. Focus on cases announced or materially updated during calendar year 2026, and verify whether the official notice remains active. Focus on this case's public facts, timeline, alleged conduct, case status, and any reward amount and exact conditions stated by the official source.",
-    "Search only information legitimately published for public access. Do NOT collect or infer relatives/family trees, home addresses, phone numbers, personal emails, precise locations, private social accounts, people-search/Whitepages profiles, data broker records, private identifiers, or unrelated personal details. Do not treat a matching name alone as identity proof.",
-    "Return concise findings with source title, direct URL, publication date if available, what the source specifically corroborates or contradicts, and confidence/identity-match caveats. Separate official-source facts from allegations and third-party claims. Explicitly say when no reliable lead is found. Never recommend contacting, confronting, or surveilling anyone; do not submit tips automatically."
+    "Previously discovered leads and findings: " + (prior || "No earlier research results; begin from the official notice."),
+    "Research the named subject and this exact case across the public web. Follow relevant links and pursue promising leads, prioritizing official FBI/DOJ/USMS/court/regulator records and reputable independent news. Search disclosed aliases only when the official notice or reliable case sources connect them. Prioritize cases announced or materially updated in 2026, but include older public records when they directly explain this same case. Check the official notice's current status and latest dated update.",
+    "REQUIRED OUTPUT, using these exact headings: SUBJECT AND CASE; WHAT WAS FOUND; PUBLIC CASE TIMELINE; CASE STATUS; REWARD VERIFICATION; SOURCE-BY-SOURCE COMPARISON; UNRESOLVED DISCREPANCIES; NEXT PUBLIC SOURCES TO CHECK.",
+    "SUBJECT AND CASE: identify only the subject as named in the official notice, relevant disclosed aliases, official case/reference numbers, agency, alleged conduct as described by sources, and clear identity-match reasoning. Give a useful descriptive summary of the publicly documented case, not generic filler.",
+    "WHAT WAS FOUND: list concrete case-relevant facts and developments from reliable sources, with source title, publication/update date, direct URL, and the exact fact supported. Distinguish confirmed public-record facts, allegations, reporting, and inference. Explain why each lead relates to this same case; do not merge people merely because names match.",
+    "REWARD VERIFICATION IS MANDATORY: extract the exact reward amount and conditions from the primary official notice, including currency, maximum vs fixed amount, eligibility, deadline, and qualifying information if stated. Then compare against at least two independent reliable sources where available (prefer official agency pages/releases and court or agency records; reputable news only as secondary corroboration). Give each source's exact amount/wording, date, URL, and whether it agrees, conflicts, or does not mention a reward. State a verdict: VERIFIED AGAINST MULTIPLE SOURCES, OFFICIAL SOURCE ONLY—NOT INDEPENDENTLY CORROBORATED, CONFLICTING AMOUNTS—HUMAN REVIEW REQUIRED, or NO REWARD STATED IN THE OFFICIAL NOTICE. Never invent an amount. If fewer than two reliable sources exist, say exactly which sources were checked and what additional evidence is needed; do not write 'unknown' or imply verification.",
+    "If a page is unavailable or no reliable corroboration is found, report the concrete limitation and what was checked; never substitute 'unknown', 'N/A', or a generic answer for the research. A missing result is not proof that information does not exist.",
+    "Search only information legitimately published for public access. Do NOT collect or infer relatives/family trees, home addresses, phone numbers, personal emails, precise/private locations, private social accounts, people-search/Whitepages profiles, data broker records, private identifiers, or unrelated personal details. Do not identify or accuse a person from a name/photo resemblance alone.",
+    "Finish with a concise source list and confidence assessment grounded in the actual evidence. Explicitly state when a claim is not corroborated. Do not recommend contacting, confronting, tracking, or surveilling anyone; do not submit tips automatically."
   ].join("\n\n");
 }
 
@@ -384,7 +389,7 @@ async function runDigest(): Promise<void> {
     `);
     const recent = await client.query(`
       SELECT c.id,c.agency,c.title,c.source_url,c.retrieved_at,c.reward_advertised,c.reward_amount_text,c.review_status,
-             (SELECT string_agg(r.provider || ': ' || left(r.research_text, 1800), E'\\n\\n' ORDER BY r.created_at DESC)
+             (SELECT string_agg(r.provider || ': ' || left(r.research_text, 3500), E'\\n\\n' ORDER BY r.created_at DESC)
               FROM redom_fbi_security_research_runs r
               WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary
       FROM redom_fbi_security_cases c
@@ -396,9 +401,9 @@ async function runDigest(): Promise<void> {
     const reportUrl = base + "/cases";
     const items = recent.rows.map((item: any) => {
       const reward = item.reward_advertised
-        ? `<p><strong>Reward wording detected:</strong> ${escapeHtml(item.reward_amount_text ?? "amount not confirmed")} — verify directly at the official source.</p>`
-        : "";
-      const research = item.research_summary ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>` : "<p><strong>AI-assisted research:</strong> No completed results stored; check provider configuration and worker logs.</p>";
+        ? `<p><strong>Reward lead — NOT YET VERIFIED:</strong> ${escapeHtml(item.reward_amount_text ?? "The page contains reward-related wording but no safely extracted amount.")}. The research section must compare the official wording against independent reliable sources; do not treat the extracted amount as confirmed.</p>`
+        : `<p><strong>Reward check:</strong> No reward amount was extracted from this page. This does not prove no reward exists; see the source-by-source research check.</p>`;
+      const research = item.research_summary ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>` : "<p><strong>AI-assisted research:</strong> No completed research results are stored for this notice yet. This is a failed/incomplete research state, not a finding that no related information exists.</p>";
       return `<li style="margin:0 0 22px"><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.agency)} · status: ${escapeHtml(item.review_status)}</span>${reward}${research}<br><a href="${escapeHtml(item.source_url)}">Open official source</a> · <a href="${escapeHtml(base + "/cases/" + encodeURIComponent(item.id) + "/report")}">Open draft report</a></li>`;
     }).join("");
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
