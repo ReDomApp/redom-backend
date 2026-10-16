@@ -17,6 +17,8 @@ const INTERVAL_MS = 60 * 60_000;
 const LOCK_KEY = 741_820_611;
 let timer: ReturnType<typeof setInterval> | undefined;
 let running = false;
+let currentRunStartedAt = 0;
+let researchedCasesThisRun = 0;
 
 function recipients(): string[] {
   const configured = process.env.FBI_SECURITY_ADMIN_EMAILS ?? process.env.BUG_REPORT_RECIPIENTS ?? env.email.bugReportRecipients.join(",");
@@ -246,6 +248,7 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
   const queued = new Set(configured);
   let imported = 0;
   for (const rawUrl of configured) {
+    if (Date.now() - currentRunStartedAt >= RESEARCH_MAX_MS || researchedCasesThisRun >= RESEARCH_MAX_CASES) break;
     let url: URL;
     try { url = new URL(rawUrl); } catch { continue; }
     const source = OFFICIAL_HOSTS[url.hostname.toLowerCase()];
@@ -306,7 +309,8 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const caseNumber = "FBI-" + new Date().getUTCFullYear() + "-" + createHash("sha256").update(id).digest("hex").slice(0, 12).toUpperCase();
       await pool.query("UPDATE redom_fbi_security_cases SET case_number=$1 WHERE id=$2 AND case_number IS NULL", [caseNumber, id]);
       if (isNewOrChanged && relevantRiskNotice) imported++;
-      if (isIndividualNotice && relevantRiskNotice) {
+      if (isIndividualNotice && relevantRiskNotice && researchedCasesThisRun < RESEARCH_MAX_CASES && Date.now() - currentRunStartedAt < RESEARCH_MAX_MS) {
+        researchedCasesThisRun++;
         try {
           await runCaseResearch(id, title, canonical, text, new Date().toISOString().slice(0, 13));
         } catch (researchError) {
@@ -346,6 +350,8 @@ async function runDigest(): Promise<void> {
   const to = recipients();
   if (!to.length) return;
   running = true;
+  currentRunStartedAt = Date.now();
+  researchedCasesThisRun = 0;
   const client = await pool.connect();
   let locked = false;
   let runId: number | undefined;
