@@ -5,7 +5,7 @@ import { logger } from "../../lib/logger";
 import { env } from "../../config/env";
 
 /**
- * FBI Security scheduled review digest.
+ * FBI Security hourly public-source review report.
  *
  * Runs inside the existing backend process and uses PostgreSQL advisory locks
  * so multiple Render instances do not send the same digest concurrently.
@@ -180,11 +180,9 @@ async function runDigest(): Promise<void> {
     locked = lock.rows[0]?.locked === true;
     if (!locked) return;
 
-    const day = new Date().toISOString().slice(0, 10);
-    const runKey = `daily-public-intelligence:${day}`;
+    const hour = new Date().toISOString().slice(0, 13);
+    const runKey = `hourly-public-intelligence:${hour}`;
     const importedCount = await pollConfiguredOfficialUrls();
-    const existing = await client.query("SELECT id,status FROM redom_fbi_security_worker_runs WHERE run_key=$1", [runKey]);
-    if (existing.rows[0]?.status === "sent" || existing.rows[0]?.status === "skipped") { if (importedCount > 0) await sendImmediateNoticeAlert(to, importedCount, day); return; }
     const inserted = await client.query(
       `INSERT INTO redom_fbi_security_worker_runs(run_key,status)
        VALUES($1,'running') ON CONFLICT(run_key) DO UPDATE SET status='running',started_at=now()
@@ -199,16 +197,16 @@ async function runDigest(): Promise<void> {
       SELECT count(*)::int AS total,
              count(*) FILTER (WHERE reward_advertised)::int AS reward_count,
              count(*) FILTER (WHERE review_status='new')::int AS new_count,
-             count(*) FILTER (WHERE retrieved_at >= now() - interval '24 hours')::int AS last_24h
+             count(*) FILTER (WHERE retrieved_at >= now() - interval '1 hour')::int AS last_hour
       FROM redom_fbi_security_cases
     `);
     const recent = await client.query(`
       SELECT id,agency,title,source_url,retrieved_at,reward_advertised,reward_amount_text,review_status
       FROM redom_fbi_security_cases
-      WHERE retrieved_at >= now() - interval '24 hours'
-      ORDER BY retrieved_at DESC LIMIT 25
+      WHERE retrieved_at >= now() - interval '1 hour'
+      ORDER BY retrieved_at DESC LIMIT 50
     `);
-    const c = counts.rows[0] ?? { total: 0, reward_count: 0, new_count: 0, last_24h: 0 };
+    const c = counts.rows[0] ?? { total: 0, reward_count: 0, new_count: 0, last_hour: 0 };
     const base = publicBaseUrl();
     const reportUrl = base + "/cases";
     const items = recent.rows.map((item: any) => {
@@ -220,8 +218,8 @@ async function runDigest(): Promise<void> {
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
       <h1>FBI Security — Public-Source Review Digest</h1>
       <p>Automated internal digest from the separate FBI Security module in the existing backend. This is not an official FBI communication and does not establish wrongdoing.</p>
-      <ul><li>Public notices tracked: <strong>${Number(c.total)}</strong></li><li>Reward notices flagged for manual verification: <strong>${Number(c.reward_count)}</strong></li><li>Notices awaiting initial review: <strong>${Number(c.new_count)}</strong></li><li>Retrieved in the last 24 hours: <strong>${Number(c.last_24h)}</strong></li></ul>
-      <h2>Recently retrieved notices</h2>${items || "<p>No new public notices were retrieved in the last 24 hours.</p>"}
+      <ul><li>Public notices tracked: <strong>${Number(c.total)}</strong></li><li>Reward notices flagged for manual verification: <strong>${Number(c.reward_count)}</strong></li><li>Notices awaiting initial review: <strong>${Number(c.new_count)}</strong></li><li>Retrieved in the last hour: <strong>${Number(c.last_hour)}</strong></li></ul>
+      <h2>Recently retrieved notices</h2>${items || "<p>No public notices were retrieved in the last hour.</p>"}
       <p><a href="${escapeHtml(reportUrl)}">Open public-source case list</a></p>
       <hr><p style="font-size:12px;color:#596579">Public-source data only. Reward detection is heuristic and must be checked against the original notice. Human review is required before any official submission. Do not add restricted identity, tax, financial, credential, or private-account information.</p>
       </body></html>`;
@@ -235,21 +233,21 @@ async function runDigest(): Promise<void> {
     const sent = await resend.emails.send({
       from,
       to,
-      subject: `FBI Security public-source digest — ${day}`,
+      subject: `FBI Security hourly public-source report — ${hour}:00 UTC`,
       html,
       headers: { "X-Entity-Ref-ID": `fbi-security-${day}` },
     });
     if (sent.error) throw new Error(sent.error.message || "Resend rejected the digest");
     await client.query(
       "UPDATE redom_fbi_security_worker_runs SET status='sent',finished_at=now(),cases_count=$2,details=$3::jsonb WHERE id=$1",
-      [runId, recent.rows.length, JSON.stringify({ recipients: to.length, providerMessageId: sent.data?.id ?? null, date: day, importedCount })],
+      [runId, recent.rows.length, JSON.stringify({ recipients: to.length, providerMessageId: sent.data?.id ?? null, hour, importedCount })],
     );
     await client.query(
       `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at)
        VALUES('scheduled_digest_sent',NULL,$1::jsonb,now())`,
       [JSON.stringify({ runKey, recipientCount: to.length, recentNoticeCount: recent.rows.length })],
     );
-    logger.info({ runKey, recentNoticeCount: recent.rows.length, recipientCount: to.length, importedCount }, "FBI Security daily digest sent");
+    logger.info({ runKey, recentNoticeCount: recent.rows.length, recipientCount: to.length, importedCount }, "FBI Security hourly report sent");
   } catch (error) {
     if (runId) {
       try {
