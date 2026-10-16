@@ -382,10 +382,13 @@ async function runDigest(): Promise<void> {
       FROM redom_fbi_security_cases
     `);
     const recent = await client.query(`
-      SELECT id,agency,title,source_url,retrieved_at,reward_advertised,reward_amount_text,review_status
-      FROM redom_fbi_security_cases
-      WHERE retrieved_at >= now() - interval '1 hour'
-      ORDER BY retrieved_at DESC LIMIT 50
+      SELECT c.id,c.agency,c.title,c.source_url,c.retrieved_at,c.reward_advertised,c.reward_amount_text,c.review_status,
+             (SELECT string_agg(r.provider || ': ' || left(r.research_text, 1800), E'\\n\\n' ORDER BY r.created_at DESC)
+              FROM redom_fbi_security_research_runs r
+              WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary
+      FROM redom_fbi_security_cases c
+      WHERE c.retrieved_at >= now() - interval '1 hour'
+      ORDER BY c.retrieved_at DESC LIMIT 50
     `);
     const c = counts.rows[0] ?? { total: 0, reward_count: 0, new_count: 0, last_hour: 0 };
     const base = publicBaseUrl();
@@ -394,7 +397,8 @@ async function runDigest(): Promise<void> {
       const reward = item.reward_advertised
         ? `<p><strong>Reward wording detected:</strong> ${escapeHtml(item.reward_amount_text ?? "amount not confirmed")} — verify directly at the official source.</p>`
         : "";
-      return `<li style="margin:0 0 18px"><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.agency)} · status: ${escapeHtml(item.review_status)}</span>${reward}<br><a href="${escapeHtml(item.source_url)}">Open official source</a> · <a href="${escapeHtml(base + "/cases/" + encodeURIComponent(item.id) + "/report")}">Open draft report</a></li>`;
+      const research = item.research_summary ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>` : "<p><strong>AI-assisted research:</strong> No completed results stored; check provider configuration and worker logs.</p>";
+      return `<li style="margin:0 0 22px"><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.agency)} · status: ${escapeHtml(item.review_status)}</span>${reward}${research}<br><a href="${escapeHtml(item.source_url)}">Open official source</a> · <a href="${escapeHtml(base + "/cases/" + encodeURIComponent(item.id) + "/report")}">Open draft report</a></li>`;
     }).join("");
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
       <h1>FBI Security — Public-Source Review Digest</h1>
@@ -421,7 +425,7 @@ async function runDigest(): Promise<void> {
     if (sent.error) throw new Error(sent.error.message || "Resend rejected the digest");
     await client.query(
       "UPDATE redom_fbi_security_worker_runs SET status='sent',finished_at=now(),cases_count=$2,details=$3::jsonb WHERE id=$1",
-      [runId, recent.rows.length, JSON.stringify({ recipients: to.length, providerMessageId: sent.data?.id ?? null, hour, importedCount })],
+      [runId, recent.rows.length, JSON.stringify({ recipients: to.length, providerMessageId: sent.data?.id ?? null, hour, importedCount, researchedCases: researchedCasesThisRun, elapsedMs: Date.now() - currentRunStartedAt, timeBudgetMs: RESEARCH_MAX_MS })],
     );
     await client.query(
       `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at)
