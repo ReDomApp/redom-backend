@@ -125,8 +125,8 @@ async function researchWithOpenAI(prompt: string): Promise<{provider:string;text
     method: "POST",
     headers: { authorization: "Bearer " + key, "content-type": "application/json" },
     body: JSON.stringify({
-      model: process.env.FBI_SECURITY_OPENAI_MODEL?.trim() || "gpt-5.5",
-      tools: [{ type: "web_search", return_token_budget: "unlimited" }],
+      model: process.env.FBI_SECURITY_OPENAI_MODEL?.trim() || "gpt-5",
+      tools: [{ type: "web_search", search_context_size: "high" }],
       tool_choice: "required",
       background: false,
       input: prompt,
