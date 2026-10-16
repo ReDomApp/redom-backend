@@ -77,6 +77,26 @@ async function ensureDigestSchema(): Promise<void> {
     UPDATE redom_fbi_security_cases SET case_number = 'FBI-' || to_char(COALESCE(published_at, retrieved_at, now()), 'YYYY') || '-' || upper(substr(md5(id), 1, 12)) WHERE case_number IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS redom_fbi_security_cases_case_number_idx ON redom_fbi_security_cases(case_number) WHERE case_number IS NOT NULL;
     CREATE INDEX IF NOT EXISTS redom_fbi_security_worker_runs_started_idx ON redom_fbi_security_worker_runs (started_at DESC);
+    -- Retire the known general FTC index/program pages previously misclassified as case notices.
+    UPDATE redom_fbi_security_cases
+       SET source_id='excluded_index', review_status='closed', reward_advertised=false,
+           reward_amount_text=NULL, reward_exact_wording=NULL, reward_conditions='[]'::jsonb
+     WHERE source_url IN (
+       'https://www.ftc.gov/enforcement/penalty-offenses',
+       'https://www.ftc.gov/enforcement/refunds',
+       'https://www.ftc.gov/enforcement/criminal-liaison-unit',
+       'https://www.ftc.gov/enforcement/consumer-sentinel-network',
+       'https://www.ftc.gov/enforcement/competition-consumer-protection-guidance-documents',
+       'https://www.ftc.gov/enforcement/hisa',
+       'https://www.ftc.gov/enforcement/rulemaking',
+       'https://www.ftc.gov/enforcement/anticompetitive-practices',
+       'https://www.ftc.gov/enforcement/merger-review',
+       'https://www.ftc.gov/enforcement/premerger-notification-program',
+       'https://www.ftc.gov/news-events/news/press-releases',
+       'https://www.fdic.gov/consumer-resource-center',
+       'https://www.consumerfinance.gov/enforcement/',
+       'https://www.usmarshals.gov/what-we-do/fugitive-investigations'
+     );
   `);
 }
 
@@ -466,7 +486,7 @@ async function runDigest(): Promise<void> {
              count(*) FILTER (WHERE reward_advertised)::int AS reward_count,
              count(*) FILTER (WHERE review_status='new')::int AS new_count,
              count(*) FILTER (WHERE retrieved_at >= now() - interval '1 hour')::int AS last_hour
-      FROM redom_fbi_security_cases
+      FROM redom_fbi_security_cases WHERE source_id <> 'excluded_index'
     `);
     const recent = await client.query(`
       SELECT c.id,c.agency,c.title,c.source_url,c.retrieved_at,c.reward_advertised,c.reward_amount_text,c.review_status,
@@ -477,7 +497,7 @@ async function runDigest(): Promise<void> {
               FROM redom_fbi_security_research_runs r
               WHERE r.case_id=c.id AND r.status IN ('failed','skipped') AND r.created_at >= now() - interval '1 hour') AS research_failures
       FROM redom_fbi_security_cases c
-      WHERE c.retrieved_at >= now() - interval '1 hour'
+      WHERE c.source_id <> 'excluded_index' AND c.retrieved_at >= now() - interval '1 hour'
       ORDER BY c.retrieved_at DESC LIMIT 50
     `);
     const c = counts.rows[0] ?? { total: 0, reward_count: 0, new_count: 0, last_hour: 0 };
