@@ -347,10 +347,10 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
       const title = (titleMatch?.[1] ?? url.hostname + " official public notice").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
       // Do not misclassify penalty ceilings, civil penalties, or refund totals as rewards.
-      const rewardMatch = text.match(/.{0,180}\\b(?:reward|rewarded|reward offer|offering a reward|offers a reward)\\b.{0,260}/i);
+      const rewardMatch = text.match(/.{0,180}\b(?:reward|rewarded|reward offer|offering a reward|offers a reward)\b.{0,260}/i);
       const rewardText = rewardMatch?.[0]?.trim().slice(0, 600) ?? null;
-      const amount = rewardText?.match(/(?:reward(?: of| up to| totaling)?\\s*)?(?:up to\\s*)?\\$\\s?[0-9][0-9,]*(?:\\.\\d{2})?/i)?.[0]?.trim() ?? null;
-      const reward = Boolean(rewardText && amount && /\\breward\\b/i.test(rewardText));
+      const amount = rewardText?.match(/(?:reward(?: of| up to| totaling)?\s*)?(?:up to\s*)?\$\s?[0-9][0-9,]*(?:\.\d{2})?/i)?.[0]?.trim() ?? null;
+      const reward = Boolean(rewardText && amount && /\breward\b/i.test(rewardText));
       const canonical = url.toString().split("#")[0];
       const id = createHash("sha256").update(source.id + "|" + canonical).digest("hex").slice(0, 24);
       const hash = createHash("sha256").update(text, "utf8").digest("hex");
@@ -444,7 +444,10 @@ async function runDigest(): Promise<void> {
       SELECT c.id,c.agency,c.title,c.source_url,c.retrieved_at,c.reward_advertised,c.reward_amount_text,c.review_status,
              (SELECT string_agg(r.provider || ': ' || left(r.research_text, 3500), E'\\n\\n' ORDER BY r.created_at DESC)
               FROM redom_fbi_security_research_runs r
-              WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary
+              WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary,
+             (SELECT string_agg(r.provider || ': ' || left(coalesce(r.error_message,'provider failed'), 350), E'\\n' ORDER BY r.created_at DESC)
+              FROM redom_fbi_security_research_runs r
+              WHERE r.case_id=c.id AND r.status='failed' AND r.created_at >= now() - interval '1 hour') AS research_failures
       FROM redom_fbi_security_cases c
       WHERE c.retrieved_at >= now() - interval '1 hour'
       ORDER BY c.retrieved_at DESC LIMIT 50
