@@ -278,9 +278,16 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
           if (configured.length >= 60) break;
           try {
             const link = new URL(match[1], url);
+            const host = link.hostname.toLowerCase();
             const path = link.pathname.toLowerCase();
-            const individual = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/.test(path) || /\/(?:press-releases|news|litigation|enforcement|fugitives)\/[^\/]+(?:\.html?)?\/?$/.test(path);
-            if (link.protocol === "https:" && link.hostname.toLowerCase() === url.hostname.toLowerCase() && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
+            const individual = /\\/wanted\\/(?:[^\\/]+\\/)*[^\\/]+\\/?$/.test(path)
+              || /\\/opa\\/(?:pr|press-releases)\\/[^\\/]+\\/?$/.test(path)
+              || /\\/(?:newsroom\\/press-releases|news-events\\/news\\/press-releases|news-events\\/press-releases|press-releases|news|litigation|enforcement|fugitives|pressroom\\/pressreleases)\\/[^\\/]+(?:\\.html?)?\\/?$/.test(path)
+              || /\\/litigation\\/litreleases\\/[^\\/]+(?:\\.html?)?\\/?$/.test(path)
+              || /\\/enforcement\\/[^\\/]+\\/?$/.test(path);
+            // Follow case-relevant links across known federal-agency domains only.
+            // The fetch loop revalidates each queued URL against OFFICIAL_HOSTS.
+            if (link.protocol === "https:" && OFFICIAL_HOSTS[host] && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
               queued.add(link.toString());
               configured.push(link.toString());
             }
