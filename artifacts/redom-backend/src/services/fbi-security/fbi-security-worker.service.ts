@@ -192,6 +192,20 @@ function researchPrompt(title: string, officialUrl: string, officialText: string
   ].join("\n\n");
 }
 
+
+async function providerCooldownReason(provider: string): Promise<string | null> {
+  const latest = await pool.query(
+    "SELECT error_message, created_at FROM redom_fbi_security_research_runs WHERE provider=$1 AND status='failed' ORDER BY created_at DESC LIMIT 1",
+    [provider],
+  );
+  const row = latest.rows[0];
+  if (!row?.error_message || !row?.created_at) return null;
+  const message = String(row.error_message);
+  const cooldownMs = /HTTP 429/.test(message) ? 6 * 60 * 60_000 : /HTTP 404/.test(message) ? 24 * 60 * 60_000 : 0;
+  if (!cooldownMs || Date.now() - new Date(row.created_at).getTime() >= cooldownMs) return null;
+  return "Temporarily skipped after provider HTTP " + ( /HTTP 429/.test(message) ? "429 rate/quota limit" : "404 model/endpoint not found" ) + "; retry window has not elapsed.";
+}
+
 async function runCaseResearch(caseId: string, title: string, officialUrl: string, officialText: string, runKey: string): Promise<number> {
   await ensureResearchSchema();
   const enabled = Boolean(process.env.OPENAI_API_KEY?.trim()) || Boolean((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim());
@@ -205,14 +219,28 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
   const maxRounds = Math.max(1, Math.min(RESEARCH_MAX_ROUNDS, Number(process.env.FBI_SECURITY_RESEARCH_ROUNDS ?? RESEARCH_MAX_ROUNDS) || RESEARCH_MAX_ROUNDS));
   for (let round = 1; round <= maxRounds && Date.now() - started < RESEARCH_MAX_MS; round++) {
     const prompt = researchPrompt(title, officialUrl, officialText, round, prior);
-    const providers = [
-      ...(process.env.OPENAI_API_KEY?.trim() ? [() => researchWithOpenAI(prompt)] : []),
-      ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? [() => researchWithGemini(prompt)] : []),
+    const configuredProviders: Array<{ name: string; run: () => Promise<{provider:string;text:string}> }> = [
+      ...(process.env.OPENAI_API_KEY?.trim() ? [{ name: "OpenAI web_search", run: () => researchWithOpenAI(prompt) }] : []),
+      ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? [{ name: "Gemini Google Search", run: () => researchWithGemini(prompt) }] : []),
     ];
-    const results = await Promise.allSettled(providers.map((run) => run()));
+    const providers: Array<{ name: string; run: () => Promise<{provider:string;text:string}> }> = [];
+    for (const provider of configuredProviders) {
+      const cooldown = await providerCooldownReason(provider.name);
+      if (cooldown) {
+        await pool.query(
+          \`INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,error_message)
+           VALUES($1,$2,$3,'skipped',$4)
+           ON CONFLICT(case_id,provider,run_key) DO UPDATE SET status='skipped',error_message=EXCLUDED.error_message,created_at=now()\`,
+          [caseId, provider.name, runKey + ":round-" + round, cooldown],
+        );
+      } else {
+        providers.push(provider);
+      }
+    }
+    const results = await Promise.allSettled(providers.map((provider) => provider.run()));
     const texts: string[] = [];
     for (let i = 0; i < results.length; i++) {
-      const providerName = i === 0 && process.env.OPENAI_API_KEY?.trim() ? "OpenAI web_search" : "Gemini Google Search";
+      const providerName = providers[i].name;
       const result = results[i];
       if (result.status === "fulfilled") {
         const item = result.value;
@@ -447,7 +475,7 @@ async function runDigest(): Promise<void> {
               WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary,
              (SELECT string_agg(r.provider || ': ' || left(coalesce(r.error_message,'provider failed'), 350), E'\\n' ORDER BY r.created_at DESC)
               FROM redom_fbi_security_research_runs r
-              WHERE r.case_id=c.id AND r.status='failed' AND r.created_at >= now() - interval '1 hour') AS research_failures
+              WHERE r.case_id=c.id AND r.status IN ('failed','skipped') AND r.created_at >= now() - interval '1 hour') AS research_failures
       FROM redom_fbi_security_cases c
       WHERE c.retrieved_at >= now() - interval '1 hour'
       ORDER BY c.retrieved_at DESC LIMIT 50
