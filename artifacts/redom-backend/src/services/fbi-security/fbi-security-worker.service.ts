@@ -94,6 +94,7 @@ const OFFICIAL_HOSTS: Record<string, { id: string; agency: string; tipUrl: strin
 async function pollConfiguredOfficialUrls(): Promise<number> {
   const defaults = ["https://www.fbi.gov/wanted", "https://www.justice.gov/news", "https://www.sec.gov/litigation/litreleases", "https://www.ftc.gov/news-events/news/press-releases", "https://www.usmarshals.gov/what-we-do/fugitive-investigations", "https://www.consumerfinance.gov/enforcement/", "https://www.cftc.gov/PressRoom/PressReleases", "https://www.fdic.gov/consumer-resource-center"];
   const configured = [...new Set((process.env.FBI_SECURITY_MONITOR_URLS ?? defaults.join(",")).split(",").map((v) => v.trim()).filter(Boolean))].slice(0, 20);
+  const queued = new Set(configured);
   let imported = 0;
   for (const rawUrl of configured) {
     let url: URL;
@@ -113,10 +114,28 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const announced = Number(response.headers.get("content-length") ?? 0);
       if (announced > 2_000_000) continue;
       const raw = await response.text();
+      // Discover a bounded set of individual public notices from this official page.
+      if (configured.length < 60) {
+        const anchors = raw.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi);
+        for (const match of anchors) {
+          if (configured.length >= 60) break;
+          try {
+            const link = new URL(match[1], url);
+            const path = link.pathname.toLowerCase();
+            const individual = /\/wanted\/[^/]+\/?$/.test(path) || /\/(?:press-releases|news|litigation|enforcement|fugitives)\/[^/]+(?:\.html?)?\/?$/.test(path);
+            if (link.protocol === "https:" && link.hostname.toLowerCase() === url.hostname.toLowerCase() && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
+              queued.add(link.toString());
+              configured.push(link.toString());
+            }
+          } catch { /* Ignore malformed links. */ }
+        }
+      }
       if (Buffer.byteLength(raw, "utf8") > 2_000_000) continue;
       const clean = raw.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|iframe|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
       const text = clean.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim().slice(0, 10_000);
       if (text.length < 40) continue;
+      const individualNotice = /\/wanted\/[^/]+\/?$/i.test(url.pathname) || /\/(?:press-releases|news|litigation|enforcement|fugitives)\/[^/]+(?:\.html?)?\/?$/i.test(url.pathname);
+      if (!individualNotice) continue;
       const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
       const title = (titleMatch?.[1] ?? url.hostname + " official public notice").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
       const rewardText = text.match(/.{0,160}(?:reward|up to\s*\$\s?[0-9][0-9,]*).{0,240}/i)?.[0]?.trim().slice(0, 600) ?? null;
