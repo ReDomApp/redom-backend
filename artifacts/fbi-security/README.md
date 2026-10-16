@@ -20,6 +20,11 @@ No extra Render service, standalone Python API, separate UI, or SQLite store sho
 - `GET /cases?q=...&reward_only=true&limit=50` — searchable public records.
 - `GET /cases/:caseId` — record details.
 - `GET /cases/number/:caseNumber` — retrieve a persistent record using its unique `FBI-YYYY-XXXXXXXXXXXX` case number.
+- `POST /admin/cases/:caseId/corroborations` — fetch and store metadata from allowlisted official/news sources; requires the existing `x-redom-fbi-security-key` admin key.
+- `GET /cases/:caseId/corroborations` — view corroboration sources for one exact case.
+- `PATCH /admin/cases/:caseId/corroborations/:corroborationId` — record an analyst assessment (`supports_notice`, `contradicts_notice`, `unrelated`, or `needs_review`) with case-scoped matching.
+- `GET /cases/:caseId/verification-report` — evidence-linked verification draft with source URLs, publisher/headline/date, SHA-256 hashes, analyst assessments, and uncertainties.
+- Corroboration sources are limited to an explicit HTTPS host allowlist, fetched without following redirects, capped at 1.5 MB and 10 seconds, and stored under a foreign key to one case. Retrieved metadata is not treated as proof; analyst review is mandatory.
 - `GET /cases/:caseId/report` — evidence-linked Markdown draft.
 - `GET /correlations` — duplicate/cross-notice candidates; human review required.
 - `POST /admin/ingest-url` — fetch and import a public page from the exact official-host allowlist, with HTTPS-only, redirect rejection, timeout, content-type and size limits.
@@ -27,8 +32,16 @@ No extra Render service, standalone Python API, separate UI, or SQLite store sho
 - `PATCH /admin/cases/:caseId/status` — update analyst-review status.
 - `POST /admin/cases/:caseId/notes` and `GET /admin/cases/:caseId/notes` — add and read minimized analyst notes.
 - `GET /admin/audit` — audit history.
+- `POST /admin/tips` — submit a structured tip to an AES-256-GCM encrypted staging queue. Requires the admin key and a configured `FBI_SECURITY_TIP_ENCRYPTION_KEY`; this endpoint is not an unauthenticated public tip form.
+- `GET /admin/tips?status=pending_review&limit=50` — list queue metadata without decrypting tip contents.
+- `GET /admin/tips/:tipId` — decrypt one tip for an authorized administrator and return its public-source references; access is audited.
+- `PATCH /admin/tips/:tipId` — update review status and analyst note.
+- `POST /admin/tips/:tipId/sources` — attach up to 20 HTTPS source references from the explicit allowlist; this stores references and hashes but does not fetch or verify the pages.
+- `POST /admin/tips/:tipId/verify-sources` — fetch only the URLs already attached to that tip, up to 20 sources, with an 8-second timeout, no redirects, HTTPS host allowlisting, HTML-only responses, and a 1 MB per-source cap; extract publisher/headline/description metadata and store a SHA-256 fingerprint for review.
+- `GET /admin/tips/:tipId/sources` — view attached sources, retrieval status, extracted metadata, and content hashes.
+- Tip payloads are encrypted with AES-256-GCM using a 32-byte key supplied as 64 hex characters or base64 in `FBI_SECURITY_TIP_ENCRYPTION_KEY`. Generate a dedicated key outside the repository, store it only in the existing Render service's secret environment, and maintain a protected backup/recovery procedure. Losing the key makes stored tip payloads unreadable. SHA-256 hashes are integrity fingerprints, not anonymization.
 
-Admin routes require `REDOM_FBI_SECURITY_ADMIN_KEY` with at least 32 random characters in the existing Render backend environment. Keep the value out of Git and logs. If it is not configured, admin actions remain disabled.
+Admin routes require `REDOM_FBI_SECURITY_ADMIN_KEY` with at least 32 random characters in the existing Render backend environment. Encrypted tip intake additionally requires `FBI_SECURITY_TIP_ENCRYPTION_KEY` (32-byte AES key encoded as hex or base64). Keep both values out of Git and logs. If the relevant secret is not configured, the associated admin actions remain disabled.
 
 ## Current limits and release checklist
 
