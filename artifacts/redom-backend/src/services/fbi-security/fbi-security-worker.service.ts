@@ -298,7 +298,11 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const clean = raw.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|iframe|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
       const text = clean.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim().slice(0, 10_000);
       if (text.length < 40) continue;
-      const individualNotice = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname) || /\/(?:press-releases|news|litigation|enforcement|fugitives)\/[^\/]+(?:\.html?)?\/?$/i.test(url.pathname);
+      const individualNotice = /\\/wanted\\/(?:[^\\/]+\\/)*[^\\/]+\\/?$/i.test(url.pathname)
+        || /\\/opa\\/(?:pr|press-releases)\\/[^\\/]+\\/?$/i.test(url.pathname)
+        || /\\/(?:newsroom\\/press-releases|news-events\\/news\\/press-releases|news-events\\/press-releases|press-releases|news|fugitives|pressroom\\/pressreleases)\\/[^\\/]+(?:\\.html?)?\\/?$/i.test(url.pathname)
+        || /\\/litigation\\/litreleases\\/(?:[^\\/]+\\/)*[^\\/]+(?:\\.html?)?\\/?$/i.test(url.pathname)
+        || /\\/enforcement\\/(?:[^\\/]+\\/)*[^\\/]+\\/?$/i.test(url.pathname);
       if (!individualNotice) continue;
       const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
       const title = (titleMatch?.[1] ?? url.hostname + " official public notice").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
