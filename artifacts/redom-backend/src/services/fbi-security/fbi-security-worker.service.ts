@@ -17,6 +17,8 @@ const INTERVAL_MS = 60 * 60_000;
 const LOCK_KEY = 741_820_611;
 let timer: ReturnType<typeof setInterval> | undefined;
 let running = false;
+let currentRunStartedAt = 0;
+let researchedCasesThisRun = 0;
 
 function recipients(): string[] {
   const configured = process.env.FBI_SECURITY_ADMIN_EMAILS ?? process.env.BUG_REPORT_RECIPIENTS ?? env.email.bugReportRecipients.join(",");
@@ -91,11 +93,167 @@ const OFFICIAL_HOSTS: Record<string, { id: string; agency: string; tipUrl: strin
   "www.fdic.gov": { id: "fdic_consumer", agency: "Federal Deposit Insurance Corporation", tipUrl: "https://ask.fdic.gov/fdicinformationandsupportcenter/s/" },
 };
 
+
+const RESEARCH_MAX_MS = 55 * 60_000;
+const RESEARCH_MAX_CASES = 12;
+const RESEARCH_MAX_ROUNDS = 3;
+const RESEARCH_MAX_BYTES = 30_000;
+
+async function boundedJsonFetch(url: string, init: RequestInit, timeoutMs = 90_000): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal, redirect: "error" });
+    const text = await response.text();
+    if (!response.ok) throw new Error("Research provider returned HTTP " + response.status);
+    if (Buffer.byteLength(text, "utf8") > RESEARCH_MAX_BYTES) throw new Error("Research provider response exceeded size limit");
+    return JSON.parse(text);
+  } finally { clearTimeout(timeout); }
+}
+
+function extractOpenAiText(payload: any): string {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  const parts: string[] = [];
+  for (const item of payload?.output ?? []) for (const content of item?.content ?? []) if (content?.type === "output_text" && typeof content.text === "string") parts.push(content.text);
+  return parts.join("\n").slice(0, 20_000);
+}
+
+async function researchWithOpenAI(prompt: string): Promise<{provider:string;text:string}> {
+  const key = process.env.OPENAI_API_KEY?.trim();
+  if (!key) throw new Error("OPENAI_API_KEY is not configured");
+  const payload = await boundedJsonFetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { authorization: "Bearer " + key, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: process.env.FBI_SECURITY_OPENAI_MODEL?.trim() || "gpt-5",
+      tools: [{ type: "web_search", search_context_size: "high" }],
+      tool_choice: "required",
+      background: false,
+      input: prompt,
+    }),
+  }, 180_000);
+  const text = extractOpenAiText(payload);
+  if (!text) throw new Error("OpenAI returned no research text");
+  return { provider: "OpenAI web_search", text };
+}
+
+async function researchWithGemini(prompt: string): Promise<{provider:string;text:string}> {
+  const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GEMINI_API_KEY?.trim();
+  if (!key) throw new Error("GEMINI_API_KEY is not configured");
+  const model = process.env.FBI_SECURITY_GEMINI_MODEL?.trim() || "gemini-2.5-pro";
+  const payload = await boundedJsonFetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(key), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 6000 },
+    }),
+  }, 180_000);
+  const text = (payload?.candidates?.[0]?.content?.parts ?? []).map((p: any) => typeof p.text === "string" ? p.text : "").join("\n").slice(0, 20_000);
+  if (!text) throw new Error("Gemini returned no research text");
+  return { provider: "Gemini Google Search", text };
+}
+
+async function ensureResearchSchema(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS redom_fbi_security_research_runs (
+      id bigserial PRIMARY KEY,
+      case_id text NOT NULL REFERENCES redom_fbi_security_cases(id) ON DELETE CASCADE,
+      provider text NOT NULL,
+      run_key text NOT NULL,
+      status text NOT NULL CHECK (status IN ('completed','failed','skipped')),
+      research_text text NOT NULL DEFAULT '',
+      source_urls jsonb NOT NULL DEFAULT '[]'::jsonb,
+      error_message text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE(case_id, provider, run_key)
+    );
+    CREATE INDEX IF NOT EXISTS redom_fbi_security_research_case_idx ON redom_fbi_security_research_runs(case_id, created_at DESC);
+  `);
+}
+
+function researchPrompt(title: string, officialUrl: string, officialText: string, round: number, prior: string): string {
+  return [
+    "Produce a useful, case-specific, source-cited public intelligence brief about the individual explicitly named in this official U.S. federal wanted/enforcement notice. Do not return a generic directory summary.",
+    "Starting official notice: " + officialUrl,
+    "Notice title: " + title,
+    "Official notice excerpt: " + officialText.slice(0, 6500),
+    "Research round: " + round + " of " + RESEARCH_MAX_ROUNDS + ".",
+    "Previously discovered leads and findings: " + (prior || "No earlier research results; begin from the official notice."),
+    "Research the named subject and this exact case across the public web. Follow relevant links and pursue promising leads, prioritizing official FBI/DOJ/USMS/court/regulator records and reputable independent news. Search disclosed aliases only when the official notice or reliable case sources connect them. Prioritize cases announced or materially updated in 2026, but include older public records when they directly explain this same case. Check the official notice's current status and latest dated update.",
+    "REQUIRED OUTPUT, using these exact headings: SUBJECT AND CASE; WHAT WAS FOUND; PUBLIC CASE TIMELINE; CASE STATUS; REWARD VERIFICATION; SOURCE-BY-SOURCE COMPARISON; UNRESOLVED DISCREPANCIES; NEXT PUBLIC SOURCES TO CHECK.",
+    "SUBJECT AND CASE: identify only the subject as named in the official notice, relevant disclosed aliases, official case/reference numbers, agency, alleged conduct as described by sources, and clear identity-match reasoning. Give a useful descriptive summary of the publicly documented case, not generic filler.",
+    "WHAT WAS FOUND: list concrete case-relevant facts and developments from reliable sources, with source title, publication/update date, direct URL, and the exact fact supported. Distinguish confirmed public-record facts, allegations, reporting, and inference. Explain why each lead relates to this same case; do not merge people merely because names match. If a reliable source directly links the named subject to a company or licensed business, investigate that entity using official Secretary of State/corporate registry records, SEC EDGAR, regulator enforcement pages, court records, and the relevant state professional/business-license lookup. Report entity name, jurisdiction, public filing/status dates, registered business address only when it is the entity's official registered office, public officers/roles only where officially listed, business type, filings, enforcement actions, and official website. Clearly distinguish a confirmed ownership/role link from a same-name match or an unverified lead.",
+    "REWARD VERIFICATION IS MANDATORY: extract the exact reward amount and conditions from the primary official notice, including currency, maximum vs fixed amount, eligibility, deadline, and qualifying information if stated. Then compare against at least two independent reliable sources where available (prefer official agency pages/releases and court or agency records; reputable news only as secondary corroboration). Give each source's exact amount/wording, date, URL, and whether it agrees, conflicts, or does not mention a reward. State a verdict: VERIFIED AGAINST MULTIPLE SOURCES, OFFICIAL SOURCE ONLY—NOT INDEPENDENTLY CORROBORATED, CONFLICTING AMOUNTS—HUMAN REVIEW REQUIRED, or NO REWARD STATED IN THE OFFICIAL NOTICE. Never invent an amount. If fewer than two reliable sources exist, say exactly which sources were checked and what additional evidence is needed; do not write 'unknown' or imply verification.",
+    "If a page is unavailable or no reliable corroboration is found, report the concrete limitation and what was checked; never substitute 'unknown', 'N/A', or a generic answer for the research. A missing result is not proof that information does not exist.",
+    "Search only information legitimately published for public access and relevant to this exact public case. You may list official company websites, public corporate filings, public business contact channels, and clearly official business/social-media accounts that the company itself publishes. For the named subject, include only social profiles that the official case notice or reliable case reporting explicitly identifies as relevant to the case; do not infer ownership from a similar name or photo. Do NOT query or seek Social Security Administration/SSN records, IRS/tax records, restricted licensing systems, private databases, relatives/family trees, genealogy/family-tree search sites, home addresses, personal phone numbers, personal emails, precise/private locations, private social accounts, people-search or data-broker profiles including Whitepages, TruePeopleSearch, Extended, or similar services, private identifiers, or unrelated personal details. Do not use people-search listings or an address appearing in a broker database to confirm that a named person is the FBI-notice subject or that the person resides at that address. Do not build a family tree or aggregate relatives. Establish case identity only through the official notice and independent reliable public reporting or court/regulator records that directly tie the person to the same case; explain conflicts and same-name ambiguity. Do not identify or accuse a person from a name/photo resemblance alone. For public business records, use official state corporate registries and licensing lookup pages; describe a registry as unavailable when it is not public or accessible rather than attempting to bypass access controls.",
+    "Finish with a concise source list and confidence assessment grounded in the actual evidence. Explicitly state when a claim is not corroborated. Do not recommend contacting, confronting, tracking, or surveilling anyone; do not submit tips automatically."
+  ].join("\n\n");
+}
+
+async function runCaseResearch(caseId: string, title: string, officialUrl: string, officialText: string, runKey: string): Promise<number> {
+  await ensureResearchSchema();
+  const enabled = Boolean(process.env.OPENAI_API_KEY?.trim()) || Boolean((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim());
+  if (!enabled) {
+    logger.warn({ caseId }, "FBI Security AI-assisted research skipped: configure OPENAI_API_KEY and/or GEMINI_API_KEY");
+    return 0;
+  }
+  const started = Date.now();
+  let completed = 0;
+  let prior = "";
+  const maxRounds = Math.max(1, Math.min(RESEARCH_MAX_ROUNDS, Number(process.env.FBI_SECURITY_RESEARCH_ROUNDS ?? RESEARCH_MAX_ROUNDS) || RESEARCH_MAX_ROUNDS));
+  for (let round = 1; round <= maxRounds && Date.now() - started < RESEARCH_MAX_MS; round++) {
+    const prompt = researchPrompt(title, officialUrl, officialText, round, prior);
+    const providers = [
+      ...(process.env.OPENAI_API_KEY?.trim() ? [() => researchWithOpenAI(prompt)] : []),
+      ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? [() => researchWithGemini(prompt)] : []),
+    ];
+    const results = await Promise.allSettled(providers.map((run) => run()));
+    const texts: string[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const providerName = i === 0 && process.env.OPENAI_API_KEY?.trim() ? "OpenAI web_search" : "Gemini Google Search";
+      const result = results[i];
+      if (result.status === "fulfilled") {
+        const item = result.value;
+        texts.push(item.text);
+        const urls = [...new Set(item.text.match(/https:\/\/[^\s"'<>]+/g) ?? [])].map((u) => u.replace(/[.,;]+$/, "")).filter((u) => { try { return new URL(u).protocol === "https:"; } catch { return false; } }).slice(0, 100);
+        await pool.query(
+          `INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,research_text,source_urls)
+           VALUES($1,$2,$3,'completed',$4,$5::jsonb)
+           ON CONFLICT(case_id,provider,run_key) DO UPDATE SET status='completed',research_text=EXCLUDED.research_text,source_urls=EXCLUDED.source_urls,error_message=NULL,created_at=now()`,
+          [caseId, item.provider, runKey + ":round-" + round, item.text.slice(0, 20_000), JSON.stringify(urls)],
+        );
+        completed++;
+      } else {
+        await pool.query(
+          `INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,error_message)
+           VALUES($1,$2,$3,'failed',$4)
+           ON CONFLICT(case_id,provider,run_key) DO UPDATE SET status='failed',error_message=EXCLUDED.error_message,created_at=now()`,
+          [caseId, providerName, runKey + ":round-" + round, (result.reason instanceof Error ? result.reason.message : String(result.reason)).slice(0, 500)],
+        );
+      }
+    }
+    prior = texts.join("\n\n--- Independent provider results ---\n\n").slice(0, 12_000);
+    // Continue only while at least one provider yields a concrete source-backed lead.
+    const hasLead = /https:\/\//i.test(prior) && /corroborat|court|indict|charged|convict|official|press release|reward|filing|case number|reported/i.test(prior);
+    if (!hasLead) break;
+  }
+  await pool.query(
+    `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at)
+     VALUES('ai_public_web_research_completed',$1,$2::jsonb,now())`,
+    [caseId, JSON.stringify({ providers: [...(process.env.OPENAI_API_KEY?.trim() ? ["OpenAI"] : []), ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? ["Gemini"] : [])], rounds: maxRounds, completedProviderRuns: completed, elapsedMs: Date.now() - started })],
+  );
+  return completed;
+}
+
 async function pollConfiguredOfficialUrls(): Promise<number> {
   const defaults = ["https://www.fbi.gov/wanted", "https://www.justice.gov/news", "https://www.sec.gov/litigation/litreleases", "https://www.ftc.gov/news-events/news/press-releases", "https://www.usmarshals.gov/what-we-do/fugitive-investigations", "https://www.consumerfinance.gov/enforcement/", "https://www.cftc.gov/PressRoom/PressReleases", "https://www.fdic.gov/consumer-resource-center"];
   const configured = [...new Set((process.env.FBI_SECURITY_MONITOR_URLS ?? defaults.join(",")).split(",").map((v) => v.trim()).filter(Boolean))].slice(0, 20);
+  const queued = new Set(configured);
   let imported = 0;
   for (const rawUrl of configured) {
+    if (Date.now() - currentRunStartedAt >= RESEARCH_MAX_MS || researchedCasesThisRun >= RESEARCH_MAX_CASES) break;
     let url: URL;
     try { url = new URL(rawUrl); } catch { continue; }
     const source = OFFICIAL_HOSTS[url.hostname.toLowerCase()];
@@ -113,10 +271,39 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const announced = Number(response.headers.get("content-length") ?? 0);
       if (announced > 2_000_000) continue;
       const raw = await response.text();
+      // Discover a bounded set of individual public notices from this official page.
+      if (configured.length < 60) {
+        const anchors = raw.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi);
+        for (const match of anchors) {
+          if (configured.length >= 60) break;
+          try {
+            const link = new URL(match[1], url);
+            const host = link.hostname.toLowerCase();
+            const path = link.pathname.toLowerCase();
+            const individual = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/.test(path)
+              || /\/opa\/(?:pr|press-releases)\/[^\/]+\/?$/.test(path)
+              || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|litigation|enforcement|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\.html?)?\/?$/.test(path)
+              || /\/litigation\/litreleases\/[^\/]+(?:\.html?)?\/?$/.test(path)
+              || /\/enforcement\/[^\/]+\/?$/.test(path);
+            // Follow case-relevant links across known federal-agency domains only.
+            // The fetch loop revalidates each queued URL against OFFICIAL_HOSTS.
+            if (link.protocol === "https:" && OFFICIAL_HOSTS[host] && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
+              queued.add(link.toString());
+              configured.push(link.toString());
+            }
+          } catch { /* Ignore malformed links. */ }
+        }
+      }
       if (Buffer.byteLength(raw, "utf8") > 2_000_000) continue;
       const clean = raw.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|iframe|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
       const text = clean.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim().slice(0, 10_000);
       if (text.length < 40) continue;
+      const individualNotice = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname)
+        || /\/opa\/(?:pr|press-releases)\/[^\/]+\/?$/i.test(url.pathname)
+        || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\.html?)?\/?$/i.test(url.pathname)
+        || /\/litigation\/litreleases\/(?:[^\/]+\/)*[^\/]+(?:\.html?)?\/?$/i.test(url.pathname)
+        || /\/enforcement\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname);
+      if (!individualNotice) continue;
       const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
       const title = (titleMatch?.[1] ?? url.hostname + " official public notice").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
       const rewardText = text.match(/.{0,160}(?:reward|up to\s*\$\s?[0-9][0-9,]*).{0,240}/i)?.[0]?.trim().slice(0, 600) ?? null;
@@ -138,6 +325,14 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const caseNumber = "FBI-" + new Date().getUTCFullYear() + "-" + createHash("sha256").update(id).digest("hex").slice(0, 12).toUpperCase();
       await pool.query("UPDATE redom_fbi_security_cases SET case_number=$1 WHERE id=$2 AND case_number IS NULL", [caseNumber, id]);
       if (isNewOrChanged && relevantRiskNotice) imported++;
+      if (individualNotice && relevantRiskNotice && researchedCasesThisRun < RESEARCH_MAX_CASES && Date.now() - currentRunStartedAt < RESEARCH_MAX_MS) {
+        researchedCasesThisRun++;
+        try {
+          await runCaseResearch(id, title, canonical, text, new Date().toISOString().slice(0, 13));
+        } catch (researchError) {
+          logger.warn({ caseId: id, error: researchError instanceof Error ? researchError.message : String(researchError) }, "FBI Security AI-assisted public-web research failed");
+        }
+      }
       await pool.query(
         `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at) VALUES('scheduled_official_url_polled',$1,$2::jsonb,now())`,
         [id, JSON.stringify({ sourceId: source.id, sourceUrl: canonical, contentSha256: hash, changed: isNewOrChanged ? "new_or_changed" : "unchanged" })],
@@ -171,11 +366,14 @@ async function runDigest(): Promise<void> {
   const to = recipients();
   if (!to.length) return;
   running = true;
+  currentRunStartedAt = Date.now();
+  researchedCasesThisRun = 0;
   const client = await pool.connect();
   let locked = false;
   let runId: number | undefined;
   try {
     await ensureDigestSchema();
+    await ensureResearchSchema();
     const lock = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [LOCK_KEY]);
     locked = lock.rows[0]?.locked === true;
     if (!locked) return;
@@ -201,19 +399,23 @@ async function runDigest(): Promise<void> {
       FROM redom_fbi_security_cases
     `);
     const recent = await client.query(`
-      SELECT id,agency,title,source_url,retrieved_at,reward_advertised,reward_amount_text,review_status
-      FROM redom_fbi_security_cases
-      WHERE retrieved_at >= now() - interval '1 hour'
-      ORDER BY retrieved_at DESC LIMIT 50
+      SELECT c.id,c.agency,c.title,c.source_url,c.retrieved_at,c.reward_advertised,c.reward_amount_text,c.review_status,
+             (SELECT string_agg(r.provider || ': ' || left(r.research_text, 3500), E'\\n\\n' ORDER BY r.created_at DESC)
+              FROM redom_fbi_security_research_runs r
+              WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary
+      FROM redom_fbi_security_cases c
+      WHERE c.retrieved_at >= now() - interval '1 hour'
+      ORDER BY c.retrieved_at DESC LIMIT 50
     `);
     const c = counts.rows[0] ?? { total: 0, reward_count: 0, new_count: 0, last_hour: 0 };
     const base = publicBaseUrl();
     const reportUrl = base + "/cases";
     const items = recent.rows.map((item: any) => {
       const reward = item.reward_advertised
-        ? `<p><strong>Reward wording detected:</strong> ${escapeHtml(item.reward_amount_text ?? "amount not confirmed")} — verify directly at the official source.</p>`
-        : "";
-      return `<li style="margin:0 0 18px"><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.agency)} · status: ${escapeHtml(item.review_status)}</span>${reward}<br><a href="${escapeHtml(item.source_url)}">Open official source</a> · <a href="${escapeHtml(base + "/cases/" + encodeURIComponent(item.id) + "/report")}">Open draft report</a></li>`;
+        ? `<p><strong>Reward lead — NOT YET VERIFIED:</strong> ${escapeHtml(item.reward_amount_text ?? "The page contains reward-related wording but no safely extracted amount.")}. The research section must compare the official wording against independent reliable sources; do not treat the extracted amount as confirmed.</p>`
+        : `<p><strong>Reward check:</strong> No reward amount was extracted from this page. This does not prove no reward exists; see the source-by-source research check.</p>`;
+      const research = item.research_summary ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>` : "<p><strong>AI-assisted research:</strong> No completed research results are stored for this notice yet. This is a failed/incomplete research state, not a finding that no related information exists.</p>";
+      return `<li style="margin:0 0 22px"><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.agency)} · status: ${escapeHtml(item.review_status)}</span>${reward}${research}<br><a href="${escapeHtml(item.source_url)}">Open official source</a> · <a href="${escapeHtml(base + "/cases/" + encodeURIComponent(item.id) + "/report")}">Open draft report</a></li>`;
     }).join("");
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
       <h1>FBI Security — Public-Source Review Digest</h1>
@@ -240,7 +442,7 @@ async function runDigest(): Promise<void> {
     if (sent.error) throw new Error(sent.error.message || "Resend rejected the digest");
     await client.query(
       "UPDATE redom_fbi_security_worker_runs SET status='sent',finished_at=now(),cases_count=$2,details=$3::jsonb WHERE id=$1",
-      [runId, recent.rows.length, JSON.stringify({ recipients: to.length, providerMessageId: sent.data?.id ?? null, hour, importedCount })],
+      [runId, recent.rows.length, JSON.stringify({ recipients: to.length, providerMessageId: sent.data?.id ?? null, hour, importedCount, researchedCases: researchedCasesThisRun, elapsedMs: Date.now() - currentRunStartedAt, timeBudgetMs: RESEARCH_MAX_MS })],
     );
     await client.query(
       `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at)
