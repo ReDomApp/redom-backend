@@ -77,6 +77,26 @@ async function ensureDigestSchema(): Promise<void> {
     UPDATE redom_fbi_security_cases SET case_number = 'FBI-' || to_char(COALESCE(published_at, retrieved_at, now()), 'YYYY') || '-' || upper(substr(md5(id), 1, 12)) WHERE case_number IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS redom_fbi_security_cases_case_number_idx ON redom_fbi_security_cases(case_number) WHERE case_number IS NOT NULL;
     CREATE INDEX IF NOT EXISTS redom_fbi_security_worker_runs_started_idx ON redom_fbi_security_worker_runs (started_at DESC);
+    -- Retire known general/index pages that were previously misclassified as case notices.
+    UPDATE redom_fbi_security_cases
+       SET source_id='excluded_index', review_status='closed', reward_advertised=false,
+           reward_amount_text=NULL, reward_exact_wording=NULL, reward_conditions='[]'::jsonb
+     WHERE regexp_replace(source_url, '/+$', '') IN (
+       'https://www.ftc.gov/enforcement/penalty-offenses',
+       'https://www.ftc.gov/enforcement/refunds',
+       'https://www.ftc.gov/enforcement/criminal-liaison-unit',
+       'https://www.ftc.gov/enforcement/consumer-sentinel-network',
+       'https://www.ftc.gov/enforcement/competition-consumer-protection-guidance-documents',
+       'https://www.ftc.gov/enforcement/hisa',
+       'https://www.ftc.gov/enforcement/rulemaking',
+       'https://www.ftc.gov/enforcement/anticompetitive-practices',
+       'https://www.ftc.gov/enforcement/merger-review',
+       'https://www.ftc.gov/enforcement/premerger-notification-program',
+       'https://www.ftc.gov/news-events/news/press-releases',
+       'https://www.fdic.gov/consumer-resource-center',
+       'https://www.consumerfinance.gov/enforcement/',
+       'https://www.usmarshals.gov/what-we-do/fugitive-investigations'
+     );
   `);
 }
 
@@ -192,6 +212,20 @@ function researchPrompt(title: string, officialUrl: string, officialText: string
   ].join("\n\n");
 }
 
+
+async function providerCooldownReason(provider: string): Promise<string | null> {
+  const latest = await pool.query(
+    "SELECT error_message, created_at FROM redom_fbi_security_research_runs WHERE provider=$1 AND status='failed' ORDER BY created_at DESC LIMIT 1",
+    [provider],
+  );
+  const row = latest.rows[0];
+  if (!row?.error_message || !row?.created_at) return null;
+  const message = String(row.error_message);
+  const cooldownMs = /HTTP 429/.test(message) ? 6 * 60 * 60_000 : /HTTP 404/.test(message) ? 24 * 60 * 60_000 : 0;
+  if (!cooldownMs || Date.now() - new Date(row.created_at).getTime() >= cooldownMs) return null;
+  return "Temporarily skipped after provider HTTP " + (/HTTP 429/.test(message) ? "429 rate/quota limit" : "404 model/endpoint not found") + "; retry window has not elapsed.";
+}
+
 async function runCaseResearch(caseId: string, title: string, officialUrl: string, officialText: string, runKey: string): Promise<number> {
   await ensureResearchSchema();
   const enabled = Boolean(process.env.OPENAI_API_KEY?.trim()) || Boolean((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim());
@@ -205,14 +239,28 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
   const maxRounds = Math.max(1, Math.min(RESEARCH_MAX_ROUNDS, Number(process.env.FBI_SECURITY_RESEARCH_ROUNDS ?? RESEARCH_MAX_ROUNDS) || RESEARCH_MAX_ROUNDS));
   for (let round = 1; round <= maxRounds && Date.now() - started < RESEARCH_MAX_MS; round++) {
     const prompt = researchPrompt(title, officialUrl, officialText, round, prior);
-    const providers = [
-      ...(process.env.OPENAI_API_KEY?.trim() ? [() => researchWithOpenAI(prompt)] : []),
-      ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? [() => researchWithGemini(prompt)] : []),
+    const configuredProviders: Array<{ name: string; run: () => Promise<{provider:string;text:string}> }> = [
+      ...(process.env.OPENAI_API_KEY?.trim() ? [{ name: "OpenAI web_search", run: () => researchWithOpenAI(prompt) }] : []),
+      ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? [{ name: "Gemini Google Search", run: () => researchWithGemini(prompt) }] : []),
     ];
-    const results = await Promise.allSettled(providers.map((run) => run()));
+    const providers: Array<{ name: string; run: () => Promise<{provider:string;text:string}> }> = [];
+    for (const provider of configuredProviders) {
+      const cooldown = await providerCooldownReason(provider.name);
+      if (cooldown) {
+        await pool.query(
+          \`INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,error_message)
+           VALUES($1,$2,$3,'skipped',$4)
+           ON CONFLICT(case_id,provider,run_key) DO UPDATE SET status='skipped',error_message=EXCLUDED.error_message,created_at=now()\`,
+          [caseId, provider.name, runKey + ":round-" + round, cooldown],
+        );
+      } else {
+        providers.push(provider);
+      }
+    }
+    const results = await Promise.allSettled(providers.map((provider) => provider.run()));
     const texts: string[] = [];
     for (let i = 0; i < results.length; i++) {
-      const providerName = i === 0 && process.env.OPENAI_API_KEY?.trim() ? "OpenAI web_search" : "Gemini Google Search";
+      const providerName = providers[i].name;
       const result = results[i];
       if (result.status === "fulfilled") {
         const item = result.value;
@@ -245,6 +293,52 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
     [caseId, JSON.stringify({ providers: [...(process.env.OPENAI_API_KEY?.trim() ? ["OpenAI"] : []), ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? ["Gemini"] : [])], rounds: maxRounds, completedProviderRuns: completed, elapsedMs: Date.now() - started })],
   );
   return completed;
+}
+
+/**
+ * Only case-level pages should enter the case table. Indexes and general
+ * programme pages are discovery pages, not individual subjects/cases.
+ */
+function isIndividualNoticeUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  const path = url.pathname.replace(/\/+$/, "").toLowerCase();
+  const segments = path.split("/").filter(Boolean);
+  const isSlug = (value: string | undefined) => Boolean(value && !/^(index|index\.html?|press-releases|news|enforcement|litigation|fugitives|wanted|refunds|penalty-offenses|criminal-liaison-unit|consumer-sentinel-network|rulemaking|merger-review|premerger-notification-program|consumer-resource-center)$/i.test(value));
+  if (host === "www.fbi.gov") {
+    const i = segments.indexOf("wanted");
+    return i >= 0 && segments.length >= i + 3 && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.justice.gov") {
+    return (/^\/opa\/(pr|press-release)\/[^/]+$/.test(path)
+      || /^\/usao-[^/]+\/(pr|press-release)\/[^/]+$/.test(path))
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.sec.gov") {
+    return /^\/litigation\/litreleases\/(?:\d{4}\/)?[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.ftc.gov") {
+    return /^\/news-events\/news\/press-releases\/[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.usmarshals.gov") {
+    return (/^\/news\/press-releases\/[^/]+$/.test(path)
+      || /^\/what-we-do\/fugitive-investigations\/[^/]+$/.test(path))
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.consumerfinance.gov") {
+    return /^\/enforcement\/(?:actions|orders|consent-orders)\/[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.cftc.gov") {
+    return /^\/pressroom\/pressreleases\/[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.fdic.gov") {
+    return /^\/news\/press-releases\/[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  return false;
 }
 
 async function pollConfiguredOfficialUrls(): Promise<number> {
@@ -280,11 +374,7 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
             const link = new URL(match[1], url);
             const host = link.hostname.toLowerCase();
             const path = link.pathname.toLowerCase();
-            const individual = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/.test(path)
-              || /\/opa\/(?:pr|press-releases)\/[^\/]+\/?$/.test(path)
-              || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|litigation|enforcement|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\.html?)?\/?$/.test(path)
-              || /\/litigation\/litreleases\/[^\/]+(?:\.html?)?\/?$/.test(path)
-              || /\/enforcement\/[^\/]+\/?$/.test(path);
+            const individual = isIndividualNoticeUrl(link);
             // Follow case-relevant links across known federal-agency domains only.
             // The fetch loop revalidates each queued URL against OFFICIAL_HOSTS.
             if (link.protocol === "https:" && OFFICIAL_HOSTS[host] && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
@@ -298,17 +388,14 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const clean = raw.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|iframe|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
       const text = clean.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim().slice(0, 10_000);
       if (text.length < 40) continue;
-      const individualNotice = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname)
-        || /\/opa\/(?:pr|press-releases)\/[^\/]+\/?$/i.test(url.pathname)
-        || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\.html?)?\/?$/i.test(url.pathname)
-        || /\/litigation\/litreleases\/(?:[^\/]+\/)*[^\/]+(?:\.html?)?\/?$/i.test(url.pathname)
-        || /\/enforcement\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname);
-      if (!individualNotice) continue;
+      const individualNotice = isIndividualNoticeUrl(url);
       const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
       const title = (titleMatch?.[1] ?? url.hostname + " official public notice").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
-      const rewardText = text.match(/.{0,160}(?:reward|up to\s*\$\s?[0-9][0-9,]*).{0,240}/i)?.[0]?.trim().slice(0, 600) ?? null;
-      const amount = rewardText?.match(/(?:up to\s*)?\$\s?[0-9][0-9,]*(?:\.\d{2})?/i)?.[0]?.trim() ?? null;
-      const reward = Boolean(rewardText && amount && /reward|offering|offers/i.test(rewardText));
+      // Do not misclassify penalty ceilings, civil penalties, or refund totals as rewards.
+      const rewardMatch = text.match(/.{0,180}\b(?:reward|rewarded|reward offer|offering a reward|offers a reward)\b.{0,260}/i);
+      const rewardText = rewardMatch?.[0]?.trim().slice(0, 600) ?? null;
+      const amount = rewardText?.match(/(?:reward(?: of| up to| totaling)?\s*)?(?:up to\s*)?\$\s?[0-9][0-9,]*(?:\.\d{2})?/i)?.[0]?.trim() ?? null;
+      const reward = Boolean(rewardText && amount && /\breward\b/i.test(rewardText));
       const canonical = url.toString().split("#")[0];
       const id = createHash("sha256").update(source.id + "|" + canonical).digest("hex").slice(0, 24);
       const hash = createHash("sha256").update(text, "utf8").digest("hex");
@@ -396,7 +483,7 @@ async function runDigest(): Promise<void> {
              count(*) FILTER (WHERE reward_advertised)::int AS reward_count,
              count(*) FILTER (WHERE review_status='new')::int AS new_count,
              count(*) FILTER (WHERE retrieved_at >= now() - interval '1 hour')::int AS last_hour
-      FROM redom_fbi_security_cases
+      FROM redom_fbi_security_cases WHERE source_id <> 'excluded_index'
     `);
     const recent = await client.query(`
       SELECT c.id,c.agency,c.title,c.source_url,c.retrieved_at,c.reward_advertised,c.reward_amount_text,c.review_status,
@@ -404,7 +491,7 @@ async function runDigest(): Promise<void> {
               FROM redom_fbi_security_research_runs r
               WHERE r.case_id=c.id AND r.status='completed' AND r.created_at >= now() - interval '1 hour') AS research_summary
       FROM redom_fbi_security_cases c
-      WHERE c.retrieved_at >= now() - interval '1 hour'
+      WHERE c.source_id <> 'excluded_index' AND c.retrieved_at >= now() - interval '1 hour'
       ORDER BY c.retrieved_at DESC LIMIT 50
     `);
     const c = counts.rows[0] ?? { total: 0, reward_count: 0, new_count: 0, last_hour: 0 };
@@ -414,7 +501,11 @@ async function runDigest(): Promise<void> {
       const reward = item.reward_advertised
         ? `<p><strong>Reward lead — NOT YET VERIFIED:</strong> ${escapeHtml(item.reward_amount_text ?? "The page contains reward-related wording but no safely extracted amount.")}. The research section must compare the official wording against independent reliable sources; do not treat the extracted amount as confirmed.</p>`
         : `<p><strong>Reward check:</strong> No reward amount was extracted from this page. This does not prove no reward exists; see the source-by-source research check.</p>`;
-      const research = item.research_summary ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>` : "<p><strong>AI-assisted research:</strong> No completed research results are stored for this notice yet. This is a failed/incomplete research state, not a finding that no related information exists.</p>";
+      const research = item.research_summary
+        ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>`
+        : item.research_failures
+          ? `<p><strong>AI-assisted research failed:</strong> ${escapeHtml(item.research_failures).replace(/\\n/g, "<br>")}. No findings were produced; this is a provider failure, not a case finding.</p>`
+          : "<p><strong>AI-assisted research:</strong> No completed research results are stored for this notice yet. This is a failed/incomplete research state, not a finding that no related information exists.</p>";
       return `<li style="margin:0 0 22px"><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.agency)} · status: ${escapeHtml(item.review_status)}</span>${reward}${research}<br><a href="${escapeHtml(item.source_url)}">Open official source</a> · <a href="${escapeHtml(base + "/cases/" + encodeURIComponent(item.id) + "/report")}">Open draft report</a></li>`;
     }).join("");
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
