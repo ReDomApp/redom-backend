@@ -1,0 +1,40 @@
+name: FBI Security profile parser
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/fbi-security/**"
+      - "artifacts/redom-backend/src/services/fbi-security/fbi-security-worker.service.ts"
+      - "artifacts/redom-backend/package.json"
+      - ".github/workflows/fbi-security-parser.yml"
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/fbi-security/**"
+      - "artifacts/redom-backend/src/services/fbi-security/fbi-security-worker.service.ts"
+      - "artifacts/redom-backend/package.json"
+      - ".github/workflows/fbi-security-parser.yml"
+
+jobs:
+  parser-and-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run FBI parser fixture tests
+        run: pnpm --filter @workspace/redom-backend run test:fbi-security
+      - name: Typecheck backend including worker integration
+        run: pnpm --filter @workspace/redom-backend run typecheck
+      - name: Build backend including worker integration
+        run: pnpm --filter @workspace/redom-backend run build
+      - name: Live FBI page smoke test
+        env:
+          FBI_SECURITY_LIVE_SMOKE: "1"
+        run: pnpm --filter @workspace/redom-backend run test:fbi-security
