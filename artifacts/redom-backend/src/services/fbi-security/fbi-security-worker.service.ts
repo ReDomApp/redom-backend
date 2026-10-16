@@ -7,8 +7,8 @@ import { env } from "../../config/env";
 /**
  * FBI Security hourly public-source review report.
  *
- * Runs inside the existing backend process and uses PostgreSQL advisory locks
- * so multiple Render instances do not send the same digest concurrently.
+ * Runs inside the existing backend process once per hour and uses PostgreSQL advisory locks
+ * so multiple Render instances do not send duplicate hourly reports.
  * The digest contains aggregate public-notice metadata only; it never sends
  * full scraped text, private identifiers, financial data, or analyst notes.
  */
@@ -235,7 +235,7 @@ async function runDigest(): Promise<void> {
       to,
       subject: `FBI Security hourly public-source report — ${hour}:00 UTC`,
       html,
-      headers: { "X-Entity-Ref-ID": `fbi-security-${day}` },
+      headers: { "X-Entity-Ref-ID": `fbi-security-${hour}` },
     });
     if (sent.error) throw new Error(sent.error.message || "Resend rejected the digest");
     await client.query(
@@ -271,7 +271,7 @@ export function startFbiSecurityWorker(): void {
   timer = setInterval(() => { void runDigest(); }, INTERVAL_MS);
   timer.unref?.();
   void runDigest();
-  logger.info("FBI Security digest worker enabled");
+  logger.info("FBI Security hourly lookup and report worker enabled");
 }
 
 export function stopFbiSecurityWorker(): void {
