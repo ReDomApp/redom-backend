@@ -212,7 +212,7 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
       if (result.status === "fulfilled") {
         const item = result.value;
         texts.push(item.text);
-        const urls = [...new Set([...item.text.matchAll(/https?:\/\/[^\s)\]}>,"']+/g)].map((m) => m[0].replace(/[.,;]+$/, "")).filter((u) => { try { const x = new URL(u); return x.protocol === "https:"; } catch { return false; } }))].slice(0, 100);
+        const urls = [...new Set(item.text.match(/https:\/\/[^\s"'<>]+/g) ?? [])].map((u) => u.replace(/[.,;]+$/, "")).filter((u) => { try { return new URL(u).protocol === "https:"; } catch { return false; } }).slice(0, 100);
         await pool.query(
           `INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,research_text,source_urls)
            VALUES($1,$2,$3,'completed',$4,$5::jsonb)
@@ -274,7 +274,7 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
           try {
             const link = new URL(match[1], url);
             const path = link.pathname.toLowerCase();
-            const individual = /\/wanted\/(?:[^/]+\\/)*[^/]+\/?$/.test(path) || /\/(?:press-releases|news|litigation|enforcement|fugitives)\/[^/]+(?:\.html?)?\/?$/.test(path);
+            const individual = /\/wanted\/(?:[^/]+\/)*[^/]+\/?$/.test(path) || /\/(?:press-releases|news|litigation|enforcement|fugitives)\/[^/]+(?:\.html?)?\/?$/.test(path);
             if (link.protocol === "https:" && link.hostname.toLowerCase() === url.hostname.toLowerCase() && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
               queued.add(link.toString());
               configured.push(link.toString());
@@ -286,7 +286,7 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const clean = raw.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|iframe|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
       const text = clean.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim().slice(0, 10_000);
       if (text.length < 40) continue;
-      const individualNotice = /\/wanted\/(?:[^/]+\\/)*[^/]+\/?$/i.test(url.pathname) || /\/(?:press-releases|news|litigation|enforcement|fugitives)\/[^/]+(?:\.html?)?\/?$/i.test(url.pathname);
+      const individualNotice = /\/wanted\/(?:[^/]+\/)*[^/]+\/?$/i.test(url.pathname) || /\/(?:press-releases|news|litigation|enforcement|fugitives)\/[^/]+(?:\.html?)?\/?$/i.test(url.pathname);
       if (!individualNotice) continue;
       const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
       const title = (titleMatch?.[1] ?? url.hostname + " official public notice").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
