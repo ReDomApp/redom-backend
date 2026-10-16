@@ -181,7 +181,7 @@ function researchPrompt(title: string, officialUrl: string, officialText: string
     "Official notice excerpt: " + officialText.slice(0, 5500),
     "Research round: " + round + " of " + RESEARCH_MAX_ROUNDS + ".",
     "Prior leads from the previous research round: " + (prior || "None."),
-    "Search the wider public Internet for relevant official court filings, DOJ/FBI/USMS releases, regulator enforcement records, and reputable news coverage. Follow promising source links and search additional names/aliases only when explicitly disclosed in the official notice. Focus on this case's public facts, timeline, alleged conduct, case status, and any reward amount and exact conditions stated by the official source.",
+    "Search the wider public Internet for relevant official court filings, DOJ/FBI/USMS releases, regulator enforcement records, and reputable news coverage. Follow promising source links and search additional names/aliases only when explicitly disclosed in the official notice. Focus on cases announced or materially updated during calendar year 2026, and verify whether the official notice remains active. Focus on this case's public facts, timeline, alleged conduct, case status, and any reward amount and exact conditions stated by the official source.",
     "Search only information legitimately published for public access. Do NOT collect or infer relatives/family trees, home addresses, phone numbers, personal emails, precise locations, private social accounts, people-search/Whitepages profiles, data broker records, private identifiers, or unrelated personal details. Do not treat a matching name alone as identity proof.",
     "Return concise findings with source title, direct URL, publication date if available, what the source specifically corroborates or contradicts, and confidence/identity-match caveats. Separate official-source facts from allegations and third-party claims. Explicitly say when no reliable lead is found. Never recommend contacting, confronting, or surveilling anyone; do not submit tips automatically."
   ].join("\n\n");
@@ -357,6 +357,7 @@ async function runDigest(): Promise<void> {
   let runId: number | undefined;
   try {
     await ensureDigestSchema();
+    await ensureResearchSchema();
     const lock = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [LOCK_KEY]);
     locked = lock.rows[0]?.locked === true;
     if (!locked) return;
