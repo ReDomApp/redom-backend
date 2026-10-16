@@ -459,7 +459,11 @@ async function runDigest(): Promise<void> {
       const reward = item.reward_advertised
         ? `<p><strong>Reward lead — NOT YET VERIFIED:</strong> ${escapeHtml(item.reward_amount_text ?? "The page contains reward-related wording but no safely extracted amount.")}. The research section must compare the official wording against independent reliable sources; do not treat the extracted amount as confirmed.</p>`
         : `<p><strong>Reward check:</strong> No reward amount was extracted from this page. This does not prove no reward exists; see the source-by-source research check.</p>`;
-      const research = item.research_summary ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>` : "<p><strong>AI-assisted research:</strong> No completed research results are stored for this notice yet. This is a failed/incomplete research state, not a finding that no related information exists.</p>";
+      const research = item.research_summary
+        ? `<p><strong>AI-assisted public-source research (review required):</strong><br>${escapeHtml(item.research_summary).replace(/\\n/g, "<br>")}</p>`
+        : item.research_failures
+          ? `<p><strong>AI-assisted research failed:</strong> ${escapeHtml(item.research_failures).replace(/\\n/g, "<br>")}. No findings were produced; this is a provider failure, not a case finding.</p>`
+          : "<p><strong>AI-assisted research:</strong> No completed research results are stored for this notice yet. This is a failed/incomplete research state, not a finding that no related information exists.</p>";
       return `<li style="margin:0 0 22px"><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.agency)} · status: ${escapeHtml(item.review_status)}</span>${reward}${research}<br><a href="${escapeHtml(item.source_url)}">Open official source</a> · <a href="${escapeHtml(base + "/cases/" + encodeURIComponent(item.id) + "/report")}">Open draft report</a></li>`;
     }).join("");
     const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
