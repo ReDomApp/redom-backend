@@ -181,10 +181,10 @@ function researchPrompt(title: string, officialUrl: string, officialText: string
     "Official notice excerpt: " + officialText.slice(0, 6500),
     "Research round: " + round + " of " + RESEARCH_MAX_ROUNDS + ".",
     "Previously discovered leads and findings: " + (prior || "No earlier research results; begin from the official notice."),
-    "Research the named subject and this exact case across the public web. Follow relevant links and pursue promising leads, prioritizing official FBI/DOJ/USMS/court/regulator records and reputable independent news. Search disclosed aliases only when the official notice or reliable case sources connect them. Prioritize cases announced or materially updated in 2026, but include older public records when they directly explain this same case. Check the official notice's current status and latest dated update.",
+    "SCOPE: The FBI wanted-profile URL supplied above is the sole discovery anchor. Research exactly the one named person in that profile. Only after establishing that profile, search other public websites for records that explicitly correspond to this same person and same case; use the name plus the FBI-disclosed aliases, case number, charge, location/jurisdiction, and dates as cross-checks. Follow relevant links from the FBI notice and corroborating sources. Do not run broad searches for unrelated FBI notices, other people, or general agency programme pages. Prioritize official court/regulator records and reputable independent reporting; search aliases only when the FBI notice or reliable case sources connect them. Prioritize cases announced or materially updated in 2026, while including older records only when they directly explain this same case. Check the FBI profile's current status and latest dated update.",
     "REQUIRED OUTPUT, using these exact headings: SUBJECT AND CASE; WHAT WAS FOUND; PUBLIC CASE TIMELINE; CASE STATUS; REWARD VERIFICATION; SOURCE-BY-SOURCE COMPARISON; UNRESOLVED DISCREPANCIES; NEXT PUBLIC SOURCES TO CHECK.",
-    "SUBJECT AND CASE: identify only the subject as named in the official notice, relevant disclosed aliases, official case/reference numbers, agency, alleged conduct as described by sources, and clear identity-match reasoning. Give a useful descriptive summary of the publicly documented case, not generic filler.",
-    "WHAT WAS FOUND: list concrete case-relevant facts and developments from reliable sources, with source title, publication/update date, direct URL, and the exact fact supported. Distinguish confirmed public-record facts, allegations, reporting, and inference. Explain why each lead relates to this same case; do not merge people merely because names match. If a reliable source directly links the named subject to a company or licensed business, investigate that entity using official Secretary of State/corporate registry records, SEC EDGAR, regulator enforcement pages, court records, and the relevant state professional/business-license lookup. Report entity name, jurisdiction, public filing/status dates, registered business address only when it is the entity's official registered office, public officers/roles only where officially listed, business type, filings, enforcement actions, and official website. Clearly distinguish a confirmed ownership/role link from a same-name match or an unverified lead.",
+    "SUBJECT AND CASE: start with exactly one person named in the FBI profile. Record the exact FBI profile URL, subject name as published, FBI-disclosed aliases, case/reference numbers, alleged conduct as described by sources, and why each external record matches this same person and case. Do not combine same-name people. If matching details are insufficient, label the external result an unresolved same-name candidate and exclude it from confirmed findings. Do not produce a multi-person list.",
+    "WHAT WAS FOUND: list only concrete facts relevant to this person's FBI case, with source title, publication/update date, direct URL, exact supported fact, and the match rationale. Distinguish official public-record facts, allegations, reporting, and inference. No general dossier: exclude relatives, private home addresses, personal phone/email, private social accounts, SSNs or other private identifiers, people-search/data-broker profiles, and unrelated personal details. If reliable sources directly connect the subject to a business relevant to the case, check official corporate registries, SEC EDGAR, regulator enforcement pages, court records, or relevant public professional-license records. Clearly distinguish confirmed links from same-name matches.",
     "REWARD VERIFICATION IS MANDATORY: extract the exact reward amount and conditions from the primary official notice, including currency, maximum vs fixed amount, eligibility, deadline, and qualifying information if stated. Then compare against at least two independent reliable sources where available (prefer official agency pages/releases and court or agency records; reputable news only as secondary corroboration). Give each source's exact amount/wording, date, URL, and whether it agrees, conflicts, or does not mention a reward. State a verdict: VERIFIED AGAINST MULTIPLE SOURCES, OFFICIAL SOURCE ONLY—NOT INDEPENDENTLY CORROBORATED, CONFLICTING AMOUNTS—HUMAN REVIEW REQUIRED, or NO REWARD STATED IN THE OFFICIAL NOTICE. Never invent an amount. If fewer than two reliable sources exist, say exactly which sources were checked and what additional evidence is needed; do not write 'unknown' or imply verification.",
     "If a page is unavailable or no reliable corroboration is found, report the concrete limitation and what was checked; never substitute 'unknown', 'N/A', or a generic answer for the research. A missing result is not proof that information does not exist.",
     "Search only information legitimately published for public access and relevant to this exact public case. You may list official company websites, public corporate filings, public business contact channels, and clearly official business/social-media accounts that the company itself publishes. For the named subject, include only social profiles that the official case notice or reliable case reporting explicitly identifies as relevant to the case; do not infer ownership from a similar name or photo. Do NOT query or seek Social Security Administration/SSN records, IRS/tax records, restricted licensing systems, private databases, relatives/family trees, genealogy/family-tree search sites, home addresses, personal phone numbers, personal emails, precise/private locations, private social accounts, people-search or data-broker profiles including Whitepages, TruePeopleSearch, Extended, or similar services, private identifiers, or unrelated personal details. Do not use people-search listings or an address appearing in a broker database to confirm that a named person is the FBI-notice subject or that the person resides at that address. Do not build a family tree or aggregate relatives. Establish case identity only through the official notice and independent reliable public reporting or court/regulator records that directly tie the person to the same case; explain conflicts and same-name ambiguity. Do not identify or accuse a person from a name/photo resemblance alone. For public business records, use official state corporate registries and licensing lookup pages; describe a registry as unavailable when it is not public or accessible rather than attempting to bypass access controls.",
@@ -248,16 +248,19 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
 }
 
 async function pollConfiguredOfficialUrls(): Promise<number> {
-  const defaults = ["https://www.fbi.gov/wanted", "https://www.justice.gov/news", "https://www.sec.gov/litigation/litreleases", "https://www.ftc.gov/news-events/news/press-releases", "https://www.usmarshals.gov/what-we-do/fugitive-investigations", "https://www.consumerfinance.gov/enforcement/", "https://www.cftc.gov/PressRoom/PressReleases", "https://www.fdic.gov/consumer-resource-center"];
-  const configured = [...new Set((process.env.FBI_SECURITY_MONITOR_URLS ?? defaults.join(",")).split(",").map((v) => v.trim()).filter(Boolean))].slice(0, 20);
+  // Discovery is intentionally FBI-only. Other public sites are searched only
+  // after a single-person FBI wanted notice has been accepted as the case anchor.
+  const configured = ["https://www.fbi.gov/wanted"];
   const queued = new Set(configured);
   let imported = 0;
   for (const rawUrl of configured) {
     if (Date.now() - currentRunStartedAt >= RESEARCH_MAX_MS || researchedCasesThisRun >= RESEARCH_MAX_CASES) break;
     let url: URL;
     try { url = new URL(rawUrl); } catch { continue; }
-    const source = OFFICIAL_HOSTS[url.hostname.toLowerCase()];
-    if (url.protocol !== "https:" || !source || url.username || url.password || url.port) continue;
+    const source = url.hostname.toLowerCase() === "www.fbi.gov"
+      ? { id: "fbi_wanted", agency: "Federal Bureau of Investigation", tipUrl: "https://tips.fbi.gov/" }
+      : undefined;
+    if (url.protocol !== "https:" || !source || url.username || url.password || url.port || url.pathname.split("/").filter(Boolean)[0] !== "wanted") continue;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12_000);
     try {
@@ -280,14 +283,12 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
             const link = new URL(match[1], url);
             const host = link.hostname.toLowerCase();
             const path = link.pathname.toLowerCase();
-            const individual = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/.test(path)
-              || /\/opa\/(?:pr|press-releases)\/[^\/]+\/?$/.test(path)
-              || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|litigation|enforcement|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\.html?)?\/?$/.test(path)
-              || /\/litigation\/litreleases\/[^\/]+(?:\.html?)?\/?$/.test(path)
-              || /\/enforcement\/[^\/]+\/?$/.test(path);
-            // Follow case-relevant links across known federal-agency domains only.
-            // The fetch loop revalidates each queued URL against OFFICIAL_HOSTS.
-            if (link.protocol === "https:" && OFFICIAL_HOSTS[host] && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
+            // Follow only individual FBI wanted-profile URLs during discovery.
+            const individual = host === "www.fbi.gov"
+              && /^\/wanted\/(?:[^/]+\/){1,3}[^/]+\/?$/.test(path)
+              && !/\/(?:index|search|most-wanted|ten-most-wanted|wanted-fugitives)\/?$/.test(path);
+            // The first phase must never crawl other agencies or general pages.
+            if (link.protocol === "https:" && host === "www.fbi.gov" && !link.username && !link.password && !link.port && individual && !queued.has(link.toString())) {
               queued.add(link.toString());
               configured.push(link.toString());
             }
@@ -298,14 +299,18 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const clean = raw.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|iframe|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
       const text = clean.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim().slice(0, 10_000);
       if (text.length < 40) continue;
-      const individualNotice = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname)
-        || /\/opa\/(?:pr|press-releases)\/[^\/]+\/?$/i.test(url.pathname)
-        || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\.html?)?\/?$/i.test(url.pathname)
-        || /\/litigation\/litreleases\/(?:[^\/]+\/)*[^\/]+(?:\.html?)?\/?$/i.test(url.pathname)
-        || /\/enforcement\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname);
+      const individualNotice = url.hostname.toLowerCase() === "www.fbi.gov"
+        && /^\/wanted\/(?:[^/]+\/){1,3}[^/]+\/?$/i.test(url.pathname)
+        && !/\/(?:index|search|most-wanted|ten-most-wanted|wanted-fugitives)\/?$/i.test(url.pathname);
       if (!individualNotice) continue;
       const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
-      const title = (titleMatch?.[1] ?? url.hostname + " official public notice").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+      const title = (titleMatch?.[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s*[|—-]\s*(?:the )?FBI.*$/i, "").replace(/\s+/g, " ").trim().slice(0, 300);
+      // A result must be anchored to one named person, not an index, gang,
+      // organization, or multi-subject roundup.
+      const genericTitle = /^(?:wanted|most wanted|ten most wanted fugitives|wanted fugitives|seeking information|fbi wanted list)$/i.test(title);
+      const groupTitle = /\b(gang|organization|organisation|network|group|cartel|crew|fugitives|individuals|members|persons of interest)\b/i.test(title);
+      const titleWords = title.split(/\s+/).filter((word) => /^[\p{L}][\p{L}'’-]*$/u.test(word));
+      if (genericTitle || groupTitle || titleWords.length < 2 || titleWords.length > 7) continue;
       const rewardText = text.match(/.{0,160}(?:reward|up to\s*\$\s?[0-9][0-9,]*).{0,240}/i)?.[0]?.trim().slice(0, 600) ?? null;
       const amount = rewardText?.match(/(?:up to\s*)?\$\s?[0-9][0-9,]*(?:\.\d{2})?/i)?.[0]?.trim() ?? null;
       const reward = Boolean(rewardText && amount && /reward|offering|offers/i.test(rewardText));
