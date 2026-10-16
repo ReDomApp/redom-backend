@@ -91,6 +91,155 @@ const OFFICIAL_HOSTS: Record<string, { id: string; agency: string; tipUrl: strin
   "www.fdic.gov": { id: "fdic_consumer", agency: "Federal Deposit Insurance Corporation", tipUrl: "https://ask.fdic.gov/fdicinformationandsupportcenter/s/" },
 };
 
+
+const RESEARCH_MAX_MS = 55 * 60_000;
+const RESEARCH_MAX_CASES = 12;
+const RESEARCH_MAX_ROUNDS = 3;
+const RESEARCH_MAX_BYTES = 30_000;
+
+async function boundedJsonFetch(url: string, init: RequestInit, timeoutMs = 90_000): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal, redirect: "error" });
+    const text = await response.text();
+    if (!response.ok) throw new Error("Research provider returned HTTP " + response.status);
+    if (Buffer.byteLength(text, "utf8") > RESEARCH_MAX_BYTES) throw new Error("Research provider response exceeded size limit");
+    return JSON.parse(text);
+  } finally { clearTimeout(timeout); }
+}
+
+function extractOpenAiText(payload: any): string {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  const parts: string[] = [];
+  for (const item of payload?.output ?? []) for (const content of item?.content ?? []) if (content?.type === "output_text" && typeof content.text === "string") parts.push(content.text);
+  return parts.join("\n").slice(0, 20_000);
+}
+
+async function researchWithOpenAI(prompt: string): Promise<{provider:string;text:string}> {
+  const key = process.env.OPENAI_API_KEY?.trim();
+  if (!key) throw new Error("OPENAI_API_KEY is not configured");
+  const payload = await boundedJsonFetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { authorization: "Bearer " + key, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: process.env.FBI_SECURITY_OPENAI_MODEL?.trim() || "gpt-5.5",
+      tools: [{ type: "web_search", return_token_budget: "unlimited" }],
+      tool_choice: "required",
+      background: false,
+      input: prompt,
+    }),
+  }, 180_000);
+  const text = extractOpenAiText(payload);
+  if (!text) throw new Error("OpenAI returned no research text");
+  return { provider: "OpenAI web_search", text };
+}
+
+async function researchWithGemini(prompt: string): Promise<{provider:string;text:string}> {
+  const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GEMINI_API_KEY?.trim();
+  if (!key) throw new Error("GEMINI_API_KEY is not configured");
+  const model = process.env.FBI_SECURITY_GEMINI_MODEL?.trim() || "gemini-2.5-pro";
+  const payload = await boundedJsonFetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(key), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 6000 },
+    }),
+  }, 180_000);
+  const text = (payload?.candidates?.[0]?.content?.parts ?? []).map((p: any) => typeof p.text === "string" ? p.text : "").join("\n").slice(0, 20_000);
+  if (!text) throw new Error("Gemini returned no research text");
+  return { provider: "Gemini Google Search", text };
+}
+
+async function ensureResearchSchema(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS redom_fbi_security_research_runs (
+      id bigserial PRIMARY KEY,
+      case_id text NOT NULL REFERENCES redom_fbi_security_cases(id) ON DELETE CASCADE,
+      provider text NOT NULL,
+      run_key text NOT NULL,
+      status text NOT NULL CHECK (status IN ('completed','failed','skipped')),
+      research_text text NOT NULL DEFAULT '',
+      source_urls jsonb NOT NULL DEFAULT '[]'::jsonb,
+      error_message text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE(case_id, provider, run_key)
+    );
+    CREATE INDEX IF NOT EXISTS redom_fbi_security_research_case_idx ON redom_fbi_security_research_runs(case_id, created_at DESC);
+  `);
+}
+
+function researchPrompt(title: string, officialUrl: string, officialText: string, round: number, prior: string): string {
+  return [
+    "Conduct careful, source-cited public-web research on this specific publicly announced U.S. federal wanted/enforcement case.",
+    "Starting official notice: " + officialUrl,
+    "Notice title: " + title,
+    "Official notice excerpt: " + officialText.slice(0, 5500),
+    "Research round: " + round + " of " + RESEARCH_MAX_ROUNDS + ".",
+    "Prior leads from the previous research round: " + (prior || "None."),
+    "Search the wider public Internet for relevant official court filings, DOJ/FBI/USMS releases, regulator enforcement records, and reputable news coverage. Follow promising source links and search additional names/aliases only when explicitly disclosed in the official notice. Focus on this case's public facts, timeline, alleged conduct, case status, and any reward amount and exact conditions stated by the official source.",
+    "Search only information legitimately published for public access. Do NOT collect or infer relatives/family trees, home addresses, phone numbers, personal emails, precise locations, private social accounts, people-search/Whitepages profiles, data broker records, private identifiers, or unrelated personal details. Do not treat a matching name alone as identity proof.",
+    "Return concise findings with source title, direct URL, publication date if available, what the source specifically corroborates or contradicts, and confidence/identity-match caveats. Separate official-source facts from allegations and third-party claims. Explicitly say when no reliable lead is found. Never recommend contacting, confronting, or surveilling anyone; do not submit tips automatically."
+  ].join("\n\n");
+}
+
+async function runCaseResearch(caseId: string, title: string, officialUrl: string, officialText: string, runKey: string): Promise<number> {
+  await ensureResearchSchema();
+  const enabled = Boolean(process.env.OPENAI_API_KEY?.trim()) || Boolean((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim());
+  if (!enabled) {
+    logger.warn({ caseId }, "FBI Security AI-assisted research skipped: configure OPENAI_API_KEY and/or GEMINI_API_KEY");
+    return 0;
+  }
+  const started = Date.now();
+  let completed = 0;
+  let prior = "";
+  const maxRounds = Math.max(1, Math.min(RESEARCH_MAX_ROUNDS, Number(process.env.FBI_SECURITY_RESEARCH_ROUNDS ?? RESEARCH_MAX_ROUNDS) || RESEARCH_MAX_ROUNDS));
+  for (let round = 1; round <= maxRounds && Date.now() - started < RESEARCH_MAX_MS; round++) {
+    const prompt = researchPrompt(title, officialUrl, officialText, round, prior);
+    const providers = [
+      ...(process.env.OPENAI_API_KEY?.trim() ? [() => researchWithOpenAI(prompt)] : []),
+      ...((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim() ? [() => researchWithGemini(prompt)] : []),
+    ];
+    const results = await Promise.allSettled(providers.map((run) => run()));
+    const texts: string[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const providerName = i === 0 && process.env.OPENAI_API_KEY?.trim() ? "OpenAI web_search" : "Gemini Google Search";
+      const result = results[i];
+      if (result.status === "fulfilled") {
+        const item = result.value;
+        texts.push(item.text);
+        const urls = [...new Set([...item.text.matchAll(/https?:\/\/[^\s)\]}>,"']+/g)].map((m) => m[0].replace(/[.,;]+$/, "")).filter((u) => { try { const x = new URL(u); return x.protocol === "https:"; } catch { return false; } }))].slice(0, 100);
+        await pool.query(
+          `INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,research_text,source_urls)
+           VALUES($1,$2,$3,'completed',$4,$5::jsonb)
+           ON CONFLICT(case_id,provider,run_key) DO UPDATE SET status='completed',research_text=EXCLUDED.research_text,source_urls=EXCLUDED.source_urls,error_message=NULL,created_at=now()`,
+          [caseId, item.provider, runKey + ":round-" + round, item.text.slice(0, 20_000), JSON.stringify(urls)],
+        );
+        completed++;
+      } else {
+        await pool.query(
+          `INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,error_message)
+           VALUES($1,$2,$3,'failed',$4)
+           ON CONFLICT(case_id,provider,run_key) DO UPDATE SET status='failed',error_message=EXCLUDED.error_message,created_at=now()`,
+          [caseId, providerName, runKey + ":round-" + round, (result.reason instanceof Error ? result.reason.message : String(result.reason)).slice(0, 500)],
+        );
+      }
+    }
+    prior = texts.join("\n\n--- Independent provider results ---\n\n").slice(0, 12_000);
+    // Continue only while at least one provider yields a concrete source-backed lead.
+    const hasLead = /https:\/\//i.test(prior) && /corroborat|court|indict|charged|convict|official|press release|reward|filing|case number|reported/i.test(prior);
+    if (!hasLead) break;
+  }
+  await pool.query(
+    `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at)
+     VALUES('ai_public_web_research_completed',$1,$2::jsonb,now())`,
+    [caseId, JSON.stringify({ providers: ["OpenAI", "Gemini"].filter((name) => name === "OpenAI" ? Boolean(process.env.OPENAI_API_KEY?.trim()) : Boolean((process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GEMINI_API_KEY)?.trim()), rounds: maxRounds, completedProviderRuns: completed, elapsedMs: Date.now() - started })],
+  );
+  return completed;
+}
+
 async function pollConfiguredOfficialUrls(): Promise<number> {
   const defaults = ["https://www.fbi.gov/wanted", "https://www.justice.gov/news", "https://www.sec.gov/litigation/litreleases", "https://www.ftc.gov/news-events/news/press-releases", "https://www.usmarshals.gov/what-we-do/fugitive-investigations", "https://www.consumerfinance.gov/enforcement/", "https://www.cftc.gov/PressRoom/PressReleases", "https://www.fdic.gov/consumer-resource-center"];
   const configured = [...new Set((process.env.FBI_SECURITY_MONITOR_URLS ?? defaults.join(",")).split(",").map((v) => v.trim()).filter(Boolean))].slice(0, 20);
@@ -157,6 +306,13 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       const caseNumber = "FBI-" + new Date().getUTCFullYear() + "-" + createHash("sha256").update(id).digest("hex").slice(0, 12).toUpperCase();
       await pool.query("UPDATE redom_fbi_security_cases SET case_number=$1 WHERE id=$2 AND case_number IS NULL", [caseNumber, id]);
       if (isNewOrChanged && relevantRiskNotice) imported++;
+      if (isIndividualNotice && relevantRiskNotice) {
+        try {
+          await runCaseResearch(id, title, canonical, text, new Date().toISOString().slice(0, 13));
+        } catch (researchError) {
+          logger.warn({ caseId: id, error: researchError instanceof Error ? researchError.message : String(researchError) }, "FBI Security AI-assisted public-web research failed");
+        }
+      }
       await pool.query(
         `INSERT INTO redom_fbi_security_audit_events(event_type,record_id,metadata,created_at) VALUES('scheduled_official_url_polled',$1,$2::jsonb,now())`,
         [id, JSON.stringify({ sourceId: source.id, sourceUrl: canonical, contentSha256: hash, changed: isNewOrChanged ? "new_or_changed" : "unchanged" })],
