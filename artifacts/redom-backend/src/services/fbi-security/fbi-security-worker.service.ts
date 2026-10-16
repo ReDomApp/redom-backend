@@ -282,8 +282,8 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
             const path = link.pathname.toLowerCase();
             const individual = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/.test(path)
               || /\/opa\/(?:pr|press-releases)\/[^\/]+\/?$/.test(path)
-              || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|litigation|enforcement|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\\.html?)?\/?$/.test(path)
-              || /\/litigation\/litreleases\/[^\/]+(?:\\.html?)?\/?$/.test(path)
+              || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|litigation|enforcement|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\.html?)?\/?$/.test(path)
+              || /\/litigation\/litreleases\/[^\/]+(?:\.html?)?\/?$/.test(path)
               || /\/enforcement\/[^\/]+\/?$/.test(path);
             // Follow case-relevant links across known federal-agency domains only.
             // The fetch loop revalidates each queued URL against OFFICIAL_HOSTS.
@@ -300,8 +300,8 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
       if (text.length < 40) continue;
       const individualNotice = /\/wanted\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname)
         || /\/opa\/(?:pr|press-releases)\/[^\/]+\/?$/i.test(url.pathname)
-        || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\\.html?)?\/?$/i.test(url.pathname)
-        || /\/litigation\/litreleases\/(?:[^\/]+\/)*[^\/]+(?:\\.html?)?\/?$/i.test(url.pathname)
+        || /\/(?:newsroom\/press-releases|news-events\/news\/press-releases|news-events\/press-releases|press-releases|news|fugitives|pressroom\/pressreleases)\/[^\/]+(?:\.html?)?\/?$/i.test(url.pathname)
+        || /\/litigation\/litreleases\/(?:[^\/]+\/)*[^\/]+(?:\.html?)?\/?$/i.test(url.pathname)
         || /\/enforcement\/(?:[^\/]+\/)*[^\/]+\/?$/i.test(url.pathname);
       if (!individualNotice) continue;
       const titleMatch = clean.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
