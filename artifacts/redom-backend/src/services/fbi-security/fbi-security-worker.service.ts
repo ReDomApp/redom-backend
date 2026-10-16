@@ -250,7 +250,7 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
 async function pollConfiguredOfficialUrls(): Promise<number> {
   // Discovery is intentionally FBI-only. Other public sites are searched only
   // after a single-person FBI wanted notice has been accepted as the case anchor.
-  const configured = ["https://www.fbi.gov/wanted"];
+  const configured = ["https://www.fbi.gov/wanted/most-wanted-fraudsters"];
   const queued = new Set(configured);
   let imported = 0;
   for (const rawUrl of configured) {
