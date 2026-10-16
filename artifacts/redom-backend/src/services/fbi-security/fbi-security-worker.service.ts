@@ -247,6 +247,55 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
   return completed;
 }
 
+
+/**
+ * Only case-level pages should enter the case table. Indexes and general
+ * programme pages (for example FTC "Penalty Offenses" or "Recent Refunds")
+ * are discovery pages, not individual subjects/cases and must not be researched
+ * or counted as wanted/enforcement case notices.
+ */
+function isIndividualNoticeUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  const path = url.pathname.replace(/\\/+$/, "").toLowerCase();
+  const segments = path.split("/").filter(Boolean);
+  const isSlug = (value: string | undefined) => Boolean(value && !/^(index|index\\.html?|press-releases|news|enforcement|litigation|fugitives|wanted|refunds|penalty-offenses|criminal-liaison-unit|consumer-sentinel-network|rulemaking|merger-review|premerger-notification-program|consumer-resource-center)$/i.test(value));
+  if (host === "www.fbi.gov") {
+    const i = segments.indexOf("wanted");
+    return i >= 0 && segments.length >= i + 3 && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.justice.gov") {
+    return (/^\\/opa\\/(pr|press-release)\\/[^/]+$/.test(path)
+      || /^\\/usao-[^/]+\\/(pr|press-release)\\/[^/]+$/.test(path))
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.sec.gov") {
+    return /^\\/litigation\\/litreleases\\/(?:\\d{4}\\/)?[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.ftc.gov") {
+    return /^\\/news-events\\/news\\/press-releases\\/[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.usmarshals.gov") {
+    return (/^\\/news\\/press-releases\\/[^/]+$/.test(path)
+      || /^\\/what-we-do\\/fugitive-investigations\\/[^/]+$/.test(path))
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.consumerfinance.gov") {
+    return /^\\/enforcement\\/(?:actions|orders|consent-orders)\\/[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.cftc.gov") {
+    return /^\\/pressroom\\/pressreleases\\/[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  if (host === "www.fdic.gov") {
+    return /^\\/news\\/press-releases\\/[^/]+$/.test(path)
+      && isSlug(segments[segments.length - 1]);
+  }
+  return false;
+}
+
 async function pollConfiguredOfficialUrls(): Promise<number> {
   const defaults = ["https://www.fbi.gov/wanted", "https://www.justice.gov/news", "https://www.sec.gov/litigation/litreleases", "https://www.ftc.gov/news-events/news/press-releases", "https://www.usmarshals.gov/what-we-do/fugitive-investigations", "https://www.consumerfinance.gov/enforcement/", "https://www.cftc.gov/PressRoom/PressReleases", "https://www.fdic.gov/consumer-resource-center"];
   const configured = [...new Set((process.env.FBI_SECURITY_MONITOR_URLS ?? defaults.join(",")).split(",").map((v) => v.trim()).filter(Boolean))].slice(0, 20);
