@@ -256,41 +256,41 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
  */
 function isIndividualNoticeUrl(url: URL): boolean {
   const host = url.hostname.toLowerCase();
-  const path = url.pathname.replace(/\\/+$/, "").toLowerCase();
+  const path = url.pathname.replace(/\/+$/, "").toLowerCase();
   const segments = path.split("/").filter(Boolean);
-  const isSlug = (value: string | undefined) => Boolean(value && !/^(index|index\\.html?|press-releases|news|enforcement|litigation|fugitives|wanted|refunds|penalty-offenses|criminal-liaison-unit|consumer-sentinel-network|rulemaking|merger-review|premerger-notification-program|consumer-resource-center)$/i.test(value));
+  const isSlug = (value: string | undefined) => Boolean(value && !/^(index|index\.html?|press-releases|news|enforcement|litigation|fugitives|wanted|refunds|penalty-offenses|criminal-liaison-unit|consumer-sentinel-network|rulemaking|merger-review|premerger-notification-program|consumer-resource-center)$/i.test(value));
   if (host === "www.fbi.gov") {
     const i = segments.indexOf("wanted");
     return i >= 0 && segments.length >= i + 3 && isSlug(segments[segments.length - 1]);
   }
   if (host === "www.justice.gov") {
-    return (/^\\/opa\\/(pr|press-release)\\/[^/]+$/.test(path)
-      || /^\\/usao-[^/]+\\/(pr|press-release)\\/[^/]+$/.test(path))
+    return (/^\/opa\/(pr|press-release)\/[^/]+$/.test(path)
+      || /^\/usao-[^/]+\/(pr|press-release)\/[^/]+$/.test(path))
       && isSlug(segments[segments.length - 1]);
   }
   if (host === "www.sec.gov") {
-    return /^\\/litigation\\/litreleases\\/(?:\\d{4}\\/)?[^/]+$/.test(path)
+    return /^\/litigation\/litreleases\/(?:\d{4}\/)?[^/]+$/.test(path)
       && isSlug(segments[segments.length - 1]);
   }
   if (host === "www.ftc.gov") {
-    return /^\\/news-events\\/news\\/press-releases\\/[^/]+$/.test(path)
+    return /^\/news-events\/news\/press-releases\/[^/]+$/.test(path)
       && isSlug(segments[segments.length - 1]);
   }
   if (host === "www.usmarshals.gov") {
-    return (/^\\/news\\/press-releases\\/[^/]+$/.test(path)
-      || /^\\/what-we-do\\/fugitive-investigations\\/[^/]+$/.test(path))
+    return (/^\/news\/press-releases\/[^/]+$/.test(path)
+      || /^\/what-we-do\/fugitive-investigations\/[^/]+$/.test(path))
       && isSlug(segments[segments.length - 1]);
   }
   if (host === "www.consumerfinance.gov") {
-    return /^\\/enforcement\\/(?:actions|orders|consent-orders)\\/[^/]+$/.test(path)
+    return /^\/enforcement\/(?:actions|orders|consent-orders)\/[^/]+$/.test(path)
       && isSlug(segments[segments.length - 1]);
   }
   if (host === "www.cftc.gov") {
-    return /^\\/pressroom\\/pressreleases\\/[^/]+$/.test(path)
+    return /^\/pressroom\/pressreleases\/[^/]+$/.test(path)
       && isSlug(segments[segments.length - 1]);
   }
   if (host === "www.fdic.gov") {
-    return /^\\/news\\/press-releases\\/[^/]+$/.test(path)
+    return /^\/news\/press-releases\/[^/]+$/.test(path)
       && isSlug(segments[segments.length - 1]);
   }
   return false;
