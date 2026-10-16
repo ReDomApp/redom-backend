@@ -248,7 +248,7 @@ async function runCaseResearch(caseId: string, title: string, officialUrl: strin
       const cooldown = await providerCooldownReason(provider.name);
       if (cooldown) {
         await pool.query(
-          \`INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,error_message)
+          `INSERT INTO redom_fbi_security_research_runs(case_id,provider,run_key,status,error_message)
            VALUES($1,$2,$3,'skipped',$4)
            ON CONFLICT(case_id,provider,run_key) DO UPDATE SET status='skipped',error_message=EXCLUDED.error_message,created_at=now()\`,
           [caseId, provider.name, runKey + ":round-" + round, cooldown],
