@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
-import { completeChat, readInferenceConfig, type ChatMessage, type ChatRequest } from "./inference.js";
+import { completeChat, readInferenceConfig } from "./inference.js";
+import { validateChatRequest } from "./validation.js";
 import { isAuthorizedBearer, parseServiceKeys, SlidingWindowLimiter } from "./security.js";
 
 const serviceKeys = parseServiceKeys(process.env.SERVICE_API_KEYS);
@@ -11,7 +12,8 @@ const limiter = new SlidingWindowLimiter(
     : 60,
   60_000,
 );
-const port = Math.min(Math.max(Number(process.env.PORT ?? 8088), 1), 65_535);
+const portValue = Number(process.env.PORT ?? "8088");
+const port = Number.isInteger(portValue) && portValue >= 1 && portValue <= 65_535 ? portValue : 8088;
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, {
@@ -27,6 +29,10 @@ function errorPayload(code: string, message: string): { error: { code: string; m
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
+  const declaredLength = Number(req.headers["content-length"] ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
+    throw Object.assign(new Error("Request body too large."), { statusCode: 413 });
+  }
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -40,33 +46,6 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   } catch {
     throw Object.assign(new Error("Request body must be valid JSON."), { statusCode: 400 });
   }
-}
-
-function validateChat(value: unknown, configuredModel: string): ChatRequest | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const body = value as Record<string, unknown>;
-  if (body.model !== undefined && body.model !== configuredModel) return null;
-  if (!Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 100) return null;
-  const messages: ChatMessage[] = [];
-  for (const item of body.messages) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-    const message = item as Record<string, unknown>;
-    if (!["system", "user", "assistant"].includes(String(message.role)) ||
-        typeof message.content !== "string" || message.content.length > 200_000) return null;
-    messages.push({ role: message.role as ChatMessage["role"], content: message.content });
-  }
-  const temperature = body.temperature;
-  if (temperature !== undefined &&
-      (typeof temperature !== "number" || !Number.isFinite(temperature) || temperature < 0 || temperature > 2)) return null;
-  const maxTokens = body.max_tokens;
-  if (maxTokens !== undefined &&
-      (typeof maxTokens !== "number" || !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32_768)) return null;
-  return {
-    model: configuredModel,
-    messages,
-    ...(temperature === undefined ? {} : { temperature: temperature as number }),
-    ...(maxTokens === undefined ? {} : { max_tokens: maxTokens as number }),
-  };
 }
 
 const server = createServer(async (req, res) => {
@@ -111,7 +90,7 @@ const server = createServer(async (req, res) => {
     }
     try {
       const body = await readJson(req);
-      const chat = validateChat(body, config.model);
+      const chat = validateChatRequest(body, config.model);
       if (!chat) {
         json(res, 400, errorPayload("INVALID_REQUEST", "Request fields are invalid or the requested model is unavailable."));
         return;
