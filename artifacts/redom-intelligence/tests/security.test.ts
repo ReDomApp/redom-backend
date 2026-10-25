@@ -36,4 +36,9 @@ test("inference config fails closed and rejects URL credentials/query strings", 
     INFERENCE_API_KEY: "key",
     INFERENCE_MODEL: "model",
   }), null);
+  assert.equal(readInferenceConfig({
+    INFERENCE_BASE_URL: "https://example.com/prefix",
+    INFERENCE_API_KEY: "key",
+    INFERENCE_MODEL: "model",
+  }), null);
 });
