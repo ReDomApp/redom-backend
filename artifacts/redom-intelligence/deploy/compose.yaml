@@ -8,10 +8,10 @@ services:
       PORT: "8088"
       SERVICE_API_KEYS: ${SERVICE_API_KEYS:?Set a long random service key}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
-      INFERENCE_BASE_URL: http://vllm:8000
-      INFERENCE_API_KEY: ${INFERENCE_API_KEY:?Set a separate inference key}
-      INFERENCE_MODEL: ${SERVED_MODEL_NAME:-redom-model}
-      INFERENCE_TIMEOUT_MS: ${INFERENCE_TIMEOUT_MS:-90000}
+      AUREX_18_BASE_URL: http://vllm:8000
+      AUREX_18_API_KEY: ${AUREX_18_API_KEY:?Set a separate inference key}
+      AUREX_18_MODEL: ${AUREX_18_MODEL:-aurex-1.8}
+      AUREX_18_TIMEOUT_MS: ${AUREX_18_TIMEOUT_MS:-90000}
     ports:
       - "127.0.0.1:8088:8088"
     depends_on:
@@ -24,7 +24,6 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
-
   vllm:
     image: vllm/vllm-openai:latest
     restart: unless-stopped
@@ -32,9 +31,9 @@ services:
       - --model
       - ${MODEL_ID:-Qwen/Qwen3-8B}
       - --served-model-name
-      - ${SERVED_MODEL_NAME:-redom-model}
+      - ${AUREX_18_MODEL:-aurex-1.8}
       - --api-key
-      - ${INFERENCE_API_KEY:?Set a separate inference key}
+      - ${AUREX_18_API_KEY:?Set a separate inference key}
       - --host
       - 0.0.0.0
       - --port
@@ -56,10 +55,8 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
 networks:
   intelligence-private:
     driver: bridge
-
 volumes:
   model-cache:
