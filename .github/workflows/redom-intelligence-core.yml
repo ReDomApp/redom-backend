@@ -1,0 +1,44 @@
+name: ReDom Intelligence Core CI
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/redom-intelligence/**"
+      - ".github/workflows/redom-intelligence-core.yml"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Typecheck, tests, and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Typecheck Intelligence Core
+        run: pnpm --filter @redom/intelligence-core typecheck
+
+      - name: Run Intelligence Core tests
+        run: pnpm --filter @redom/intelligence-core test
+
+      - name: Build Intelligence Core
+        run: pnpm --filter @redom/intelligence-core build
