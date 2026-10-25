@@ -8,6 +8,7 @@ services:
       PORT: "8088"
       SERVICE_API_KEYS: ${SERVICE_API_KEYS:?Set a long random service key}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      MAX_CONCURRENT_INFERENCE: ${MAX_CONCURRENT_INFERENCE:-8}
       BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
       OREX_BASE_URL: http://orex-vllm:8000
       OREX_API_KEY: ${OREX_API_KEY:?Set a separate OREX inference key}
