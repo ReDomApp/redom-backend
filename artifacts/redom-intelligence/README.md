@@ -19,7 +19,7 @@ These are ReDom product identities and routing slots, not claims that ReDom has 
 - Opt-in web research through `web_search: true` using the fixed Brave Search API endpoint. The model may call only the built-in search tool; arbitrary tool definitions and arbitrary URL fetches are not exposed.
 - Up to three bounded tool-call rounds per completion. Search results are treated as untrusted evidence, and source links are appended to the final answer.
 - Health: `GET /health/live` and `GET /health/ready`; readiness probes configured model endpoints.
-- Bearer service authentication with timing-safe hash comparison; pre-auth peer-IP and authenticated service-key rate limits; bounded request body and aggregate prompt size; strict JSON content type; response security headers; bounded inference/search timeouts.
+- Bearer service authentication with timing-safe hash comparison; pre-auth peer-IP and authenticated service-key rate limits; bounded concurrent inference; bounded request body and aggregate prompt size; strict JSON content type; response security headers; bounded inference/search timeouts.
 - No prompt or completion logging, no durable conversation storage, no filesystem or shell access, and no autonomous write actions.
 
 ### Web research setup
