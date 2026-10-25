@@ -105,3 +105,28 @@ export async function completeChat(
     clearTimeout(timeout);
   }
 }
+
+/** Verifies the private inference endpoint is reachable and serves the configured model. */
+export async function isInferenceReady(config: InferenceConfig, timeoutMs = 3_000): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${config.baseUrl}/v1/models`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${config.apiKey}` },
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+    const data = (payload as Record<string, unknown>).data;
+    return Array.isArray(data) && data.some((item) =>
+      Boolean(item) && typeof item === "object" &&
+      (item as Record<string, unknown>).id === config.model
+    );
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
