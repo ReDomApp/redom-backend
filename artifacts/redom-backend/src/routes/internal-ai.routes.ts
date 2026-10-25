@@ -14,14 +14,7 @@ const schema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(1).max(4096).optional(),
   conversationId: z.string().trim().min(1).max(128).optional(),
-}).strict().superRefine((value, context) => {
-  if (value.messages.reduce((n, message) => n + message.content.length, 0) > 48_000) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Request is too large." });
-  }
-  if (!value.messages.some((message) => message.role === "user")) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "A user message is required." });
-  }
-});
+}).strict();
 
 router.get("/status", authMiddleware, (_req, res) => {
   const engine = getInternalAiStatus();
@@ -42,6 +35,10 @@ router.post("/chat/completions", authMiddleware, limit, async (req, res) => {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ success: false, code: "INVALID_REQUEST", message: "Invalid internal AI request." });
+  }
+  const totalCharacters = parsed.data.messages.reduce((n, message) => n + message.content.length, 0);
+  if (totalCharacters > 48_000 || !parsed.data.messages.some((message) => message.role === "user")) {
+    return res.status(400).json({ success: false, code: "INVALID_REQUEST", message: "Request is too large or does not contain a user message." });
   }
   try {
     const result = await generateInternalAiReply(parsed.data);
