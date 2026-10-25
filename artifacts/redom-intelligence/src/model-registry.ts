@@ -9,10 +9,11 @@ export type PublicModel = {
 };
 export type ConfiguredModel = PublicModel & { inference: InferenceConfig };
 
+/** Product identities are distinct; capability labels describe intended roles, not proof of benchmark quality. */
 export const MODEL_CATALOG: PublicModel[] = [
-  { id: "aurex-1.8", name: "AUREX 1.8", description: "General-purpose intelligence", capabilities: ["chat", "writing", "research", "analysis"], envPrefix: "AUREX_18" },
-  { id: "rex-6.8", name: "REX 6.8", description: "Coding specialist", capabilities: ["chat", "coding", "debugging", "code-review"], envPrefix: "REX_68" },
-  { id: "aurex-apex", name: "AUREX Apex", description: "Premium flagship intelligence", capabilities: ["chat", "reasoning", "analysis"], envPrefix: "AUREX_APEX" },
+  { id: "orex", name: "OREX", description: "General-purpose assistant for knowledge, writing, analysis, and tool-assisted research", capabilities: ["chat", "general-knowledge", "writing", "analysis", "web-search"], envPrefix: "OREX" },
+  { id: "apex", name: "APEX", description: "Advanced reasoning and multi-step analysis", capabilities: ["chat", "reasoning", "analysis", "web-search"], envPrefix: "APEX" },
+  { id: "ultron", name: "ULTRON", description: "Software engineering, code generation, debugging, and code review", capabilities: ["chat", "coding", "debugging", "code-review"], envPrefix: "ULTRON" },
 ];
 
 function routeConfig(model: PublicModel, env: NodeJS.ProcessEnv): ConfiguredModel | null {
