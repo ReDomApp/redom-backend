@@ -40,12 +40,19 @@ test("HTTP API authenticates services and proxies only the configured model", { 
   const inferenceKey = "inference-secret-012345678901234567890123";
   const serviceKey = "service-secret-012345678901234567890123456789";
   const modelServer = createServer(async (req, res) => {
-    if (req.method !== "POST" || req.url !== "/v1/chat/completions") {
-      res.writeHead(404).end();
-      return;
-    }
     if (req.headers.authorization !== `Bearer ${inferenceKey}`) {
       res.writeHead(401).end();
+      return;
+    }
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+        object: "list",
+        data: [{ id: "redom-test", object: "model", owned_by: "mock" }],
+      }));
+      return;
+    }
+    if (req.method !== "POST" || req.url !== "/v1/chat/completions") {
+      res.writeHead(404).end();
       return;
     }
     let raw = "";
