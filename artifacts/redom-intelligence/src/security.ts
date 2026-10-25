@@ -25,11 +25,15 @@ export function isAuthorizedBearer(
 export class SlidingWindowLimiter {
   private readonly events = new Map<string, number[]>();
 
-  constructor(
-    private readonly limit: number,
-    private readonly windowMs: number,
-    private readonly maxTrackedKeys = 10_000,
-  ) {}
+  private readonly limit: number;
+  private readonly windowMs: number;
+  private readonly maxTrackedKeys: number;
+
+  constructor(limit: number, windowMs: number, maxTrackedKeys = 10_000) {
+    this.limit = limit;
+    this.windowMs = windowMs;
+    this.maxTrackedKeys = maxTrackedKeys;
+  }
 
   consume(key: string, now = Date.now()): boolean {
     const recent = (this.events.get(key) ?? []).filter((time) => now - time < this.windowMs);
