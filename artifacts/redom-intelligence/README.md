@@ -21,7 +21,7 @@ Independent AI core/backend for ReDom-owned services. This package is a separate
 4. Run `pnpm --filter @redom/intelligence-core typecheck`, `pnpm --filter @redom/intelligence-core test`, `pnpm --filter @redom/intelligence-core build`.
 5. Start with `pnpm --filter @redom/intelligence-core start`.
 
-Without valid service keys and inference configuration, readiness fails closed and model requests return 503. Generate a service key with a cryptographically secure generator, for example `openssl rand -hex 32`. Do not use the sample values as production credentials.
+Readiness checks that the configured inference server responds to `/v1/models` and advertises the configured model; it returns 503 if the engine is unreachable or the model is not ready. Model requests also return 503 when configuration is missing. Generate a service key with a cryptographically secure generator, for example `openssl rand -hex 32`. Do not use the sample values as production credentials.
 
 ## GPU deployment
 
