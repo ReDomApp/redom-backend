@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
-import { completeChat, readInferenceConfig } from "./inference.js";
+import { completeChat, isInferenceReady, readInferenceConfig } from "./inference.js";
 import { validateChatRequest } from "./validation.js";
 import { isAuthorizedBearer, parseServiceKeys, SlidingWindowLimiter } from "./security.js";
 
@@ -57,7 +57,8 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (req.method === "GET" && path === "/health/ready") {
-    const ready = serviceKeys.length > 0 && readInferenceConfig() !== null;
+    const config = readInferenceConfig();
+    const ready = serviceKeys.length > 0 && config !== null && await isInferenceReady(config);
     json(res, ready ? 200 : 503, { status: ready ? "ready" : "not_ready", service: "redom-intelligence-core" });
     return;
   }
