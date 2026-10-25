@@ -71,7 +71,7 @@ function validateChat(value: unknown, configuredModel: string): ChatRequest | nu
 
 const server = createServer(async (req, res) => {
   const requestId = randomUUID();
-  const path = new URL(req.url ?? "/", "http://localhost").pathname;
+  const path = (req.url ?? "/").split("?")[0] ?? "/";
 
   if (req.method === "GET" && path === "/health/live") {
     json(res, 200, { status: "ok", service: "redom-intelligence-core" });
