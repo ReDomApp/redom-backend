@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { completeChat, readInferenceConfig, type ChatMessage, type ChatRequest } from "./inference.js";
 import { isAuthorizedBearer, parseServiceKeys, SlidingWindowLimiter } from "./security.js";
 
@@ -87,7 +87,7 @@ const server = createServer(async (req, res) => {
     json(res, 401, errorPayload("UNAUTHORIZED", "A valid service bearer token is required."));
     return;
   }
-  const keyFingerprint = req.headers.authorization!.slice(7).trim().slice(0, 8);
+  const keyFingerprint = createHash("sha256").update(req.headers.authorization!.slice(7).trim()).digest("hex");
   if (!limiter.consume(keyFingerprint)) {
     json(res, 429, errorPayload("RATE_LIMITED", "Request rate limit exceeded."));
     return;
