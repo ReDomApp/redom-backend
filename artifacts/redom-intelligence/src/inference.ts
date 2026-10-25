@@ -18,13 +18,14 @@ export type InferenceConfig = {
 };
 
 export class InferenceError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode: number,
-    public readonly errorCode: string,
-  ) {
+  public readonly statusCode: number;
+  public readonly errorCode: string;
+
+  constructor(message: string, statusCode: number, errorCode: string) {
     super(message);
     this.name = "InferenceError";
+    this.statusCode = statusCode;
+    this.errorCode = errorCode;
   }
 }
 
