@@ -4,7 +4,7 @@ This subsystem is intentionally independent from the existing ReDom AI providers
 
 ## Boundary
 
-- API namespace: `/internal-ai` (mounted additively).
+- API namespace planned: `/internal-ai`; route module is intentionally not mounted in the application router yet.
 - Inference protocol: OpenAI-compatible `POST /v1/chat/completions` on a dedicated, privately networked model-serving endpoint.
 - No fallback to OpenAI, Gemini, existing ReDom AI services, or any other provider.
 - No database writes, user-memory persistence, tools, file access, or external actions are exposed by this initial foundation.
@@ -24,7 +24,7 @@ Until all required values exist and the feature flag is explicitly enabled, chat
 
 ## API
 
-All endpoints require the existing ReDom bearer-token authentication middleware.
+The route module is prepared to use the existing ReDom bearer-token authentication middleware, but is not reachable through the application until separately reviewed and mounted.
 
 - `GET /internal-ai/status` — configuration readiness only; does not probe the inference host.
 - `GET /internal-ai/models` — configured model catalogue.
