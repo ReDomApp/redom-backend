@@ -1,0 +1,42 @@
+services:
+  inference:
+    image: vllm/vllm-openai:latest
+    container_name: redom-internal-ai-inference
+    restart: unless-stopped
+    ipc: host
+    command:
+      - --model
+      - ${MODEL_ID:-Qwen/Qwen3-8B}
+      - --served-model-name
+      - ${SERVED_MODEL_NAME:-redom-internal-8b}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --api-key
+      - ${INTERNAL_AI_API_KEY:?Set INTERNAL_AI_API_KEY in the inference host environment}
+      - --max-model-len
+      - ${MAX_MODEL_LEN:-8192}
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    ports:
+      # Bind to loopback only. Put a private network/proxy in front for backend access.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - model-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10m
+
+volumes:
+  model-cache:
