@@ -37,7 +37,7 @@ export function readInferenceConfig(env: NodeJS.ProcessEnv = process.env): Infer
   try {
     const url = new URL(baseUrl);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (url.username || url.password || url.search || url.hash) return null;
+    if (url.username || url.password || url.search || url.hash || (url.pathname !== "" && url.pathname !== "/")) return null;
   } catch {
     return null;
   }
