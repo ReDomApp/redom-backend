@@ -10,6 +10,9 @@ const maxBodyBytes = 1_048_576;
 const limitPerMinute = Number(process.env.RATE_LIMIT_PER_MINUTE ?? "60");
 const limiter = new SlidingWindowLimiter(Number.isFinite(limitPerMinute) ? Math.min(Math.max(limitPerMinute, 1), 600) : 60, 60_000);
 const unauthenticatedLimiter = new SlidingWindowLimiter(120, 60_000, 20_000);
+const concurrencyValue = Number(process.env.MAX_CONCURRENT_INFERENCE ?? "8");
+const maxConcurrentInference = Number.isInteger(concurrencyValue) ? Math.min(Math.max(concurrencyValue, 1), 128) : 8;
+let activeInferenceRequests = 0;
 const portValue = Number(process.env.PORT ?? "8088");
 const port = Number.isInteger(portValue) && portValue >= 1 && portValue <= 65_535 ? portValue : 8088;
 
@@ -42,7 +45,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 const server = createServer(async (req, res) => {
   const requestId = randomUUID(), path = (req.url ?? "/").split("?")[0] ?? "/";
   res.setHeader("x-request-id", requestId);
-  req.setTimeout(30_000, () => { if (!res.headersSent) json(res, 408, errorPayload("REQUEST_TIMEOUT", "Request timed out.")); req.destroy(); });
+  req.setTimeout(210_000, () => { if (!res.headersSent) json(res, 408, errorPayload("REQUEST_TIMEOUT", "Request timed out.")); req.destroy(); });
   if (req.method === "GET" && path === "/health/live") { json(res, 200, { status: "ok", service: "redom-intelligence-core" }); return; }
   if (req.method === "GET" && path === "/health/ready") {
     const models = getConfiguredModels();
@@ -60,6 +63,11 @@ const server = createServer(async (req, res) => {
     json(res, 200, { object: "list", data: models.map((model) => ({ id: model.id, object: "model", owned_by: "redom", name: model.name, description: model.description, capabilities: model.capabilities })) }); return;
   }
   if (req.method === "POST" && path === "/v1/chat/completions") {
+    if (activeInferenceRequests >= maxConcurrentInference) {
+      json(res, 503, errorPayload("INFERENCE_CAPACITY_EXCEEDED", "Inference capacity is temporarily full; retry later."));
+      return;
+    }
+    activeInferenceRequests += 1;
     try {
       const body = await readJson(req);
       const requestedId = body && typeof body === "object" && !Array.isArray(body) && typeof (body as Record<string, unknown>).model === "string" ? String((body as Record<string, unknown>).model) : undefined;
@@ -74,6 +82,8 @@ const server = createServer(async (req, res) => {
       const code = error && typeof error === "object" && "errorCode" in error ? String((error as { errorCode: unknown }).errorCode) : "INTERNAL_ERROR";
       const message = error instanceof Error ? error.message : "Unexpected internal error.";
       json(res, statusCode >= 400 && statusCode <= 599 ? statusCode : 500, errorPayload(code, message));
+    } finally {
+      activeInferenceRequests = Math.max(0, activeInferenceRequests - 1);
     }
     return;
   }
