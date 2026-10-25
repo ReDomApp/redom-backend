@@ -8,14 +8,23 @@ services:
       PORT: "8088"
       SERVICE_API_KEYS: ${SERVICE_API_KEYS:?Set a long random service key}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
-      AUREX_18_BASE_URL: http://vllm:8000
-      AUREX_18_API_KEY: ${AUREX_18_API_KEY:?Set a separate inference key}
-      AUREX_18_MODEL: ${AUREX_18_MODEL:-aurex-1.8}
-      AUREX_18_TIMEOUT_MS: ${AUREX_18_TIMEOUT_MS:-90000}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+      OREX_BASE_URL: http://orex-vllm:8000
+      OREX_API_KEY: ${OREX_API_KEY:?Set a separate OREX inference key}
+      OREX_MODEL: ${OREX_MODEL:-orex}
+      OREX_TIMEOUT_MS: ${OREX_TIMEOUT_MS:-90000}
+      APEX_BASE_URL: ${APEX_BASE_URL:-}
+      APEX_API_KEY: ${APEX_API_KEY:-}
+      APEX_MODEL: ${APEX_MODEL:-}
+      APEX_TIMEOUT_MS: ${APEX_TIMEOUT_MS:-120000}
+      ULTRON_BASE_URL: ${ULTRON_BASE_URL:-}
+      ULTRON_API_KEY: ${ULTRON_API_KEY:-}
+      ULTRON_MODEL: ${ULTRON_MODEL:-}
+      ULTRON_TIMEOUT_MS: ${ULTRON_TIMEOUT_MS:-120000}
     ports:
       - "127.0.0.1:8088:8088"
     depends_on:
-      vllm:
+      orex-vllm:
         condition: service_started
     networks:
       - intelligence-private
@@ -24,16 +33,16 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
-  vllm:
+  orex-vllm:
     image: vllm/vllm-openai:latest
     restart: unless-stopped
     command:
       - --model
-      - ${MODEL_ID:-Qwen/Qwen3-8B}
+      - ${OREX_MODEL_ID:-Qwen/Qwen3-8B}
       - --served-model-name
-      - ${AUREX_18_MODEL:-aurex-1.8}
+      - ${OREX_MODEL:-orex}
       - --api-key
-      - ${AUREX_18_API_KEY:?Set a separate inference key}
+      - ${OREX_API_KEY:?Set a separate OREX inference key}
       - --host
       - 0.0.0.0
       - --port
@@ -42,7 +51,71 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       HF_HOME: /model-cache
     volumes:
-      - model-cache:/model-cache
+      - orex-model-cache:/model-cache
+    expose:
+      - "8000"
+    networks:
+      - intelligence-private
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  apex-vllm:
+    image: vllm/vllm-openai:latest
+    profiles: ["apex"]
+    restart: unless-stopped
+    command:
+      - --model
+      - ${APEX_MODEL_ID:-Qwen/Qwen3-14B}
+      - --served-model-name
+      - ${APEX_MODEL:?Set APEX_MODEL to the model's served name}
+      - --api-key
+      - ${APEX_API_KEY:?Set APEX_API_KEY}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /model-cache
+    volumes:
+      - apex-model-cache:/model-cache
+    expose:
+      - "8000"
+    networks:
+      - intelligence-private
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  ultron-vllm:
+    image: vllm/vllm-openai:latest
+    profiles: ["ultron"]
+    restart: unless-stopped
+    command:
+      - --model
+      - ${ULTRON_MODEL_ID:-Qwen/Qwen2.5-Coder-7B-Instruct}
+      - --served-model-name
+      - ${ULTRON_MODEL:?Set ULTRON_MODEL to the model's served name}
+      - --api-key
+      - ${ULTRON_API_KEY:?Set ULTRON_API_KEY}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /model-cache
+    volumes:
+      - ultron-model-cache:/model-cache
     expose:
       - "8000"
     networks:
@@ -59,4 +132,6 @@ networks:
   intelligence-private:
     driver: bridge
 volumes:
-  model-cache:
+  orex-model-cache:
+  apex-model-cache:
+  ultron-model-cache:
