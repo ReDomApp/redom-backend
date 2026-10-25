@@ -11,7 +11,7 @@ on:
       - "package.json"
       - ".github/workflows/redom-backend-check.yml"
   push:
-    branches: [main, feat/daily-ops-intelligence]
+    branches: [main, feat/daily-ops-intelligence, feat/redom-intelligence-core]
     paths:
       - "artifacts/redom-backend/**"
       - "artifacts/redom-intelligence/**"
