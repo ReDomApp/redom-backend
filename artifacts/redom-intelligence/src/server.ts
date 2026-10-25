@@ -1,0 +1,151 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
+import { completeChat, readInferenceConfig, type ChatMessage, type ChatRequest } from "./inference.js";
+import { isAuthorizedBearer, parseServiceKeys, SlidingWindowLimiter } from "./security.js";
+
+const serviceKeys = parseServiceKeys(process.env.SERVICE_API_KEYS);
+const maxBodyBytes = 1_048_576;
+const limiter = new SlidingWindowLimiter(
+  Number.isFinite(Number(process.env.RATE_LIMIT_PER_MINUTE))
+    ? Math.min(Math.max(Number(process.env.RATE_LIMIT_PER_MINUTE ?? 60), 1), 600)
+    : 60,
+  60_000,
+);
+const port = Math.min(Math.max(Number(process.env.PORT ?? 8088), 1), 65_535);
+
+function json(res: ServerResponse, status: number, payload: unknown): void {
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+  });
+  res.end(JSON.stringify(payload));
+}
+
+function errorPayload(code: string, message: string): { error: { code: string; message: string } } {
+  return { error: { code, message } };
+}
+
+async function readJson(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > maxBodyBytes) throw Object.assign(new Error("Request body too large."), { statusCode: 413 });
+    chunks.push(buffer);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } catch {
+    throw Object.assign(new Error("Request body must be valid JSON."), { statusCode: 400 });
+  }
+}
+
+function validateChat(value: unknown, configuredModel: string): ChatRequest | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  if (body.model !== undefined && body.model !== configuredModel) return null;
+  if (!Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 100) return null;
+  const messages: ChatMessage[] = [];
+  for (const item of body.messages) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    const message = item as Record<string, unknown>;
+    if (!["system", "user", "assistant"].includes(String(message.role)) ||
+        typeof message.content !== "string" || message.content.length > 200_000) return null;
+    messages.push({ role: message.role as ChatMessage["role"], content: message.content });
+  }
+  const temperature = body.temperature;
+  if (temperature !== undefined &&
+      (typeof temperature !== "number" || !Number.isFinite(temperature) || temperature < 0 || temperature > 2)) return null;
+  const maxTokens = body.max_tokens;
+  if (maxTokens !== undefined &&
+      (typeof maxTokens !== "number" || !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32_768)) return null;
+  return {
+    model: configuredModel,
+    messages,
+    ...(temperature === undefined ? {} : { temperature: temperature as number }),
+    ...(maxTokens === undefined ? {} : { max_tokens: maxTokens as number }),
+  };
+}
+
+const server = createServer(async (req, res) => {
+  const requestId = randomUUID();
+  const path = new URL(req.url ?? "/", "http://localhost").pathname;
+
+  if (req.method === "GET" && path === "/health/live") {
+    json(res, 200, { status: "ok", service: "redom-intelligence-core" });
+    return;
+  }
+  if (req.method === "GET" && path === "/health/ready") {
+    const ready = serviceKeys.length > 0 && readInferenceConfig() !== null;
+    json(res, ready ? 200 : 503, { status: ready ? "ready" : "not_ready", service: "redom-intelligence-core" });
+    return;
+  }
+
+  if (!isAuthorizedBearer(req.headers.authorization, serviceKeys)) {
+    json(res, 401, errorPayload("UNAUTHORIZED", "A valid service bearer token is required."));
+    return;
+  }
+  const keyFingerprint = req.headers.authorization!.slice(7).trim().slice(0, 8);
+  if (!limiter.consume(keyFingerprint)) {
+    json(res, 429, errorPayload("RATE_LIMITED", "Request rate limit exceeded."));
+    return;
+  }
+
+  if (req.method === "GET" && path === "/v1/models") {
+    const config = readInferenceConfig();
+    if (!config) {
+      json(res, 503, errorPayload("ENGINE_NOT_CONFIGURED", "The model engine is not configured."));
+      return;
+    }
+    json(res, 200, { object: "list", data: [{ id: config.model, object: "model", owned_by: "redom" }] });
+    return;
+  }
+
+  if (req.method === "POST" && path === "/v1/chat/completions") {
+    const config = readInferenceConfig();
+    if (!config) {
+      json(res, 503, errorPayload("ENGINE_NOT_CONFIGURED", "The model engine is not configured."));
+      return;
+    }
+    try {
+      const body = await readJson(req);
+      const chat = validateChat(body, config.model);
+      if (!chat) {
+        json(res, 400, errorPayload("INVALID_REQUEST", "Request fields are invalid or the requested model is unavailable."));
+        return;
+      }
+      const completion = await completeChat(chat, config);
+      json(res, 200, completion);
+    } catch (error) {
+      const statusCode = error && typeof error === "object" && "statusCode" in error
+        ? Number((error as { statusCode: unknown }).statusCode)
+        : 500;
+      const code = error && typeof error === "object" && "errorCode" in error
+        ? String((error as { errorCode: unknown }).errorCode)
+        : "INTERNAL_ERROR";
+      const message = error instanceof Error ? error.message : "Unexpected internal error.";
+      json(res, statusCode >= 400 && statusCode <= 599 ? statusCode : 500, errorPayload(code, message));
+    }
+    return;
+  }
+
+  json(res, 404, errorPayload("NOT_FOUND", `No route for request ${requestId}.`));
+});
+
+server.listen(port, "0.0.0.0", () => {
+  // Intentionally log only service/port; never log prompts, completions, keys, or config.
+  process.stdout.write(`ReDom Intelligence Core listening on port ${port}\n`);
+});
+
+function shutdown(signal: string): void {
+  process.stdout.write(`Received ${signal}; shutting down.\n`);
+  server.close((error) => {
+    if (error) process.exitCode = 1;
+    process.exit();
+  });
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
