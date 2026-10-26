@@ -3,7 +3,7 @@ import { z } from "zod";
 import { pool } from "../database/db";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { logger } from "../lib/logger";
-import { SmsPoolError, SmsPoolPayload, smsPoolClient } from "../services/aurelink/smspool.client";
+import { SmsPoolError, smsPoolClient, type SmsPoolPayload } from "../services/aurelink/smspool.client";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -355,11 +355,25 @@ router.post("/aurelink/carrier-lookup", authMiddleware, async (req, res) => {
 });
 
 router.get("/aurelink/esim/plans", authMiddleware, async (req, res) => {
-  try { return res.json({ success: true, plans: await smsPoolClient.esimPlans(typeof req.query.country === "string" ? req.query.country : "") }); }
+  const country = typeof req.query.country === "string" ? req.query.country : "";
+  if (!country) return res.status(400).json({ success: false, message: "Country is required for eSIM plans." });
+  try { return res.json({ success: true, plans: await smsPoolClient.esimPlans(country) }); }
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/esim/pricing", authMiddleware, async (_req, res) => {
-  try { return res.json({ success: true, pricing: await smsPoolClient.esimPricing() }); }
+  try { return res.json({ success: true, pricing: await smsPoolClient.esimPricing() });
+router.get("/aurelink/esim/profile", authMiddleware, async (req, res) => {
+  const transactionId = typeof req.query.transactionId === "string" ? req.query.transactionId : undefined;
+  try { return res.json({ success: true, profile: await smsPoolClient.esimProfile(transactionId) }); }
+  catch (error) { return providerFailure(res, error); }
+});
+router.get("/aurelink/esim/topup-plans", authMiddleware, async (req, res) => {
+  const transactionId = typeof req.query.transactionId === "string" ? req.query.transactionId : "";
+  if (!transactionId) return res.status(400).json({ success: false, message: "Transaction ID is required." });
+  try { return res.json({ success: true, plans: await smsPoolClient.esimTopupPlans(transactionId) }); }
+  catch (error) { return providerFailure(res, error); }
+});
+ }
   catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/esim/purchase", authMiddleware, async (_req, res) => {
