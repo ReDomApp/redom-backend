@@ -31,13 +31,31 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
       status VARCHAR(30) NOT NULL DEFAULT 'pending',
       provider_cost NUMERIC(12,4),
       currency CHAR(3) NOT NULL DEFAULT 'USD',
+      carrier_name TEXT,
+      line_type TEXT,
+      verification_status VARCHAR(24) NOT NULL DEFAULT 'unverified',
+      verified_at TIMESTAMPTZ,
+      sms_received_at TIMESTAMPTZ,
+      rental_started_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      last_provider_check_at TIMESTAMPTZ,
       provider_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(provider, provider_order_id)
     );
+    -- Additive migration for databases that already created the initial AURELINK schema.
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS carrier_name TEXT;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS line_type TEXT;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS verification_status VARCHAR(24) NOT NULL DEFAULT 'unverified';
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS sms_received_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS rental_started_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS last_provider_check_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS aurelink_orders_user_created_idx ON aurelink_provider_orders(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS aurelink_orders_status_idx ON aurelink_provider_orders(status);
+    CREATE INDEX IF NOT EXISTS aurelink_orders_expiry_idx ON aurelink_provider_orders(expires_at) WHERE expires_at IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS aurelink_payment_redemptions (
       payment_reference VARCHAR(100) PRIMARY KEY REFERENCES payment_transactions(reference) ON DELETE CASCADE,
