@@ -270,6 +270,7 @@ router.get("/aurelink/activations/:orderId/messages", authMiddleware, async (req
   } catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/activations/:orderId/resend", authMiddleware, async (req, res) => {
+  if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Resend is administrator-only until provider resend fees are billed to customers." });
   const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
   if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
   try {
@@ -278,6 +279,7 @@ router.post("/aurelink/activations/:orderId/resend", authMiddleware, async (req,
   } catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/activations/:orderId/cancel", authMiddleware, async (req, res) => {
+  if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Cancellation is administrator-only until customer refunds are integrated." });
   const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
   if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
   try {
@@ -396,6 +398,7 @@ router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res
   }
 });
 router.post("/aurelink/rentals/:rentalId/cancel", authMiddleware, async (req, res) => {
+  if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Cancellation is administrator-only until customer refunds are integrated." });
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try {
