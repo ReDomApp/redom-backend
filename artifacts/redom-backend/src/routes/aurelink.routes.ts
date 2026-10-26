@@ -201,7 +201,8 @@ function expiryDate(value: unknown, fallbackSeconds?: number): Date | null {
   if (fallbackSeconds !== undefined && Number.isFinite(fallbackSeconds) && fallbackSeconds > 0) return new Date(Date.now() + fallbackSeconds * 1000);
   return null;
 }
-\nasync function ownedOrder(userId: string, orderId: string, kind?: string) {
+
+async function ownedOrder(userId: string, orderId: string, kind?: string) {
   const result = await pool.query(
     "SELECT * FROM aurelink_provider_orders WHERE user_id=$1 AND provider_order_id=$2 AND ($3::text IS NULL OR product_kind=$3) LIMIT 1",
     [userId, orderId, kind ?? null],
