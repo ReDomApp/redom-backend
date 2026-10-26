@@ -524,6 +524,18 @@ export async function createAurelinkStripeCheckout(input: { userId: string; quot
     if (amountMinor <= 0n) throw new Error("Invalid AURELINK checkout amount.");
     const currency = String(quote.currency ?? "USD").toUpperCase();
     if (currency !== "USD") throw new Error("AURELINK Stripe checkout currently supports USD quotes only.");
+    const existing = await client.query(
+      "SELECT reference,checkout_url,amount_minor,currency,purpose,status FROM payment_transactions WHERE user_id=$1 AND purpose=$2 AND metadata->>'quoteId'=$3 ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
+      [input.userId, purpose, input.quoteId],
+    );
+    if (existing.rows[0]) {
+      const row = existing.rows[0];
+      if (String(row.status) === "initialized" && row.checkout_url) {
+        await client.query("COMMIT");
+        return { reference: String(row.reference), checkoutUrl: String(row.checkout_url), amountMinor: String(row.amount_minor), currency: String(row.currency), purpose: String(row.purpose) };
+      }
+      throw new Error("A payment already exists for this quote. Check its status before retrying.");
+    }
     const userResult = await client.query("SELECT email FROM users WHERE id=$1 LIMIT 1", [input.userId]);
     const email = String(userResult.rows[0]?.email ?? "").trim();
     if (!email) throw new Error("A verified email address is required for checkout.");
