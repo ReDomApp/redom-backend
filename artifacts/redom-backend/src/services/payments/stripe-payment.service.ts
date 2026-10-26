@@ -463,6 +463,10 @@ async function markStripeAbandoned(reference: string): Promise<void> {
     "UPDATE stripe_stars_checkout_attempts SET status=CASE WHEN status IN ('completed','failed_final') THEN status ELSE 'abandoned' END,updated_at=now() WHERE reference=$1",
     [reference],
   );
+  await pool.query(
+    "UPDATE payment_transactions SET status='abandoned',gateway_status='abandoned',updated_at=now() WHERE reference=$1 AND status='initialized'",
+    [reference],
+  );
 }
 
 export async function createStripeStarsCheckout(input: {
@@ -525,7 +529,7 @@ export async function createAurelinkStripeCheckout(input: { userId: string; quot
     const currency = String(quote.currency ?? "USD").toUpperCase();
     if (currency !== "USD") throw new Error("AURELINK Stripe checkout currently supports USD quotes only.");
     const existing = await client.query(
-      "SELECT reference,checkout_url,amount_minor,currency,purpose,status FROM payment_transactions WHERE user_id=$1 AND purpose=$2 AND metadata->>'quoteId'=$3 ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
+      "SELECT reference,checkout_url,amount_minor,currency,purpose,status FROM payment_transactions WHERE user_id=$1 AND purpose=$2 AND metadata->>'quoteId'=$3 AND status IN ('initialized','paid') ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
       [input.userId, purpose, input.quoteId],
     );
     if (existing.rows[0]) {
