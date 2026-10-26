@@ -38,9 +38,9 @@ test("web research tool is executed through the fixed search provider and citati
   const config: InferenceConfig = { baseUrl: "http://model.test", apiKey: "test-key", model: "actual-model", timeoutMs: 10_000 };
   try {
     const response = await completeChat({
-      model: "orex", web_search: true,
+      model: "aurex-1.8", web_search: true,
       messages: [{ role: "user", content: "What changed in version 2? Use sources." }],
-    }, config, "orex");
+    }, config, "aurex-1.8");
     const choices = response.choices as Array<{ message: { content: string } }>;
     assert.equal(modelCalls.length, 2);
     assert.match(choices[0]?.message.content ?? "", /Sources:/);
