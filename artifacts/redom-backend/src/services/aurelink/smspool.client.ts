@@ -52,12 +52,21 @@ export class SmsPoolClient {
       try { data = text ? JSON.parse(text) as SmsPoolPayload : null; }
       catch { throw new SmsPoolError("SMSPool returned a non-JSON response.", { status: response.status }); }
 
-      if (!response.ok) throw new SmsPoolError(`SMSPool request failed with HTTP ${response.status}.`, { status: response.status });
       const obj = record(data);
-      if (obj.success === 0 || obj.success === false) {
-        const type = typeof obj.type === "string" ? obj.type : "PROVIDER_REJECTED";
-        const message = typeof obj.message === "string" ? obj.message : "SMSPool rejected the request.";
-        throw new SmsPoolError(message, { status: response.status, providerType: type });
+      const type = typeof obj.type === "string" ? obj.type : "";
+      const providerMessage = typeof obj.message === "string" ? obj.message : "";
+      if (!response.ok || obj.success === 0 || obj.success === false) {
+        const friendly: Record<string, string> = {
+          OUT_OF_STOCK: "SMSPool has no available numbers for this service and country. Try another country or service.",
+          PRICE_NOT_FOUND: "SMSPool has no number available within the current price limit. Refresh pricing or choose another pool/service.",
+          BALANCE_ERROR: "SMSPool rejected the order because the account balance is insufficient. Check the SMSPool account balance.",
+          INVALID_SERVICE: "SMSPool rejected the selected service ID. Refresh the service catalog and select the service again.",
+          INVALID_COUNTRY: "SMSPool rejected the selected country ID. Refresh the country catalog and select the country again.",
+        };
+        const safeType = type || (response.status === 422 ? "VALIDATION_ERROR" : "PROVIDER_REJECTED");
+        const message = friendly[safeType] || (providerMessage ? `SMSPool rejected ${path}: ${providerMessage.slice(0, 240)}` : `SMSPool request to ${path} failed with HTTP ${response.status}.`);
+        console.warn("[SMSPool]", JSON.stringify({ path, status: response.status, type: safeType, message: providerMessage.slice(0, 240) }));
+        throw new SmsPoolError(message, { status: response.status, providerType: safeType });
       }
       return data as T;
     } catch (error) {
