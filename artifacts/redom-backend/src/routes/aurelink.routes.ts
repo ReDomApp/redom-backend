@@ -156,7 +156,52 @@ async function isRentalNonVoip(rentalId: number): Promise<boolean> {
     return false;
   } catch { return false; }
 }
-async function ownedOrder(userId: string, orderId: string, kind?: string) {
+function providerFields(value: unknown, output: Array<{ key: string; value: string }> = []): Array<{ key: string; value: string }> {
+  if (Array.isArray(value)) { for (const item of value) providerFields(item, output); return output; }
+  if (!value || typeof value !== "object") return output;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof child === "string" || typeof child === "number" || typeof child === "boolean") {
+      output.push({ key: key.toLowerCase(), value: String(child).trim() });
+    } else if (child && typeof child === "object") providerFields(child, output);
+  }
+  return output;
+}
+function carrierAssessment(value: unknown): { carrier: string | null; lineType: string | null; result: "voip" | "mobile" | "unknown" } {
+  const fields = providerFields(value);
+  const carrierField = fields.find((field) => /^(carrier|carrier_name|operator|network_name|provider_name)$/.test(field.key) && field.value && !/^(unknown|none|null|n\/a)$/i.test(field.value));
+  const typeFields = fields.filter((field) => /(type|network|line|connection|category|classification)/.test(field.key));
+  const typeText = typeFields.map((field) => field.value).join(" ").toLowerCase();
+  const allText = fields.map((field) => field.value).join(" ").toLowerCase();
+  if (/\bvoip\b|voice[ -]?over[ -]?ip|virtual[ -]?(?:number|line|phone|telephony)/i.test(typeText)) {
+    return { carrier: carrierField?.value ?? null, lineType: typeText || null, result: "voip" };
+  }
+  if (/\b(?:mobile|wireless|cellular|gsm|lte|5g|4g|3g)\b/i.test(typeText)) {
+    return { carrier: carrierField?.value ?? null, lineType: typeText || null, result: "mobile" };
+  }
+  // Some provider responses return a dedicated boolean instead of a line-type string.
+  const voipFlag = fields.find((field) => /^(is_voip|voip|virtual|is_virtual)$/.test(field.key));
+  if (voipFlag && /^(true|1|yes)$/i.test(voipFlag.value)) return { carrier: carrierField?.value ?? null, lineType: "voip", result: "voip" };
+  const mobileFlag = fields.find((field) => /^(is_mobile|mobile|wireless)$/.test(field.key));
+  if (mobileFlag && /^(true|1|yes)$/i.test(mobileFlag.value)) return { carrier: carrierField?.value ?? null, lineType: "mobile", result: "mobile" };
+  return { carrier: carrierField?.value ?? null, lineType: typeText || null, result: "unknown" };
+}
+function expiryDate(value: unknown, fallbackSeconds?: number): Date | null {
+  const direct = value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
+  const raw = direct["expires_at"] ?? direct["expiration"] ?? direct["expiry"] ?? direct["expires"];
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = new Date(raw);
+    if (Number.isFinite(parsed.getTime())) return parsed;
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric) && numeric > 0) return new Date(numeric < 100000000000 ? numeric * 1000 : numeric);
+  }
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return new Date(raw < 100000000000 ? raw * 1000 : raw);
+  const secondsRaw = direct["expires_in"] ?? direct["time_left"];
+  const seconds = typeof secondsRaw === "number" ? secondsRaw : typeof secondsRaw === "string" ? Number(secondsRaw) : NaN;
+  if (Number.isFinite(seconds) && seconds >= 0) return new Date(Date.now() + seconds * 1000);
+  if (fallbackSeconds !== undefined && Number.isFinite(fallbackSeconds) && fallbackSeconds > 0) return new Date(Date.now() + fallbackSeconds * 1000);
+  return null;
+}
+\nasync function ownedOrder(userId: string, orderId: string, kind?: string) {
   const result = await pool.query(
     "SELECT * FROM aurelink_provider_orders WHERE user_id=$1 AND provider_order_id=$2 AND ($3::text IS NULL OR product_kind=$3) LIMIT 1",
     [userId, orderId, kind ?? null],
@@ -339,11 +384,25 @@ router.post("/aurelink/activations", authMiddleware, async (req, res) => {
       await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
       throw new SmsPoolError("Provider cost exceeded the quoted maximum; the order was cancelled.", { providerType: "PRICE_GUARD" });
     }
+    // Verify the purchased number itself; country-level catalog labels are not sufficient proof.
+    let lookup: SmsPoolPayload;
+    try { lookup = await smsPoolClient.carrierLookup(phoneNumber.replace(/[+ ()-]/g, "")); }
+    catch {
+      await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
+      throw new SmsPoolError("Carrier verification failed. The number was not accepted and cancellation was requested.", { providerType: "CARRIER_LOOKUP_FAILED" });
+    }
+    const assessment = carrierAssessment(lookup);
+    if (assessment.result !== "mobile") {
+      await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
+      const reason = assessment.result === "voip" ? "SMSPool identified this number as VoIP. The number was rejected and cancellation was requested." : "SMSPool did not confirm this number as a mobile line. The number was not accepted and cancellation was requested.";
+      throw new SmsPoolError(reason, { providerType: assessment.result === "voip" ? "VOIP_NUMBER_REJECTED" : "CARRIER_TYPE_UNVERIFIED" });
+    }
+    const expiry = expiryDate(data);
     await pool.query(
-      "INSERT INTO aurelink_provider_orders (user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,provider_payload) VALUES ($1,$2,'activation',$3,$4,$5,$6,'pending',$7,$8::jsonb)",
-      [req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, JSON.stringify(provider)],
+      "INSERT INTO aurelink_provider_orders (user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,'activation',$3,$4,$5,$6,'pending',$7,$8,$9,'verified',NOW(),$10,$11::jsonb)",
+      [req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, assessment.carrier, assessment.lineType ?? "mobile", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } })],
     );
-    return res.status(201).json({ success: true, order: { orderId: providerOrderId, phoneNumber, country, service, providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresIn: data["expires_in"] ?? null } });
+    return res.status(201).json({ success: true, order: { orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
   } catch (error) {
     if (providerOrderId) await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
     await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
@@ -359,9 +418,14 @@ router.get("/aurelink/activations/:orderId/messages", authMiddleware, async (req
     const order = await ownedOrder(req.user.userId, orderId.data, "activation");
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
     const message = object(await smsPoolClient.checkSms(orderId.data));
-    if (message["status"] === 3) await pool.query("UPDATE aurelink_provider_orders SET status='completed',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1", [order["id"], JSON.stringify({ smsReceived: true })]);
-    if (message["status"] === 6) await pool.query("UPDATE aurelink_provider_orders SET status='refunded',updated_at=NOW() WHERE id=$1", [order["id"]]);
-    return res.json({ success: true, message: { status: message["status"], sms: message["sms"] ?? null, fullSms: message["full_sms"] ?? null, expiresAt: message["expiration"] ?? null, timeLeft: message["time_left"] ?? null } });
+    const arrived = message["status"] === 3 || Boolean(message["sms"] ?? message["full_sms"]);
+    const expiry = expiryDate(message);
+    const nextStatus = message["status"] === 3 ? "completed" : message["status"] === 6 ? "refunded" : undefined;
+    await pool.query(
+      "UPDATE aurelink_provider_orders SET status=COALESCE($2,status),sms_received_at=CASE WHEN $3 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,expires_at=COALESCE($4,expires_at),last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $5::jsonb WHERE id=$1",
+      [order["id"], nextStatus ?? null, arrived, expiry, JSON.stringify({ lastPoll: { status: message["status"] ?? null, smsReceived: arrived, checkedAt: new Date().toISOString() } })],
+    );
+    return res.json({ success: true, message: { status: message["status"], sms: message["sms"] ?? null, fullSms: message["full_sms"] ?? null, smsReceivedAt: arrived ? (order["sms_received_at"] ?? new Date().toISOString()) : null, expiresAt: expiry?.toISOString() ?? order["expires_at"] ?? null, timeLeft: message["time_left"] ?? null } });
   } catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/activations/:orderId/resend", authMiddleware, async (req, res) => {
@@ -389,7 +453,7 @@ router.get("/aurelink/orders", authMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try {
     const result = await pool.query(
-      "SELECT id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,currency,created_at,updated_at FROM aurelink_provider_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",
+      "SELECT id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,created_at,updated_at FROM aurelink_provider_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",
       [req.user.userId],
     );
     return res.json({ success: true, orders: result.rows });
@@ -475,11 +539,27 @@ router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
       purchasedRentalId = null;
       throw new SmsPoolError("Rental cost exceeded the quoted maximum; a refund was requested.", { providerType: "PRICE_GUARD" });
     }
+    let lookup: SmsPoolPayload;
+    try { lookup = await smsPoolClient.carrierLookup(phoneNumber.replace(/[+ ()-]/g, "")); }
+    catch {
+      await smsPoolClient.cancelRental(providerOrderId).catch(() => undefined);
+      purchasedRentalId = null;
+      throw new SmsPoolError("Carrier verification failed. The rental was not accepted and cancellation was requested.", { providerType: "CARRIER_LOOKUP_FAILED" });
+    }
+    const assessment = carrierAssessment(lookup);
+    if (assessment.result !== "mobile") {
+      await smsPoolClient.cancelRental(providerOrderId).catch(() => undefined);
+      purchasedRentalId = null;
+      const reason = assessment.result === "voip" ? "SMSPool identified this rental number as VoIP. It was rejected and cancellation was requested." : "SMSPool did not confirm this rental as a mobile line. It was not accepted and cancellation was requested.";
+      throw new SmsPoolError(reason, { providerType: assessment.result === "voip" ? "VOIP_NUMBER_REJECTED" : "CARRIER_TYPE_UNVERIFIED" });
+    }
+    const startedAt = new Date();
+    const expiry = expiryDate(data, days * 86400) ?? new Date(startedAt.getTime() + days * 86400000);
     await pool.query(
-      "INSERT INTO aurelink_provider_orders (user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,provider_payload) VALUES ($1,$2,'rental',$3,$4,$5,$6,'active',$7,$8::jsonb)",
-      [req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, String(data["country"] ?? quote?.["country"] ?? ""), serviceId ?? null, actualCost, JSON.stringify({ provider, rentalCatalogId, serviceId, days })],
+      "INSERT INTO aurelink_provider_orders (user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,carrier_name,line_type,verification_status,verified_at,rental_started_at,expires_at,provider_payload) VALUES ($1,$2,'rental',$3,$4,$5,$6,'active',$7,$8,$9,'verified',NOW(),$10,$11,$12::jsonb)",
+      [req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, String(data["country"] ?? quote?.["country"] ?? ""), serviceId ?? null, actualCost, assessment.carrier, assessment.lineType ?? "mobile", startedAt, expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() }, rentalCatalogId, serviceId, days })],
     );
-    return res.status(201).json({ success: true, rental: { rentalId: providerOrderId, phoneNumber, days, providerCostUsd: actualCost, details: provider } });
+    return res.status(201).json({ success: true, rental: { rentalId: providerOrderId, phoneNumber, days, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), startedAt: startedAt.toISOString(), expiresAt: expiry.toISOString(), providerCostUsd: actualCost, details: provider } });
   } catch (error) {
     if (purchasedRentalId) await smsPoolClient.cancelRental(purchasedRentalId).catch(() => undefined);
     if (paymentReserved) await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
@@ -491,16 +571,34 @@ router.get("/aurelink/rentals/:rentalId/messages", authMiddleware, async (req, r
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try {
-    if (!await ownedOrder(req.user.userId, rentalId.data, "rental")) return res.status(404).json({ success: false, message: "Rental not found." });
-    return res.json({ success: true, messages: await smsPoolClient.rentalMessages(rentalId.data) });
+    const order = await ownedOrder(req.user.userId, rentalId.data, "rental");
+    if (!order) return res.status(404).json({ success: false, message: "Rental not found." });
+    const messages = await smsPoolClient.rentalMessages(rentalId.data);
+    const hasMessage = providerFields(messages).some((field) => /^(sms|message|full_sms|message_body|body|code)$/.test(field.key) && field.value.length > 0);
+    const expiry = expiryDate(messages);
+    await pool.query(
+      "UPDATE aurelink_provider_orders SET sms_received_at=CASE WHEN $2 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,expires_at=COALESCE($3,expires_at),last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $4::jsonb WHERE id=$1",
+      [order["id"], hasMessage, expiry, JSON.stringify({ lastMessagePoll: { hasMessage, checkedAt: new Date().toISOString() } })],
+    );
+    return res.json({ success: true, messages, smsReceivedAt: hasMessage ? (order["sms_received_at"] ?? new Date().toISOString()) : null, expiresAt: expiry?.toISOString() ?? order["expires_at"] ?? null });
   } catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/rentals/:rentalId/status", authMiddleware, async (req, res) => {
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try {
-    if (!await ownedOrder(req.user.userId, rentalId.data, "rental")) return res.status(404).json({ success: false, message: "Rental not found." });
-    return res.json({ success: true, status: await smsPoolClient.rentalStatus(rentalId.data) });
+    const order = await ownedOrder(req.user.userId, rentalId.data, "rental");
+    if (!order) return res.status(404).json({ success: false, message: "Rental not found." });
+    const status = await smsPoolClient.rentalStatus(rentalId.data);
+    const statusFields = providerFields(status);
+    const rawStatus = statusFields.find((field) => field.key === "status")?.value.toLowerCase();
+    const nextStatus = rawStatus && /expired|cancelled|refunded|active|completed/.test(rawStatus) ? rawStatus : null;
+    const expiry = expiryDate(status);
+    await pool.query(
+      "UPDATE aurelink_provider_orders SET status=COALESCE($2,status),expires_at=COALESCE($3,expires_at),last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $4::jsonb WHERE id=$1",
+      [order["id"], nextStatus, expiry, JSON.stringify({ lastStatusPoll: { status: rawStatus ?? null, checkedAt: new Date().toISOString() } })],
+    );
+    return res.json({ success: true, status, expiresAt: expiry?.toISOString() ?? order["expires_at"] ?? null });
   } catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res) => {
@@ -532,8 +630,8 @@ router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res
     const renewal = await smsPoolClient.renewRental(rentalId.data, parsed.data.days);
     renewalSucceeded = true;
     await pool.query(
-      "UPDATE aurelink_provider_orders SET provider_cost=COALESCE(provider_cost,0)+$2,updated_at=NOW(),provider_payload=provider_payload || $3::jsonb WHERE id=$1",
-      [rental["id"], providerMaxPrice, JSON.stringify({ lastRenewal: renewal, renewedDays: parsed.data.days })],
+      "UPDATE aurelink_provider_orders SET provider_cost=COALESCE(provider_cost,0)+$2,expires_at=COALESCE(expires_at,NOW())+($4::text||' days')::interval,updated_at=NOW(),provider_payload=provider_payload || $3::jsonb WHERE id=$1",
+      [rental["id"], providerMaxPrice, JSON.stringify({ lastRenewal: renewal, renewedDays: parsed.data.days, renewedAt: new Date().toISOString() }), String(parsed.data.days)],
     );
     return res.json({ success: true, renewal });
   } catch (error) {
