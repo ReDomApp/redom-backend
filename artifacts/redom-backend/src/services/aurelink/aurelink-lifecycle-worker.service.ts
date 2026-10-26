@@ -58,7 +58,7 @@ async function pollActivation(order: Record<string, unknown>): Promise<void> {
   );
   if ((nextStatus === "completed" && previous !== "completed") || (nextStatus === "refunded" && previous !== "refunded")) {
     const amount = scalarFields(response).find((field) => /^(refund_amount|amount_refunded|refunded_amount)$/.test(field.key) && Number(field.value) > 0)?.value ?? null;
-    await sendAurelinkFinalReceipt({ ...order, provider_payload: { ...asRecord(order["provider_payload"]), lastPoll: response } }, nextStatus === "completed" ? "Completed" : "Refunded", nextStatus === "refunded" ? amount : null);
+    await sendAurelinkFinalReceipt({ ...order, provider_payload: { ...asRecord(order["provider_payload"]), lastPoll: response } }, nextStatus === "completed" ? "Completed" : "Refunded", nextStatus === "refunded" ? (amount ?? (order["provider_cost"] !== null && order["provider_cost"] !== undefined ? String(order["provider_cost"]) : null)) : null);
   }
 }
 async function pollRental(order: Record<string, unknown>): Promise<void> {
@@ -93,7 +93,7 @@ export async function runAurelinkLifecyclePoll(): Promise<void> {
       "UPDATE aurelink_provider_orders SET status='expired',updated_at=NOW() WHERE product_kind='rental' AND status='active' AND expires_at IS NOT NULL AND expires_at<=NOW()",
     );
     const result = await pool.query(
-      "SELECT * FROM aurelink_provider_orders WHERE product_kind IN ('activation','rental') AND status IN ('pending','active') AND (last_provider_check_at IS NULL OR last_provider_check_at<NOW()-($2::text||' milliseconds')::interval) ORDER BY COALESCE(last_provider_check_at,created_at) ASC LIMIT $1",
+      "SELECT * FROM aurelink_provider_orders WHERE product_kind IN ('activation','rental') AND status IN ('pending','active','cancelled') AND (last_provider_check_at IS NULL OR last_provider_check_at<NOW()-($2::text||' milliseconds')::interval) ORDER BY COALESCE(last_provider_check_at,created_at) ASC LIMIT $1",
       [BATCH_SIZE, String(Math.max(10_000, INTERVAL_MS - 5_000))],
     );
     for (const order of result.rows as Array<Record<string, unknown>>) {
