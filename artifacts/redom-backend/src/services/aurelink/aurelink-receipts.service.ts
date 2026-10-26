@@ -36,11 +36,11 @@ export async function sendAurelinkFinalReceipt(order: OrderRecord, status: "Comp
     const payload = record(order.provider_payload);
     const orderId = String(payload.adminOrderId ?? order.orderId ?? order.provider_order_id ?? "—");
     const serial = String(payload.serialNumber ?? order.serialNumber ?? "—");
-    const amount = status === "Refunded" ? (refundedAmount ?? valueFor(order.provider_payload, ["refund_amount", "refunded_amount", "amount_refunded", "refund"]) ?? (order.provider_cost !== null && order.provider_cost !== undefined ? String(order.provider_cost) : null)) : null;
+    const amount = status === "Refunded" ? (refundedAmount ?? valueFor(order.provider_payload, ["refund_amount", "refunded_amount", "amount_refunded", "refund"])) : null;
     const rows: Array<[string, unknown]> = [
       ["Order ID", orderId], ["Serial number", serial], ["Phone number", order.phone_number ?? order.phoneNumber],
       ["Country", order.country], ["Service", order.service], ["Final status", status],
-      ...(status === "Refunded" ? [["Refund amount", amount ?? "Not confirmed by provider; contact support"] as [string, unknown]] : []),
+      ...(status === "Refunded" ? [["Refund amount", amount ?? "Refund confirmed by provider; exact amount was not supplied in the response"] as [string, unknown]] : []),
       ["Provider order", order.provider_order_id], ["Carrier", order.carrier_name], ["Line type", order.line_type],
     ];
     const html = "<h2>AURELINK Admin — " + esc(status) + " receipt</h2><table>" + rows.map(([label, value]) => "<tr><td style=\"padding:8px;border-bottom:1px solid #ddd\"><b>" + esc(label) + "</b></td><td style=\"padding:8px;border-bottom:1px solid #ddd\">" + esc(value) + "</td></tr>").join("") + "</table><p>This receipt reflects the final status recorded by AURELINK.</p>";
