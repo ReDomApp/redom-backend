@@ -32,15 +32,14 @@ async function isServiceAllowed(service: string): Promise<boolean> {
   let serviceId = normalized;
   if (/^[0-9]+$/.test(normalized)) {
     try {
-      const entries = serviceEntries(await smsPoolClient.services());
-      const match = entries.find((entry) => entry.id === normalized);
+      const match = serviceEntries(await smsPoolClient.services()).find((entry) => entry.id === normalized);
       if (!match) return false;
       serviceName = match.name;
       serviceId = match.id;
     } catch { return false; }
   }
   if (/bank|crypto|exchange|government|telecom|carrier/.test(serviceName)) return false;
-  if (serviceName === "whatsapp" && process.env.SMSPOOL_WHATSAPP_APPROVED !== "true") return false;
+  if (serviceName.includes("whatsapp") && process.env.SMSPOOL_WHATSAPP_APPROVED !== "true") return false;
   return configured.has(normalized) || configured.has(serviceName) || configured.has(serviceId);
 }
 function adminAllowed(req: Request): boolean {
@@ -50,9 +49,8 @@ function adminAllowed(req: Request): boolean {
 function providerFailure(res: Response, error: unknown): Response {
   if (error instanceof SmsPoolError) {
     const status = error.providerType === "NOT_CONFIGURED" ? 503
-      : error.providerType === "OUT_OF_STOCK" ? 409
+      : error.providerType === "OUT_OF_STOCK" || error.providerType === "PRICE_NOT_FOUND" ? 409
       : error.providerType === "BALANCE_ERROR" ? 402
-      : error.providerType === "PRICE_NOT_FOUND" ? 409
       : error.status === 429 ? 429 : 502;
     logger.warn({ provider: "smspool", status, providerType: error.providerType }, "AURELINK provider request failed");
     return res.status(status).json({ success: false, message: error.message, code: error.providerType ?? "SMSPOOL_ERROR" });
@@ -74,6 +72,11 @@ function pricesIn(value: unknown, output: number[] = []): number[] {
   }
   return output;
 }
+function retailPriceMinor(providerPrice: number): number {
+  const markupPercent = Math.max(0, Number(process.env.AURELINK_MARKUP_PERCENT ?? "35"));
+  const fixedFeeMinor = Math.max(0, Math.round(Number(process.env.AURELINK_FIXED_FEE_USD_CENTS ?? "20")));
+  return Math.ceil(providerPrice * USD_MINOR * (1 + markupPercent / 100)) + fixedFeeMinor;
+}
 async function ownedOrder(userId: string, orderId: string, kind?: string) {
   const result = await pool.query(
     "SELECT * FROM aurelink_provider_orders WHERE user_id=$1 AND provider_order_id=$2 AND ($3::text IS NULL OR product_kind=$3) LIMIT 1",
@@ -83,14 +86,14 @@ async function ownedOrder(userId: string, orderId: string, kind?: string) {
 }
 
 router.get("/aurelink/status", authMiddleware, (_req, res) => {
-  res.json({
+  return res.json({
     success: true,
     provider: "smspool",
     configured: Boolean(process.env.SMSPOOL_API_KEY?.trim()),
     allowedServices: [...allowedServices()],
     whatsappApproved: process.env.SMSPOOL_WHATSAPP_APPROVED === "true",
-    features: { oneTimeSms: true, rentals: true, carrierLookup: true, esim: true, voiceAndFlash: true },
-    note: "eSIM products are data-only; they do not provide a phone number.",
+    features: { oneTimeSms: true, rentals: true, carrierLookup: true, esimCatalog: true, esimPurchaseEnabled: false, voiceAndFlash: true },
+    note: "SMSPool eSIMs are data-only and do not provide a phone number.",
   });
 });
 
@@ -99,6 +102,7 @@ router.get("/aurelink/provider/balance", authMiddleware, async (req, res) => {
   try { return res.json({ success: true, balance: await smsPoolClient.balance() }); }
   catch (error) { return providerFailure(res, error); }
 });
+
 router.get("/aurelink/catalog/services", authMiddleware, async (_req, res) => {
   try { return res.json({ success: true, services: await smsPoolClient.services() }); }
   catch (error) { return providerFailure(res, error); }
@@ -108,22 +112,7 @@ router.get("/aurelink/catalog/countries", authMiddleware, async (_req, res) => {
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/pools", authMiddleware, async (_req, res) => {
-  try { return res.json({ success: true, pools: await smsPoolClient.pools() });
-router.get("/aurelink/catalog/rentals", authMiddleware, async (req, res) => {
-  const parsed = z.object({ extendable: z.enum(["0", "1"]).default("1") }).safeParse(req.query);
-  if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid rental catalog request." });
-  try { return res.json({ success: true, rentals: await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0) }); }
-  catch (error) { return providerFailure(res, error); }
-});
-router.get("/aurelink/catalog/rentals/:rentalId/pricing", authMiddleware, async (req, res) => {
-  const id = z.string().regex(/^\d+$/).safeParse(req.params.rentalId);
-  const service = typeof req.query.service === "string" ? req.query.service : undefined;
-  if (!id.success) return res.status(400).json({ success: false, message: "Invalid rental ID." });
-  if (service && !await isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  try { return res.json({ success: true, pricing: await smsPoolClient.rentalPricing(id.data, service) }); }
-  catch (error) { return providerFailure(res, error); }
-});
- }
+  try { return res.json({ success: true, pools: await smsPoolClient.pools() }); }
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/pricing", authMiddleware, async (req, res) => {
@@ -136,7 +125,13 @@ router.get("/aurelink/catalog/pricing", authMiddleware, async (req, res) => {
     return res.json({ success: true, pricing, lowestDetectedPrice: prices.length ? Math.min(...prices) : null, currency: "USD" });
   } catch (error) { return providerFailure(res, error); }
 });
-
+router.get("/aurelink/catalog/stock", authMiddleware, async (req, res) => {
+  const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
+  if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  try { return res.json({ success: true, stock: await smsPoolClient.stock(parsed.data) }); }
+  catch (error) { return providerFailure(res, error); }
+});
 router.get("/aurelink/catalog/suggested-countries", authMiddleware, async (req, res) => {
   const service = typeof req.query.service === "string" ? req.query.service : "";
   if (!service) return res.status(400).json({ success: false, message: "Service is required." });
@@ -160,11 +155,24 @@ router.get("/aurelink/catalog/valid-pools", authMiddleware, async (req, res) => 
   try { return res.json({ success: true, pools: await smsPoolClient.validPools(service, country) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/stock", authMiddleware, async (req, res) => {
-  const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
-  if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
-  if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  try { return res.json({ success: true, stock: await smsPoolClient.stock(parsed.data) }); }
+router.get("/aurelink/catalog/rentals", authMiddleware, async (req, res) => {
+  const parsed = z.object({ extendable: z.enum(["0", "1"]).default("1") }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid rental catalog request." });
+  try { return res.json({ success: true, rentals: await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0) }); }
+  catch (error) { return providerFailure(res, error); }
+});
+router.get("/aurelink/catalog/rentals/:rentalId/services", authMiddleware, async (req, res) => {
+  const id = z.string().regex(/^[0-9]+$/).safeParse(req.params.rentalId);
+  if (!id.success) return res.status(400).json({ success: false, message: "Invalid rental ID." });
+  try { return res.json({ success: true, services: await smsPoolClient.rentalServices(id.data) }); }
+  catch (error) { return providerFailure(res, error); }
+});
+router.get("/aurelink/catalog/rentals/:rentalId/pricing", authMiddleware, async (req, res) => {
+  const id = z.string().regex(/^[0-9]+$/).safeParse(req.params.rentalId);
+  const service = typeof req.query.service === "string" ? req.query.service : undefined;
+  if (!id.success) return res.status(400).json({ success: false, message: "Invalid rental ID." });
+  if (service && !await isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  try { return res.json({ success: true, pricing: await smsPoolClient.rentalPricing(id.data, service) }); }
   catch (error) { return providerFailure(res, error); }
 });
 
@@ -182,12 +190,10 @@ router.post("/aurelink/quotes", authMiddleware, async (req, res) => {
     const prices = pricesIn(providerPricing);
     if (!prices.length) return res.status(502).json({ success: false, message: "SMSPool returned pricing that could not be normalized. No quote was created." });
     const providerMaxPrice = Math.min(...prices);
-    const markupPercent = Math.max(0, Number(process.env.AURELINK_MARKUP_PERCENT ?? "35"));
-    const fixedFeeMinor = Math.max(0, Math.round(Number(process.env.AURELINK_FIXED_FEE_USD_CENTS ?? "20")));
-    const retailAmountMinor = Math.ceil(providerMaxPrice * USD_MINOR * (1 + markupPercent / 100)) + fixedFeeMinor;
+    const retailAmountMinor = retailPriceMinor(providerMaxPrice);
     const result = await pool.query(
-      "INSERT INTO aurelink_quotes (user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,$2,$3,$4,$5,$6,'USD',$7::jsonb,NOW()+($8::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
-      [req.user.userId, parsed.data.kind, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify(providerPricing), String(quoteTtlMinutes)],
+      "INSERT INTO aurelink_quotes (user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
+      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify(providerPricing), String(quoteTtlMinutes)],
     );
     return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
@@ -220,10 +226,8 @@ router.post("/aurelink/activations", authMiddleware, async (req, res) => {
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
-    client.release();
     return providerFailure(res, error);
-  }
-  client.release();
+  } finally { client.release(); }
 
   try {
     const service = String(quote["service"]);
@@ -263,7 +267,6 @@ router.get("/aurelink/activations/:orderId/messages", authMiddleware, async (req
     return res.json({ success: true, message: { status: message["status"], sms: message["sms"] ?? null, fullSms: message["full_sms"] ?? null, expiresAt: message["expiration"] ?? null, timeLeft: message["time_left"] ?? null } });
   } catch (error) { return providerFailure(res, error); }
 });
-
 router.post("/aurelink/activations/:orderId/resend", authMiddleware, async (req, res) => {
   const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
   if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
@@ -304,14 +307,13 @@ router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental request." });
   if (parsed.data.serviceId && !await isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   let paymentReserved = false;
+  let purchasedRentalId: string | null = null;
   try {
     const stock = await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days);
     const prices = pricesIn(stock);
     if (!prices.length) return res.status(409).json({ success: false, message: "SMSPool did not return a live price for this rental duration." });
     const providerMaxPrice = Math.min(...prices);
-    const markupPercent = Math.max(0, Number(process.env.AURELINK_MARKUP_PERCENT ?? "35"));
-    const fixedFeeMinor = Math.max(0, Math.round(Number(process.env.AURELINK_FIXED_FEE_USD_CENTS ?? "20")));
-    const retailAmountMinor = Math.ceil(providerMaxPrice * USD_MINOR * (1 + markupPercent / 100)) + fixedFeeMinor;
+    const retailAmountMinor = retailPriceMinor(providerMaxPrice);
     const redemption = await pool.query(
       "INSERT INTO aurelink_payment_redemptions (payment_reference,user_id,product_kind) SELECT reference,user_id,'rental' FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_rental' AND currency='USD' AND amount_minor >= $3 ON CONFLICT DO NOTHING RETURNING payment_reference",
       [parsed.data.paymentReference, req.user.userId, String(retailAmountMinor)],
@@ -323,6 +325,7 @@ router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
     const providerOrderId = String(data["rental_code"] ?? data["rental_id"] ?? data["order_id"] ?? "");
     const phoneNumber = String(data["phonenumber"] ?? data["number"] ?? "");
     if (!providerOrderId || !phoneNumber) throw new SmsPoolError("SMSPool returned an incomplete rental response.", { providerType: "INVALID_PROVIDER_RESPONSE" });
+    purchasedRentalId = providerOrderId;
     const actualCost = Number(data["cost"] ?? providerMaxPrice);
     if (!Number.isFinite(actualCost) || actualCost > providerMaxPrice) {
       await smsPoolClient.cancelRental(providerOrderId).catch(() => undefined);
@@ -334,6 +337,7 @@ router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
     );
     return res.status(201).json({ success: true, rental: { rentalId: providerOrderId, phoneNumber, days: parsed.data.days, providerCostUsd: actualCost, details: provider } });
   } catch (error) {
+    if (purchasedRentalId) await smsPoolClient.cancelRental(purchasedRentalId).catch(() => undefined);
     if (paymentReserved) await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
     return providerFailure(res, error);
   }
@@ -342,8 +346,7 @@ router.get("/aurelink/rentals/:rentalId/messages", authMiddleware, async (req, r
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try {
-    const rental = await ownedOrder(req.user.userId, rentalId.data, "rental");
-    if (!rental) return res.status(404).json({ success: false, message: "Rental not found." });
+    if (!await ownedOrder(req.user.userId, rentalId.data, "rental")) return res.status(404).json({ success: false, message: "Rental not found." });
     return res.json({ success: true, messages: await smsPoolClient.rentalMessages(rentalId.data) });
   } catch (error) { return providerFailure(res, error); }
 });
@@ -351,8 +354,7 @@ router.get("/aurelink/rentals/:rentalId/status", authMiddleware, async (req, res
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try {
-    const rental = await ownedOrder(req.user.userId, rentalId.data, "rental");
-    if (!rental) return res.status(404).json({ success: false, message: "Rental not found." });
+    if (!await ownedOrder(req.user.userId, rentalId.data, "rental")) return res.status(404).json({ success: false, message: "Rental not found." });
     return res.json({ success: true, status: await smsPoolClient.rentalStatus(rentalId.data) });
   } catch (error) { return providerFailure(res, error); }
 });
@@ -392,7 +394,9 @@ router.get("/aurelink/esim/plans", authMiddleware, async (req, res) => {
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/esim/pricing", authMiddleware, async (_req, res) => {
-  try { return res.json({ success: true, pricing: await smsPoolClient.esimPricing() });
+  try { return res.json({ success: true, pricing: await smsPoolClient.esimPricing() }); }
+  catch (error) { return providerFailure(res, error); }
+});
 router.get("/aurelink/esim/profile", authMiddleware, async (req, res) => {
   const transactionId = typeof req.query.transactionId === "string" ? req.query.transactionId : undefined;
   try { return res.json({ success: true, profile: await smsPoolClient.esimProfile(transactionId) }); }
@@ -404,11 +408,8 @@ router.get("/aurelink/esim/topup-plans", authMiddleware, async (req, res) => {
   try { return res.json({ success: true, plans: await smsPoolClient.esimTopupPlans(transactionId) }); }
   catch (error) { return providerFailure(res, error); }
 });
- }
-  catch (error) { return providerFailure(res, error); }
-});
 router.post("/aurelink/esim/purchase", authMiddleware, async (_req, res) => {
-  return res.status(501).json({ success: false, message: "eSIM purchases are disabled until the SMSPool plan catalog and payment reconciliation are verified. SMSPool eSIMs are data-only and do not include a phone number." });
+  return res.status(501).json({ success: false, message: "eSIM purchases are disabled until payment reconciliation is implemented. SMSPool eSIMs are data-only and do not include a phone number." });
 });
 
 export default router;
