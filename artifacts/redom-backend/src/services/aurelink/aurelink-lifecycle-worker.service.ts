@@ -39,7 +39,7 @@ function expiryFrom(value: unknown): Date | null {
   return null;
 }
 function containsSms(value: unknown): boolean {
-  return scalarFields(value).some((field) => /^(sms|full_sms|message_body|message|body|code)$/.test(field.key) && field.value.length > 0);
+  return scalarFields(value).some((field) => /^(sms|full_sms|message_body|code)$/.test(field.key) && field.value.length > 0);
 }
 
 async function pollActivation(order: Record<string, unknown>): Promise<void> {
