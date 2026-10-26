@@ -22,8 +22,8 @@ All routes require a valid ReDom access token unless noted otherwise. They are s
 - `GET /aurelink/catalog/services`
 - `GET /aurelink/catalog/countries`
 - `GET /aurelink/catalog/pools`
-- `GET /aurelink/catalog/pricing?country=US&service=1`
-- `GET /aurelink/catalog/stock?country=US&service=1`
+- `GET /aurelink/catalog/pricing?country=<SMSPool-country-ID>&service=1`
+- `GET /aurelink/catalog/stock?country=<SMSPool-country-ID>&service=1`
 - `GET /aurelink/catalog/suggested-countries?service=1`
 - `GET /aurelink/catalog/success-rate?service=1&country=US`
 - `GET /aurelink/catalog/valid-pools?service=1&country=US`
@@ -78,7 +78,7 @@ The example markup is a configurable default, not a recommended retail price. Th
 
 ## Safety, pricing and provider restrictions
 
-- The API key is only sent from the server to SMSPool in form-encoded POST bodies.
+- The API key is only sent from the server to SMSPool in form-encoded POST bodies. The country catalog filters labels containing `Virtual`/`VoIP`, and order/quote endpoints fail closed unless the selected country can be matched to the provider catalog as non-VoIP. The frontend should use the provider country ID returned by the filtered catalog.
 - Every order is associated with the authenticated user in PostgreSQL; reads, cancellation, resend and rental management enforce ownership.
 - Purchase endpoints require a paid transaction and a live price guard. Provider orders are not placed when a matching paid transaction cannot be found.
 - Services must be explicitly allowlisted. Banking, crypto exchange, government and telecom verification are denied by the service filter. WhatsApp remains disabled unless `SMSPOOL_WHATSAPP_APPROVED=true`.
