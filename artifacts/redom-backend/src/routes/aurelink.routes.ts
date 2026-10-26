@@ -140,15 +140,17 @@ async function isCountryNonVoip(country: string): Promise<boolean> {
 }
 async function isRentalNonVoip(rentalId: number): Promise<boolean> {
   try {
-    const catalog = await smsPoolClient.rentals(1);
-    const rows = catalog !== null && typeof catalog === "object" ? catalog as Record<string, unknown> : {};
-    for (const [key, value] of Object.entries(rows)) {
-      if (!value || typeof value !== "object") continue;
-      const row = value as Record<string, unknown>;
-      const id = String(row["ID"] ?? row["id"] ?? key);
-      if (id === String(rentalId)) {
-        const name = String(row["name"] ?? row["country"] ?? "").toLowerCase();
-        return Boolean(name && !/virtual|voip/.test(name));
+    const catalogs = await Promise.all([smsPoolClient.rentals(1), smsPoolClient.rentals(0)]);
+    for (const catalog of catalogs) {
+      const rows = catalog !== null && typeof catalog === "object" ? catalog as Record<string, unknown> : {};
+      for (const [key, value] of Object.entries(rows)) {
+        if (!value || typeof value !== "object") continue;
+        const row = value as Record<string, unknown>;
+        const id = String(row["ID"] ?? row["id"] ?? key);
+        if (id === String(rentalId)) {
+          const name = String(row["name"] ?? row["country"] ?? "").toLowerCase();
+          return Boolean(name && !/virtual|voip/.test(name));
+        }
       }
     }
     return false;
@@ -396,7 +398,7 @@ router.get("/aurelink/orders", authMiddleware, async (req, res) => {
 
 router.post("/aurelink/rental-quotes", authMiddleware, async (req, res) => {
   const parsed = z.object({
-    rentalId: z.number().int().positive(),
+    rentalId: z.number().int().min(0),
     days: z.number().int().min(1).max(365),
     serviceId: z.string().max(100).optional(),
   }).safeParse(req.body);
@@ -459,7 +461,7 @@ router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
     if (!await isRentalNonVoip(rentalCatalogId)) throw new SmsPoolError("Rental inventory is not confirmed as non-VoIP mobile inventory.", { providerType: "COUNTRY_NOT_VERIFIED" });
     const days = Number(quoteMetadata?.["days"]);
     const serviceId = quoteMetadata?.["serviceId"] == null ? undefined : String(quoteMetadata["serviceId"]);
-    if (!Number.isInteger(rentalCatalogId) || rentalCatalogId <= 0 || !Number.isInteger(days) || days <= 0) throw new SmsPoolError("Rental quote is missing its provider metadata.", { providerType: "INVALID_QUOTE" });
+    if (!Number.isInteger(rentalCatalogId) || rentalCatalogId < 0 || !Number.isInteger(days) || days <= 0) throw new SmsPoolError("Rental quote is missing its provider metadata.", { providerType: "INVALID_QUOTE" });
     const provider = await smsPoolClient.purchaseRental({ id: rentalCatalogId, days, service_id: serviceId });
     const data = object(provider);
     const providerOrderId = String(data["rental_code"] ?? data["rental_id"] ?? data["order_id"] ?? "");
