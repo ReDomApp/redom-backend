@@ -46,9 +46,12 @@ async function pollActivation(order: Record<string, unknown>): Promise<void> {
   const response = await smsPoolClient.checkSms(String(order["provider_order_id"]));
   const data = asRecord(response as SmsPoolPayload);
   const status = data["status"];
+  const statusText = String(status ?? "").toLowerCase().trim();
   const smsArrived = status === 3 || status === "3" || containsSms(response);
-  const nextStatus = status === 3 || status === "3" ? "completed"
-    : status === 6 || status === "6" ? "refunded"
+  const nextStatus = status === 3 || status === "3" || smsArrived ? "completed"
+    : status === 6 || status === "6" || statusText === "refunded" ? "refunded"
+    : /^(cancelled|canceled)$/.test(statusText) ? "cancelled"
+    : /^(expired|timeout|timed out)$/.test(statusText) ? "expired"
     : null;
   const expiry = expiryFrom(response);
   const previous = String(order["status"] ?? "").toLowerCase();
@@ -56,9 +59,10 @@ async function pollActivation(order: Record<string, unknown>): Promise<void> {
     "UPDATE aurelink_provider_orders SET status=COALESCE($2,status),sms_received_at=CASE WHEN $3 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,expires_at=COALESCE($4,expires_at),last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $5::jsonb WHERE id=$1",
     [order["id"], nextStatus, smsArrived, expiry, JSON.stringify({ lifecyclePoll: { status: status ?? null, smsReceived: smsArrived, checkedAt: new Date().toISOString() }, lastPoll: response })],
   );
-  if ((nextStatus === "completed" && previous !== "completed") || (nextStatus === "refunded" && previous !== "refunded")) {
-    const amount = scalarFields(response).find((field) => /^(refund_amount|amount_refunded|refunded_amount)$/.test(field.key) && Number(field.value) > 0)?.value ?? null;
-    await sendAurelinkFinalReceipt({ ...order, provider_payload: { ...asRecord(order["provider_payload"]), lastPoll: response } }, nextStatus === "completed" ? "Completed" : "Refunded", nextStatus === "refunded" ? (amount ?? (order["provider_cost"] !== null && order["provider_cost"] !== undefined ? String(order["provider_cost"]) : null)) : null);
+  if (nextStatus && nextStatus !== previous && ["completed", "refunded", "cancelled", "expired"].includes(nextStatus)) {
+    const amount = scalarFields(response).find((field) => /^(refund_amount|amount_refunded|refunded_amount)$/.test(field.key) && Number(field.value) >= 0)?.value ?? null;
+    const finalPayload = { ...asRecord(order["provider_payload"]), lastPoll: response };
+    await sendAurelinkFinalReceipt({ ...order, status: nextStatus, provider_payload: finalPayload }, nextStatus === "completed" ? "Completed" : nextStatus === "refunded" ? "Refunded" : nextStatus === "cancelled" ? "Canceled" : "Expired", nextStatus === "refunded" ? amount : null);
   }
 }
 async function pollRental(order: Record<string, unknown>): Promise<void> {
@@ -93,7 +97,7 @@ export async function runAurelinkLifecyclePoll(): Promise<void> {
       "UPDATE aurelink_provider_orders SET status='expired',updated_at=NOW() WHERE product_kind='rental' AND status='active' AND expires_at IS NOT NULL AND expires_at<=NOW()",
     );
     const result = await pool.query(
-      "SELECT * FROM aurelink_provider_orders WHERE product_kind IN ('activation','rental') AND status IN ('pending','active','cancelled') AND (last_provider_check_at IS NULL OR last_provider_check_at<NOW()-($2::text||' milliseconds')::interval) ORDER BY COALESCE(last_provider_check_at,created_at) ASC LIMIT $1",
+      "SELECT * FROM aurelink_provider_orders WHERE product_kind IN ('activation','rental') AND status IN ('pending','active','cancelled','cancellation_pending','expired') AND (last_provider_check_at IS NULL OR last_provider_check_at<NOW()-($2::text||' milliseconds')::interval) ORDER BY COALESCE(last_provider_check_at,created_at) ASC LIMIT $1",
       [BATCH_SIZE, String(Math.max(10_000, INTERVAL_MS - 5_000))],
     );
     for (const order of result.rows as Array<Record<string, unknown>>) {
