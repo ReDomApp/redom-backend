@@ -4,13 +4,13 @@ Independent backend-only AI service owned by ReDom. This service is not mounted 
 
 ## Product models
 
-| Public ID | Intended role | Environment prefix |
-|---|---|---|
-| `orex` — **OREX** | General-purpose assistant: knowledge, writing, analysis, tool-assisted research | `OREX_` |
-| `apex` — **APEX** | Advanced reasoning and multi-step analysis | `APEX_` |
-| `ultron` — **ULTRON** | Coding, debugging, code review, software engineering | `ULTRON_` |
+| Public ID | Product name | Intended role | Environment prefix |
+|---|---|---|---|
+| `aurex-1.8` | **AUREX 1.8** | General-purpose intelligence, knowledge, writing, analysis, tool-assisted research | `AUREX_18_` |
+| `rex-6.8` | **REX 6.8** | Coding, debugging, code review, software engineering | `REX_68_` |
+| `aurex-apex` | **AUREX Apex** | Advanced reasoning, complex analysis, multi-step problem solving | `AUREX_APEX_` |
 
-These are ReDom product identities and routing slots, not claims that ReDom has trained foundation models from scratch. Each identity requires a real, separately configured inference endpoint and actual model weights. Unconfigured routes are not advertised. Role labels do not prove capability quality; the model must pass the relevant evaluations before production promotion.
+These are ReDom product identities and routing slots, not claims that ReDom has trained foundation models from scratch. Each identity requires a real, separately configured inference endpoint and actual model weights. Unconfigured routes are not advertised. Role labels do not prove capability quality; each model must pass relevant evaluations before production promotion.
 
 ## Implemented capabilities
 
@@ -28,7 +28,7 @@ Set `BRAVE_SEARCH_API_KEY` using a secret manager. The API key is never returned
 
 ```json
 {
-  "model": "orex",
+  "model": "aurex-1.8",
   "web_search": true,
   "messages": [
     { "role": "user", "content": "Compare the latest official documentation for these two APIs and cite sources." }
@@ -49,7 +49,7 @@ The web-search integration contacts a fixed provider endpoint and does not fetch
 
 1. Copy `.env.example` to a secret-protected environment file and replace all sample secrets.
 2. Provision a Linux host with compatible NVIDIA drivers and NVIDIA Container Toolkit.
-3. Configure `OREX_BASE_URL`, `OREX_API_KEY`, and `OREX_MODEL` to match a real serving engine.
+3. Configure `AUREX_18_BASE_URL`, `AUREX_18_API_KEY`, and `AUREX_18_MODEL` to match a real serving engine.
 4. Build and run the service with the repository's documented Compose template.
 5. Pin container digests and model revisions, verify each model's license, and benchmark VRAM, throughput, latency, concurrency, tool-call quality, coding tasks, reasoning tasks, and safety before promoting it.
 
