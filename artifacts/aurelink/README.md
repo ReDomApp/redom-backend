@@ -46,7 +46,7 @@ SMSPool uses polling rather than an SMS push webhook for temporary activations. 
 - `POST /aurelink/rentals` — obtains live price/stock for a rental ID and requested days, verifies a paid `aurelink_rental` USD transaction, then purchases the rental.
 - `GET /aurelink/rentals/:rentalId/messages`
 - `GET /aurelink/rentals/:rentalId/status`
-- `POST /aurelink/rentals/:rentalId/renew` — request body: `{ "months": 1 }`; current provider adapter accepts the duration as days only, so the caller must use days for the API's `/rental/extend` contract.
+- `POST /aurelink/rentals/:rentalId/renew` — request body: `{ "days": 30 }`; SMSPool exposes the extension duration in days.
 - `POST /aurelink/rentals/:rentalId/cancel`
 
 ### Other SMSPool capabilities
