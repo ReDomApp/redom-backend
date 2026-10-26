@@ -38,5 +38,14 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS aurelink_orders_user_created_idx ON aurelink_provider_orders(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS aurelink_orders_status_idx ON aurelink_provider_orders(status);
+
+    CREATE TABLE IF NOT EXISTS aurelink_payment_redemptions (
+      payment_reference VARCHAR(100) PRIMARY KEY REFERENCES payment_transactions(reference) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      quote_id UUID REFERENCES aurelink_quotes(id),
+      product_kind VARCHAR(20) NOT NULL CHECK (product_kind IN ('activation','rental','esim','carrier_lookup')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_redemptions_user_idx ON aurelink_payment_redemptions(user_id, created_at DESC);
   `);
 }
