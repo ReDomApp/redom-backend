@@ -365,6 +365,7 @@ router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res
   const parsed = z.object({ days: z.number().int().min(1).max(365), paymentReference: z.string().min(8).max(100) }).safeParse(req.body);
   if (!rentalId.success || !parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental renewal request." });
   let paymentReserved = false;
+  let renewalSucceeded = false;
   try {
     const rental = await ownedOrder(req.user.userId, rentalId.data, "rental");
     if (!rental) return res.status(404).json({ success: false, message: "Rental not found." });
@@ -383,13 +384,14 @@ router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res
     if (redemption.rowCount !== 1) return res.status(402).json({ success: false, message: "A valid, unused, paid AURELINK rental-renewal transaction covering the live price is required." });
     paymentReserved = true;
     const renewal = await smsPoolClient.renewRental(rentalId.data, parsed.data.days);
+    renewalSucceeded = true;
     await pool.query(
       "UPDATE aurelink_provider_orders SET provider_cost=COALESCE(provider_cost,0)+$2,updated_at=NOW(),provider_payload=provider_payload || $3::jsonb WHERE id=$1",
       [rental["id"], providerMaxPrice, JSON.stringify({ lastRenewal: renewal, renewedDays: parsed.data.days })],
     );
     return res.json({ success: true, renewal });
   } catch (error) {
-    if (paymentReserved) await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
+    if (paymentReserved && !renewalSucceeded) await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
     return providerFailure(res, error);
   }
 });
