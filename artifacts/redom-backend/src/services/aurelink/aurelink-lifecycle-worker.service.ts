@@ -83,8 +83,8 @@ export async function runAurelinkLifecyclePoll(): Promise<void> {
       "UPDATE aurelink_provider_orders SET status='expired',updated_at=NOW() WHERE product_kind='rental' AND status='active' AND expires_at IS NOT NULL AND expires_at<=NOW()",
     );
     const result = await pool.query(
-      "SELECT id,product_kind,provider_order_id,status,expires_at,provider_payload FROM aurelink_provider_orders WHERE product_kind IN ('activation','rental') AND status IN ('pending','active') AND (last_provider_check_at IS NULL OR last_provider_check_at<NOW()-INTERVAL '55 seconds') ORDER BY COALESCE(last_provider_check_at,created_at) ASC LIMIT $1",
-      [BATCH_SIZE],
+      "SELECT id,product_kind,provider_order_id,status,expires_at,provider_payload FROM aurelink_provider_orders WHERE product_kind IN ('activation','rental') AND status IN ('pending','active') AND (last_provider_check_at IS NULL OR last_provider_check_at<NOW()-($2::text||' milliseconds')::interval) ORDER BY COALESCE(last_provider_check_at,created_at) ASC LIMIT $1",
+      [BATCH_SIZE, String(Math.max(10_000, INTERVAL_MS - 5_000))],
     );
     for (const order of result.rows as Array<Record<string, unknown>>) {
       try {
