@@ -12,11 +12,36 @@ const quoteTtlMinutes = 10;
 function allowedServices(): Set<string> {
   return new Set((process.env.AURELINK_ALLOWED_SERVICES ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
 }
-function isServiceAllowed(service: string): boolean {
+function serviceEntries(value: unknown, output: Array<{ id: string; name: string }> = []): Array<{ id: string; name: string }> {
+  if (Array.isArray(value)) { for (const item of value) serviceEntries(item, output); return output; }
+  if (!value || typeof value !== "object") return output;
+  const row = value as Record<string, unknown>;
+  const idValue = row["ID"] ?? row["id"] ?? row["service_id"] ?? row["serviceId"];
+  const nameValue = row["name"] ?? row["service"] ?? row["service_name"] ?? row["short_name"];
+  if (idValue != null && nameValue != null && (typeof idValue === "string" || typeof idValue === "number") && typeof nameValue === "string") {
+    output.push({ id: String(idValue).toLowerCase(), name: nameValue.trim().toLowerCase() });
+  }
+  for (const child of Object.values(row)) if (child && typeof child === "object") serviceEntries(child, output);
+  return output;
+}
+async function isServiceAllowed(service: string): Promise<boolean> {
   const normalized = service.trim().toLowerCase();
-  if (!normalized || /bank|crypto|exchange|government|telecom|carrier/.test(normalized)) return false;
-  if (normalized === "whatsapp" && process.env.SMSPOOL_WHATSAPP_APPROVED !== "true") return false;
-  return allowedServices().has(normalized);
+  if (!normalized) return false;
+  const configured = allowedServices();
+  let serviceName = normalized;
+  let serviceId = normalized;
+  if (/^\\d+$/.test(normalized)) {
+    try {
+      const entries = serviceEntries(await smsPoolClient.services());
+      const match = entries.find((entry) => entry.id === normalized);
+      if (!match) return false;
+      serviceName = match.name;
+      serviceId = match.id;
+    } catch { return false; }
+  }
+  if (/bank|crypto|exchange|government|telecom|carrier/.test(serviceName)) return false;
+  if (serviceName === "whatsapp" && process.env.SMSPOOL_WHATSAPP_APPROVED !== "true") return false;
+  return configured.has(normalized) || configured.has(serviceName) || configured.has(serviceId);
 }
 function adminAllowed(req: Request): boolean {
   const ids = (process.env.AURELINK_ADMIN_USER_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -94,7 +119,7 @@ router.get("/aurelink/catalog/rentals/:rentalId/pricing", authMiddleware, async 
   const id = z.string().regex(/^\d+$/).safeParse(req.params.rentalId);
   const service = typeof req.query.service === "string" ? req.query.service : undefined;
   if (!id.success) return res.status(400).json({ success: false, message: "Invalid rental ID." });
-  if (service && !isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (service && !await isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try { return res.json({ success: true, pricing: await smsPoolClient.rentalPricing(id.data, service) }); }
   catch (error) { return providerFailure(res, error); }
 });
@@ -104,7 +129,7 @@ router.get("/aurelink/catalog/rentals/:rentalId/pricing", authMiddleware, async 
 router.get("/aurelink/catalog/pricing", authMiddleware, async (req, res) => {
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
-  if (!isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try {
     const pricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
     const prices = pricesIn(pricing);
@@ -115,7 +140,7 @@ router.get("/aurelink/catalog/pricing", authMiddleware, async (req, res) => {
 router.get("/aurelink/catalog/suggested-countries", authMiddleware, async (req, res) => {
   const service = typeof req.query.service === "string" ? req.query.service : "";
   if (!service) return res.status(400).json({ success: false, message: "Service is required." });
-  if (!isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try { return res.json({ success: true, countries: await smsPoolClient.suggestedCountries(service) }); }
   catch (error) { return providerFailure(res, error); }
 });
@@ -277,7 +302,7 @@ router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
     paymentReference: z.string().min(8).max(100),
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental request." });
-  if (parsed.data.serviceId && !isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (parsed.data.serviceId && !await isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   let paymentReserved = false;
   try {
     const stock = await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days);
@@ -356,7 +381,7 @@ router.post("/aurelink/carrier-lookup", authMiddleware, async (req, res) => {
   const parsed = z.object({ phoneNumber: z.string().min(5).max(32).regex(/^\+?[0-9 ()-]+$/) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ success: false, message: "A valid phone number is required." });
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Carrier lookups require billing integration or administrator access." });
-  try { return res.json({ success: true, lookup: await smsPoolClient.carrierLookup(parsed.data.phoneNumber.replace(/[ ()-]/g, "")) }); }
+  try { return res.json({ success: true, lookup: await smsPoolClient.carrierLookup(parsed.data.phoneNumber.replace(/[+ ()-]/g, "")) }); }
   catch (error) { return providerFailure(res, error); }
 });
 
