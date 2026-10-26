@@ -18,6 +18,13 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS aurelink_quotes_user_expiry_idx ON aurelink_quotes(user_id, expires_at);
 
+    CREATE TABLE IF NOT EXISTS aurelink_admin_identity (
+      singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+      id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    INSERT INTO aurelink_admin_identity (singleton) VALUES (TRUE) ON CONFLICT (singleton) DO NOTHING;
+
     CREATE TABLE IF NOT EXISTS aurelink_provider_orders (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -44,6 +51,9 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(provider, provider_order_id)
     );
+    ALTER TABLE aurelink_provider_orders ALTER COLUMN user_id DROP NOT NULL;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS admin_account_id UUID REFERENCES aurelink_admin_identity(id) ON DELETE CASCADE;
+    CREATE INDEX IF NOT EXISTS aurelink_orders_admin_created_idx ON aurelink_provider_orders(admin_account_id, created_at DESC);
     -- Additive migration for databases that already created the initial AURELINK schema.
     ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS carrier_name TEXT;
     ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS line_type TEXT;
