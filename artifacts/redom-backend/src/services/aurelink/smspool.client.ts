@@ -78,8 +78,9 @@ export class SmsPoolClient {
   countries(): Promise<SmsPoolPayload> { return this.post("/country/retrieve_all"); }
   pools(): Promise<SmsPoolPayload> { return this.post("/pool/retrieve_all"); }
   rentals(extendable: 0 | 1): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_all", { type: extendable }); }
-  rentalPricing(rentalId: string, serviceId?: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_pricing", { rental_id: rentalId, service_id: serviceId }); }
-  rentalServices(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_services", { rental_id: rentalId }); }
+  rentalPricing(rentalId: string, service?: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_pricing", { id: rentalId, service }); }
+  rentalServices(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_services", { rental: rentalId }); }
+  rentalStock(rentalId: string, days: number): Promise<SmsPoolPayload> { return this.post("/rental/stock", { id: rentalId, days }); }
   pricing(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/request/pricing", fields); }
   stock(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/sms/stock", fields); }
   activeOrders(): Promise<SmsPoolPayload> { return this.post("/request/active"); }
