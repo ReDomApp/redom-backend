@@ -2,8 +2,10 @@ import { pool } from "../../database/db";
 import { logger } from "../../lib/logger";
 import { smsPoolClient, type SmsPoolPayload } from "./smspool.client";
 
-const INTERVAL_MS = Math.max(30_000, Number(process.env.AURELINK_LIFECYCLE_POLL_MS ?? 60_000));
-const BATCH_SIZE = Math.max(1, Math.min(100, Number(process.env.AURELINK_LIFECYCLE_BATCH_SIZE ?? 25)));
+const configuredIntervalMs = Number(process.env.AURELINK_LIFECYCLE_POLL_MS ?? 60_000);
+const configuredBatchSize = Number(process.env.AURELINK_LIFECYCLE_BATCH_SIZE ?? 25);
+const INTERVAL_MS = Number.isFinite(configuredIntervalMs) ? Math.max(30_000, configuredIntervalMs) : 60_000;
+const BATCH_SIZE = Number.isFinite(configuredBatchSize) ? Math.max(1, Math.min(100, configuredBatchSize)) : 25;
 let timer: ReturnType<typeof setInterval> | undefined;
 let running = false;
 
@@ -37,10 +39,6 @@ function expiryFrom(value: unknown): Date | null {
 }
 function containsSms(value: unknown): boolean {
   return scalarFields(value).some((field) => /^(sms|full_sms|message_body|message|body|code)$/.test(field.key) && field.value.length > 0);
-}
-function mergePayload(value: unknown): Record<string, unknown> {
-  const parsed = typeof value === "string" ? (() => { try { return JSON.parse(value) as unknown; } catch { return {}; } })() : value;
-  return asRecord(parsed);
 }
 
 async function pollActivation(order: Record<string, unknown>): Promise<void> {
