@@ -78,7 +78,7 @@ export class SmsPoolClient {
   rentals(extendable: 0 | 1): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_all", { type: extendable }); }
   rentalPricing(rentalId: string, service?: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_pricing", { id: rentalId, service }); }
   rentalServices(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_services", { rental: rentalId }); }
-  rentalStock(rentalId: string, days: number): Promise<SmsPoolPayload> { return this.post("/rental/stock", { id: rentalId, days }); }
+  rentalStock(rentalId: string, days: number, serviceId?: string): Promise<SmsPoolPayload> { return this.post("/rental/stock", { id: rentalId, days, service_id: serviceId }); }
   price(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/request/price", fields); }
   pricing(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/request/pricing", fields); }
   stock(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/sms/stock", fields); }
