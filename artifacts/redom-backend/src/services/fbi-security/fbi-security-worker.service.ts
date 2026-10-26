@@ -14,7 +14,7 @@ import { buildCaseResearchPlan, buildResearchInstructions } from "./case-researc
  * The digest contains aggregate public-notice metadata only; it never sends
  * full scraped text, private identifiers, financial data, or analyst notes.
  */
-const WORKER_ENABLED = () => process.env.FBI_SECURITY_ENABLED === "true" && process.env.FBI_SECURITY_WORKER_ENABLED === "true";
+// Permanently disabled by explicit operator request. Keep the implementation in-repo for reference, but never run it.\nconst WORKER_ENABLED = () => false;
 const INTERVAL_MS = 60 * 60_000;
 const LOCK_KEY = 741_820_611;
 let timer: ReturnType<typeof setInterval> | undefined;
