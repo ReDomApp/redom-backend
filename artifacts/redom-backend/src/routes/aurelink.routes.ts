@@ -98,7 +98,7 @@ router.get("/aurelink/catalog/rentals", authMiddleware, async (req, res) => {
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/rentals/:rentalId/pricing", authMiddleware, async (req, res) => {
-  const id = z.string().regex(/^\\d+$/).safeParse(req.params.rentalId);
+  const id = z.string().regex(/^\d+$/).safeParse(req.params.rentalId);
   const service = typeof req.query.service === "string" ? req.query.service : undefined;
   if (!id.success) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   if (service && !isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
@@ -327,11 +327,11 @@ router.get("/aurelink/rentals/:rentalId/status", authMiddleware, async (req, res
 });
 router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res) => {
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
-  const parsed = z.object({ months: z.number().int().min(1).max(12) }).safeParse(req.body);
+  const parsed = z.object({ days: z.number().int().min(1).max(365) }).safeParse(req.body);
   if (!rentalId.success || !parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental renewal request." });
   try {
     if (!await ownedOrder(req.user.userId, rentalId.data, "rental")) return res.status(404).json({ success: false, message: "Rental not found." });
-    return res.json({ success: true, renewal: await smsPoolClient.renewRental(rentalId.data, parsed.data.months) });
+    return res.json({ success: true, renewal: await smsPoolClient.renewRental(rentalId.data, parsed.data.days) });
   } catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/rentals/:rentalId/cancel", authMiddleware, async (req, res) => {
