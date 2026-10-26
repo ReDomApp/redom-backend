@@ -27,3 +27,5 @@ h1,h2,h3{letter-spacing:-.045em}
 .provider-alert-icon{width:26px;height:26px;display:grid;place-items:center;flex-shrink:0;border-radius:50%;background:#ffedcf;color:#985b00;font-weight:800}
 .provider-config-alert strong{font-size:13px;color:#754600}.provider-config-alert p{font-size:12px;line-height:1.65;margin:5px 0 7px}.provider-config-alert code{font-family:"DM Mono",monospace;font-size:11px;background:#f7ead7;padding:2px 4px;border-radius:4px}.provider-config-alert a{font-size:11px;font-weight:700;color:#1554c5;text-decoration:none}.provider-config-alert a:hover{text-decoration:underline}
 @media(max-width:720px){.brand-emblem{width:54px;height:54px}.brand-emblem.compact{width:36px;height:36px}.selector-card,.summary-card,.order-card,.history-card{padding:17px}}
+
+.provider-pill{display:flex;align-items:center;gap:7px;border:1px solid #f1d5a6;color:#965a00;background:#fff8ed;border-radius:99px;padding:7px 10px;font:500 9px "DM Mono",monospace;letter-spacing:.07em}.provider-pill i{width:5px;height:5px;border-radius:50%;background:#d98a13;display:inline-block}.online.offline{color:#965a00}.online.offline i{background:#d98a13}
