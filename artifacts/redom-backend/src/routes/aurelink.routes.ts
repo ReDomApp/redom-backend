@@ -113,10 +113,34 @@ router.get("/aurelink/catalog/pricing", authMiddleware, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try {
-    const pricing = await smsPoolClient.pricing({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
+    const pricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
     const prices = pricesIn(pricing);
     return res.json({ success: true, pricing, lowestDetectedPrice: prices.length ? Math.min(...prices) : null, currency: "USD" });
   } catch (error) { return providerFailure(res, error); }
+});
+
+router.get("/aurelink/catalog/suggested-countries", authMiddleware, async (req, res) => {
+  const service = typeof req.query.service === "string" ? req.query.service : "";
+  if (!service) return res.status(400).json({ success: false, message: "Service is required." });
+  if (!isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  try { return res.json({ success: true, countries: await smsPoolClient.suggestedCountries(service) }); }
+  catch (error) { return providerFailure(res, error); }
+});
+router.get("/aurelink/catalog/success-rate", authMiddleware, async (req, res) => {
+  const service = typeof req.query.service === "string" ? req.query.service : "";
+  const country = typeof req.query.country === "string" ? req.query.country : undefined;
+  if (!service) return res.status(400).json({ success: false, message: "Service is required." });
+  if (!isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  try { return res.json({ success: true, successRate: await smsPoolClient.successRate(service, country) }); }
+  catch (error) { return providerFailure(res, error); }
+});
+router.get("/aurelink/catalog/valid-pools", authMiddleware, async (req, res) => {
+  const service = typeof req.query.service === "string" ? req.query.service : "";
+  const country = typeof req.query.country === "string" ? req.query.country : "";
+  if (!service || !country) return res.status(400).json({ success: false, message: "Service and country are required." });
+  if (!isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  try { return res.json({ success: true, pools: await smsPoolClient.validPools(service, country) }); }
+  catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/stock", authMiddleware, async (req, res) => {
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
@@ -136,7 +160,7 @@ router.post("/aurelink/quotes", authMiddleware, async (req, res) => {
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid quote request." });
   if (!isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try {
-    const providerPricing = await smsPoolClient.pricing({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
+    const providerPricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
     const prices = pricesIn(providerPricing);
     if (!prices.length) return res.status(502).json({ success: false, message: "SMSPool returned pricing that could not be normalized. No quote was created." });
     const providerMaxPrice = Math.min(...prices);
@@ -213,6 +237,15 @@ router.get("/aurelink/activations/:orderId/messages", authMiddleware, async (req
     if (message["status"] === 3) await pool.query("UPDATE aurelink_provider_orders SET status='completed',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1", [order["id"], JSON.stringify({ smsReceived: true })]);
     if (message["status"] === 6) await pool.query("UPDATE aurelink_provider_orders SET status='refunded',updated_at=NOW() WHERE id=$1", [order["id"]]);
     return res.json({ success: true, message: { status: message["status"], sms: message["sms"] ?? null, fullSms: message["full_sms"] ?? null, expiresAt: message["expiration"] ?? null, timeLeft: message["time_left"] ?? null } });
+  } catch (error) { return providerFailure(res, error); }
+});
+
+router.post("/aurelink/activations/:orderId/resend", authMiddleware, async (req, res) => {
+  const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
+  if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
+  try {
+    if (!await ownedOrder(req.user.userId, orderId.data, "activation")) return res.status(404).json({ success: false, message: "Order not found." });
+    return res.json({ success: true, resend: await smsPoolClient.resendSms(orderId.data) });
   } catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/activations/:orderId/cancel", authMiddleware, async (req, res) => {
@@ -323,6 +356,10 @@ router.post("/aurelink/carrier-lookup", authMiddleware, async (req, res) => {
 
 router.get("/aurelink/esim/plans", authMiddleware, async (req, res) => {
   try { return res.json({ success: true, plans: await smsPoolClient.esimPlans(typeof req.query.country === "string" ? req.query.country : "") }); }
+  catch (error) { return providerFailure(res, error); }
+});
+router.get("/aurelink/esim/pricing", authMiddleware, async (_req, res) => {
+  try { return res.json({ success: true, pricing: await smsPoolClient.esimPricing() }); }
   catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/esim/purchase", authMiddleware, async (_req, res) => {
