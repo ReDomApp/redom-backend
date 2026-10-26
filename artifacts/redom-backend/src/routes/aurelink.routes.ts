@@ -99,6 +99,61 @@ function rentalPriceForDays(value: unknown, days: number): number | null {
   }
   return null;
 }
+function countryEntries(value: unknown, output: Array<{ id: string; code: string; name: string }> = []): Array<{ id: string; code: string; name: string }> {
+  if (Array.isArray(value)) { for (const item of value) countryEntries(item, output); return output; }
+  if (!value || typeof value !== "object") return output;
+  const row = value as Record<string, unknown>;
+  const idValue = row["ID"] ?? row["id"] ?? row["country_id"] ?? row["countryId"];
+  const nameValue = row["name"] ?? row["country"] ?? row["country_name"];
+  const codeValue = row["iso"] ?? row["iso2"] ?? row["code"] ?? row["short_name"] ?? row["country_code"] ?? "";
+  if (idValue != null && nameValue != null && (typeof idValue === "string" || typeof idValue === "number") && typeof nameValue === "string") {
+    output.push({ id: String(idValue).toLowerCase(), code: String(codeValue).toLowerCase(), name: nameValue.trim().toLowerCase() });
+  }
+  for (const child of Object.values(row)) if (child && typeof child === "object") countryEntries(child, output);
+  return output;
+}
+function filterVirtualInventory(value: unknown): unknown {
+  if (Array.isArray(value)) return value.filter((item) => {
+    if (!item || typeof item !== "object") return true;
+    const row = item as Record<string, unknown>;
+    const name = String(row["name"] ?? row["country"] ?? row["country_name"] ?? "").toLowerCase();
+    return !/virtual|voip/.test(name);
+  }).map((item) => filterVirtualInventory(item));
+  if (!value || typeof value !== "object") return value;
+  const row = value as Record<string, unknown>;
+  const name = String(row["name"] ?? row["country"] ?? row["country_name"] ?? "").toLowerCase();
+  if (name && /virtual|voip/.test(name)) return null;
+  const filtered: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(row)) {
+    const next = filterVirtualInventory(child);
+    if (next !== null && next !== undefined) filtered[key] = next;
+  }
+  return filtered;
+}
+async function isCountryNonVoip(country: string): Promise<boolean> {
+  try {
+    const entries = countryEntries(await smsPoolClient.countries());
+    const normalized = country.trim().toLowerCase();
+    const match = entries.find((entry) => entry.id === normalized || entry.code === normalized || entry.name === normalized);
+    return Boolean(match && !/virtual|voip/.test(match.name));
+  } catch { return false; }
+}
+async function isRentalNonVoip(rentalId: number): Promise<boolean> {
+  try {
+    const catalog = await smsPoolClient.rentals(1);
+    const rows = catalog !== null && typeof catalog === "object" ? catalog as Record<string, unknown> : {};
+    for (const [key, value] of Object.entries(rows)) {
+      if (!value || typeof value !== "object") continue;
+      const row = value as Record<string, unknown>;
+      const id = String(row["ID"] ?? row["id"] ?? key);
+      if (id === String(rentalId)) {
+        const name = String(row["name"] ?? row["country"] ?? "").toLowerCase();
+        return Boolean(name && !/virtual|voip/.test(name));
+      }
+    }
+    return false;
+  } catch { return false; }
+}
 async function ownedOrder(userId: string, orderId: string, kind?: string) {
   const result = await pool.query(
     "SELECT * FROM aurelink_provider_orders WHERE user_id=$1 AND provider_order_id=$2 AND ($3::text IS NULL OR product_kind=$3) LIMIT 1",
@@ -130,7 +185,7 @@ router.get("/aurelink/catalog/services", authMiddleware, async (_req, res) => {
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/countries", authMiddleware, async (_req, res) => {
-  try { return res.json({ success: true, countries: await smsPoolClient.countries() }); }
+  try { return res.json({ success: true, countries: filterVirtualInventory(await smsPoolClient.countries()) }); }
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/pools", authMiddleware, async (_req, res) => {
@@ -141,6 +196,7 @@ router.get("/aurelink/catalog/pricing", authMiddleware, async (req, res) => {
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isCountryNonVoip(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not confirmed as non-VoIP mobile inventory. Select a country from the filtered catalog." });
   try {
     const pricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
     const prices = pricesIn(pricing);
@@ -151,6 +207,7 @@ router.get("/aurelink/catalog/stock", authMiddleware, async (req, res) => {
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isCountryNonVoip(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not confirmed as non-VoIP mobile inventory." });
   try { return res.json({ success: true, stock: await smsPoolClient.stock(parsed.data) }); }
   catch (error) { return providerFailure(res, error); }
 });
@@ -180,7 +237,7 @@ router.get("/aurelink/catalog/valid-pools", authMiddleware, async (req, res) => 
 router.get("/aurelink/catalog/rentals", authMiddleware, async (req, res) => {
   const parsed = z.object({ extendable: z.enum(["0", "1"]).default("1") }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid rental catalog request." });
-  try { return res.json({ success: true, rentals: await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0) }); }
+  try { return res.json({ success: true, rentals: filterVirtualInventory(await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0)) }); }
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/rentals/:rentalId/services", authMiddleware, async (req, res) => {
@@ -207,6 +264,7 @@ router.post("/aurelink/quotes", authMiddleware, async (req, res) => {
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid quote request." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isCountryNonVoip(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not confirmed as non-VoIP mobile inventory." });
   try {
     const providerPricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
     const prices = pricesIn(providerPricing);
@@ -267,6 +325,7 @@ router.post("/aurelink/activations", authMiddleware, async (req, res) => {
   try {
     const service = String(quote["service"]);
     const country = String(quote["country"]);
+    if (!await isCountryNonVoip(country)) throw new SmsPoolError("Country inventory is not confirmed as non-VoIP.", { providerType: "COUNTRY_NOT_VERIFIED" });
     const maxPrice = Number(quote["provider_max_price"]);
     const provider = await smsPoolClient.purchaseSms({ country, service, maxPrice, pool: parsed.data.pool, pricingOption: parsed.data.pricingOption });
     const data = object(provider);
@@ -343,6 +402,7 @@ router.post("/aurelink/rental-quotes", authMiddleware, async (req, res) => {
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental quote request." });
   if (parsed.data.serviceId && !await isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isRentalNonVoip(parsed.data.rentalId)) return res.status(403).json({ success: false, message: "This rental inventory is not confirmed as non-VoIP mobile inventory." });
   try {
     const providerPricing = await smsPoolClient.rentalPricing(String(parsed.data.rentalId), parsed.data.serviceId);
     const providerMaxPrice = rentalPriceForDays(providerPricing, parsed.data.days);
@@ -396,6 +456,7 @@ router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
   try {
     const quoteMetadata = typeof quote?.["provider_pricing"] === "string" ? JSON.parse(String(quote["provider_pricing"])) as Record<string, unknown> : quote?.["provider_pricing"] as Record<string, unknown>;
     const rentalCatalogId = Number(quoteMetadata?.["rentalCatalogId"]);
+    if (!await isRentalNonVoip(rentalCatalogId)) throw new SmsPoolError("Rental inventory is not confirmed as non-VoIP mobile inventory.", { providerType: "COUNTRY_NOT_VERIFIED" });
     const days = Number(quoteMetadata?.["days"]);
     const serviceId = quoteMetadata?.["serviceId"] == null ? undefined : String(quoteMetadata["serviceId"]);
     if (!Number.isInteger(rentalCatalogId) || rentalCatalogId <= 0 || !Number.isInteger(days) || days <= 0) throw new SmsPoolError("Rental quote is missing its provider metadata.", { providerType: "INVALID_QUOTE" });
