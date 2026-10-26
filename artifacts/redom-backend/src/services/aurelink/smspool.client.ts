@@ -77,6 +77,9 @@ export class SmsPoolClient {
   services(): Promise<SmsPoolPayload> { return this.post("/service/retrieve_all"); }
   countries(): Promise<SmsPoolPayload> { return this.post("/country/retrieve_all"); }
   pools(): Promise<SmsPoolPayload> { return this.post("/pool/retrieve_all"); }
+  rentals(extendable: 0 | 1): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_all", { type: extendable }); }
+  rentalPricing(rentalId: string, serviceId?: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_pricing", { rental_id: rentalId, service_id: serviceId }); }
+  rentalServices(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_services", { rental_id: rentalId }); }
   pricing(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/request/pricing", fields); }
   stock(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/sms/stock", fields); }
   activeOrders(): Promise<SmsPoolPayload> { return this.post("/request/active"); }
@@ -108,16 +111,20 @@ export class SmsPoolClient {
     });
   }
 
-  rentalStatus(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_status", { rental_id: rentalId }); }
-  rentalMessages(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_messages", { rental_id: rentalId }); }
+  rentalStatus(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_status", { rental_code: rentalId }); }
+  rentalMessages(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/retrieve_messages", { rental_code: rentalId }); }
   purchaseRental(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/purchase/rental", fields); }
-  renewRental(rentalId: string, months: number): Promise<SmsPoolPayload> { return this.post("/rental/renew", { rental_id: rentalId, months }); }
-  cancelRental(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/cancel", { rental_id: rentalId }); }
+  renewRental(rentalId: string, days: number): Promise<SmsPoolPayload> { return this.post("/rental/extend", { rental_code: rentalId, days }); }
+  cancelRental(rentalId: string): Promise<SmsPoolPayload> { return this.post("/rental/refund", { rental_code: rentalId }); }
 
-  carrierLookup(phoneNumber: string): Promise<SmsPoolPayload> { return this.post("/carrier/lookup", { number: phoneNumber }); }
-  esimPlans(fields: Record<string, string | number | undefined> = {}): Promise<SmsPoolPayload> { return this.post("/esim/plans", fields); }
-  purchaseEsim(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/esim/purchase", fields); }
-  esimStatus(orderId: string): Promise<SmsPoolPayload> { return this.post("/esim/status", { order_id: orderId }); }
+  carrierLookup(phoneNumber: string): Promise<SmsPoolPayload> { return this.post("/carrier/paid_lookup", { phonenumber: phoneNumber }); }
+  esimPlans(country: string): Promise<SmsPoolPayload> { return this.post("/esim/plans", { country }); }
+  esimPricing(): Promise<SmsPoolPayload> { return this.post("/esim/pricing"); }
+  purchaseEsim(plan: number): Promise<SmsPoolPayload> { return this.post("/esim/purchase", { plan }); }
+  esimProfile(transactionId?: string): Promise<SmsPoolPayload> { return this.post("/esim/profile", { transaction_id: transactionId }); }
+  esimTopupPlans(transactionId: string): Promise<SmsPoolPayload> { return this.post("/esim/topup_plans", { transaction_id: transactionId }); }
+  esimTopup(transactionId: string, plan: number): Promise<SmsPoolPayload> { return this.post("/esim/topup", { transaction_id: transactionId, plan }); }
+  deleteEsim(transactionId: string): Promise<SmsPoolPayload> { return this.post("/esim/delete", { transaction_id: transactionId }); }
 }
 
 export const smsPoolClient = new SmsPoolClient();
