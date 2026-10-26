@@ -33,6 +33,7 @@ All routes require a valid ReDom access token unless noted otherwise. They are s
 ### One-time SMS activation
 
 - `POST /aurelink/quotes` — fetches live SMSPool service pricing, applies configured retail markup and stores a 10-minute, single-use quote. Request: `{ "kind":"activation", "country":"US", "service":"1" }`.
+- `POST /aurelink/checkout` — creates a hosted Stripe Checkout session for a valid AURELINK quote and stores a purpose-specific payment transaction.
 - `POST /aurelink/activations` — consumes a quote after verifying a paid `payment_transactions` row for the same user, purpose `aurelink_otp`, USD, and sufficient amount. Request: `{ "quoteId":"<uuid>", "paymentReference":"<paid-reference>" }`.
 - `GET /aurelink/activations/:orderId/messages` — polls SMSPool and returns status/code for the owner only.
 - `POST /aurelink/activations/:orderId/resend` — administrator-only until resend fees are billed
@@ -43,7 +44,9 @@ SMSPool uses polling rather than an SMS push webhook for temporary activations. 
 
 ### Long-term rentals
 
-- `POST /aurelink/rentals` — obtains live price/stock for a rental ID and requested days, verifies a paid `aurelink_rental` USD transaction, then purchases the rental.
+- `POST /aurelink/rental-quotes` — obtains live rental pricing for a rental ID and duration.
+- `POST /aurelink/checkout` — also creates checkout for rental quotes using purpose `aurelink_rental`.
+- `POST /aurelink/rentals` — consumes the paid rental quote and purchases the rental.
 - `GET /aurelink/rentals/:rentalId/messages`
 - `GET /aurelink/rentals/:rentalId/status`
 - `POST /aurelink/rentals/:rentalId/renew` — request body: `{ "days": 30, "paymentReference": "<paid-reference>" }`; SMSPool exposes the extension duration in days and each renewal is payment-gated.
@@ -71,7 +74,7 @@ Add these to the deployment environment, never to source control:
 - `AURELINK_ADMIN_USER_IDS` — comma-separated ReDom user IDs allowed to inspect provider balance and use unmetered carrier lookup.
 - `AURELINK_SMSPOOL_TIMEOUT_MS=12000`
 
-The example markup is a configurable default, not a recommended retail price. The quote API returns a USD price calculated from the live provider quote. This branch does not yet create the customer checkout session itself: an existing/next payment integration must create a `payment_transactions` row using the returned amount and purpose (`aurelink_otp` or `aurelink_rental`), then mark it paid only after the payment provider verifies it. Never trust a client-provided price.
+The example markup is a configurable default, not a recommended retail price. The quote API returns a USD price calculated from the live provider quote. The branch creates hosted Stripe Checkout sessions in USD for activation and rental quotes. The payment callback verifies Stripe’s session amount and currency against the recorded transaction before marking it paid. AURELINK then checks that paid transaction before ordering from SMSPool. Never trust a client-provided price.
 
 ## Safety, pricing and provider restrictions
 
