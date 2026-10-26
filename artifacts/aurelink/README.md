@@ -46,7 +46,7 @@ SMSPool uses polling rather than an SMS push webhook for temporary activations. 
 - `POST /aurelink/rentals` — obtains live price/stock for a rental ID and requested days, verifies a paid `aurelink_rental` USD transaction, then purchases the rental.
 - `GET /aurelink/rentals/:rentalId/messages`
 - `GET /aurelink/rentals/:rentalId/status`
-- `POST /aurelink/rentals/:rentalId/renew` — request body: `{ "days": 30 }`; SMSPool exposes the extension duration in days.
+- `POST /aurelink/rentals/:rentalId/renew` — request body: `{ "days": 30, "paymentReference": "<paid-reference>" }`; SMSPool exposes the extension duration in days and each renewal is payment-gated.
 - `POST /aurelink/rentals/:rentalId/cancel`
 
 ### Other SMSPool capabilities
@@ -71,7 +71,7 @@ Add these to the deployment environment, never to source control:
 - `AURELINK_ADMIN_USER_IDS` — comma-separated ReDom user IDs allowed to inspect provider balance and use unmetered carrier lookup.
 - `AURELINK_SMSPOOL_TIMEOUT_MS=12000`
 
-The example markup is a configurable default, not a recommended retail price. The quote API returns a USD price calculated from the live provider quote. Payment creation must use the returned retail amount and the purposes above; never trust a client-provided price. The existing payment system must create and verify these purpose-specific transactions before a purchase can succeed.
+The example markup is a configurable default, not a recommended retail price. The quote API returns a USD price calculated from the live provider quote. This branch does not yet create the customer checkout session itself: an existing/next payment integration must create a `payment_transactions` row using the returned amount and purpose (`aurelink_otp` or `aurelink_rental`), then mark it paid only after the payment provider verifies it. Never trust a client-provided price.
 
 ## Safety, pricing and provider restrictions
 
@@ -82,7 +82,7 @@ The example markup is a configurable default, not a recommended retail price. Th
 - SMSPool may require separate service whitelist approval. A generic API key does not mean every service is approved.
 - SMSPool's API does not make all destination platforms accept a number. Never advertise guaranteed acceptance by WhatsApp, Facebook, TikTok, or other third parties.
 - A provider price or availability response is not a reservation. Prices and stock can change between quote and order; the maximum-price guard prevents an activation order above the quoted provider cost.
-- Do not expose raw provider payloads or full SMS bodies in application logs.
+- Do not expose raw provider payloads or full SMS bodies in application logs. SMSPool cancellation/refund actions affect AURELINK’s provider balance; they do not automatically refund a customer’s original payment. Wire the customer refund/credit path before exposing cancellation to production customers. SMSPool supports inbound SMS retrieval, not sending outbound SMS from rented numbers.
 
 ## Database
 
