@@ -172,7 +172,7 @@ function carrierAssessment(value: unknown): { carrier: string | null; lineType: 
   const typeFields = fields.filter((field) => /(type|network|line|connection|category|classification)/.test(field.key));
   const typeText = typeFields.map((field) => field.value).join(" ").toLowerCase();
   const allText = fields.map((field) => field.value).join(" ").toLowerCase();
-  if (/\bvoip\b|voice[ -]?over[ -]?ip|virtual[ -]?(?:number|line|phone|telephony)/i.test(typeText)) {
+  if (/\bvoip\b|voice[ -]?over[ -]?ip|virtual[ -]?(?:number|line|phone|telephony)/i.test(typeText) || /\bvoip\b|voice[ -]?over[ -]?ip|virtual[ -]?(?:number|line|phone|telephony)/i.test(allText)) {
     return { carrier: carrierField?.value ?? null, lineType: typeText || null, result: "voip" };
   }
   if (/\b(?:mobile|wireless|cellular|gsm|lte|5g|4g|3g)\b/i.test(typeText)) {
@@ -216,7 +216,7 @@ router.get("/aurelink/status", authMiddleware, (_req, res) => {
     configured: Boolean(process.env.SMSPOOL_API_KEY?.trim()),
     allowedServices: [...allowedServices()],
     whatsappApproved: process.env.SMSPOOL_WHATSAPP_APPROVED === "true",
-    features: { oneTimeSms: true, rentals: true, carrierLookup: true, esimCatalog: true, esimPurchaseEnabled: false, voiceAndFlash: true },
+    features: { oneTimeSms: true, rentals: true, carrierLookup: true, carrierVerificationBeforeAcceptance: true, lifecycleTracking: Boolean(process.env.SMSPOOL_API_KEY?.trim()), esimCatalog: true, esimPurchaseEnabled: false, voiceAndFlash: true },
     note: "SMSPool eSIMs are data-only and do not provide a phone number.",
   });
 });
