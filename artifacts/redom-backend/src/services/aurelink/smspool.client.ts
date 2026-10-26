@@ -1,5 +1,3 @@
-import { env } from "../../config/env";
-
 const BASE_URL = "https://api.smspool.net";
 const DEFAULT_TIMEOUT_MS = 12_000;
 
