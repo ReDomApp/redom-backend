@@ -85,7 +85,13 @@ export class SmsPoolClient {
   pricing(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/request/pricing", fields); }
   stock(fields: Record<string, string | number | undefined>): Promise<SmsPoolPayload> { return this.post("/sms/stock", fields); }
   activeOrders(): Promise<SmsPoolPayload> { return this.post("/request/active"); }
-  orderHistory(): Promise<SmsPoolPayload> { return this.post("/request/orders"); }
+  orderHistory(): Promise<SmsPoolPayload> { return this.post("/request/history"); }
+  suggestedCountries(service: string): Promise<SmsPoolPayload> { return this.post("/request/suggested_countries", { service }); }
+  successRate(service: string, country?: string): Promise<SmsPoolPayload> { return this.post("/request/success_rate", { service, country }); }
+  validPools(service: string, country: string): Promise<SmsPoolPayload> { return this.post("/pool/retrieve_valid", { service, country, web: "1", include_stock: "1" }); }
+  resendSms(orderId: string): Promise<SmsPoolPayload> { return this.post("/sms/resend", { orderid: orderId }); }
+  reactivateSms(orderId: string): Promise<SmsPoolPayload> { return this.post("/sms/reactivate", { orderid: orderId }); }
+  archiveSms(orderId?: string): Promise<SmsPoolPayload> { return this.post("/request/archive", { orderid: orderId }); }
   checkSms(orderId: string): Promise<SmsPoolPayload> { return this.post("/sms/check", { orderid: orderId }); }
   cancelSms(orderId: string): Promise<SmsPoolPayload> { return this.post("/sms/cancel", { orderid: orderId }); }
 
