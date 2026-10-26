@@ -10,22 +10,22 @@ services:
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
       MAX_CONCURRENT_INFERENCE: ${MAX_CONCURRENT_INFERENCE:-8}
       BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
-      OREX_BASE_URL: http://orex-vllm:8000
-      OREX_API_KEY: ${OREX_API_KEY:?Set a separate OREX inference key}
-      OREX_MODEL: ${OREX_MODEL:-orex}
-      OREX_TIMEOUT_MS: ${OREX_TIMEOUT_MS:-90000}
-      APEX_BASE_URL: ${APEX_BASE_URL:-http://apex-vllm:8000}
-      APEX_API_KEY: ${APEX_API_KEY:-}
-      APEX_MODEL: ${APEX_MODEL:-}
-      APEX_TIMEOUT_MS: ${APEX_TIMEOUT_MS:-120000}
-      ULTRON_BASE_URL: ${ULTRON_BASE_URL:-http://ultron-vllm:8000}
-      ULTRON_API_KEY: ${ULTRON_API_KEY:-}
-      ULTRON_MODEL: ${ULTRON_MODEL:-}
-      ULTRON_TIMEOUT_MS: ${ULTRON_TIMEOUT_MS:-120000}
+      AUREX_18_BASE_URL: http://aurex-18-vllm:8000
+      AUREX_18_API_KEY: ${AUREX_18_API_KEY:?Set a separate AUREX 1.8 inference key}
+      AUREX_18_MODEL: ${AUREX_18_MODEL:-aurex-1.8}
+      AUREX_18_TIMEOUT_MS: ${AUREX_18_TIMEOUT_MS:-90000}
+      REX_68_BASE_URL: http://rex-68-vllm:8000
+      REX_68_API_KEY: ${REX_68_API_KEY:-}
+      REX_68_MODEL: ${REX_68_MODEL:-}
+      REX_68_TIMEOUT_MS: ${REX_68_TIMEOUT_MS:-120000}
+      AUREX_APEX_BASE_URL: http://aurex-apex-vllm:8000
+      AUREX_APEX_API_KEY: ${AUREX_APEX_API_KEY:-}
+      AUREX_APEX_MODEL: ${AUREX_APEX_MODEL:-}
+      AUREX_APEX_TIMEOUT_MS: ${AUREX_APEX_TIMEOUT_MS:-120000}
     ports:
       - "127.0.0.1:8088:8088"
     depends_on:
-      orex-vllm:
+      aurex-18-vllm:
         condition: service_started
     networks:
       - intelligence-private
@@ -34,16 +34,16 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
-  orex-vllm:
+  aurex-18-vllm:
     image: vllm/vllm-openai:latest
     restart: unless-stopped
     command:
       - --model
-      - ${OREX_MODEL_ID:-Qwen/Qwen3-8B}
+      - ${AUREX_18_MODEL_ID:-Qwen/Qwen3-8B}
       - --served-model-name
-      - ${OREX_MODEL:-orex}
+      - ${AUREX_18_MODEL:-aurex-1.8}
       - --api-key
-      - ${OREX_API_KEY:?Set a separate OREX inference key}
+      - ${AUREX_18_API_KEY:?Set a separate AUREX 1.8 inference key}
       - --host
       - 0.0.0.0
       - --port
@@ -52,7 +52,7 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       HF_HOME: /model-cache
     volumes:
-      - orex-model-cache:/model-cache
+      - aurex-18-model-cache:/model-cache
     expose:
       - "8000"
     networks:
@@ -65,17 +65,17 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-  apex-vllm:
+  rex-68-vllm:
     image: vllm/vllm-openai:latest
-    profiles: ["apex"]
+    profiles: ["rex-68"]
     restart: unless-stopped
     command:
       - --model
-      - ${APEX_MODEL_ID:-Qwen/Qwen3-14B}
+      - ${REX_68_MODEL_ID:-Qwen/Qwen2.5-Coder-7B-Instruct}
       - --served-model-name
-      - ${APEX_MODEL:?Set APEX_MODEL to the model's served name}
+      - ${REX_68_MODEL:-rex-6.8}
       - --api-key
-      - ${APEX_API_KEY:?Set APEX_API_KEY}
+      - ${REX_68_API_KEY:-configure-a-long-random-rex-secret}
       - --host
       - 0.0.0.0
       - --port
@@ -84,7 +84,7 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       HF_HOME: /model-cache
     volumes:
-      - apex-model-cache:/model-cache
+      - rex-68-model-cache:/model-cache
     expose:
       - "8000"
     networks:
@@ -97,17 +97,17 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-  ultron-vllm:
+  aurex-apex-vllm:
     image: vllm/vllm-openai:latest
-    profiles: ["ultron"]
+    profiles: ["aurex-apex"]
     restart: unless-stopped
     command:
       - --model
-      - ${ULTRON_MODEL_ID:-Qwen/Qwen2.5-Coder-7B-Instruct}
+      - ${AUREX_APEX_MODEL_ID:-Qwen/Qwen3-14B}
       - --served-model-name
-      - ${ULTRON_MODEL:?Set ULTRON_MODEL to the model's served name}
+      - ${AUREX_APEX_MODEL:-aurex-apex}
       - --api-key
-      - ${ULTRON_API_KEY:?Set ULTRON_API_KEY}
+      - ${AUREX_APEX_API_KEY:-configure-a-long-random-apex-secret}
       - --host
       - 0.0.0.0
       - --port
@@ -116,7 +116,7 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       HF_HOME: /model-cache
     volumes:
-      - ultron-model-cache:/model-cache
+      - aurex-apex-model-cache:/model-cache
     expose:
       - "8000"
     networks:
@@ -133,6 +133,6 @@ networks:
   intelligence-private:
     driver: bridge
 volumes:
-  orex-model-cache:
-  apex-model-cache:
-  ultron-model-cache:
+  aurex-18-model-cache:
+  rex-68-model-cache:
+  aurex-apex-model-cache:
