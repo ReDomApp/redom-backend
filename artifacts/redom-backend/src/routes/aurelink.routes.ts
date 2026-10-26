@@ -78,6 +78,27 @@ function retailPriceMinor(providerPrice: number): number {
   const fixedFeeMinor = Math.max(0, Math.round(Number(process.env.AURELINK_FIXED_FEE_USD_CENTS ?? "20")));
   return Math.ceil(providerPrice * USD_MINOR * (1 + markupPercent / 100)) + fixedFeeMinor;
 }
+function rentalPriceForDays(value: unknown, days: number): number | null {
+  if (typeof value === "string") {
+    try { return rentalPriceForDays(JSON.parse(value) as unknown, days); } catch { return null; }
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) { const price = rentalPriceForDays(item, days); if (price !== null) return price; }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const direct = row[String(days)];
+  if (typeof direct === "number" || typeof direct === "string") {
+    const price = Number(direct);
+    if (Number.isFinite(price) && price > 0) return price;
+  }
+  for (const child of Object.values(row)) {
+    const price = rentalPriceForDays(child, days);
+    if (price !== null) return price;
+  }
+  return null;
+}
 async function ownedOrder(userId: string, orderId: string, kind?: string) {
   const result = await pool.query(
     "SELECT * FROM aurelink_provider_orders WHERE user_id=$1 AND provider_order_id=$2 AND ($3::text IS NULL OR product_kind=$3) LIMIT 1",
@@ -323,10 +344,12 @@ router.post("/aurelink/rental-quotes", authMiddleware, async (req, res) => {
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental quote request." });
   if (parsed.data.serviceId && !await isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try {
-    const providerPricing = await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days);
-    const prices = pricesIn(providerPricing);
-    if (!prices.length) return res.status(409).json({ success: false, message: "SMSPool did not return a live price for this rental duration." });
-    const providerMaxPrice = Math.min(...prices);
+    const providerPricing = await smsPoolClient.rentalPricing(String(parsed.data.rentalId), parsed.data.serviceId);
+    const providerMaxPrice = rentalPriceForDays(providerPricing, parsed.data.days);
+    if (providerMaxPrice === null) return res.status(409).json({ success: false, message: "SMSPool did not return an exact live price for this rental duration." });
+    const stockResponse = object(await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days, parsed.data.serviceId));
+    const stockCount = Number(stockResponse["stock"] ?? stockResponse["available"] ?? 1);
+    if (Number.isFinite(stockCount) && stockCount <= 0) return res.status(409).json({ success: false, message: "No inventory is currently available for this rental." });
     const retailAmountMinor = retailPriceMinor(providerMaxPrice);
     const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: parsed.data.serviceId ?? null, pricing: providerPricing };
     const result = await pool.query(
@@ -429,10 +452,13 @@ router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res
     const savedPayload = typeof rental.provider_payload === "string" ? JSON.parse(rental.provider_payload) as Record<string, unknown> : rental.provider_payload as Record<string, unknown>;
     const catalogId = Number(savedPayload?.["rentalCatalogId"]);
     if (!Number.isInteger(catalogId) || catalogId <= 0) return res.status(409).json({ success: false, message: "This rental is missing its pricing reference and cannot be renewed automatically." });
-    const stock = await smsPoolClient.rentalStock(String(catalogId), parsed.data.days);
-    const prices = pricesIn(stock);
-    if (!prices.length) return res.status(409).json({ success: false, message: "SMSPool did not return a live renewal price." });
-    const providerMaxPrice = Math.min(...prices);
+    const serviceId = savedPayload?.["serviceId"] == null ? undefined : String(savedPayload["serviceId"]);
+    const renewalPricing = await smsPoolClient.rentalPricing(String(catalogId), serviceId);
+    const providerMaxPrice = rentalPriceForDays(renewalPricing, parsed.data.days);
+    if (providerMaxPrice === null) return res.status(409).json({ success: false, message: "SMSPool did not return an exact live renewal price." });
+    const stockResponse = object(await smsPoolClient.rentalStock(String(catalogId), parsed.data.days, serviceId));
+    const stockCount = Number(stockResponse["stock"] ?? stockResponse["available"] ?? 1);
+    if (Number.isFinite(stockCount) && stockCount <= 0) return res.status(409).json({ success: false, message: "No inventory is available for this renewal duration." });
     const retailAmountMinor = retailPriceMinor(providerMaxPrice);
     const redemption = await pool.query(
       "INSERT INTO aurelink_payment_redemptions (payment_reference,user_id,product_kind) SELECT reference,user_id,'rental' FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_rental' AND currency='USD' AND amount_minor >= $3 ON CONFLICT DO NOTHING RETURNING payment_reference",
