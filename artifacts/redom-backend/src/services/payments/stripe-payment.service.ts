@@ -507,6 +507,72 @@ export async function createStripeStarsCheckout(input: {
   return {sessionId:session.id,checkoutUrl:session.url};
 }
 
+export async function createAurelinkStripeCheckout(input: { userId: string; quoteId: string }): Promise<{ reference: string; checkoutUrl: string; amountMinor: string; currency: string; purpose: string }> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const quoteResult = await client.query(
+      "SELECT id,product_kind,retail_amount_minor,currency,expires_at FROM aurelink_quotes WHERE id=$1 AND user_id=$2 AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",
+      [input.quoteId, input.userId],
+    );
+    const quote = quoteResult.rows[0];
+    if (!quote) throw new Error("AURELINK quote expired or was not found.");
+    const purpose = String(quote.product_kind) === "activation" ? "aurelink_otp"
+      : String(quote.product_kind) === "rental" ? "aurelink_rental" : "";
+    if (!purpose) throw new Error("This AURELINK product cannot be checked out.");
+    const amountMinor = BigInt(String(quote.retail_amount_minor));
+    if (amountMinor <= 0n) throw new Error("Invalid AURELINK checkout amount.");
+    const currency = String(quote.currency ?? "USD").toUpperCase();
+    if (currency !== "USD") throw new Error("AURELINK Stripe checkout currently supports USD quotes only.");
+    const userResult = await client.query("SELECT email FROM users WHERE id=$1 LIMIT 1", [input.userId]);
+    const email = String(userResult.rows[0]?.email ?? "").trim();
+    if (!email) throw new Error("A verified email address is required for checkout.");
+    const reference = "AURELINK-" + crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+    const metadata = { provider: "stripe", purpose, reference, userId: input.userId, quoteId: input.quoteId, productKind: String(quote.product_kind) };
+    await client.query(
+      "INSERT INTO payment_transactions (user_id,reference,amount_minor,currency,purpose,status,metadata,payment_provider,customer_email) VALUES ($1,$2,$3,$4,$5,'initialized',$6::jsonb,'stripe',$7)",
+      [input.userId, reference, amountMinor.toString(), currency, purpose, JSON.stringify(metadata), email],
+    );
+    const body = form({
+      mode: "payment",
+      client_reference_id: reference,
+      "line_items[0][price_data][currency]": currency.toLowerCase(),
+      "line_items[0][price_data][product_data][name]": String(quote.product_kind) === "rental" ? "AURELINK mobile number rental" : "AURELINK SMS activation",
+      "line_items[0][price_data][product_data][description]": "AURELINK telecom service",
+      "line_items[0][price_data][unit_amount]": amountMinor.toString(),
+      "line_items[0][quantity]": 1,
+      customer_email: email,
+      success_url: BACKEND_CALLBACK + "?session_id={CHECKOUT_SESSION_ID}&reference=" + encodeURIComponent(reference),
+      cancel_url: BACKEND_CALLBACK + "?reference=" + encodeURIComponent(reference) + "&status=cancelled",
+      "metadata[provider]": metadata.provider,
+      "metadata[purpose]": metadata.purpose,
+      "metadata[reference]": metadata.reference,
+      "metadata[userId]": metadata.userId,
+      "metadata[quoteId]": metadata.quoteId,
+      "metadata[productKind]": metadata.productKind,
+      "payment_intent_data[metadata][provider]": metadata.provider,
+      "payment_intent_data[metadata][purpose]": metadata.purpose,
+      "payment_intent_data[metadata][reference]": metadata.reference,
+      "payment_intent_data[metadata][userId]": metadata.userId,
+      "payment_intent_data[metadata][quoteId]": metadata.quoteId,
+      "payment_intent_data[metadata][productKind]": metadata.productKind,
+    });
+    const session = await stripeRequest<StripeSession>("post", "/checkout/sessions", body);
+    if (!session.id || !session.url) throw new Error("Stripe did not return a hosted checkout URL.");
+    await client.query(
+      "UPDATE payment_transactions SET checkout_url=$1,gateway_status='checkout_created',metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{stripeCheckoutSessionId}',to_jsonb($2::text),true),updated_at=now() WHERE reference=$3",
+      [session.url, session.id, reference],
+    );
+    await client.query("COMMIT");
+    return { reference, checkoutUrl: session.url, amountMinor: amountMinor.toString(), currency, purpose };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function markLegacyStripePaid(session: StripeSession): Promise<void> {
   const reference=String(session.metadata?.reference??"").trim();
   if(!reference)throw new Error("Stripe Checkout session is missing ReDom payment reference.");
