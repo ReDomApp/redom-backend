@@ -229,13 +229,14 @@ router.post("/aurelink/activations", authMiddleware, async (req, res) => {
     return providerFailure(res, error);
   } finally { client.release(); }
 
+  let providerOrderId: string | null = null;
   try {
     const service = String(quote["service"]);
     const country = String(quote["country"]);
     const maxPrice = Number(quote["provider_max_price"]);
     const provider = await smsPoolClient.purchaseSms({ country, service, maxPrice, pool: parsed.data.pool, pricingOption: parsed.data.pricingOption });
     const data = object(provider);
-    const providerOrderId = String(data["order_id"] ?? data["orderid"] ?? "");
+    providerOrderId = String(data["order_id"] ?? data["orderid"] ?? "");
     const phoneNumber = String(data["number"] ?? data["phonenumber"] ?? "");
     if (!providerOrderId || !phoneNumber) throw new SmsPoolError("SMSPool returned an incomplete activation response.", { providerType: "INVALID_PROVIDER_RESPONSE" });
     const actualCost = Number(data["cost"] ?? maxPrice);
@@ -249,6 +250,7 @@ router.post("/aurelink/activations", authMiddleware, async (req, res) => {
     );
     return res.status(201).json({ success: true, order: { orderId: providerOrderId, phoneNumber, country, service, providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresIn: data["expires_in"] ?? null } });
   } catch (error) {
+    if (providerOrderId) await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
     await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
     await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND user_id=$2", [parsed.data.quoteId, req.user.userId]).catch(() => undefined);
     return providerFailure(res, error);
