@@ -148,7 +148,7 @@ router.get("/aurelink/catalog/success-rate", authMiddleware, async (req, res) =>
   const service = typeof req.query.service === "string" ? req.query.service : "";
   const country = typeof req.query.country === "string" ? req.query.country : undefined;
   if (!service) return res.status(400).json({ success: false, message: "Service is required." });
-  if (!isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try { return res.json({ success: true, successRate: await smsPoolClient.successRate(service, country) }); }
   catch (error) { return providerFailure(res, error); }
 });
@@ -156,14 +156,14 @@ router.get("/aurelink/catalog/valid-pools", authMiddleware, async (req, res) => 
   const service = typeof req.query.service === "string" ? req.query.service : "";
   const country = typeof req.query.country === "string" ? req.query.country : "";
   if (!service || !country) return res.status(400).json({ success: false, message: "Service and country are required." });
-  if (!isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try { return res.json({ success: true, pools: await smsPoolClient.validPools(service, country) }); }
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/stock", authMiddleware, async (req, res) => {
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
-  if (!isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try { return res.json({ success: true, stock: await smsPoolClient.stock(parsed.data) }); }
   catch (error) { return providerFailure(res, error); }
 });
@@ -176,7 +176,7 @@ router.post("/aurelink/quotes", authMiddleware, async (req, res) => {
     pool: z.string().max(32).optional(),
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid quote request." });
-  if (!isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try {
     const providerPricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
     const prices = pricesIn(providerPricing);
