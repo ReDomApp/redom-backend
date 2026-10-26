@@ -35,7 +35,7 @@ All routes require a valid ReDom access token unless noted otherwise. They are s
 - `POST /aurelink/quotes` — fetches live SMSPool service pricing, applies configured retail markup and stores a 10-minute, single-use quote. Request: `{ "kind":"activation", "country":"US", "service":"1" }`.
 - `POST /aurelink/checkout` — creates a hosted Stripe Checkout session for a valid AURELINK quote and stores a purpose-specific payment transaction.
 - `POST /aurelink/activations` — consumes a quote after verifying a paid `payment_transactions` row for the same user, purpose `aurelink_otp`, USD, and sufficient amount. Request: `{ "quoteId":"<uuid>", "paymentReference":"<paid-reference>" }`.
-- `GET /aurelink/activations/:orderId/messages` — polls SMSPool and returns status/code for the owner only.
+- `GET /aurelink/activations/:orderId/messages` — polls SMSPool and returns status/code for the owner only; persists first-SMS-arrival time and expiry.
 - `POST /aurelink/activations/:orderId/resend` — administrator-only until resend fees are billed
 - `POST /aurelink/activations/:orderId/cancel` — administrator-only until customer refunds are integrated
 - `GET /aurelink/orders` — user's own recorded orders.
@@ -47,8 +47,8 @@ SMSPool uses polling rather than an SMS push webhook for temporary activations. 
 - `POST /aurelink/rental-quotes` — obtains live rental pricing for a rental ID and duration.
 - `POST /aurelink/checkout` — also creates checkout for rental quotes using purpose `aurelink_rental`.
 - `POST /aurelink/rentals` — consumes the paid rental quote and purchases the rental.
-- `GET /aurelink/rentals/:rentalId/messages`
-- `GET /aurelink/rentals/:rentalId/status`
+- `GET /aurelink/rentals/:rentalId/messages` — persists SMS-arrival time and provider expiry.
+- `GET /aurelink/rentals/:rentalId/status` — refreshes provider status and expiry.
 - `POST /aurelink/rentals/:rentalId/renew` — request body: `{ "days": 30, "paymentReference": "<paid-reference>" }`; SMSPool exposes the extension duration in days and each renewal is payment-gated.
 - `POST /aurelink/rentals/:rentalId/cancel` — administrator-only until customer refunds are integrated
 
@@ -78,7 +78,7 @@ The example markup is a configurable default, not a recommended retail price. Th
 
 ## Safety, pricing and provider restrictions
 
-- The API key is only sent from the server to SMSPool in form-encoded POST bodies. The country catalog filters labels containing `Virtual`/`VoIP`, and order/quote endpoints fail closed unless the selected country can be matched to the provider catalog as non-VoIP. The frontend should use the provider country ID returned by the filtered catalog.
+- The API key is only sent from the server to SMSPool in form-encoded POST bodies. The country catalog filters labels containing `Virtual`/`VoIP`, and order/quote endpoints fail closed unless the selected country can be matched to the provider catalog as non-VoIP. The frontend should use the provider country ID returned by the filtered catalog. After an activation or rental is purchased, AURELINK performs a per-number SMSPool carrier lookup before accepting it. Explicit VoIP results are rejected and cancellation is requested; lookup failures or results that do not establish a mobile line also fail closed. Only verified mobile results are returned as accepted purchases. Carrier, line type, verification time, SMS-arrival time, expiry, and last provider-check time are persisted.
 - Every order is associated with the authenticated user in PostgreSQL; reads, cancellation, resend and rental management enforce ownership.
 - Purchase endpoints require a paid transaction and a live price guard. Provider orders are not placed when a matching paid transaction cannot be found.
 - Services must be explicitly allowlisted. Banking, crypto exchange, government and telecom verification are denied by the service filter. WhatsApp remains disabled unless `SMSPOOL_WHATSAPP_APPROVED=true`.
@@ -89,8 +89,8 @@ The example markup is a configurable default, not a recommended retail price. Th
 
 ## Database
 
-Startup creates `aurelink_quotes` and `aurelink_provider_orders` with indexes. Quotes expire after ten minutes and are single-use. Provider orders are scoped to the owner.
+Startup creates `aurelink_quotes` and `aurelink_provider_orders` with indexes and performs additive migrations for lifecycle fields. Quotes expire after ten minutes and are single-use. Provider orders are scoped to the owner. A background lifecycle worker starts with the backend when `SMSPOOL_API_KEY` is present; by default it checks up to 25 pending activations/rentals each minute, records first SMS receipt and provider status/expiry, and marks expired pending activations. Configure `AURELINK_LIFECYCLE_POLL_MS` (minimum 30 seconds) and `AURELINK_LIFECYCLE_BATCH_SIZE` (1–100) if needed.
 
 ## Validation status
 
-This branch was authored against the existing Express 5 / TypeScript backend and SMSPool's published API reference/official JavaScript SDK. It still requires a repository CI/typecheck run and a live SMSPool sandbox/low-balance test using AURELINK's own account before production enablement. Do not turn on customer purchasing until the payment-creation flow is wired to the quoted amount and the provider confirms commercial resale rights.
+This branch was authored against the existing Express 5 / TypeScript backend and SMSPool's published API reference/official JavaScript SDK. Carrier lookup is a paid provider capability; confirm the current SMSPool lookup price and account permissions before enabling customer sales. This branch still requires a repository CI/typecheck run and a live SMSPool low-risk test using AURELINK's own account before production enablement. The carrier-response parser must be confirmed against real SMSPool responses before relying on it as a compliance guarantee. Do not turn on customer purchasing until the payment-creation flow is wired to the quoted amount and the provider confirms commercial resale rights.
