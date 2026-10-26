@@ -1,0 +1,18 @@
+{
+  "name": "@redom/intelligence-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent, self-hostable AI inference gateway for ReDom services.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "dev": "pnpm run build && node dist/src/server.js",
+    "test": "pnpm run build && node --test dist/tests/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "typescript": "~5.9.3"
+  }
+}

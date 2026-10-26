@@ -5,14 +5,16 @@ on:
     branches: [main]
     paths:
       - "artifacts/redom-backend/**"
+      - "artifacts/redom-intelligence/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "package.json"
       - ".github/workflows/redom-backend-check.yml"
   push:
-    branches: [main, feat/daily-ops-intelligence]
+    branches: [main, feat/daily-ops-intelligence, feat/redom-intelligence-core]
     paths:
       - "artifacts/redom-backend/**"
+      - "artifacts/redom-intelligence/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "package.json"
@@ -33,3 +35,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @workspace/redom-backend run typecheck
       - run: pnpm --filter @workspace/redom-backend run build
+      - name: Typecheck independent ReDom Intelligence Core
+        run: pnpm --filter @redom/intelligence-core run typecheck
+      - name: Test independent ReDom Intelligence Core
+        run: pnpm --filter @redom/intelligence-core run test
+      - name: Build independent ReDom Intelligence Core
+        run: pnpm --filter @redom/intelligence-core run build

@@ -293,6 +293,15 @@ importers:
         specifier: 3.1.0
         version: 3.1.0
 
+  artifacts/redom-intelligence:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.3
+        version: 25.9.5
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
   artifacts/redom-frontend:
     dependencies:
       '@config-plugins/react-native-webrtc':
