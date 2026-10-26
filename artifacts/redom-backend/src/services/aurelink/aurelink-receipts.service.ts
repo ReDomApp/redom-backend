@@ -36,7 +36,7 @@ export async function sendAurelinkFinalReceipt(order: OrderRecord, status: "Comp
     const payload = record(order.provider_payload);
     const orderId = String(payload.adminOrderId ?? order.orderId ?? order.provider_order_id ?? "—");
     const serial = String(payload.serialNumber ?? order.serialNumber ?? "—");
-    const amount = status === "Refunded" ? (refundedAmount ?? valueFor(order.provider_payload, ["refund_amount", "refunded_amount", "amount_refunded", "refund"])) : null;
+    const amount = status === "Refunded" ? (refundedAmount ?? valueFor(order.provider_payload, ["refund_amount", "refunded_amount", "amount_refunded", "refund"]) ?? (order.provider_cost !== null && order.provider_cost !== undefined ? String(order.provider_cost) : null)) : null;
     const rows: Array<[string, unknown]> = [
       ["Order ID", orderId], ["Serial number", serial], ["Phone number", order.phone_number ?? order.phoneNumber],
       ["Country", order.country], ["Service", order.service], ["Final status", status],
