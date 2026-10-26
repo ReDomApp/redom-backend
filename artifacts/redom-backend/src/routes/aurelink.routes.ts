@@ -4,6 +4,7 @@ import { pool } from "../database/db";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { logger } from "../lib/logger";
 import { SmsPoolError, smsPoolClient, type SmsPoolPayload } from "../services/aurelink/smspool.client";
+import { createAurelinkStripeCheckout } from "../services/payments/stripe-payment.service";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -199,6 +200,18 @@ router.post("/aurelink/quotes", authMiddleware, async (req, res) => {
   } catch (error) { return providerFailure(res, error); }
 });
 
+router.post("/aurelink/checkout", authMiddleware, async (req, res) => {
+  const parsed = z.object({ quoteId: z.string().uuid() }).safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "A valid AURELINK quote is required." });
+  try {
+    const checkout = await createAurelinkStripeCheckout({ userId: req.user.userId, quoteId: parsed.data.quoteId });
+    return res.status(201).json({ success: true, checkoutUrl: checkout.checkoutUrl, paymentReference: checkout.reference, amountMinor: checkout.amountMinor, currency: checkout.currency, purpose: checkout.purpose });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to create AURELINK checkout.";
+    return res.status(400).json({ success: false, message });
+  }
+});
+
 router.post("/aurelink/activations", authMiddleware, async (req, res) => {
   const parsed = z.object({ quoteId: z.string().uuid(), paymentReference: z.string().min(8).max(100), pool: z.string().max(32).optional(), pricingOption: z.union([z.literal(0), z.literal(1)]).optional() }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Valid quote and payment reference are required." });
@@ -301,48 +314,90 @@ router.get("/aurelink/orders", authMiddleware, async (req, res) => {
   } catch (error) { return providerFailure(res, error); }
 });
 
-router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
+router.post("/aurelink/rental-quotes", authMiddleware, async (req, res) => {
   const parsed = z.object({
     rentalId: z.number().int().positive(),
     days: z.number().int().min(1).max(365),
     serviceId: z.string().max(100).optional(),
-    paymentReference: z.string().min(8).max(100),
   }).safeParse(req.body);
-  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental request." });
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental quote request." });
   if (parsed.data.serviceId && !await isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  let paymentReserved = false;
-  let purchasedRentalId: string | null = null;
   try {
-    const stock = await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days);
-    const prices = pricesIn(stock);
+    const providerPricing = await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days);
+    const prices = pricesIn(providerPricing);
     if (!prices.length) return res.status(409).json({ success: false, message: "SMSPool did not return a live price for this rental duration." });
     const providerMaxPrice = Math.min(...prices);
     const retailAmountMinor = retailPriceMinor(providerMaxPrice);
-    const redemption = await pool.query(
-      "INSERT INTO aurelink_payment_redemptions (payment_reference,user_id,product_kind) SELECT reference,user_id,'rental' FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_rental' AND currency='USD' AND amount_minor >= $3 ON CONFLICT DO NOTHING RETURNING payment_reference",
-      [parsed.data.paymentReference, req.user.userId, String(retailAmountMinor)],
+    const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: parsed.data.serviceId ?? null, pricing: providerPricing };
+    const result = await pool.query(
+      "INSERT INTO aurelink_quotes (user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'rental',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,provider_max_price,retail_amount_minor,currency,expires_at",
+      [req.user.userId, String(parsed.data.rentalId), parsed.data.serviceId ?? "always_on", providerMaxPrice, retailAmountMinor, JSON.stringify(quoteMetadata), String(quoteTtlMinutes)],
     );
-    if (redemption.rowCount !== 1) return res.status(402).json({ success: false, message: "A valid, unused, paid AURELINK rental transaction covering the live price is required." });
+    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
+  } catch (error) { return providerFailure(res, error); }
+});
+
+router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
+  const parsed = z.object({ quoteId: z.string().uuid(), paymentReference: z.string().min(8).max(100) }).safeParse(req.body);
+  if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "A valid rental quote and payment reference are required." });
+  const client = await pool.connect();
+  let quote: Record<string, unknown> | undefined;
+  let paymentReserved = false;
+  let purchasedRentalId: string | null = null;
+  try {
+    await client.query("BEGIN");
+    const quoteResult = await client.query(
+      "SELECT * FROM aurelink_quotes WHERE id=$1 AND user_id=$2 AND product_kind='rental' AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",
+      [parsed.data.quoteId, req.user.userId],
+    );
+    quote = quoteResult.rows[0] as Record<string, unknown> | undefined;
+    if (!quote) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "Rental quote expired, consumed, or not found." }); }
+    const paid = await client.query(
+      "SELECT id FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_rental' AND currency='USD' AND amount_minor >= $3 LIMIT 1",
+      [parsed.data.paymentReference, req.user.userId, String(quote["retail_amount_minor"])],
+    );
+    if (paid.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(402).json({ success: false, message: "A verified, paid AURELINK rental transaction covering this quote is required." }); }
+    const redemption = await client.query(
+      "INSERT INTO aurelink_payment_redemptions (payment_reference,user_id,quote_id,product_kind) VALUES ($1,$2,$3,'rental') ON CONFLICT DO NOTHING RETURNING payment_reference",
+      [parsed.data.paymentReference, req.user.userId, parsed.data.quoteId],
+    );
+    if (redemption.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This payment has already been used for an AURELINK order." }); }
+    await client.query("UPDATE aurelink_quotes SET consumed_at=NOW() WHERE id=$1", [parsed.data.quoteId]);
+    await client.query("COMMIT");
     paymentReserved = true;
-    const provider = await smsPoolClient.purchaseRental({ id: parsed.data.rentalId, days: parsed.data.days, service_id: parsed.data.serviceId });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return providerFailure(res, error);
+  } finally { client.release(); }
+
+  try {
+    const quoteMetadata = typeof quote?.["provider_pricing"] === "string" ? JSON.parse(String(quote["provider_pricing"])) as Record<string, unknown> : quote?.["provider_pricing"] as Record<string, unknown>;
+    const rentalCatalogId = Number(quoteMetadata?.["rentalCatalogId"]);
+    const days = Number(quoteMetadata?.["days"]);
+    const serviceId = quoteMetadata?.["serviceId"] == null ? undefined : String(quoteMetadata["serviceId"]);
+    if (!Number.isInteger(rentalCatalogId) || rentalCatalogId <= 0 || !Number.isInteger(days) || days <= 0) throw new SmsPoolError("Rental quote is missing its provider metadata.", { providerType: "INVALID_QUOTE" });
+    const provider = await smsPoolClient.purchaseRental({ id: rentalCatalogId, days, service_id: serviceId });
     const data = object(provider);
     const providerOrderId = String(data["rental_code"] ?? data["rental_id"] ?? data["order_id"] ?? "");
     const phoneNumber = String(data["phonenumber"] ?? data["number"] ?? "");
     if (!providerOrderId || !phoneNumber) throw new SmsPoolError("SMSPool returned an incomplete rental response.", { providerType: "INVALID_PROVIDER_RESPONSE" });
     purchasedRentalId = providerOrderId;
+    const providerMaxPrice = Number(quote?.["provider_max_price"]);
     const actualCost = Number(data["cost"] ?? providerMaxPrice);
     if (!Number.isFinite(actualCost) || actualCost > providerMaxPrice) {
       await smsPoolClient.cancelRental(providerOrderId).catch(() => undefined);
-      throw new SmsPoolError("Rental cost exceeded the live price guard; a refund was requested.", { providerType: "PRICE_GUARD" });
+      purchasedRentalId = null;
+      throw new SmsPoolError("Rental cost exceeded the quoted maximum; a refund was requested.", { providerType: "PRICE_GUARD" });
     }
     await pool.query(
-      "INSERT INTO aurelink_provider_orders (user_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,provider_payload) VALUES ($1,'rental',$2,$3,$4,$5,'active',$6,$7::jsonb)",
-      [req.user.userId, providerOrderId, phoneNumber, String(data["country"] ?? parsed.data.rentalId), parsed.data.serviceId ?? null, actualCost, JSON.stringify({ provider, rentalCatalogId: parsed.data.rentalId, serviceId: parsed.data.serviceId ?? null, days: parsed.data.days })],
+      "INSERT INTO aurelink_provider_orders (user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,provider_payload) VALUES ($1,$2,'rental',$3,$4,$5,$6,'active',$7,$8::jsonb)",
+      [req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, String(data["country"] ?? quote?.["country"] ?? ""), serviceId ?? null, actualCost, JSON.stringify({ provider, rentalCatalogId, serviceId, days })],
     );
-    return res.status(201).json({ success: true, rental: { rentalId: providerOrderId, phoneNumber, days: parsed.data.days, providerCostUsd: actualCost, details: provider } });
+    return res.status(201).json({ success: true, rental: { rentalId: providerOrderId, phoneNumber, days, providerCostUsd: actualCost, details: provider } });
   } catch (error) {
     if (purchasedRentalId) await smsPoolClient.cancelRental(purchasedRentalId).catch(() => undefined);
     if (paymentReserved) await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
+    await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND user_id=$2", [parsed.data.quoteId, req.user.userId]).catch(() => undefined);
     return providerFailure(res, error);
   }
 });
