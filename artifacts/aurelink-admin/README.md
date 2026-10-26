@@ -14,12 +14,11 @@ Private operations frontend for AURELINK. The UI contains no payment flow and ne
 Configure these in the backend Render service before enabling login:
 
 - `AURELINK_ADMIN_PASSWORD`: long, unique admin password (never commit it).
-- `AURELINK_ADMIN_USER_ID`: UUID of the existing database user whose AURELINK records are assigned to the admin.
 - `AURELINK_ADMIN_SESSION_SECRET`: random secret dedicated to signing admin sessions (recommended); otherwise the backend JWT secret is used.
 - `SMSPOOL_API_KEY`: existing SMSPool API key.
 - `AURELINK_ALLOWED_SERVICES`: server-side allowlist of enabled service IDs/names.
 
-The backend requires `AURELINK_ADMIN_USER_ID` to reference an existing row in `users` because existing AURELINK order records use that foreign key. Keep the ID stable so history remains attached to the same admin identity.
+A stable admin identity UUID is created once in the database and is separate from normal user accounts. Admin order records use the `admin_account_id` extension on the existing AURELINK provider-order table, while customer orders remain tied to their normal user IDs.
 
 ## Receipt email
 
