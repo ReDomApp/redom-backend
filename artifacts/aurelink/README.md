@@ -35,8 +35,8 @@ All routes require a valid ReDom access token unless noted otherwise. They are s
 - `POST /aurelink/quotes` — fetches live SMSPool service pricing, applies configured retail markup and stores a 10-minute, single-use quote. Request: `{ "kind":"activation", "country":"US", "service":"1" }`.
 - `POST /aurelink/activations` — consumes a quote after verifying a paid `payment_transactions` row for the same user, purpose `aurelink_otp`, USD, and sufficient amount. Request: `{ "quoteId":"<uuid>", "paymentReference":"<paid-reference>" }`.
 - `GET /aurelink/activations/:orderId/messages` — polls SMSPool and returns status/code for the owner only.
-- `POST /aurelink/activations/:orderId/resend`
-- `POST /aurelink/activations/:orderId/cancel`
+- `POST /aurelink/activations/:orderId/resend` — administrator-only until resend fees are billed
+- `POST /aurelink/activations/:orderId/cancel` — administrator-only until customer refunds are integrated
 - `GET /aurelink/orders` — user's own recorded orders.
 
 SMSPool uses polling rather than an SMS push webhook for temporary activations. Client apps should poll the AURELINK messages route with a modest interval and stop when the order completes, expires, or is refunded.
@@ -47,7 +47,7 @@ SMSPool uses polling rather than an SMS push webhook for temporary activations. 
 - `GET /aurelink/rentals/:rentalId/messages`
 - `GET /aurelink/rentals/:rentalId/status`
 - `POST /aurelink/rentals/:rentalId/renew` — request body: `{ "days": 30, "paymentReference": "<paid-reference>" }`; SMSPool exposes the extension duration in days and each renewal is payment-gated.
-- `POST /aurelink/rentals/:rentalId/cancel`
+- `POST /aurelink/rentals/:rentalId/cancel` — administrator-only until customer refunds are integrated
 
 ### Other SMSPool capabilities
 
