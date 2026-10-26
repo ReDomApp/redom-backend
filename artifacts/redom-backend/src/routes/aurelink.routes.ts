@@ -30,7 +30,7 @@ async function isServiceAllowed(service: string): Promise<boolean> {
   const configured = allowedServices();
   let serviceName = normalized;
   let serviceId = normalized;
-  if (/^\\d+$/.test(normalized)) {
+  if (/^[0-9]+$/.test(normalized)) {
     try {
       const entries = serviceEntries(await smsPoolClient.services());
       const match = entries.find((entry) => entry.id === normalized);
