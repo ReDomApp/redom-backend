@@ -451,14 +451,12 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
   return imported;
 }
 
-async function sendImmediateNoticeAlert(to: string[], importedCount: number, day: string): Promise<void> {\n  // Hard stop: this feature must never send email while disabled.\n  void to; void importedCount; void day; return;
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.FBI_SECURITY_EMAIL_FROM?.trim() || process.env.REDOM_OPS_REPORT_FROM?.trim() || "admin@wnncompany.com";
-  if (!apiKey || !from || importedCount < 1) return;
-  const base = publicBaseUrl();
-  const html = "<h1>FBI Security notice update</h1><p>" + importedCount + " new official public notice record(s) were detected during hourly polling.</p><p><a href=\"" + base + "/cases\">Review case records</a></p><p>Official public-source information only. Verify source facts before action. No identity or guilt conclusion is implied.</p>";
-  const sent = await new Resend(apiKey).emails.send({ from, to, subject: "FBI Security — new public notices detected (" + day + ")", html });
-  if (sent.error) throw new Error(sent.error.message || "Unable to send new-notice alert");
+async function sendImmediateNoticeAlert(to: string[], importedCount: number, day: string): Promise<void> {
+  // Hard stop: this feature must never send email while disabled.
+  void to;
+  void importedCount;
+  void day;
+  return;
 }
 function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({
