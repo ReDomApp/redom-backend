@@ -451,7 +451,7 @@ async function pollConfiguredOfficialUrls(): Promise<number> {
   return imported;
 }
 
-async function sendImmediateNoticeAlert(to: string[], importedCount: number, day: string): Promise<void> {
+async function sendImmediateNoticeAlert(to: string[], importedCount: number, day: string): Promise<void> {\n  // Hard stop: this feature must never send email while disabled.\n  void to; void importedCount; void day; return;
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.FBI_SECURITY_EMAIL_FROM?.trim() || process.env.REDOM_OPS_REPORT_FROM?.trim() || "admin@wnncompany.com";
   if (!apiKey || !from || importedCount < 1) return;
