@@ -579,6 +579,7 @@ export async function createAurelinkStripeCheckout(input: { userId: string; quot
       "UPDATE payment_transactions SET checkout_url=$1,gateway_status='checkout_created',metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{stripeCheckoutSessionId}',to_jsonb($2::text),true),updated_at=now() WHERE reference=$3",
       [session.url, session.id, reference],
     );
+    await client.query("UPDATE aurelink_quotes SET expires_at=GREATEST(expires_at,NOW()+INTERVAL '24 hours') WHERE id=$1", [input.quoteId]);
     await client.query("COMMIT");
     return { reference, checkoutUrl: session.url, amountMinor: amountMinor.toString(), currency, purpose };
   } catch (error) {
