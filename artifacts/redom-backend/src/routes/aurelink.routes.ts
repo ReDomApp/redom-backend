@@ -49,13 +49,6 @@ function pricesIn(value: unknown, output: number[] = []): number[] {
   }
   return output;
 }
-async function verifyPaidPayment(userId: string, reference: string, purpose: "aurelink_otp" | "aurelink_rental", amountMinor: number): Promise<boolean> {
-  const result = await pool.query(
-    "SELECT id FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose=$3 AND currency='USD' AND amount_minor >= $4 LIMIT 1",
-    [reference, userId, purpose, String(amountMinor)],
-  );
-  return result.rowCount === 1;
-}
 async function ownedOrder(userId: string, orderId: string, kind?: string) {
   const result = await pool.query(
     "SELECT * FROM aurelink_provider_orders WHERE user_id=$1 AND provider_order_id=$2 AND ($3::text IS NULL OR product_kind=$3) LIMIT 1",
