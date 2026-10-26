@@ -18,6 +18,7 @@ import { startStarsTrialWorker, stopStarsTrialWorker } from "./services/payments
 import { ensureRedomOAuthSchema } from "./services/redom-oauth-schema.service";
 import { ensureOpsIntelligenceSchema, startDailyOpsIntelligence, stopDailyOpsIntelligence } from "./services/operations/daily-ops-intelligence.service";
 import { startFbiSecurityWorker, stopFbiSecurityWorker } from "./services/fbi-security/fbi-security-worker.service";
+import { ensureAurelinkSchema } from "./services/aurelink/schema-bootstrap.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -28,6 +29,7 @@ async function start(): Promise<void> {
   await ensureMessagingCompletionSchema();
   await ensureRecognizedDeviceSchema();
   await ensurePaymentSchema();
+  await ensureAurelinkSchema(pool);
   await ensureBugReportSchema();
   await ensureStarsSchema();
   await ensureRefundSchema();
