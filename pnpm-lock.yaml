@@ -127,41 +127,28 @@ importers:
   artifacts/aurelink-public:
     dependencies:
       react:
-        specifier: catalog:
+        specifier: ^19.2.3
         version: 19.2.3
       react-dom:
-        specifier: catalog:
+        specifier: 19.2.3
         version: 19.2.3
     devDependencies:
       '@types/react':
-        specifier: catalog:
+        specifier: ^19.2.0
         version: 19.2.18
       '@types/react-dom':
-        specifier: catalog:
+        specifier: ^19.2.0
         version: 19.3.0
       '@vitejs/plugin-react':
-        specifier: catalog:
+        specifier: ^5.0.4
         version: 5.2.0
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
       vite:
-        specifier: catalog:
+        specifier: ^7.3.2
         version: 7.3.6
 
-
-  .:
-    dependencies:
-      '@replit/connectors-sdk':
-        specifier: ^0.4.1
-        version: 0.4.1
-    devDependencies:
-      prettier:
-        specifier: ^3.9.6
-        version: 3.9.6
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
 
   artifacts/api-server:
     dependencies:
