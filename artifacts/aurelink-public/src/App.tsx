@@ -1,144 +1,37 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { getPublicIp, type PublicNetwork } from "./network";
+import { FormEvent, useEffect, useState } from "react";
+import { getPublicIp } from "./network";
 import "./styles.css";
-
-type Screen = "login" | "register" | "verify" | "complete";
-type ApiResult = { success?: boolean; message?: string; code?: string; expiresAt?: string; remainingSeconds?: number; user?: { email?: string } };
+import Mark from "./assets/aurelink-mark.svg";
+import Shield from "./assets/icon-shield.svg";
+import Mail from "./assets/icon-mail.svg";
+import NetworkIcon from "./assets/icon-network.svg";
+type Screen = "login" | "register" | "verify" | "complete" | "reset-request" | "reset-complete";
+type Result = { success?: boolean; message?: string; code?: string; email?: string; user?: Record<string, unknown>; session?: { accessToken: string; refreshToken: string } };
+type Notice = { kind: "info" | "success" | "error"; text: string } | null;
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "https://redom-backend.onrender.com/redom-backend";
-
-async function request<T extends ApiResult>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(API_BASE + path, {
-    method: body === undefined ? "GET" : "POST",
-    headers: { Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    cache: "no-store",
-  });
-  let payload: T;
-  try { payload = await response.json() as T; }
-  catch { throw new Error("Aurelink received an invalid server response. Please try again."); }
-  if (!response.ok || payload.success === false) {
-    const error = new Error(payload.message || "The request could not be completed.") as Error & { code?: string; payload?: T };
-    error.code = payload.code;
-    error.payload = payload;
-    throw error;
-  }
-  return payload;
+async function api<T extends Result = Result>(path: string, body: unknown): Promise<T> {
+ const response = await fetch(API_BASE + path, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+ let data: T; try { data = await response.json() as T; } catch { throw new Error("Aurelink received an invalid server response. Please try again."); }
+ if (!response.ok || data.success === false) { const error = new Error(data.message || "The request could not be completed.") as Error & { code?: string }; error.code = data.code; throw error; } return data;
 }
-
-function mailProvider(email: string) {
-  const domain = email.split("@")[1]?.toLowerCase() || "";
-  if (domain === "gmail.com" || domain === "googlemail.com") return { label: "Open Gmail", url: "https://mail.google.com/" };
-  if (["outlook.com", "hotmail.com", "live.com", "msn.com"].includes(domain)) return { label: "Open Outlook", url: "https://outlook.live.com/mail/" };
-  if (domain === "yahoo.com" || domain.endsWith(".yahoo.com")) return { label: "Open Yahoo Mail", url: "https://mail.yahoo.com/" };
-  if (domain === "icloud.com" || domain === "me.com" || domain === "mac.com") return { label: "Open iCloud Mail", url: "https://www.icloud.com/mail" };
-  return { label: "Open your email", url: "https://mail.google.com/" };
-}
-
-function Brand() {
-  return <div className="brand"><div className="brand-symbol" aria-hidden="true"><i/><i/><i/><i/></div><div><strong>AURELINK</strong><span>CONNECTED. SECURE. GLOBAL.</span></div></div>;
-}
-
+function providerFor(email: string) { const d = email.split("@")[1]?.toLowerCase() || ""; if (["gmail.com","googlemail.com"].includes(d)) return {label:"Open Gmail",url:"https://mail.google.com/"}; if (["outlook.com","hotmail.com","live.com","msn.com"].includes(d)) return {label:"Open Outlook",url:"https://outlook.live.com/mail/"}; if (d === "yahoo.com" || d.endsWith(".yahoo.com")) return {label:"Open Yahoo Mail",url:"https://mail.yahoo.com/"}; if (["icloud.com","me.com","mac.com"].includes(d)) return {label:"Open iCloud Mail",url:"https://www.icloud.com/mail"}; return {label:"Open your email",url:"https://mail.google.com/"}; }
+function Brand() { return <div className="brand"><img src={Mark} alt="" className="brand-mark"/><div><strong>AURELINK</strong><span>CONNECTED. SECURE. GLOBAL.</span></div></div>; }
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ kind: "info" | "success" | "error"; text: string } | null>(null);
-  const [mailLink, setMailLink] = useState<{ label: string; url: string } | null>(null);
-  const [network, setNetwork] = useState<PublicNetwork | null>(null);
-  const [token, setToken] = useState("");
-  const queryToken = useMemo(() => new URLSearchParams(window.location.search).get("token") || "", []);
-  const screenParam = useMemo(() => new URLSearchParams(window.location.search).get("screen") || "", []);
-
-  useEffect(() => {
-    if (screenParam === "verify-email" && queryToken) {
-      setToken(queryToken);
-      setScreen("verify");
-      void request<ApiResult>("/aurelink/auth/signup/email/verify", { token: queryToken })
-        .then((result) => { setNotice({ kind: "success", text: result.message || "Email confirmed. Continue creating your account." }); })
-        .catch((error: Error) => setNotice({ kind: "error", text: error.message }));
-    }
-  }, [queryToken, screenParam]);
-
-  async function submitEmail(e: FormEvent) {
-    e.preventDefault();
-    if (!e.currentTarget.reportValidity()) return;
-    setBusy(true); setNotice({ kind: "info", text: "Checking your connection securely…" }); setMailLink(null);
-    try {
-      const ip = await getPublicIp();
-      setNetwork({ ip, status: "checked" });
-      const result = await request<ApiResult>("/aurelink/auth/signup/email/request", { email: email.trim(), clientIp: ip });
-      setMailLink(mailProvider(email.trim()));
-      setNotice({ kind: "success", text: result.message || "Mail sent. Check your inbox and spam folder." });
-    } catch (error) {
-      const err = error as Error & { code?: string; payload?: ApiResult };
-      if (err.code === "AURELINK_EMAIL_TOKEN_ACTIVE") {
-        setMailLink(mailProvider(email.trim()));
-        setNotice({ kind: "info", text: err.message || "An unexpired confirmation link was recently sent to this address. Check your inbox or wait for it to expire." });
-      } else {
-        setNotice({ kind: "error", text: err.message || "Aurelink could not start registration." });
-      }
-    } finally { setBusy(false); }
-  }
-
-  async function submitLogin(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true); setNotice({ kind: "info", text: "Signing in securely…" });
-    try {
-      const result = await request<ApiResult>("/aurelink/auth/login", { email: email.trim(), password });
-      if (result.user) sessionStorage.setItem("aurelink.user", JSON.stringify(result.user));
-      setNotice({ kind: "success", text: result.message || "Signed in successfully." });
-    } catch (error) { setNotice({ kind: "error", text: (error as Error).message || "Unable to sign in." }); }
-    finally { setBusy(false); }
-  }
-
-  async function resendConfirmation() { await submitEmail(new Event("submit") as unknown as FormEvent); }
-
-  return <main className="shell">
-    <section className="visual">
-      <div className="visual-grid"/>
-      <Brand/>
-      <div className="visual-copy"><div className="eyebrow"><span/> YOUR WORLD, CONNECTED</div><h1>One account.<br/><em>More possibility.</em></h1><p>Secure access to Aurelink services, communication and global connectivity — built around you.</p><div className="trust-row"><span>⌁ Privacy first</span><span>◈ Secure by design</span><span>◎ Global access</span></div></div>
-      <div className="visual-footer"><span>© {new Date().getFullYear()} Aurelink, Inc.</span><span>ACCOUNT SECURITY / 01</span></div>
-    </section>
-    <section className="content">
-      <div className="mobile-brand"><Brand/></div>
-      <div className="auth-card">
-        <div className="card-top"><div className="step-label">{screen === "verify" ? "EMAIL CONFIRMATION" : screen === "complete" ? "ACCOUNT SETUP" : "AURELINK ACCOUNT"}</div><div className="secure"><span>▣</span> Secure connection</div></div>
-        {screen === "login" && <>
-          <h2>Welcome back</h2><p className="subhead">Sign in to continue to your Aurelink account.</p>
-          <form onSubmit={submitLogin}>
-            <label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="email" required maxLength={255} placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)}/>
-            <div className="label-row"><label htmlFor="password">Password</label><button type="button" className="text-button" onClick={()=>setNotice({kind:"info",text:"Password recovery will be available through the account recovery flow."})}>Forgot password?</button></div>
-            <input id="password" type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Enter your password"/>
-            <button className="primary" disabled={busy}>{busy ? "Please wait…" : "Sign in"} <span>→</span></button>
-          </form>
-          <div className="switch">New to Aurelink? <button onClick={()=>{setScreen("register");setNotice(null)}}>Create an account</button></div>
-        </>}
-        {screen === "register" && <>
-          <h2>Create your account</h2><p className="subhead">Start with your email. We’ll send a short-lived confirmation link.</p>
-          <form onSubmit={submitEmail}>
-            <label htmlFor="register-email">Email address</label><input id="register-email" type="email" autoComplete="email" required maxLength={255} placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)}/>
-            <div className="privacy-note"><span>◈</span><p>We check connection reputation to protect accounts from automated abuse. Ordinary home, business, Wi-Fi and mobile connections are supported.</p></div>
-            <button className="primary" disabled={busy}>{busy ? "Verifying connection…" : "Send confirmation email"} <span>→</span></button>
-          </form>
-          <div className="switch">Already have an account? <button onClick={()=>{setScreen("login");setNotice(null)}}>Sign in</button></div>
-        </>}
-        {screen === "verify" && <>
-          <h2>Check your email</h2><p className="subhead">We’ll verify the confirmation link before you continue.</p>
-          <button className="primary" onClick={()=>{setScreen("complete");setNotice({kind:"info",text:"Continue using the secure link from your confirmation email."})}}>Continue <span>→</span></button>
-          <div className="switch"><button onClick={()=>setScreen("register")}>Back to registration</button></div>
-        </>}
-        {screen === "complete" && <>
-          <h2>Finish setting up</h2><p className="subhead">Your email confirmation is the first step. Follow the confirmation link to complete secure account setup.</p>
-          <button className="primary" onClick={()=>{setScreen("register");setNotice(null)}}>Return to Aurelink <span>→</span></button>
-        </>}
-        {notice && <div className={"notice "+notice.kind} role="status" aria-live="polite"><span className="notice-icon">{notice.kind==="success"?"✓":notice.kind==="error"?"!":"i"}</span><p>{notice.text}</p></div>}
-        {mailLink && <a className="mail-link" href={mailLink.url} target="_blank" rel="noreferrer">{mailLink.label} <span>↗</span></a>}
-        {network && screen === "register" && notice?.kind === "success" && <p className="network-footnote">Connection check completed. Your public IP is not displayed for privacy.</p>}
-        <div className="card-bottom"><span>Protected by Aurelink security</span><span>Privacy · Terms · Help</span></div>
-      </div>
-      <div className="content-foot">Aurelink services are protected by layered account and network security.</div>
-    </section>
-  </main>;
+ const [screen,setScreen] = useState<Screen>("login"); const [email,setEmail] = useState(""); const [password,setPassword] = useState(""); const [confirmPassword,setConfirmPassword] = useState(""); const [fullName,setFullName] = useState(""); const [acceptedTerms,setAcceptedTerms] = useState(false); const [busy,setBusy] = useState(false); const [notice,setNotice] = useState<Notice>(null); const [mailLink,setMailLink] = useState<{label:string;url:string}|null>(null); const [token,setToken] = useState(""); const [verifiedEmail,setVerifiedEmail] = useState(""); const [showPassword,setShowPassword] = useState(false);
+ useEffect(() => { const params = new URLSearchParams(window.location.search); const t = params.get("token") || ""; const s = params.get("screen") || ""; if (t) setToken(t); if (s === "verify-email" && t) { setScreen("verify"); setBusy(true); api("/aurelink/auth/signup/email/verify",{token:t}).then(r => { setVerifiedEmail(r.email || ""); setEmail(r.email || ""); setNotice({kind:"success",text:r.message || "Email confirmed. Complete your account setup."}); setScreen("complete"); }).catch(e => setNotice({kind:"error",text:e.message || "This confirmation link is invalid or expired."})).finally(()=>setBusy(false)); } else if (s === "reset-password" && t) { setScreen("reset-complete"); } }, []);
+ async function register(e: FormEvent) { e.preventDefault(); setBusy(true); setNotice({kind:"info",text:"Checking your public network connection…"}); setMailLink(null); try { const ip = await getPublicIp(); const r = await api("/aurelink/auth/signup/email/request",{email:email.trim(),clientIp:ip}); setMailLink(providerFor(email.trim())); setNotice({kind:"success",text:r.message || "Mail sent. Check your inbox and spam folder."}); } catch(err) { const x=err as Error & {code?:string}; if (x.code === "AURELINK_EMAIL_TOKEN_ACTIVE") { setMailLink(providerFor(email.trim())); setNotice({kind:"info",text:x.message || "An unexpired confirmation link was recently sent. Check your inbox before requesting another."}); } else setNotice({kind:"error",text:x.message || "Aurelink could not start registration."}); } finally { setBusy(false); } }
+ async function login(e: FormEvent) { e.preventDefault(); setBusy(true); setNotice({kind:"info",text:"Signing in securely…"}); try { const r=await api("/aurelink/auth/login",{email:email.trim(),password}); if (r.session) { sessionStorage.setItem("aurelink.accessToken",r.session.accessToken); sessionStorage.setItem("aurelink.refreshToken",r.session.refreshToken); } if(r.user) sessionStorage.setItem("aurelink.user",JSON.stringify(r.user)); setNotice({kind:"success",text:r.message || "Signed in successfully."}); } catch(err) { setNotice({kind:"error",text:(err as Error).message || "Unable to sign in."}); } finally { setBusy(false); } }
+ async function complete(e: FormEvent) { e.preventDefault(); if(password.length<10 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) { setNotice({kind:"error",text:"Use at least 10 characters with at least one letter and one number."}); return; } if(password!==confirmPassword) { setNotice({kind:"error",text:"The passwords do not match."}); return; } if(!acceptedTerms) { setNotice({kind:"error",text:"Accept the Terms and Privacy Policy to continue."}); return; } setBusy(true); setNotice({kind:"info",text:"Creating your Aurelink account…"}); try { const r=await api("/aurelink/auth/signup/complete",{token,fullName:fullName.trim(),password,confirmPassword,acceptedTerms:true}); if(r.session) {sessionStorage.setItem("aurelink.accessToken",r.session.accessToken);sessionStorage.setItem("aurelink.refreshToken",r.session.refreshToken);} if(r.user)sessionStorage.setItem("aurelink.user",JSON.stringify(r.user)); setNotice({kind:"success",text:r.message || "Your Aurelink account has been created."}); } catch(err) { setNotice({kind:"error",text:(err as Error).message || "Account creation failed."}); } finally {setBusy(false);} }
+ async function requestReset(e: FormEvent) { e.preventDefault(); setBusy(true); try { const r=await api("/aurelink/auth/password-reset/request",{email:email.trim()}); setNotice({kind:"success",text:r.message || "If an account exists, recovery instructions have been sent."}); } catch(err) {setNotice({kind:"error",text:(err as Error).message});} finally {setBusy(false);} }
+ async function resetPassword(e: FormEvent) { e.preventDefault(); if(password.length<10 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {setNotice({kind:"error",text:"Use at least 10 characters with at least one letter and one number."});return;} setBusy(true); try { const r=await api("/aurelink/auth/password-reset/complete",{token,password}); setNotice({kind:"success",text:r.message || "Password reset. Please sign in again."}); setScreen("login");setPassword(""); } catch(err) {setNotice({kind:"error",text:(err as Error).message || "Unable to reset password."});} finally {setBusy(false);} }
+ const title = screen==="login"?"Welcome back":screen==="register"?"Create your account":screen==="verify"?"Confirm your email":screen==="complete"?"Finish setting up":screen==="reset-request"?"Recover your account":"Choose a new password";
+ return <main className="shell"><section className="visual"><div className="visual-grid"/><Brand/><div className="visual-copy"><div className="eyebrow"><i/> YOUR WORLD, CONNECTED</div><h1>One account.<br/><em>More possibility.</em></h1><p>One secure identity for your Aurelink services. Thoughtfully built for people, protected by intelligent network safeguards.</p><div className="trust-row"><span><img src={Shield} alt=""/> Privacy first</span><span><img src={NetworkIcon} alt=""/> Network aware</span><span><img src={Mail} alt=""/> Verified access</span></div></div><div className="visual-footer"><span>© {new Date().getFullYear()} Aurelink</span><span>ACCOUNT SECURITY / 01</span></div></section>
+ <section className="content"><div className="mobile-brand"><Brand/></div><div className="auth-card"><div className="card-top"><div className="step-label">{screen==="verify"?"EMAIL CONFIRMATION":screen==="complete"?"ACCOUNT SETUP":screen.startsWith("reset")?"ACCOUNT RECOVERY":"AURELINK ACCOUNT"}</div><div className="secure"><img src={Shield} alt=""/> Secure connection</div></div><h2>{title}</h2>
+ {screen==="login" && <><p className="subhead">Sign in to continue to your Aurelink account.</p><form onSubmit={login}><label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="email" required maxLength={255} placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)}/><div className="label-row"><label htmlFor="password">Password</label><button type="button" className="text-button" onClick={()=>{setScreen("reset-request");setNotice(null)}}>Forgot password?</button></div><div className="password-wrap"><input id="password" type={showPassword?"text":"password"} autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Enter your password"/><button type="button" className="eye-button" aria-label={showPassword?"Hide password":"Show password"} onClick={()=>setShowPassword(!showPassword)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg></button></div><button className="primary" disabled={busy}>{busy?"Please wait…":"Sign in"}<span>→</span></button></form><div className="switch">New to Aurelink? <button onClick={()=>{setScreen("register");setNotice(null)}}>Create an account</button></div></>}
+ {screen==="register" && <><p className="subhead">Start with your email. We’ll send a short-lived confirmation link.</p><form onSubmit={register}><label htmlFor="register-email">Email address</label><input id="register-email" type="email" autoComplete="email" required maxLength={255} placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)}/><div className="privacy-note"><img src={NetworkIcon} alt=""/><p>We check connection reputation to help stop automated abuse. Ordinary home, broadband, business, Wi-Fi and mobile connections are supported.</p></div><button className="primary" disabled={busy}>{busy?"Checking connection…":"Send confirmation email"}<span>→</span></button></form><div className="switch">Already have an account? <button onClick={()=>{setScreen("login");setNotice(null)}}>Sign in</button></div></>}
+ {screen==="verify" && <><p className="subhead">We’re checking the secure confirmation link. This link expires after five minutes.</p>{busy&&<div className="loading-line"/>}<button className="secondary" onClick={()=>{setScreen("register");setNotice(null)}}>Back to registration</button></>}
+ {screen==="complete" && <><p className="subhead">Email confirmed{verifiedEmail?" for "+verifiedEmail:""}. Set up your account to finish.</p><form onSubmit={complete}><label htmlFor="full-name">Full name</label><input id="full-name" autoComplete="name" required minLength={2} maxLength={200} value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your full name"/><label htmlFor="new-password">Create password</label><input id="new-password" type="password" autoComplete="new-password" required minLength={10} maxLength={200} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 10 characters"/><p className="field-hint">Use at least 10 characters, including a letter and a number.</p><label htmlFor="confirm-password">Confirm password</label><input id="confirm-password" type="password" autoComplete="new-password" required minLength={10} maxLength={200} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Enter the password again"/><label className="terms-check"><input type="checkbox" checked={acceptedTerms} onChange={e=>setAcceptedTerms(e.target.checked)}/><span>I agree to Aurelink’s <a href="/terms" target="_blank" rel="noreferrer">Terms</a> and <a href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>.</span></label><button className="primary" disabled={busy}>{busy?"Creating account…":"Create secure account"}<span>→</span></button></form></>}
+ {screen==="reset-request" && <><p className="subhead">Enter your email address. If an account exists, we’ll send recovery instructions.</p><form onSubmit={requestReset}><label htmlFor="reset-email">Email address</label><input id="reset-email" type="email" required autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/><button className="primary" disabled={busy}>{busy?"Sending…":"Send recovery email"}<span>→</span></button></form><div className="switch"><button onClick={()=>{setScreen("login");setNotice(null)}}>Return to sign in</button></div></>}
+ {screen==="reset-complete" && <><p className="subhead">Create a new password for your Aurelink account.</p><form onSubmit={resetPassword}><label htmlFor="reset-new-password">New password</label><input id="reset-new-password" type="password" autoComplete="new-password" minLength={10} required value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 10 characters"/><button className="primary" disabled={busy}>{busy?"Updating…":"Reset password"}<span>→</span></button></form></>}
+ {notice && <div className={"notice "+notice.kind} role="status" aria-live="polite"><span className="notice-icon">{notice.kind==="success"?"✓":notice.kind==="error"?"!":"i"}</span><p>{notice.text}</p></div>}{mailLink && <a className="mail-link" href={mailLink.url} target="_blank" rel="noreferrer">{mailLink.label}<span>↗</span></a>}<div className="card-bottom"><span>Protected by Aurelink security</span><span>Privacy · Terms · Help</span></div></div><div className="content-foot">Aurelink protects sign-in and registration with account and network security checks.</div></section></main>;
 }
