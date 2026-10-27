@@ -9,22 +9,64 @@ import { pool } from "../database/db";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { emailService } from "../services/auth/email.service";
+import { loginNotificationService } from "../services/auth/login-notification.service";
 
 const router = Router();
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 const ip = (req: Request) => String(req.ip ?? "").replace(/^::ffff:/, "").slice(0,45);
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
-function jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
+
+function describeDevice(ua:string, supplied?:unknown) {
+  const explicit=typeof supplied==="string"?supplied.trim():"";
+  if(explicit && explicit.length<160) return explicit;
+  if(/iPhone/i.test(ua)) return "iPhone (model unavailable to browser)";
+  if(/iPad/i.test(ua)) return "iPad (model unavailable to browser)";
+  if(/Android/i.test(ua)) {
+    const match=ua.match(/Android[^;)]*;\\s*(?:[a-z]{2}-[A-Z]{2};\\s*)?(?:wv;\\s*)?([^;)/]+?)(?:\\s+Build\\/[^;)]*)?[;)]/i);
+    const model=match?.[1]?.trim();
+    if(model && !/^(Linux|Android|K|wv)$/i.test(model)) return model.slice(0,150);
+    return "Android device (model not disclosed by browser)";
+  }
+  if(/Windows NT/i.test(ua)) return "Windows PC";
+  if(/Macintosh|Mac OS X/i.test(ua)) return "Mac";
+  if(/CrOS/i.test(ua)) return "Chromebook";
+  if(/Linux/i.test(ua)) return "Linux device";
+  return "Device not identifiable from browser";
+}
+function platformFor(ua:string) {
+  if(/Android/i.test(ua)) return "Android";
+  if(/iPhone|iPad|iPod/i.test(ua)) return "iOS";
+  if(/Windows/i.test(ua)) return "Windows";
+  if(/Macintosh|Mac OS X/i.test(ua)) return "macOS";
+  if(/CrOS/i.test(ua)) return "ChromeOS";
+  if(/Linux/i.test(ua)) return "Linux";
+  return "Unknown";
+}
+function browserFor(ua:string) {
+  if(/Edg\\//i.test(ua)) return "Microsoft Edge";
+  if(/Firefox\\//i.test(ua)) return "Firefox";
+  if(/CriOS\\//i.test(ua)) return "Chrome (iOS)";
+  if(/Chrome\\//i.test(ua)) return "Chrome";
+  if(/Safari\\//i.test(ua) && !/Chrome/i.test(ua)) return "Safari";
+  if(/SamsungBrowser\\//i.test(ua)) return "Samsung Internet";
+  return "Browser not identifiable";
+}
+\nfunction jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
 function refreshSecret() { const v=process.env.JWT_REFRESH_SECRET; if(!v) throw new Error("JWT_REFRESH_SECRET is not configured."); return v; }
 function validPassword(v:string) { if(v.length<10 || !/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) throw new Error("Password must be at least 10 characters and contain a letter and a number."); }
-async function startSession(req:Request,user:{id:string;email:string}) {
-  const sessionId = randomUUID();
+async function startSession(req:Request,user:{id:string;email:string;first_name?:string;last_name?:string},network:Awaited<ReturnType<typeof checkIP>>) {
+  const sessionId=randomUUID(), ua=agent(req), deviceName=describeDevice(ua,req.body?.deviceName);
+  const platform=platformFor(ua), browser=browserFor(ua), addr=ip(req);
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
-  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),ip(req)]);
-  await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type) VALUES($1,$2,$3,$4,'login')",[user.id,sessionId,ip(req),agent(req)]);
+  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,country,region,city,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,deviceName,platform,browser,ua,addr,network.location?.country??null,network.location?.state??null,network.location?.city??null]);
+  await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type,success,device_name,platform,browser,country,region,city,login_time) VALUES($1,$2,$3,$4,'login',TRUE,$5,$6,$7,$8,$9,$10,NOW())",[user.id,sessionId,addr,ua,deviceName,platform,browser,network.location?.country??null,network.location?.state??null,network.location?.city??null]);
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
-  return {accessToken,refreshToken,expiresIn:900,sessionId};
+  const previous=await pool.query("SELECT id FROM aurelink_sessions WHERE user_id=$1 AND id<>$2 AND device_name=$3 AND revoked_at IS NULL LIMIT 1",[user.id,sessionId,deviceName]);
+  const isNewDevice=previous.rowCount===0;
+  // Login remains successful if email delivery is temporarily unavailable; the event is already persisted.
+  void loginNotificationService.send({email:user.email,firstName:user.first_name??"",lastName:user.last_name??"",ipAddress:addr,eventAt:new Date(),deviceName,deviceUserAgent:ua,ipapi:network}).catch(()=>undefined);
+  return {accessToken,refreshToken,expiresIn:900,sessionId,deviceName,platform,browser,location:{city:network.location?.city??null,region:network.location?.state??null,country:network.location?.country??null},isNewDevice};
 }
 router.post("/aurelink/auth/register",(_req,res)=>res.status(410).json({success:false,message:"Direct registration is disabled. Use the email-confirmation signup flow."}));
 router.post("/aurelink/auth/login",async(req,res)=>{
@@ -39,9 +81,17 @@ router.post("/aurelink/auth/login",async(req,res)=>{
       return res.status(401).json({success:false,message:"Invalid email or password."});
     }
     if(user.account_status!=="active")return res.status(403).json({success:false,message:"This Aurelink account is not active."});
+    let network:Awaited<ReturnType<typeof checkIP>>;
+    try { network=await checkIP(ip(req)); }
+    catch { await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'network_check_unavailable')",[user.id,ip(req),agent(req)]).catch(()=>undefined); return res.status(503).json({success:false,code:"AURELINK_NETWORK_CHECK_UNAVAILABLE",message:"We couldn't securely verify this network. Please try again shortly."}); }
+    const networkBlocked=network.is_bogon===true||network.is_crawler===true||network.is_datacenter===true||network.is_tor===true||network.is_proxy===true||network.is_vpn===true||network.is_abuser===true||network.bot_status===true||network.hosting===true||Boolean(network.egress_service)||network.fraud_score>=50;
+    if(networkBlocked) {
+      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,$4)",[user.id,ip(req),agent(req),"network_risk_blocked"]).catch(()=>undefined);
+      return res.status(403).json({success:false,code:"AURELINK_NETWORK_BLOCKED",message:"This connection could not be accepted because it matched a high-risk network signal. Turn off VPN or proxy services and try a normal connection."});
+    }
     const sec=await pool.query("SELECT two_factor_enabled,two_factor_method FROM aurelink_account_security WHERE user_id=$1",[user.id]);
     if(sec.rows[0]?.two_factor_enabled) return res.status(501).json({success:false,code:"AURELINK_2FA_SETUP_REQUIRED",message:"Two-factor authentication is enabled, but challenge delivery is not yet available for this account. Contact Aurelink support; password-only login is blocked."});
-    const session=await startSession(req,{id:user.id,email:user.email});
+    const session=await startSession(req,{id:user.id,email:user.email,first_name:user.first_name,last_name:user.last_name},network);
     await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.login',$2,$3)",[user.id,ip(req),agent(req)]);
     delete user.password_hash;
     return res.json({success:true,user,session});
