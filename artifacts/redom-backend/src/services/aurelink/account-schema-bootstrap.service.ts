@@ -11,6 +11,7 @@ export async function ensureAurelinkAccountSchema(pool: Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aurelink_users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      account_id VARCHAR(16) UNIQUE,
       first_name VARCHAR(100) NOT NULL DEFAULT '',
       last_name VARCHAR(100) NOT NULL DEFAULT '',
       email VARCHAR(255) NOT NULL,
@@ -24,6 +25,7 @@ export async function ensureAurelinkAccountSchema(pool: Pool): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ
     );
+    ALTER TABLE aurelink_users ADD COLUMN IF NOT EXISTS account_id VARCHAR(16) UNIQUE;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_users_email_unique
       ON aurelink_users (LOWER(email));
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_users_phone_unique
@@ -178,5 +180,23 @@ export async function ensureAurelinkAccountSchema(pool: Pool): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS aurelink_audit_logs_user_idx
       ON aurelink_audit_logs(user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS aurelink_signup_email_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email VARCHAR(255) NOT NULL,
+      token_hash VARCHAR(64) NOT NULL UNIQUE,
+      request_ip VARCHAR(45) NOT NULL,
+      country VARCHAR(100),
+      region VARCHAR(100),
+      city VARCHAR(100),
+      timezone VARCHAR(100),
+      network_type VARCHAR(80),
+      expires_at TIMESTAMPTZ NOT NULL,
+      verified_at TIMESTAMPTZ,
+      consumed_at TIMESTAMPTZ,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_signup_email_tokens_email_idx
+      ON aurelink_signup_email_tokens(LOWER(email), created_at DESC);
   `);
 }
