@@ -20,36 +20,11 @@
 <button class="social google" type="button" data-provider="Google"><span class="icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15z"/><path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.9l-6.6-5.1c-1.8 1.2-4 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44z"/><path fill="#FBBC05" d="M12.6 27.6a12 12 0 0 1 0-7.2v-5.3H5.8a20 20 0 0 0 0 17.8z"/><path fill="#EA4335" d="M24 12c3 0 5.7 1 7.8 3.1l5.8-5.8A19.3 19.3 0 0 0 24 4 20 20 0 0 0 5.8 15.1l6.8 5.3C14.2 15.6 18.7 12 24 12z"/></svg></span><span class="label">Continue with Google</span></button>
 </fieldset></form><section class="panel screen" id="recovery"><h2>Password recovery</h2><p class="intro">Recover access to your Aurelink account.</p><p class="subcopy">Password recovery requires the Aurelink authentication service and is not available yet.</p><button class="back" data-screen="login">‹ Back to sign in</button></section><section class="panel screen" id="register"><h2>Create an account</h2><p class="intro">Aurelink account registration is coming next.</p><p class="subcopy">Registration will be enabled when the account service is connected.</p><button class="back" data-screen="login">‹ Back to sign in</button></section><div class="foot"><strong>Aurelink, Inc.</strong><br><span id="company-address">Address pending confirmation</span></div></main>
 <script>
-const API_BASE="https://redom-backend.onrender.com/redom-backend";
 const notice=document.getElementById("notice");
 const login=document.getElementById("login");
 let pending=null;
 function showScreen(name){document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("active",s.id===name));login.style.display=name==="login"?"block":"none";}
 document.querySelectorAll("[data-screen]").forEach(a=>a.addEventListener("click",e=>{e.preventDefault();showScreen(a.dataset.screen);}));
-document.querySelectorAll("[data-provider]").forEach(button=>button.addEventListener("click",()=>{if(button.dataset.provider==="Google"){notice.textContent="Google sign-in is not connected yet.";return;}if(button.dataset.provider==="Facebook"||button.dataset.provider==="ReDom"){notice.textContent=button.dataset.provider+" sign-in is coming soon.";}}));
-login.addEventListener("submit",async e=>{
- e.preventDefault();
- if(!login.reportValidity())return;
- const email=document.getElementById("email").value.trim().toLowerCase();
- const password=document.getElementById("password").value;
- if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){notice.textContent="Please enter a valid email address.";return;}
- const button=login.querySelector(".primary");
- button.disabled=true;button.textContent="Signing in…";notice.textContent="Securely checking your account…";
- try{
-  const response=await fetch(API_BASE+"/auth/login",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({identifier:email,password,loginSource:"web",deviceType:"web",platform:"web",deviceName:"Aurelink Public Account"})});
-  const data=await response.json().catch(()=>({success:false,message:"The authentication service returned an invalid response."}));
-  if(!response.ok||data.success!==true){notice.textContent=data.message||"Login failed. Check your email and password.";return;}
-  if(data.requiresVerification||data.requiresTwoFactor){notice.textContent=data.message||"Additional verification is required. Aurelink's verification screen is not yet connected.";return;}
-  if(data.session?.accessToken){
-   sessionStorage.setItem("aurelink_access_token",data.session.accessToken);
-   if(data.session.refreshToken)sessionStorage.setItem("aurelink_refresh_token",data.session.refreshToken);
-   if(data.user)sessionStorage.setItem("aurelink_account_user",JSON.stringify(data.user));
-  }
-  notice.textContent="Sign-in successful. Your account is authenticated, but the Aurelink destination is not configured yet.";
- }catch(error){notice.textContent="Unable to reach the authentication service. Please try again later.";}
- finally{button.disabled=false;button.textContent="Login ›";}
-});
-const recovery=document.getElementById("recovery");
-const recoveryInfo=recovery.querySelector(".subcopy");
-recoveryInfo.textContent="Enter your email address on the sign-in screen first. Password recovery will use the shared authentication service.";
+login.addEventListener("submit",e=>{e.preventDefault();if(!login.reportValidity())return;const email=document.getElementById("email").value.trim();if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){notice.textContent="Please enter a valid email address.";return;}const button=login.querySelector(".primary");button.disabled=true;button.textContent="Signing in…";notice.textContent="Checking your Aurelink account…";if(pending)clearTimeout(pending);pending=setTimeout(()=>{notice.textContent="Login failed: Aurelink authentication is not connected yet. No credentials were sent to a server.";button.disabled=false;button.innerHTML="Login&nbsp; ›";},10000);});
+document.querySelectorAll("[data-provider]").forEach(b=>b.addEventListener("click",()=>{notice.textContent=b.dataset.provider+" sign-in is coming soon.";}));
 </script></body></html>
