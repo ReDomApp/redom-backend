@@ -99,6 +99,8 @@ function App() {
   useEffect(() => {
     const titles: Record<Screen, string> = {
       login: 'Sign in · AURELINK',
+      'verify-device': 'Verify this browser · AURELINK',
+      'verify-2fa': 'Two-factor authentication · AURELINK',
       forgot: 'Account recovery · AURELINK',
       'reset-code': 'Verify recovery code · AURELINK',
       'reset-password': 'Choose a new password · AURELINK',
@@ -435,7 +437,7 @@ function App() {
             <p className="intro-copy">{screen === 'verify-device' ? 'Confirm this browser to finish signing in.' : 'Enter the code from your two-factor authentication method.'}</p>
             <p className="brand-description">{typeof securityChallenge?.maskedTarget === 'string' ? `A verification code was sent to ${securityChallenge.maskedTarget}.` : 'Complete this additional security check to protect your account.'}</p>
             <form className="login-form" onSubmit={verifyLoginSecurity}>
-              <label className="input-wrap"><LockIcon /><span className="sr-only">Six-digit security code</span><input className="code-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6-digit verification code" value={securityCode} onChange={e => setSecurityCode(e.target.value.replace(/\\D/g, '').slice(0, 6))} disabled={busy} /></label>
+              <label className="input-wrap"><LockIcon /><span className="sr-only">Six-digit security code</span><input className="code-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6-digit verification code" value={securityCode} onChange={e => setSecurityCode(e.target.value.replace(/\D/g, '').slice(0, 6))} disabled={busy} /></label>
               {notice && <div className={`notice notice-${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'} aria-live="polite">{notice.text}</div>}
               <button className="login-button full-width-button" type="submit" disabled={busy || securityCode.length !== 6}>{busy ? 'Verifying…' : screen === 'verify-device' ? 'Verify browser' : 'Verify and sign in'} <span className="button-arrow" aria-hidden="true">→</span></button>
             </form>
