@@ -15,10 +15,10 @@ function jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new E
 function refreshSecret() { const v=process.env.JWT_REFRESH_SECRET; if(!v) throw new Error("JWT_REFRESH_SECRET is not configured."); return v; }
 function validPassword(v:string) { if(v.length<10 || !/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) throw new Error("Password must be at least 10 characters and contain a letter and a number."); }
 async function startSession(req:Request,user:{id:string;email:string}) {
-  const sessionId = (await pool.query("INSERT INTO aurelink_sessions(user_id,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+INTERVAL '30 days') RETURNING id",[user.id,String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),ip(req)])).then(r=>String(r.rows[0].id));
+  const sessionId = randomBytes(16).toString("hex");
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
-  await pool.query("UPDATE aurelink_sessions SET refresh_token_hash=$2 WHERE id=$1",[sessionId,hash(refreshToken)]);
+  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),ip(req)]);
   await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type) VALUES($1,$2,$3,$4,'login')",[user.id,sessionId,ip(req),agent(req)]);
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
   return {accessToken,refreshToken,expiresIn:900,sessionId};
@@ -103,16 +103,21 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
   if(!parsed.success)return res.status(400).json({success:false,message:"A valid reset token and password are required."});
   try{
     validPassword(parsed.data.password);
-    const result=await pool.query("SELECT id,user_id FROM aurelink_password_resets WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);
-    const reset=result.rows[0]; if(!reset)return res.status(400).json({success:false,message:"Reset link is invalid or expired."});
-    const passwordHash=await hashPassword(parsed.data.password);
-    await pool.query("BEGIN");
-    await pool.query("UPDATE aurelink_users SET password_hash=$2,updated_at=NOW() WHERE id=$1",[reset.user_id,passwordHash]);
-    await pool.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
-    await pool.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL",[reset.user_id]);
-    await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.password_reset',$2,$3)",[reset.user_id,ip(req),agent(req)]);
-    await pool.query("COMMIT");
-    return res.json({success:true,message:"Password reset. Please sign in again."});
-  }catch{await pool.query("ROLLBACK").catch(()=>undefined);return res.status(400).json({success:false,message:"Unable to reset password. The link may be invalid or expired."});}
+    const client=await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result=await client.query("SELECT id,user_id FROM aurelink_password_resets WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);
+      const reset=result.rows[0];
+      if(!reset){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Reset link is invalid or expired."});}
+      const passwordHash=await hashPassword(parsed.data.password);
+      await client.query("UPDATE aurelink_users SET password_hash=$2,updated_at=NOW() WHERE id=$1",[reset.user_id,passwordHash]);
+      await client.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
+      await client.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL",[reset.user_id]);
+      await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.password_reset',$2,$3)",[reset.user_id,ip(req),agent(req)]);
+      await client.query("COMMIT");
+      return res.json({success:true,message:"Password reset. Please sign in again."});
+    } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; }
+    finally { client.release(); }
+  }catch{return res.status(400).json({success:false,message:"Unable to reset password. The link may be invalid or expired."});}
 });
 export default router;
