@@ -1,4 +1,5 @@
 import { Router, type Request } from "express";
+import { isIP } from "node:net";
 import { z } from "zod";
 import { randomBytes, randomUUID, randomInt, createHash } from "node:crypto";
 import { checkIP } from "../lib/ipapi";
@@ -121,7 +122,8 @@ router.post("/aurelink/auth/signup/email/request",async(req,res)=>{
   // Never substitute the Render egress address for the visitor's connection.
   const suppliedIp=typeof req.body?.clientIp==="string"?req.body.clientIp.trim():"";
   const clientIp=suppliedIp;
-  if(!clientIp || !/^(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}|[0-9a-fA-F:]{3,45})$/.test(clientIp) || clientIp==="127.0.0.1" || clientIp==="::1") {
+  // Validate using Node's IP parser; hand-written regexes are easy to over-escape.
+  if(!clientIp || isIP(clientIp)===0 || clientIp==="127.0.0.1" || clientIp==="::1" || clientIp.startsWith("127.")) {
     return res.status(400).json({success:false,code:"AURELINK_CLIENT_IP_REQUIRED",message:"Aurelink could not identify your device's public network address. Refresh the page and try again."});
   }
   try {
