@@ -60,7 +60,7 @@ async function startSession(req:Request,user:{id:string;email:string;first_name?
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
   await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,country,region,city,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,deviceName,platform,browser,ua,addr,network.location?.country??null,network.location?.state??null,network.location?.city??null]);
-  await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type,success,device_name,platform,browser,country,region,city) VALUES($1,$2,$3,$4,'login',TRUE,$5,$6,$7,$8,$9,$10)",[user.id,sessionId,addr,ua,deviceName,platform,browser,network.location?.country??null,network.location?.state??null,network.location?.city??null]);
+  await pool.query("INSERT INTO aurelink_login_history(user_id,account_id,email,session_id,ip_address,user_agent,event_type,success,device_name,platform,browser,country,region,city) VALUES($1,$2,$3,$4,$5,$6,'login',TRUE,$7,$8,$9,$10,$11,$12)",[user.id,(user as any).account_id??null,user.email,sessionId,addr,ua,deviceName,platform,browser,network.location?.country??null,network.location?.state??null,network.location?.city??null]);
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
   const previous=await pool.query("SELECT id FROM aurelink_sessions WHERE user_id=$1 AND id<>$2 AND device_name=$3 AND revoked_at IS NULL LIMIT 1",[user.id,sessionId,deviceName]);
   const isNewDevice=previous.rowCount===0;
@@ -74,10 +74,10 @@ router.post("/aurelink/auth/login",async(req,res)=>{
   if(!parsed.success)return res.status(400).json({success:false,message:"Valid email and password are required."});
   try{
     const email=emailService.normalize(parsed.data.email);
-    const found=await pool.query("SELECT id,email,first_name,last_name,password_hash,email_verified,account_status FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
+    const found=await pool.query("SELECT id,account_id,email,first_name,last_name,password_hash,email_verified,account_status FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
     const user=found.rows[0];
     if(!user || user.email_verified!==true || !await verifyPassword(parsed.data.password,String(user.password_hash))) {
-      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'invalid_credentials')",[user?.id??null,ip(req),agent(req)]).catch(()=>undefined);
+      await pool.query("INSERT INTO aurelink_login_history(user_id,account_id,email,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,$2,$3,'login',FALSE,$4,$5,'invalid_credentials')",[user?.id??null,user?.account_id??null,email,ip(req),agent(req)]).catch(()=>undefined);
       return res.status(401).json({success:false,message:"Invalid email or password."});
     }
     if(user.account_status!=="active")return res.status(403).json({success:false,message:"This Aurelink account is not active."});
@@ -97,7 +97,7 @@ router.post("/aurelink/auth/login",async(req,res)=>{
     return res.json({success:true,user,session});
   }catch(e){return res.status(500).json({success:false,message:"Aurelink login failed."});}
 });
-router.get("/aurelink/auth/login-history",aurelinkAuthMiddleware,async(req,res)=>{try{const limit=Math.min(100,Math.max(1,Number(req.query.limit)||30));const result=await pool.query("SELECT id,event_type,success,ip_address,country,region,city,device_name,device_type,platform,browser,user_agent,failure_reason,created_at FROM aurelink_login_history WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",[req.user!.userId,limit]);return res.json({success:true,events:result.rows});}catch{return res.status(500).json({success:false,message:"Could not load login history."});}});
+router.get("/aurelink/auth/login-history",aurelinkAuthMiddleware,async(req,res)=>{try{const limit=Math.min(100,Math.max(1,Number(req.query.limit)||30));const result=await pool.query("SELECT h.id,h.account_id,h.email,h.event_type,h.success,h.ip_address,h.country,h.region,h.city,h.device_name,h.device_type,h.platform,h.browser,h.user_agent,h.failure_reason,h.created_at FROM aurelink_login_history h WHERE h.user_id=$1 ORDER BY h.created_at DESC LIMIT $2",[req.user!.userId,limit]);return res.json({success:true,events:result.rows});}catch{return res.status(500).json({success:false,message:"Could not load login history."});}});
 router.get("/aurelink/auth/me",aurelinkAuthMiddleware,async(req,res)=>{
   const r=await pool.query("SELECT id,email,first_name,last_name,email_verified,phone_number,phone_verified,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
   if(!r.rows[0])return res.status(404).json({success:false,message:"Account not found."});
