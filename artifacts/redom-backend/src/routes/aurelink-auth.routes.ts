@@ -77,7 +77,7 @@ router.post("/aurelink/auth/refresh",async(req,res)=>{
   try{
     const payload=jwt.verify(parsed.data.refreshToken,refreshSecret()) as {userId?:string;sessionId?:string;audience?:string};
     if(payload.audience!=="aurelink"||!payload.userId||!payload.sessionId)throw new Error("invalid");
-    const session=await pool.query("SELECT s.id,u.email,u.account_status FROM aurelink_sessions s JOIN aurelink_users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW() AND s.refresh_token_hash=$3",[payload.sessionId,payload.userId,hash(parsed.data.refreshToken)]);
+    const session=await pool.query("SELECT s.id,u.email,u.account_status FROM aurelink_sessions s JOIN aurelink_users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW() AND s.refresh_token_hash=$3 AND s.last_activity_at>NOW()-INTERVAL '10 minutes'",[payload.sessionId,payload.userId,hash(parsed.data.refreshToken)]);
     if(!session.rows[0]||session.rows[0].account_status!=="active")throw new Error("invalid");
     const accessToken=jwt.sign({userId:payload.userId,sessionId:payload.sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
     const refreshToken=jwt.sign({userId:payload.userId,sessionId:payload.sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
