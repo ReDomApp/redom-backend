@@ -117,7 +117,13 @@ router.post("/aurelink/auth/signup/email/request",async(req,res)=>{
   const parsed=z.object({email:z.string().email().max(255)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"Enter a valid email address."});
   const email=emailService.normalize(parsed.data.email);
-  const clientIp=ip(req);
+  // The public signup page must submit the IP it discovered directly from the browser via IPAPI.
+  // Never substitute the Render egress address for the visitor's connection.
+  const suppliedIp=typeof req.body?.clientIp==="string"?req.body.clientIp.trim():"";
+  const clientIp=suppliedIp;
+  if(!clientIp || !/^(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}|[0-9a-fA-F:]{3,45})$/.test(clientIp) || clientIp==="127.0.0.1" || clientIp==="::1") {
+    return res.status(400).json({success:false,code:"AURELINK_CLIENT_IP_REQUIRED",message:"Aurelink could not identify your device's public network address. Refresh the page and try again."});
+  }
   try {
     // Enforce high-confidence network abuse signals, but never require a mobile connection.
     // Residential ISP, broadband, Wi-Fi, and ordinary carrier NAT remain eligible.
