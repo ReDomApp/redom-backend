@@ -104,3 +104,30 @@ button{cursor:pointer}
  .subhead{margin-bottom:18px}
  .card-bottom{margin-top:20px}
 }
+
+
+/* Lightweight animated SIM showcase: CSS-only, no canvas or animation library. */
+.sim-showcase{height:190px;max-width:430px;position:relative;margin:28px 0 4px;display:flex;align-items:center;justify-content:center;isolation:isolate}
+.orbit{position:absolute;border:1px solid #2c5278;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}
+.orbit-one{width:220px;height:150px;animation:orbit-drift 12s ease-in-out infinite}
+.orbit-two{width:285px;height:185px;border-color:#234465;animation:orbit-drift 16s ease-in-out infinite reverse}
+.sim-card{position:relative;z-index:2;width:144px;height:174px;padding:15px 13px;border-radius:13px;border:1px solid #8ccaff;background:linear-gradient(145deg,#f8fcff 0%,#d9edff 48%,#a9d5fb 100%);box-shadow:0 18px 45px #020b1b66,inset 0 1px #fff;transform:rotate(-7deg);animation:sim-float 5s ease-in-out infinite}
+.sim-brand{font:800 15px Manrope,sans-serif;letter-spacing:.12em;color:#173d68}.sim-brand span{color:#2486d7}
+.sim-chip{width:37px;height:31px;margin:19px auto 12px;border:1px solid #6b9fc8;border-radius:6px;background:linear-gradient(135deg,#d7e7a8,#a8c97e);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);overflow:hidden}
+.sim-chip i{border:1px solid #789e5f88}
+.sim-number{font-size:8px;font-weight:800;letter-spacing:.12em;color:#244c74;text-align:center}
+.sim-status{display:flex;justify-content:center;align-items:center;gap:5px;margin-top:12px;font-size:6px;font-weight:800;letter-spacing:.1em;color:#286449;white-space:nowrap}
+.sim-status i,.pill-dot{width:5px;height:5px;display:inline-block;border-radius:50%;background:#48c995;box-shadow:0 0 0 3px #48c99522}
+.float-pill{position:absolute;z-index:3;display:flex;align-items:center;gap:7px;border:1px solid #365675;background:#102b49eF;color:#e0efff;border-radius:9px;padding:9px 11px;font-size:10px;box-shadow:0 8px 22px #020a1844;backdrop-filter:blur(8px);white-space:nowrap}
+.float-country{top:22px;left:0;animation:pill-float 5.8s ease-in-out infinite}
+.float-sms{right:0;bottom:19px;animation:pill-float 6.4s ease-in-out infinite reverse}
+.sms-glyph{font-size:13px;color:#7bc4ff}
+.signal{position:absolute;z-index:1;width:8px;height:8px;border-radius:50%;background:#70c3ff;box-shadow:0 0 0 5px #70c3ff20,0 0 22px #70c3ff99}
+.signal-one{left:18%;top:42%;animation:signal-pulse 3s ease-out infinite}
+.signal-two{right:17%;top:26%;animation:signal-pulse 3s ease-out 1.4s infinite}
+@keyframes sim-float{0%,100%{transform:translateY(2px) rotate(-7deg)}50%{transform:translateY(-8px) rotate(-4deg)}}
+@keyframes pill-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes orbit-drift{0%,100%{transform:translate(-50%,-50%) rotate(-8deg) scale(1)}50%{transform:translate(-50%,-50%) rotate(8deg) scale(1.035)}}
+@keyframes signal-pulse{0%{box-shadow:0 0 0 0 #70c3ff66}100%{box-shadow:0 0 0 13px #70c3ff00}}
+@media(max-width:850px){.sim-showcase{height:150px;max-width:340px;margin:23px auto 0}.sim-card{width:112px;height:137px;padding:11px}.sim-chip{margin:12px auto 9px;width:32px;height:25px}.sim-status{margin-top:9px;font-size:5px}.orbit-one{width:175px;height:115px}.orbit-two{width:230px;height:145px}.float-pill{font-size:9px;padding:8px 9px}.float-country{top:9px;left:0}.float-sms{right:0;bottom:9px}.signal-one{left:12%}.signal-two{right:12%}}
+@media(prefers-reduced-motion:reduce){.sim-card,.orbit,.float-pill,.signal{animation:none!important;scroll-behavior:auto!important}}
