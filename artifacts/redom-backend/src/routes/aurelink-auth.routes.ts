@@ -25,21 +25,7 @@ async function startSession(req:Request,user:{id:string;email:string}) {
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
   return {accessToken,refreshToken,expiresIn:900,sessionId};
 }
-router.post("/aurelink/auth/register", async(req,res)=>{
-  const parsed=z.object({firstName:z.string().trim().min(1).max(100),lastName:z.string().trim().min(1).max(100),email:z.string().email().max(255),password:z.string().min(10).max(200)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"Provide a valid name, email and password (at least 10 characters)."});
-  try{
-    validPassword(parsed.data.password);
-    const email=emailService.validate(parsed.data.email);
-    const passwordHash=await hashPassword(parsed.data.password);
-    const result=await pool.query("INSERT INTO aurelink_users(first_name,last_name,email,password_hash,account_status) VALUES($1,$2,$3,$4,'active') RETURNING id,email,first_name,last_name,account_status,created_at",[parsed.data.firstName,parsed.data.lastName,email,passwordHash]);
-    const user=result.rows[0];
-    await pool.query("INSERT INTO aurelink_account_security(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.id]);
-    await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'account.registered',$2,$3)",[user.id,ip(req),agent(req)]);
-    const session=await startSession(req,{id:user.id,email:user.email});
-    return res.status(201).json({success:true,user,session});
-  }catch(e){const msg=e instanceof Error?e.message:"Registration failed.";return res.status(msg.includes("duplicate key")?409:400).json({success:false,message:msg.includes("duplicate key")?"An Aurelink account already exists for this email.":msg});}
-});
+router.post("/aurelink/auth/register",(_req,res)=>res.status(410).json({success:false,message:"Direct registration is disabled. Use the email-confirmation signup flow."}));
 router.post("/aurelink/auth/login",async(req,res)=>{
   const parsed=z.object({email:z.string().email().max(255),password:z.string().min(1).max(200)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"Valid email and password are required."});
@@ -47,7 +33,7 @@ router.post("/aurelink/auth/login",async(req,res)=>{
     const email=emailService.normalize(parsed.data.email);
     const found=await pool.query("SELECT id,email,first_name,last_name,password_hash,email_verified,account_status FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
     const user=found.rows[0];
-    if(!user || !await verifyPassword(parsed.data.password,String(user.password_hash))) {
+    if(!user || user.email_verified!==true || !await verifyPassword(parsed.data.password,String(user.password_hash))) {
       await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'invalid_credentials')",[user?.id??null,ip(req),agent(req)]).catch(()=>undefined);
       return res.status(401).json({success:false,message:"Invalid email or password."});
     }
