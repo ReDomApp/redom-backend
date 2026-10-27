@@ -56,7 +56,6 @@ import ordersPaymentsRoutes from "./orders-payments.routes";
 import paymentsRoutes from "./payments.routes";
 import starsPaymentsRoutes from "./stars-payments.routes";
 import starsGiftingRoutes from "./stars-gifting.routes";
-import redomOAuthRoutes from "./redom-oauth.routes";
 import redomMcpRoutes from "./redom-mcp.routes";
 import operationsRoutes from "./operations.routes";
 
@@ -67,7 +66,6 @@ router.use(aurelinkAdminRoutes);
 router.use(whatsappCloudRoutes);
 router.use(healthRouter);
 router.use("/ops", operationsRoutes);
-router.use("/oauth", redomOAuthRoutes);
 router.use(redomMcpRoutes);
 router.use("/auth", authRoutes);
 router.use("/sessions", sessionRoutes);
