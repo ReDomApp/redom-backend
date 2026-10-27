@@ -119,10 +119,14 @@ router.post("/aurelink/auth/signup/email/request",async(req,res)=>{
   const email=emailService.normalize(parsed.data.email);
   const clientIp=ip(req);
   try {
-    // Fail closed: signup is not initiated unless the IP reputation and mobile-network checks succeed.
+    // Accept legitimate residential, business, ISP, broadband, Wi-Fi, and mobile networks.
+    // Block clearly risky infrastructure or high-confidence abuse signals; network type alone is not a reason to deny signup.
     const net=await checkIP(clientIp);
-    if(net.is_bogon===true||net.is_crawler===true||net.is_datacenter===true||net.is_tor===true||net.is_vpn===true||net.is_proxy===true||net.is_abuser===true||net.is_mobile!==true||net.fraud_score>=70) {
-      return res.status(403).json({success:false,code:"AURELINK_NETWORK_BLOCKED",message:"For your security, Aurelink cannot start registration from this network. Turn off VPN or proxy services and use a supported mobile network."});
+    const blocked=net.is_bogon===true || net.is_crawler===true || net.is_datacenter===true ||
+      net.is_tor===true || net.is_vpn===true || net.is_proxy===true || net.is_abuser===true ||
+      (typeof net.fraud_score==="number" && net.fraud_score>=70);
+    if(blocked) {
+      return res.status(403).json({success:false,code:"AURELINK_NETWORK_BLOCKED",message:"For your security, Aurelink cannot start registration from this network. Turn off VPN or proxy services and try again using a trusted internet connection."});
     }
     const existing=await pool.query("SELECT id FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
     if(existing.rows[0])return res.status(409).json({success:false,message:"An Aurelink account already exists for this email. Please sign in instead."});
