@@ -19,6 +19,7 @@ import { ensureRedomOAuthSchema } from "./services/redom-oauth-schema.service";
 import { ensureOpsIntelligenceSchema, startDailyOpsIntelligence, stopDailyOpsIntelligence } from "./services/operations/daily-ops-intelligence.service";
 import { startFbiSecurityWorker, stopFbiSecurityWorker } from "./services/fbi-security/fbi-security-worker.service";
 import { ensureAurelinkSchema } from "./services/aurelink/schema-bootstrap.service";
+import { ensureAurelinkAccountSchema } from "./services/aurelink/account-schema-bootstrap.service";
 import { startAurelinkLifecycleWorker, stopAurelinkLifecycleWorker } from "./services/aurelink/aurelink-lifecycle-worker.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
@@ -31,6 +32,7 @@ async function start(): Promise<void> {
   await ensureRecognizedDeviceSchema();
   await ensurePaymentSchema();
   await ensureAurelinkSchema(pool);
+  await ensureAurelinkAccountSchema(pool);
   await ensureBugReportSchema();
   await ensureStarsSchema();
   await ensureRefundSchema();
