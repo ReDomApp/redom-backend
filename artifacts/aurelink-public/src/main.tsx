@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-type Screen = 'login' | 'forgot' | 'reset-code' | 'reset-password' | 'signup-soon';
+type Screen = 'login' | 'verify-device' | 'verify-2fa' | 'forgot' | 'reset-code' | 'reset-password' | 'signup-soon';
 type Notice = { kind: 'error' | 'info' | 'success'; text: string } | null;
 type RecoveryMethod = { channel?: string; type?: string; label?: string; maskedTarget?: string; target?: string };
 
@@ -94,7 +94,7 @@ function App() {
   const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);\n  const [securityCode, setSecurityCode] = useState('');\n  const [securityChallenge, setSecurityChallenge] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     const titles: Record<Screen, string> = {
@@ -180,6 +180,58 @@ function App() {
       setNotice({ kind: 'error', text: error instanceof DOMException && error.name === 'AbortError' ? 'Login timed out. Check your connection and try again.' : error instanceof Error ? error.message : 'Unable to connect securely. Please try again shortly.' });
     } finally {
       window.clearTimeout(timeout);
+      setBusy(false);
+    }
+  }
+
+  async function verifyLoginSecurity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const challengeId = typeof securityChallenge?.challengeId === 'string' ? securityChallenge.challengeId : '';
+    if (!challengeId || !/^\\d{6}$/.test(securityCode)) {
+      setNotice({ kind: 'error', text: 'Enter the 6-digit verification code.' });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      const isDevice = screen === 'verify-device';
+      const result = await api<{
+        success?: boolean;
+        message?: string;
+        user?: Record<string, unknown>;
+        session?: unknown;
+        requiresTwoFactor?: boolean;
+        twoFactorVerification?: Record<string, unknown>;
+      }>(isDevice ? '/auth/verify-login-device' : '/auth/verify-login-2fa', {
+        method: 'POST',
+        body: JSON.stringify({
+          challengeId,
+          code: securityCode,
+          deviceId: deviceId(),
+          deviceName: navigator.userAgent,
+          deviceType: 'browser',
+          platform: 'web',
+          loginSource: 'aurelink-public',
+          appVersion: 'web',
+        }),
+      });
+      if (result.requiresTwoFactor && result.twoFactorVerification) {
+        setSecurityChallenge(result.twoFactorVerification);
+        setSecurityCode('');
+        changeScreen('verify-2fa');
+        setNotice({ kind: 'info', text: 'Device verified. Complete your two-factor check.' });
+        return;
+      }
+      if (!result.success || !result.session) throw new Error(result.message || 'Security verification could not be completed.');
+      saveSession(result.session);
+      setPassword('');
+      setSecurityCode('');
+      setSecurityChallenge(null);
+      changeScreen('login');
+      setNotice({ kind: 'success', text: `Signed in successfully${typeof result.user?.firstName === 'string' ? `, ${result.user.firstName}` : ''}. Your session is saved.` });
+    } catch (error) {
+      setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'Verification failed. Check your code and try again.' });
+    } finally {
       setBusy(false);
     }
   }
@@ -377,6 +429,17 @@ function App() {
               <button type="button" className="provider-button github-button" onClick={() => comingSoon('GitHub')}><span className="provider-symbol"><GitHubIcon /></span><span>Continue with GitHub</span><span className="provider-chevron">↗</span></button>
               <button type="button" className="provider-button redom-button" onClick={() => comingSoon('ReDom')}><span className="provider-symbol"><ReDomIcon /></span><span>Continue with ReDom</span><span className="provider-chevron">↗</span></button>
             </div>
+          </>}
+
+          {(screen === 'verify-device' || screen === 'verify-2fa') && <>
+            <p className="intro-copy">{screen === 'verify-device' ? 'Confirm this browser to finish signing in.' : 'Enter the code from your two-factor authentication method.'}</p>
+            <p className="brand-description">{typeof securityChallenge?.maskedTarget === 'string' ? `A verification code was sent to ${securityChallenge.maskedTarget}.` : 'Complete this additional security check to protect your account.'}</p>
+            <form className="login-form" onSubmit={verifyLoginSecurity}>
+              <label className="input-wrap"><LockIcon /><span className="sr-only">Six-digit security code</span><input className="code-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6-digit verification code" value={securityCode} onChange={e => setSecurityCode(e.target.value.replace(/\\D/g, '').slice(0, 6))} disabled={busy} /></label>
+              {notice && <div className={`notice notice-${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'} aria-live="polite">{notice.text}</div>}
+              <button className="login-button full-width-button" type="submit" disabled={busy || securityCode.length !== 6}>{busy ? 'Verifying…' : screen === 'verify-device' ? 'Verify browser' : 'Verify and sign in'} <span className="button-arrow" aria-hidden="true">→</span></button>
+            </form>
+            <button type="button" className="back-link" onClick={() => { setSecurityCode(''); setSecurityChallenge(null); changeScreen('login'); }}>← Back to sign in</button>
           </>}
 
           {screen === 'forgot' && <>
