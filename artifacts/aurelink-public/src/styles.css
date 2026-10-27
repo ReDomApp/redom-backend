@@ -17,3 +17,5 @@
 .secondary{border:1px solid #d9e4ef;background:#fff;border-radius:8px;min-height:48px;padding:0 16px;color:#27679f;font-weight:700}
 .loading-line{height:3px;background:linear-gradient(90deg,#126bc2 0 45%,#d8e9fa 45%);border-radius:4px;margin:18px 0;animation:pulse 1.2s ease-in-out infinite alternate}
 @keyframes pulse{from{opacity:.45}to{opacity:1}}
+
+.auth-card input[type=checkbox]{height:16px!important;width:16px!important;margin:2px 0 0!important;padding:0!important;border-radius:4px}
