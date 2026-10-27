@@ -124,6 +124,19 @@ overrides:
   rollup>@rollup/rollup-win32-x64-msvc: '-'
 
 importers:
+  .:
+    dependencies:
+      '@replit/connectors-sdk':
+        specifier: ^0.4.1
+        version: 0.4.1
+    devDependencies:
+      prettier:
+        specifier: ^3.9.6
+        version: 3.9.6
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
   artifacts/aurelink-public:
     dependencies:
       react:
