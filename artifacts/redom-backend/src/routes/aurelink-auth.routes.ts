@@ -150,10 +150,15 @@ router.post("/aurelink/auth/signup/email/request",async(req,res)=>{
       });
     }
     const existing=await pool.query("SELECT id FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
-    if(existing.rows[0])return res.status(409).json({success:false,message:"An Aurelink account already exists for this email. Please sign in instead."});
+    if(existing.rows[0])return res.status(409).json({success:false,code:"AURELINK_ACCOUNT_EXISTS",message:"An Aurelink account already exists for this email. Please sign in instead."});
+    // Reuse the existing live challenge; do not invalidate or spam an already-delivered link.
+    const active=await pool.query("SELECT expires_at,verified_at FROM aurelink_signup_email_tokens WHERE LOWER(email)=LOWER($1) AND consumed_at IS NULL AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1",[email]);
+    if(active.rows[0]) {
+      const remainingSeconds=Math.max(1,Math.ceil((new Date(active.rows[0].expires_at).getTime()-Date.now())/1000));
+      return res.status(409).json({success:false,code:"AURELINK_EMAIL_TOKEN_ACTIVE",expiresAt:active.rows[0].expires_at,verified:active.rows[0].verified_at!=null,remainingSeconds,message:active.rows[0].verified_at!=null?"This email is already confirmed. Continue account setup using the confirmation email link.":"An unexpired confirmation link was recently sent to this address. Check your inbox or spam folder, or wait for it to expire before requesting another."});
+    }
     const token=randomBytes(32).toString("base64url");
     const expiresAt=new Date(Date.now()+5*60*1000);
-    await pool.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE LOWER(email)=LOWER($1) AND consumed_at IS NULL",[email]);
     await pool.query("INSERT INTO aurelink_signup_email_tokens(email,token_hash,request_ip,country,region,city,timezone,network_type,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",[email,hash(token),clientIp,net.location?.country??null,net.location?.state??null,net.location?.city??null,net.location?.timezone??null,net.company?.type??net.asn?.type??"unknown",expiresAt]);
     const link=publicBase()+"/?screen=verify-email&token="+encodeURIComponent(token);
     const location=[net.location?.city,net.location?.country].filter(Boolean).join(", ")||"Location unavailable";
