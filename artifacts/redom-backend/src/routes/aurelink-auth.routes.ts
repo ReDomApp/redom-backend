@@ -119,21 +119,46 @@ router.post("/aurelink/auth/signup/email/request",async(req,res)=>{
   const email=emailService.normalize(parsed.data.email);
   const clientIp=ip(req);
   try {
-    // Network reputation is recorded for security review, but never blocks signup by itself:
-    // legitimate ISP, Wi-Fi, carrier NAT, VPN-detected false positives, and IP lookup outages must not lock out real users.
-    // Abuse prevention should use request/email rate limits and verification, not network-type classification alone.
-    let net: Awaited<ReturnType<typeof checkIP>> | null = null;
-    try { net = await checkIP(clientIp); } catch { net = null; }
+    // Enforce high-confidence network abuse signals, but never require a mobile connection.
+    // Residential ISP, broadband, Wi-Fi, and ordinary carrier NAT remain eligible.
+    let net: Awaited<ReturnType<typeof checkIP>>;
+    try {
+      net = await checkIP(clientIp);
+    } catch {
+      // Fail closed when reputation cannot be checked: do not silently bypass network protection.
+      return res.status(503).json({success:false,code:"AURELINK_NETWORK_CHECK_UNAVAILABLE",message:"We couldn't securely verify this connection right now. Please try again shortly."});
+    }
+    const blocked = net.success !== true ||
+      net.is_bogon === true ||
+      net.is_crawler === true ||
+      net.is_datacenter === true ||
+      net.is_tor === true ||
+      net.is_vpn === true ||
+      net.is_proxy === true ||
+      net.is_abuser === true ||
+      net.bot_status === true ||
+      net.hosting === true ||
+      net.vpn === true ||
+      net.proxy === true ||
+      net.tor === true ||
+      (typeof net.fraud_score === "number" && net.fraud_score >= 70);
+    if (blocked) {
+      return res.status(403).json({
+        success:false,
+        code:"AURELINK_NETWORK_BLOCKED",
+        message:"For your security, Aurelink cannot start registration from this connection. Disable VPN, proxy, or Tor services and try again using a trusted residential, business, Wi-Fi, or mobile network."
+      });
+    }
     const existing=await pool.query("SELECT id FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
     if(existing.rows[0])return res.status(409).json({success:false,message:"An Aurelink account already exists for this email. Please sign in instead."});
     const token=randomBytes(32).toString("base64url");
     const expiresAt=new Date(Date.now()+5*60*1000);
     await pool.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE LOWER(email)=LOWER($1) AND consumed_at IS NULL",[email]);
-    await pool.query("INSERT INTO aurelink_signup_email_tokens(email,token_hash,request_ip,country,region,city,timezone,network_type,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",[email,hash(token),clientIp,net?.location?.country??null,net?.location?.state??null,net?.location?.city??null,net?.location?.timezone??null,net?.company?.type??net?.asn?.type??"unknown",expiresAt]);
+    await pool.query("INSERT INTO aurelink_signup_email_tokens(email,token_hash,request_ip,country,region,city,timezone,network_type,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",[email,hash(token),clientIp,net.location?.country??null,net.location?.state??null,net.location?.city??null,net.location?.timezone??null,net.company?.type??net.asn?.type??"unknown",expiresAt]);
     const link=publicBase()+"/?screen=verify-email&token="+encodeURIComponent(token);
-    const location=[net?.location?.city,net?.location?.country].filter(Boolean).join(", ")||"Location unavailable";
+    const location=[net.location?.city,net.location?.country].filter(Boolean).join(", ")||"Location unavailable";
     const maskedIp=clientIp.split(".").length===4?clientIp.split(".").map((v,i)=>i===3?"•••":v).join("."):clientIp;
-    const html=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#182230"><div style="max-width:600px;margin:24px auto;padding:28px;background:#fff;border-radius:14px"><h1 style="color:#173b78">AURELINK</h1><h2>Hello,</h2><p>Use the secure button below to confirm this email address for your Aurelink account.</p><p style="text-align:center;margin:32px 0"><a href="${link}" style="display:inline-block;background:#087be5;color:#fff;text-decoration:none;padding:15px 28px;border-radius:6px;font-weight:bold">Confirm email address</a></p><p>This one-time confirmation link expires in <strong>5 minutes</strong>. If it expires, return to Aurelink and request a new link.</p><hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0"><p style="font-size:13px;color:#596579">Request location: ${escapeHtml(location)}<br>IP address: ${escapeHtml(maskedIp)}<br>Timezone: ${escapeHtml(net?.location?.timezone??"Unavailable")}</p><p><strong>If you did not initiate this request, please ignore this email.</strong></p><p style="margin-top:28px">Aurelink, Inc.</p></div></body></html>`;
+    const html=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#182230"><div style="max-width:600px;margin:24px auto;padding:28px;background:#fff;border-radius:14px"><h1 style="color:#173b78">AURELINK</h1><h2>Hello,</h2><p>Use the secure button below to confirm this email address for your Aurelink account.</p><p style="text-align:center;margin:32px 0"><a href="${link}" style="display:inline-block;background:#087be5;color:#fff;text-decoration:none;padding:15px 28px;border-radius:6px;font-weight:bold">Confirm email address</a></p><p>This one-time confirmation link expires in <strong>5 minutes</strong>. If it expires, return to Aurelink and request a new link.</p><hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0"><p style="font-size:13px;color:#596579">Request location: ${escapeHtml(location)}<br>IP address: ${escapeHtml(maskedIp)}<br>Timezone: ${escapeHtml(net.location?.timezone??"Unavailable")}</p><p><strong>If you did not initiate this request, please ignore this email.</strong></p><p style="margin-top:28px">Aurelink, Inc.</p></div></body></html>`;
     const sent=await resend.emails.send({from:aurelinkSender(),to:email,subject:"Confirm your email address | Aurelink",html});
     if(sent.error){await pool.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE token_hash=$1",[hash(token)]);throw new Error(sent.error.message);}
     await pool.query("INSERT INTO aurelink_audit_logs(event_type,ip_address,user_agent,metadata) VALUES('signup.email_confirmation_sent',$1,$2,$3::jsonb)",[clientIp,agent(req),JSON.stringify({email,provider:"resend",messageId:sent.data?.id??null})]);
