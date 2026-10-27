@@ -131,3 +131,34 @@ button{cursor:pointer}
 @keyframes signal-pulse{0%{box-shadow:0 0 0 0 #70c3ff66}100%{box-shadow:0 0 0 13px #70c3ff00}}
 @media(max-width:850px){.sim-showcase{height:150px;max-width:340px;margin:23px auto 0}.sim-card{width:112px;height:137px;padding:11px}.sim-chip{margin:12px auto 9px;width:32px;height:25px}.sim-status{margin-top:9px;font-size:5px}.orbit-one{width:175px;height:115px}.orbit-two{width:230px;height:145px}.float-pill{font-size:9px;padding:8px 9px}.float-country{top:9px;left:0}.float-sms{right:0;bottom:9px}.signal-one{left:12%}.signal-two{right:12%}}
 @media(prefers-reduced-motion:reduce){.sim-card,.orbit,.float-pill,.signal{animation:none!important;scroll-behavior:auto!important}}
+
+
+/* Scroll-revealed activity rail sits between the form and true page footer. */
+.activity-preview{width:100%;max-width:420px;margin:34px auto 0;padding-top:17px;border-top:1px solid #edf1f5;overflow:hidden}
+.activity-heading,.activity-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.activity-live{display:flex;align-items:center;gap:7px;color:#687b90;font-size:9px;font-weight:800;letter-spacing:.14em;white-space:nowrap}
+.activity-live i{width:6px;height:6px;border-radius:50%;background:#35b987;box-shadow:0 0 0 3px #35b98720;animation:activity-pulse 2s ease-out infinite}
+.activity-caption{color:#a2adba;font-size:7px;letter-spacing:.08em;text-align:right}
+.activity-window{overflow:hidden;margin-top:13px;mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent)}
+.activity-track{display:flex;gap:10px;width:max-content;animation:activity-scroll 24s linear infinite}
+.activity-preview:hover .activity-track{animation-play-state:paused}
+.activity-card{width:246px;min-height:62px;display:flex;align-items:center;gap:9px;padding:10px;border:1px solid #e2e8ef;border-radius:10px;background:linear-gradient(125deg,#fff,#f8fbff);box-shadow:0 4px 14px #142f4d08}
+.carrier-mark{width:31px;height:31px;border-radius:8px;display:grid;place-items:center;flex:none;font-size:12px;font-weight:800}
+.carrier-v{background:#fff0f0;color:#d92735;font-size:21px;font-family:Arial,sans-serif;font-style:italic}
+.carrier-a{background:#e8f3ff;color:#176bc0;font-size:9px}
+.carrier-t{background:#e7f7ed;color:#26854f;font-size:18px}
+.activity-detail{min-width:0;flex:1}
+.activity-detail strong{display:block;color:#26374b;font-size:11px;font-weight:700;white-space:nowrap}
+.activity-detail strong span{color:#8291a3;font-weight:500;margin-left:3px}
+.activity-detail small{display:block;color:#9aa6b4;font-size:9px;margin-top:4px;white-space:nowrap}
+.activity-code{font-size:10px;letter-spacing:.06em;color:#8e9cac}
+.activity-check{width:17px;height:17px;display:grid;place-items:center;border-radius:50%;background:#e5f7ef;color:#25966b;font-size:10px}
+.activity-bottom{margin-top:11px;color:#a2adba;font-size:9px}
+.activity-dots{display:flex;gap:4px}
+.activity-dots i{width:4px;height:4px;background:#d2deeb;border-radius:50%;animation:dot-hop 1.3s ease-in-out infinite}
+.activity-dots i:nth-child(2){animation-delay:.18s}.activity-dots i:nth-child(3){animation-delay:.36s}
+@keyframes activity-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes activity-pulse{0%{box-shadow:0 0 0 0 #35b98755}100%{box-shadow:0 0 0 7px #35b98700}}
+@keyframes dot-hop{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-3px);opacity:1}}
+@media(max-width:850px){.activity-preview{margin-top:31px;max-width:420px}.activity-card{width:228px}.activity-caption{font-size:6px}}
+@media(prefers-reduced-motion:reduce){.activity-track,.activity-live i,.activity-dots i{animation:none!important}.activity-track{transform:none}}
