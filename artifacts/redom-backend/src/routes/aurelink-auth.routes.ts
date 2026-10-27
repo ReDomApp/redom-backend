@@ -9,7 +9,7 @@ import { pool } from "../database/db";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { emailService } from "../services/auth/email.service";
-import { loginNotificationService } from "../services/auth/login-notification.service";
+
 
 const router = Router();
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
@@ -65,7 +65,7 @@ async function startSession(req:Request,user:{id:string;email:string;first_name?
   const previous=await pool.query("SELECT id FROM aurelink_sessions WHERE user_id=$1 AND id<>$2 AND device_name=$3 AND revoked_at IS NULL LIMIT 1",[user.id,sessionId,deviceName]);
   const isNewDevice=previous.rowCount===0;
   // Login remains successful if email delivery is temporarily unavailable; the event is already persisted.
-  void loginNotificationService.send({email:user.email,firstName:user.first_name??"",lastName:user.last_name??"",ipAddress:addr,eventAt:new Date(),deviceName,deviceUserAgent:ua,ipapi:network}).catch(()=>undefined);
+  void resend.emails.send({from:process.env.AURELINK_EMAIL_FROM??"Aurelink <noreply@wnncompany.com>",to:user.email,subject:isNewDevice?"New device sign-in to Aurelink":"New sign-in to Aurelink",html:`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#17263b"><h2>Aurelink sign-in alert</h2><p>Hello ${String(user.first_name??"").replace(/[&<>"]/g,"")||"there"}, a sign-in just occurred.</p>${isNewDevice?"<p><b>New device detected.</b></p>":""}<p><b>Device:</b> ${deviceName.replace(/[&<>"]/g,"")}<br><b>Platform:</b> ${platform}<br><b>Browser:</b> ${browser}<br><b>Approximate location:</b> ${[network.location?.city,network.location?.state,network.location?.country].filter(Boolean).join(", ")||"Unavailable"}<br><b>IP address:</b> ${addr}<br><b>Time:</b> ${new Date().toISOString()} (UTC)<br><b>Account:</b> ${user.id}</p><p>If this wasn't you, change your password and contact support.</p></div>`}).catch(()=>undefined);
   return {accessToken,refreshToken,expiresIn:900,sessionId,deviceName,platform,browser,location:{city:network.location?.city??null,region:network.location?.state??null,country:network.location?.country??null},isNewDevice};
 }
 router.post("/aurelink/auth/register",(_req,res)=>res.status(410).json({success:false,message:"Direct registration is disabled. Use the email-confirmation signup flow."}));
