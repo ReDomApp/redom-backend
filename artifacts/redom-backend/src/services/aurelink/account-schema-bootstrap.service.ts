@@ -134,8 +134,11 @@ export async function ensureAurelinkAccountSchema(pool: Pool): Promise<void> {
       failure_reason VARCHAR(255),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_login_history ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+    ALTER TABLE aurelink_login_history ADD COLUMN IF NOT EXISTS account_id VARCHAR(16);
     CREATE INDEX IF NOT EXISTS aurelink_login_history_user_idx
       ON aurelink_login_history(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS aurelink_login_history_email_idx ON aurelink_login_history(LOWER(email), created_at DESC);
 
     CREATE TABLE IF NOT EXISTS aurelink_recognized_devices (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
