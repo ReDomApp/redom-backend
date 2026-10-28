@@ -157,14 +157,15 @@ router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
   }catch{return res.json(generic);}
 });
 router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
-  const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(10).max(200)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"A valid reset token and password are required."});
+  const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(10).max(200),confirmPassword:z.string().min(10).max(200)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"A valid reset token, new password and confirmation are required."});
+  if(parsed.data.password!==parsed.data.confirmPassword)return res.status(400).json({success:false,message:"The passwords do not match."});
   try{
     validPassword(parsed.data.password);
     const client=await pool.connect();
     try {
       await client.query("BEGIN");
-      const result=await client.query("SELECT id,user_id FROM aurelink_password_resets WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);
+      const result=await client.query("SELECT r.id,r.user_id,u.email,u.account_id,u.first_name FROM aurelink_password_resets r JOIN aurelink_users u ON u.id=r.user_id WHERE r.token_hash=$1 AND r.consumed_at IS NULL AND r.expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);
       const reset=result.rows[0];
       if(!reset){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Reset link is invalid or expired."});}
       const passwordHash=await hashPassword(parsed.data.password);
