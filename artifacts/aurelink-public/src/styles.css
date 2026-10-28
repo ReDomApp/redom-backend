@@ -339,3 +339,41 @@ button{cursor:pointer}
  .world-disclaimer{font-size:8px;padding:0 12px 13px}
  .content-foot{font-size:9px}
 }
+
+
+/* Full-viewport auth layout: avoid a narrow centered card on phones and tablets. */
+html,body,#root{width:100%;min-height:100%;margin:0}
+.shell{display:block;width:100%;min-height:100svh}
+.visual{display:none}
+.content{display:flex;width:100%;min-height:100svh;min-width:0;padding:clamp(20px,4vw,44px) clamp(16px,4vw,56px) 30px;align-items:stretch;justify-content:flex-start}
+.mobile-brand{display:block;width:100%;max-width:100%;margin:0 auto 26px}
+.mobile-brand .brand{justify-content:center}
+.auth-card{width:100%;max-width:none;min-width:0;flex:none}
+.card-top,.auth-card h2,.subhead,.auth-card form,.switch,.privacy-note,.notice,.mail-link,.login-history-panel,.card-bottom{width:100%}
+.auth-card h2{font-size:clamp(30px,4vw,42px)}
+.subhead{font-size:clamp(14px,1.7vw,17px)}
+.auth-card label{font-size:clamp(13px,1.5vw,15px)}
+.auth-card input{width:100%;height:clamp(52px,6vw,62px);font-size:clamp(15px,1.5vw,17px)}
+.primary{width:100%;min-height:clamp(54px,6vw,64px);font-size:clamp(15px,1.5vw,17px)}
+.switch{font-size:clamp(13px,1.5vw,15px)}
+.card-bottom{font-size:11px;flex-wrap:wrap}
+.world-stage{display:block;width:100%;max-width:none;align-self:stretch;flex:none;margin:34px 0 0}
+.content-foot{width:100%;max-width:none;margin:18px 0 0}
+@media(min-width:1000px){
+ .content{padding:36px clamp(40px,7vw,110px) 38px}
+ .auth-card{max-width:none}
+ .world-canvas{height:clamp(420px,48vw,600px)}
+}
+@media(max-width:600px){
+ .content{padding:20px 16px 26px}
+ .mobile-brand{margin-bottom:23px}
+ .card-top{margin-bottom:22px}
+ .auth-card h2{font-size:31px}
+ .subhead{font-size:14px;line-height:1.65;margin-bottom:22px}
+ .auth-card input{height:54px;font-size:15px}
+ .primary{min-height:56px;font-size:15px}
+ .card-bottom{font-size:10px}
+ .world-stage{margin-top:28px}
+ .world-canvas{height:360px}
+ .content-foot{font-size:10px}
+}
