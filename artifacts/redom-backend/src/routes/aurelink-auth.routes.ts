@@ -142,8 +142,24 @@ router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
     const knownIps=new Set(prior.rows.map((r:any)=>String(r.ip_address??"")));
     const newNetwork=!knownIps.has(suppliedIp);
     const token=randomBytes(32).toString("base64url"); const expiresAt=new Date(Date.now()+5*60*1000);
-    await pool.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[user.id]);
-    await pool.query("INSERT INTO aurelink_password_resets(user_id,token_hash,expires_at,request_ip) VALUES($1,$2,$3,$4)",[user.id,hash(token),expiresAt,suppliedIp]);
+    // Serialize reset requests per user so concurrent requests cannot send competing live links.
+    const resetClient=await pool.connect();
+    try {
+      await resetClient.query("BEGIN");
+      await resetClient.query("SELECT pg_advisory_xact_lock(hashtext($1))",[String(user.id)]);
+      const active=await resetClient.query("SELECT id FROM aurelink_password_resets WHERE user_id=$1 AND consumed_at IS NULL AND expires_at>NOW() LIMIT 1",[user.id]);
+      if(active.rows[0]) {
+        await resetClient.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.duplicate_suppressed',$2,$3,$4::jsonb)",[user.id,suppliedIp,agent(req),JSON.stringify({reason:"active_reset_link_exists"})]).catch(()=>undefined);
+        await resetClient.query("COMMIT");
+        return res.json(generic);
+      }
+      await resetClient.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[user.id]);
+      await resetClient.query("INSERT INTO aurelink_password_resets(user_id,token_hash,expires_at,request_ip) VALUES($1,$2,$3,$4)",[user.id,hash(token),expiresAt,suppliedIp]);
+      await resetClient.query("COMMIT");
+    } catch(error) {
+      await resetClient.query("ROLLBACK").catch(()=>undefined);
+      throw error;
+    } finally { resetClient.release(); }
     const base=publicBase();
     const link=`${base}/?screen=reset-password&token=${encodeURIComponent(token)}`;
     const safeName=escapeHtml(String(user.first_name||"there"));
