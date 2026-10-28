@@ -167,8 +167,16 @@ router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
     const maskedIp=suppliedIp.includes(".")?suppliedIp.split(".").map((v,i)=>i===3?"•••":v).join("."):suppliedIp.slice(0,12)+"…";
     const networkNote=newNetwork?"We received a password-reset request from a network IP address that does not appear in your recent successful Aurelink sign-in history.":"We received a password-reset request from an IP address recorded in your recent successful Aurelink sign-in history.";
     const html=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#17263b"><div style="max-width:600px;margin:24px auto;padding:32px;background:#fff;border-radius:14px"><h1 style="color:#173b78;letter-spacing:3px">AURELINK</h1><p>Hi ${safeName},</p><p>This is Aurelink Support. We received a request to reset the password for your account.</p><p>${networkNote}</p><p><strong>Request details</strong><br>IP address: ${escapeHtml(maskedIp)}<br>Approximate location: ${location}<br>Time: ${new Date().toISOString()} (UTC)<br>Account ID: ${escapeHtml(String(user.account_id))}</p><p style="text-align:center;margin:30px 0"><a href="${link}" style="display:inline-block;background:#126ac2;color:#fff;text-decoration:none;padding:15px 28px;border-radius:7px;font-weight:bold">Reset password</a></p><p>This secure link expires in <strong>5 minutes</strong> and can be used only once.</p><p>If you did not request this change, do not use the link. Your current password will remain unchanged unless the link is used. If you suspect unauthorized access, contact Aurelink Support.</p><p style="font-size:12px;color:#65758a">For your security, Aurelink will never ask you to send your password or verification code by email.</p><p>Aurelink Support</p></div></body></html>`;
-    const result=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Secure password reset | Aurelink",html});
-    if(result.error)throw new Error(result.error.message);
+    let result;
+    try { result=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Secure password reset | Aurelink",html}); }
+    catch(error) {
+      await pool.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND token_hash=$2 AND consumed_at IS NULL",[user.id,hash(token)]).catch(()=>undefined);
+      throw error;
+    }
+    if(result.error) {
+      await pool.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND token_hash=$2 AND consumed_at IS NULL",[user.id,hash(token)]).catch(()=>undefined);
+      throw new Error(result.error.message);
+    }
     return res.json(generic);
   }catch{return res.json(generic);}
 });
