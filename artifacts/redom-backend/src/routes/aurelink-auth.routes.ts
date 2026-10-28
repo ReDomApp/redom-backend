@@ -73,17 +73,59 @@ router.post("/aurelink/auth/refresh",async(req,res)=>{
   }catch{return res.status(401).json({success:false,message:"Invalid, expired or revoked Aurelink refresh token."});}
 });
 router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
-  const parsed=z.object({email:z.string().email().max(255)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"A valid email address is required."});
+  const parsed=z.object({email:z.string().email().max(255),clientIp:z.string().min(3).max(45)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Enter a valid email address and allow Aurelink to verify your network."});
+  const suppliedIp=parsed.data.clientIp.trim();
+  if(isIP(suppliedIp)===0||suppliedIp==="127.0.0.1"||suppliedIp==="::1"||suppliedIp.startsWith("127."))return res.status(400).json({success:false,message:"Aurelink could not verify your public IP address. Please retry."});
   const generic={success:true,message:"If an Aurelink account exists for this email, password recovery instructions will be sent."};
   try{
-    const found=await pool.query("SELECT id,email,first_name FROM aurelink_users WHERE LOWER(email)=LOWER($1) AND account_status='active'",[emailService.normalize(parsed.data.email)]);
-    const user=found.rows[0]; if(!user)return res.json(generic);
-    const token=randomBytes(32).toString("base64url"); const expiresAt=new Date(Date.now()+30*60*1000);
-    await pool.query("INSERT INTO aurelink_password_resets(user_id,token_hash,expires_at,request_ip) VALUES($1,$2,$3,$4)",[user.id,hash(token),expiresAt,ip(req)]);
-    const base=(process.env.AURELINK_PUBLIC_URL??"https://aurelink-public.onrender.com").replace(/\/$/,"");
-    const result=await (await import("../lib/resend")).resend.emails.send({from:process.env.AURELINK_EMAIL_FROM??"Aurelink <noreply@wnncompany.com>",to:user.email,subject:"Reset your Aurelink password",html:`<div style="font-family:Arial,sans-serif"><h2>Reset your Aurelink password</h2><p>Use the secure link below within 30 minutes.</p><p><a href="${base}/?screen=reset-password&token=${encodeURIComponent(token)}">Reset password</a></p><p>If you did not request this, ignore this email.</p></div>`});
-    if(result.error)throw new Error(result.error.message);
+    let network:Awaited<ReturnType<typeof checkIP>>;
+    try{network=await checkIP(suppliedIp);}catch{return res.status(503).json({success:false,code:"AURELINK_NETWORK_CHECK_UNAVAILABLE",message:"We couldn't verify this network securely. Please try again shortly."});}
+    const blocked=network.is_bogon===true||network.is_crawler===true||network.is_datacenter===true||network.is_tor===true||network.is_proxy===true||network.is_vpn===true||network.is_abuser===true||network.bot_status===true||network.hosting===true||Boolean(network.egress_service)||network.fraud_score>=50;
+    if(blocked){await pool.query("INSERT INTO aurelink_audit_logs(event_type,ip_address,user_agent,metadata) VALUES('auth.password_reset.blocked',$1,$2,$3::jsonb)",[suppliedIp,agent(req),JSON.stringify({reason:"network_risk_blocked"})]).catch(()=>undefined);return res.status(403).json({success:false,code:"AURELINK_NETWORK_BLOCKED",message:"This password-reset request was blocked because the network matched a high-risk signal. Turn off VPN or proxy services and try again from a normal connection."});}
+    const found=await pool.query("SELECT id,account_id,email,first_name,last_name FROM aurelink_users WHERE LOWER(email)=LOWER($1) AND account_status='active'",[emailService.normalize(parsed.data.email)]);
+    const user=found.rows[0];
+    await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.requested',$2,$3,$4::jsonb)",[user?.id??null,suppliedIp,agent(req),JSON.stringify({email:emailService.normalize(parsed.data.email),accountFound:Boolean(user),country:network.location?.country??null,city:network.location?.city??null})]);
+    if(!user)return res.json(generic);
+    const prior=await pool.query("SELECT ip_address FROM aurelink_login_history WHERE user_id=$1 AND success=TRUE ORDER BY created_at DESC LIMIT 100",[user.id]);
+    const knownIps=new Set(prior.rows.map((r:any)=>String(r.ip_address??"")));
+    const newNetwork=!knownIps.has(suppliedIp);
+    const token=randomBytes(32).toString("base64url"); const expiresAt=new Date(Date.now()+5*60*1000);
+    // Serialize reset requests per user so concurrent requests cannot send competing live links.
+    const resetClient=await pool.connect();
+    try {
+      await resetClient.query("BEGIN");
+      await resetClient.query("SELECT pg_advisory_xact_lock(hashtext($1))",[String(user.id)]);
+      const active=await resetClient.query("SELECT id FROM aurelink_password_resets WHERE user_id=$1 AND consumed_at IS NULL AND expires_at>NOW() LIMIT 1",[user.id]);
+      if(active.rows[0]) {
+        await resetClient.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.duplicate_suppressed',$2,$3,$4::jsonb)",[user.id,suppliedIp,agent(req),JSON.stringify({reason:"active_reset_link_exists"})]).catch(()=>undefined);
+        await resetClient.query("COMMIT");
+        return res.json(generic);
+      }
+      await resetClient.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[user.id]);
+      await resetClient.query("INSERT INTO aurelink_password_resets(user_id,token_hash,expires_at,request_ip) VALUES($1,$2,$3,$4)",[user.id,hash(token),expiresAt,suppliedIp]);
+      await resetClient.query("COMMIT");
+    } catch(error) {
+      await resetClient.query("ROLLBACK").catch(()=>undefined);
+      throw error;
+    } finally { resetClient.release(); }
+    const base=publicBase();
+    const link=`${base}/?screen=reset-password&token=${encodeURIComponent(token)}`;
+    const safeName=escapeHtml(String(user.first_name||"there"));
+    const location=[network.location?.city,network.location?.state,network.location?.country].filter(Boolean).map(String).map(escapeHtml).join(", ")||"Unavailable";
+    const maskedIp=suppliedIp.includes(".")?suppliedIp.split(".").map((v,i)=>i===3?"•••":v).join("."):suppliedIp.slice(0,12)+"…";
+    const networkNote=newNetwork?"We received a password-reset request from a network IP address that does not appear in your recent successful Aurelink sign-in history.":"We received a password-reset request from an IP address recorded in your recent successful Aurelink sign-in history.";
+    const html=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#17263b"><div style="max-width:600px;margin:24px auto;padding:32px;background:#fff;border-radius:14px"><h1 style="color:#173b78;letter-spacing:3px">AURELINK</h1><p>Hi ${safeName},</p><p>This is Aurelink Support. We received a request to reset the password for your account.</p><p>${networkNote}</p><p><strong>Request details</strong><br>IP address: ${escapeHtml(maskedIp)}<br>Approximate location: ${location}<br>Time: ${new Date().toISOString()} (UTC)<br>Account ID: ${escapeHtml(String(user.account_id))}</p><p style="text-align:center;margin:30px 0"><a href="${link}" style="display:inline-block;background:#126ac2;color:#fff;text-decoration:none;padding:15px 28px;border-radius:7px;font-weight:bold">Reset password</a></p><p>This secure link expires in <strong>5 minutes</strong> and can be used only once.</p><p>If you did not request this change, do not use the link. Your current password will remain unchanged unless the link is used. If you suspect unauthorized access, contact Aurelink Support.</p><p style="font-size:12px;color:#65758a">For your security, Aurelink will never ask you to send your password or verification code by email.</p><p>Aurelink Support</p></div></body></html>`;
+    let result;
+    try { result=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Secure password reset | Aurelink",html}); }
+    catch(error) {
+      await pool.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND token_hash=$2 AND consumed_at IS NULL",[user.id,hash(token)]).catch(()=>undefined);
+      throw error;
+    }
+    if(result.error) {
+      await pool.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND token_hash=$2 AND consumed_at IS NULL",[user.id,hash(token)]).catch(()=>undefined);
+      throw new Error(result.error.message);
+    }
     return res.json(generic);
   }catch{return res.json(generic);}
 });
