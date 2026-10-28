@@ -172,9 +172,19 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
       await client.query("UPDATE aurelink_users SET password_hash=$2,updated_at=NOW() WHERE id=$1",[reset.user_id,passwordHash]);
       await client.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
       await client.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL",[reset.user_id]);
-      await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.password_reset',$2,$3)",[reset.user_id,ip(req),agent(req)]);
+      await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset',$2,$3,$4::jsonb)",[reset.user_id,ip(req),agent(req),JSON.stringify({accountId:String(reset.account_id),allSessionsRevoked:true,resetTokenConsumed:true,occurredAt:new Date().toISOString()})]);
+      await client.query("INSERT INTO aurelink_login_history(user_id,account_id,email,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,$2,$3,'password_reset',TRUE,$4,$5,NULL)",[reset.user_id,reset.account_id,reset.email,ip(req),agent(req)]);
       await client.query("COMMIT");
-      return res.json({success:true,message:"Password reset. Please sign in again."});
+      const resetTime=new Date().toISOString();
+      const safeFirstName=escapeHtml(String(reset.first_name||"there"));
+      const safeAccountId=escapeHtml(String(reset.account_id||"Unavailable"));
+      const safeResetIp=escapeHtml(ip(req)||"Unavailable");
+      const resetHtml=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#17263b"><div style="max-width:600px;margin:24px auto;padding:32px;background:#fff;border-radius:14px"><h1 style="color:#173b78;letter-spacing:3px">AURELINK</h1><h2>Password changed successfully</h2><p>Hi ${safeFirstName},</p><p>The password for your Aurelink account has been changed successfully.</p><p><strong>Account ID:</strong> ${safeAccountId}<br><strong>Request IP:</strong> ${safeResetIp}<br><strong>Time:</strong> ${escapeHtml(resetTime)} (UTC)</p><p>For your security, all active Aurelink sessions have been signed out. Please sign in again using your new password.</p><p>If you made this change, no further action is needed. If you did not change your password, secure your account immediately by contacting Aurelink Support.</p><p><a href="${publicBase()}/" style="display:inline-block;background:#126ac2;color:#fff;text-decoration:none;padding:13px 24px;border-radius:7px;font-weight:bold">Continue to login</a></p><p style="font-size:12px;color:#65758a">This is a security notification. Aurelink Support will never ask you to email your password or verification codes.</p><p>Aurelink Support</p></div></body></html>`;
+      let confirmationEmailSent=false;
+      try { const mail=await resend.emails.send({from:aurelinkSender(),to:reset.email,subject:"Your Aurelink password was changed",html:resetHtml}); confirmationEmailSent=!mail.error; }
+      catch { confirmationEmailSent=false; }
+      await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.confirmation_email',$2,$3,$4::jsonb)",[reset.user_id,ip(req),agent(req),JSON.stringify({sent:confirmationEmailSent,occurredAt:resetTime})]).catch(()=>undefined);
+      return res.json({success:true,message:"Password reset. All active sessions have been signed out. Please sign in again."});
     } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; }
     finally { client.release(); }
   }catch{return res.status(400).json({success:false,message:"Unable to reset password. The link may be invalid or expired."});}
@@ -296,10 +306,9 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       await client.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE id=$1",[challenge.id]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.created',$2,$3,$4::jsonb)",[user.id,challenge.request_ip,agent(req),JSON.stringify({accountId,termsAccepted:true,termsAcceptedAt:new Date().toISOString()})]);
       await client.query("COMMIT");
-      const session=await startSession(req,{id:user.id,email:user.email});
-      const emailHtml=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1 style="color:#173b78">AURELINK</h1><h2>Welcome to Aurelink, ${escapeHtml(firstName)}!</h2><p>Your account has been created successfully.</p><p><strong>Aurelink Account ID:</strong> ${escapeHtml(accountId)}</p><p>If you did not create this account, contact Aurelink support immediately.</p><p>Aurelink, Inc.</p></div>`;
+      const emailHtml=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1 style="color:#173b78">AURELINK</h1><h2>Welcome to Aurelink, ${escapeHtml(firstName)}!</h2><p>Your account has been created successfully.</p><p><strong>Aurelink Account ID:</strong> ${escapeHtml(accountId)}</p><p>For your security, you have not been signed in automatically. Continue to the Aurelink login screen and sign in with your new credentials.</p><p>If you did not create this account, contact Aurelink support immediately.</p><p>Aurelink, Inc.</p></div>`;
       void resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Your Aurelink account is ready",html:emailHtml}).catch(()=>undefined);
-      return res.status(201).json({success:true,message:"Your Aurelink account has been created.",user,session});
+      return res.status(201).json({success:true,message:"Your Aurelink account has been created. Please sign in.",user});
     }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
   }catch(e){return res.status(500).json({success:false,message:"Aurelink could not complete account creation. Please try again."});}
 });
