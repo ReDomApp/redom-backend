@@ -10,21 +10,63 @@ import { hashPassword, verifyPassword } from "../utils/password";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { emailService } from "../services/auth/email.service";
 
+
 const router = Router();
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 const ip = (req: Request) => String(req.ip ?? "").replace(/^::ffff:/, "").slice(0,45);
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
-function jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
+
+function describeDevice(ua:string, supplied?:unknown) {
+  const explicit=typeof supplied==="string"?supplied.trim():"";
+  if(explicit && explicit.length<160) return explicit;
+  if(/iPhone/i.test(ua)) return "iPhone (model unavailable to browser)";
+  if(/iPad/i.test(ua)) return "iPad (model unavailable to browser)";
+  if(/Android/i.test(ua)) {
+    const match=ua.match(/Android[^;)]*;\\s*(?:[a-z]{2}-[A-Z]{2};\\s*)?(?:wv;\\s*)?([^;)/]+?)(?:\\s+Build\\/[^;)]*)?[;)]/i);
+    const model=match?.[1]?.trim();
+    if(model && !/^(Linux|Android|K|wv)$/i.test(model)) return model.slice(0,150);
+    return "Android device (model not disclosed by browser)";
+  }
+  if(/Windows NT/i.test(ua)) return "Windows PC";
+  if(/Macintosh|Mac OS X/i.test(ua)) return "Mac";
+  if(/CrOS/i.test(ua)) return "Chromebook";
+  if(/Linux/i.test(ua)) return "Linux device";
+  return "Device not identifiable from browser";
+}
+function platformFor(ua:string) {
+  if(/Android/i.test(ua)) return "Android";
+  if(/iPhone|iPad|iPod/i.test(ua)) return "iOS";
+  if(/Windows/i.test(ua)) return "Windows";
+  if(/Macintosh|Mac OS X/i.test(ua)) return "macOS";
+  if(/CrOS/i.test(ua)) return "ChromeOS";
+  if(/Linux/i.test(ua)) return "Linux";
+  return "Unknown";
+}
+function browserFor(ua:string) {
+  if(/Edg\\//i.test(ua)) return "Microsoft Edge";
+  if(/Firefox\\//i.test(ua)) return "Firefox";
+  if(/CriOS\\//i.test(ua)) return "Chrome (iOS)";
+  if(/Chrome\\//i.test(ua)) return "Chrome";
+  if(/Safari\\//i.test(ua) && !/Chrome/i.test(ua)) return "Safari";
+  if(/SamsungBrowser\\//i.test(ua)) return "Samsung Internet";
+  return "Browser not identifiable";
+}
+\nfunction jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
 function refreshSecret() { const v=process.env.JWT_REFRESH_SECRET; if(!v) throw new Error("JWT_REFRESH_SECRET is not configured."); return v; }
 function validPassword(v:string) { if(v.length<10 || !/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) throw new Error("Password must be at least 10 characters and contain a letter and a number."); }
-async function startSession(req:Request,user:{id:string;email:string}) {
-  const sessionId = randomUUID();
+async function startSession(req:Request,user:{id:string;email:string;first_name?:string;last_name?:string},network:Awaited<ReturnType<typeof checkIP>>) {
+  const sessionId=randomUUID(), ua=agent(req), deviceName=describeDevice(ua,req.body?.deviceName);
+  const platform=platformFor(ua), browser=browserFor(ua), addr=ip(req);
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
-  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),ip(req)]);
-  await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type) VALUES($1,$2,$3,$4,'login')",[user.id,sessionId,ip(req),agent(req)]);
+  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,country,region,city,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,deviceName,platform,browser,ua,addr,network.location?.country??null,network.location?.state??null,network.location?.city??null]);
+  await pool.query("INSERT INTO aurelink_login_history(user_id,account_id,email,session_id,ip_address,user_agent,event_type,success,device_name,platform,browser,country,region,city) VALUES($1,$2,$3,$4,$5,$6,'login',TRUE,$7,$8,$9,$10,$11,$12)",[user.id,(user as any).account_id??null,user.email,sessionId,addr,ua,deviceName,platform,browser,network.location?.country??null,network.location?.state??null,network.location?.city??null]);
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
-  return {accessToken,refreshToken,expiresIn:900,sessionId};
+  const previous=await pool.query("SELECT id FROM aurelink_sessions WHERE user_id=$1 AND id<>$2 AND device_name=$3 AND revoked_at IS NULL LIMIT 1",[user.id,sessionId,deviceName]);
+  const isNewDevice=previous.rowCount===0;
+  // Login remains successful if email delivery is temporarily unavailable; the event is already persisted.
+  void resend.emails.send({from:process.env.AURELINK_EMAIL_FROM??"Aurelink <noreply@wnncompany.com>",to:user.email,subject:isNewDevice?"New device sign-in to Aurelink":"New sign-in to Aurelink",html:`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#17263b"><h2>Aurelink sign-in alert</h2><p>Hello ${String(user.first_name??"").replace(/[&<>"]/g,"")||"there"}, a sign-in just occurred.</p>${isNewDevice?"<p><b>New device detected.</b></p>":""}<p><b>Device:</b> ${deviceName.replace(/[&<>"]/g,"")}<br><b>Platform:</b> ${platform}<br><b>Browser:</b> ${browser}<br><b>Approximate location:</b> ${[network.location?.city,network.location?.state,network.location?.country].filter(Boolean).join(", ")||"Unavailable"}<br><b>IP address:</b> ${addr}<br><b>Time:</b> ${new Date().toISOString()} (UTC)<br><b>Account:</b> ${user.id}</p><p>If this wasn't you, change your password and contact support.</p></div>`}).catch(()=>undefined);
+  return {accessToken,refreshToken,expiresIn:900,sessionId,deviceName,platform,browser,location:{city:network.location?.city??null,region:network.location?.state??null,country:network.location?.country??null},isNewDevice};
 }
 router.post("/aurelink/auth/register",(_req,res)=>res.status(410).json({success:false,message:"Direct registration is disabled. Use the email-confirmation signup flow."}));
 router.post("/aurelink/auth/login",async(req,res)=>{
@@ -32,21 +74,30 @@ router.post("/aurelink/auth/login",async(req,res)=>{
   if(!parsed.success)return res.status(400).json({success:false,message:"Valid email and password are required."});
   try{
     const email=emailService.normalize(parsed.data.email);
-    const found=await pool.query("SELECT id,email,first_name,last_name,password_hash,email_verified,account_status FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
+    const found=await pool.query("SELECT id,account_id,email,first_name,last_name,password_hash,email_verified,account_status FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
     const user=found.rows[0];
     if(!user || user.email_verified!==true || !await verifyPassword(parsed.data.password,String(user.password_hash))) {
-      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'invalid_credentials')",[user?.id??null,ip(req),agent(req)]).catch(()=>undefined);
+      await pool.query("INSERT INTO aurelink_login_history(user_id,account_id,email,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,$2,$3,'login',FALSE,$4,$5,'invalid_credentials')",[user?.id??null,user?.account_id??null,email,ip(req),agent(req)]).catch(()=>undefined);
       return res.status(401).json({success:false,message:"Invalid email or password."});
     }
     if(user.account_status!=="active")return res.status(403).json({success:false,message:"This Aurelink account is not active."});
+    let network:Awaited<ReturnType<typeof checkIP>>;
+    try { network=await checkIP(ip(req)); }
+    catch { await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'network_check_unavailable')",[user.id,ip(req),agent(req)]).catch(()=>undefined); return res.status(503).json({success:false,code:"AURELINK_NETWORK_CHECK_UNAVAILABLE",message:"We couldn't securely verify this network. Please try again shortly."}); }
+    const networkBlocked=network.is_bogon===true||network.is_crawler===true||network.is_datacenter===true||network.is_tor===true||network.is_proxy===true||network.is_vpn===true||network.is_abuser===true||network.bot_status===true||network.hosting===true||Boolean(network.egress_service)||network.fraud_score>=50;
+    if(networkBlocked) {
+      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,$4)",[user.id,ip(req),agent(req),"network_risk_blocked"]).catch(()=>undefined);
+      return res.status(403).json({success:false,code:"AURELINK_NETWORK_BLOCKED",message:"This connection could not be accepted because it matched a high-risk network signal. Turn off VPN or proxy services and try a normal connection."});
+    }
     const sec=await pool.query("SELECT two_factor_enabled,two_factor_method FROM aurelink_account_security WHERE user_id=$1",[user.id]);
     if(sec.rows[0]?.two_factor_enabled) return res.status(501).json({success:false,code:"AURELINK_2FA_SETUP_REQUIRED",message:"Two-factor authentication is enabled, but challenge delivery is not yet available for this account. Contact Aurelink support; password-only login is blocked."});
-    const session=await startSession(req,{id:user.id,email:user.email});
+    const session=await startSession(req,{id:user.id,email:user.email,first_name:user.first_name,last_name:user.last_name},network);
     await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.login',$2,$3)",[user.id,ip(req),agent(req)]);
     delete user.password_hash;
     return res.json({success:true,user,session});
   }catch(e){return res.status(500).json({success:false,message:"Aurelink login failed."});}
 });
+router.get("/aurelink/auth/login-history",aurelinkAuthMiddleware,async(req,res)=>{try{const limit=Math.min(100,Math.max(1,Number(req.query.limit)||30));const result=await pool.query("SELECT h.id,h.account_id,h.email,h.event_type,h.success,h.ip_address,h.country,h.region,h.city,h.device_name,h.device_type,h.platform,h.browser,h.user_agent,h.failure_reason,h.created_at FROM aurelink_login_history h WHERE h.user_id=$1 ORDER BY h.created_at DESC LIMIT $2",[req.user!.userId,limit]);return res.json({success:true,events:result.rows});}catch{return res.status(500).json({success:false,message:"Could not load login history."});}});
 router.get("/aurelink/auth/me",aurelinkAuthMiddleware,async(req,res)=>{
   const r=await pool.query("SELECT id,email,first_name,last_name,email_verified,phone_number,phone_verified,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
   if(!r.rows[0])return res.status(404).json({success:false,message:"Account not found."});
@@ -73,38 +124,91 @@ router.post("/aurelink/auth/refresh",async(req,res)=>{
   }catch{return res.status(401).json({success:false,message:"Invalid, expired or revoked Aurelink refresh token."});}
 });
 router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
-  const parsed=z.object({email:z.string().email().max(255)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"A valid email address is required."});
+  const parsed=z.object({email:z.string().email().max(255),clientIp:z.string().min(3).max(45)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Enter a valid email address and allow Aurelink to verify your network."});
+  const suppliedIp=parsed.data.clientIp.trim();
+  if(isIP(suppliedIp)===0||suppliedIp==="127.0.0.1"||suppliedIp==="::1"||suppliedIp.startsWith("127."))return res.status(400).json({success:false,message:"Aurelink could not verify your public IP address. Please retry."});
   const generic={success:true,message:"If an Aurelink account exists for this email, password recovery instructions will be sent."};
   try{
-    const found=await pool.query("SELECT id,email,first_name FROM aurelink_users WHERE LOWER(email)=LOWER($1) AND account_status='active'",[emailService.normalize(parsed.data.email)]);
-    const user=found.rows[0]; if(!user)return res.json(generic);
-    const token=randomBytes(32).toString("base64url"); const expiresAt=new Date(Date.now()+30*60*1000);
-    await pool.query("INSERT INTO aurelink_password_resets(user_id,token_hash,expires_at,request_ip) VALUES($1,$2,$3,$4)",[user.id,hash(token),expiresAt,ip(req)]);
-    const base=(process.env.AURELINK_PUBLIC_URL??"https://aurelink-public.onrender.com").replace(/\/$/,"");
-    const result=await (await import("../lib/resend")).resend.emails.send({from:process.env.AURELINK_EMAIL_FROM??"Aurelink <noreply@wnncompany.com>",to:user.email,subject:"Reset your Aurelink password",html:`<div style="font-family:Arial,sans-serif"><h2>Reset your Aurelink password</h2><p>Use the secure link below within 30 minutes.</p><p><a href="${base}/?screen=reset-password&token=${encodeURIComponent(token)}">Reset password</a></p><p>If you did not request this, ignore this email.</p></div>`});
-    if(result.error)throw new Error(result.error.message);
+    let network:Awaited<ReturnType<typeof checkIP>>;
+    try{network=await checkIP(suppliedIp);}catch{return res.status(503).json({success:false,code:"AURELINK_NETWORK_CHECK_UNAVAILABLE",message:"We couldn't verify this network securely. Please try again shortly."});}
+    const blocked=network.is_bogon===true||network.is_crawler===true||network.is_datacenter===true||network.is_tor===true||network.is_proxy===true||network.is_vpn===true||network.is_abuser===true||network.bot_status===true||network.hosting===true||Boolean(network.egress_service)||network.fraud_score>=50;
+    if(blocked){await pool.query("INSERT INTO aurelink_audit_logs(event_type,ip_address,user_agent,metadata) VALUES('auth.password_reset.blocked',$1,$2,$3::jsonb)",[suppliedIp,agent(req),JSON.stringify({reason:"network_risk_blocked"})]).catch(()=>undefined);return res.status(403).json({success:false,code:"AURELINK_NETWORK_BLOCKED",message:"This password-reset request was blocked because the network matched a high-risk signal. Turn off VPN or proxy services and try again from a normal connection."});}
+    const found=await pool.query("SELECT id,account_id,email,first_name,last_name FROM aurelink_users WHERE LOWER(email)=LOWER($1) AND account_status='active'",[emailService.normalize(parsed.data.email)]);
+    const user=found.rows[0];
+    await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.requested',$2,$3,$4::jsonb)",[user?.id??null,suppliedIp,agent(req),JSON.stringify({email:emailService.normalize(parsed.data.email),accountFound:Boolean(user),country:network.location?.country??null,city:network.location?.city??null})]);
+    if(!user)return res.json(generic);
+    const prior=await pool.query("SELECT ip_address FROM aurelink_login_history WHERE user_id=$1 AND success=TRUE ORDER BY created_at DESC LIMIT 100",[user.id]);
+    const knownIps=new Set(prior.rows.map((r:any)=>String(r.ip_address??"")));
+    const newNetwork=!knownIps.has(suppliedIp);
+    const token=randomBytes(32).toString("base64url"); const expiresAt=new Date(Date.now()+5*60*1000);
+    // Serialize reset requests per user so concurrent requests cannot send competing live links.
+    const resetClient=await pool.connect();
+    try {
+      await resetClient.query("BEGIN");
+      await resetClient.query("SELECT pg_advisory_xact_lock(hashtext($1))",[String(user.id)]);
+      const active=await resetClient.query("SELECT id FROM aurelink_password_resets WHERE user_id=$1 AND consumed_at IS NULL AND expires_at>NOW() LIMIT 1",[user.id]);
+      if(active.rows[0]) {
+        await resetClient.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.duplicate_suppressed',$2,$3,$4::jsonb)",[user.id,suppliedIp,agent(req),JSON.stringify({reason:"active_reset_link_exists"})]).catch(()=>undefined);
+        await resetClient.query("COMMIT");
+        return res.json(generic);
+      }
+      await resetClient.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[user.id]);
+      await resetClient.query("INSERT INTO aurelink_password_resets(user_id,token_hash,expires_at,request_ip) VALUES($1,$2,$3,$4)",[user.id,hash(token),expiresAt,suppliedIp]);
+      await resetClient.query("COMMIT");
+    } catch(error) {
+      await resetClient.query("ROLLBACK").catch(()=>undefined);
+      throw error;
+    } finally { resetClient.release(); }
+    const base=publicBase();
+    const link=`${base}/?screen=reset-password&token=${encodeURIComponent(token)}`;
+    const safeName=escapeHtml(String(user.first_name||"there"));
+    const location=[network.location?.city,network.location?.state,network.location?.country].filter(Boolean).map(String).map(escapeHtml).join(", ")||"Unavailable";
+    const maskedIp=suppliedIp.includes(".")?suppliedIp.split(".").map((v,i)=>i===3?"•••":v).join("."):suppliedIp.slice(0,12)+"…";
+    const networkNote=newNetwork?"We received a password-reset request from a network IP address that does not appear in your recent successful Aurelink sign-in history.":"We received a password-reset request from an IP address recorded in your recent successful Aurelink sign-in history.";
+    const html=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#17263b"><div style="max-width:600px;margin:24px auto;padding:32px;background:#fff;border-radius:14px"><h1 style="color:#173b78;letter-spacing:3px">AURELINK</h1><p>Hi ${safeName},</p><p>This is Aurelink Support. We received a request to reset the password for your account.</p><p>${networkNote}</p><p><strong>Request details</strong><br>IP address: ${escapeHtml(maskedIp)}<br>Approximate location: ${location}<br>Time: ${new Date().toISOString()} (UTC)<br>Account ID: ${escapeHtml(String(user.account_id))}</p><p style="text-align:center;margin:30px 0"><a href="${link}" style="display:inline-block;background:#126ac2;color:#fff;text-decoration:none;padding:15px 28px;border-radius:7px;font-weight:bold">Reset password</a></p><p>This secure link expires in <strong>5 minutes</strong> and can be used only once.</p><p>If you did not request this change, do not use the link. Your current password will remain unchanged unless the link is used. If you suspect unauthorized access, contact Aurelink Support.</p><p style="font-size:12px;color:#65758a">For your security, Aurelink will never ask you to send your password or verification code by email.</p><p>Aurelink Support</p></div></body></html>`;
+    let result;
+    try { result=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Secure password reset | Aurelink",html}); }
+    catch(error) {
+      await pool.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND token_hash=$2 AND consumed_at IS NULL",[user.id,hash(token)]).catch(()=>undefined);
+      throw error;
+    }
+    if(result.error) {
+      await pool.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND token_hash=$2 AND consumed_at IS NULL",[user.id,hash(token)]).catch(()=>undefined);
+      throw new Error(result.error.message);
+    }
     return res.json(generic);
   }catch{return res.json(generic);}
 });
 router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
-  const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(10).max(200)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"A valid reset token and password are required."});
+  const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(10).max(200),confirmPassword:z.string().min(10).max(200)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"A valid reset token, new password and confirmation are required."});
+  if(parsed.data.password!==parsed.data.confirmPassword)return res.status(400).json({success:false,message:"The passwords do not match."});
   try{
     validPassword(parsed.data.password);
     const client=await pool.connect();
     try {
       await client.query("BEGIN");
-      const result=await client.query("SELECT id,user_id FROM aurelink_password_resets WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);
+      const result=await client.query("SELECT r.id,r.user_id,u.email,u.account_id,u.first_name FROM aurelink_password_resets r JOIN aurelink_users u ON u.id=r.user_id WHERE r.token_hash=$1 AND r.consumed_at IS NULL AND r.expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);
       const reset=result.rows[0];
       if(!reset){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Reset link is invalid or expired."});}
       const passwordHash=await hashPassword(parsed.data.password);
       await client.query("UPDATE aurelink_users SET password_hash=$2,updated_at=NOW() WHERE id=$1",[reset.user_id,passwordHash]);
       await client.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
       await client.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL",[reset.user_id]);
-      await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.password_reset',$2,$3)",[reset.user_id,ip(req),agent(req)]);
+      await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset',$2,$3,$4::jsonb)",[reset.user_id,ip(req),agent(req),JSON.stringify({accountId:String(reset.account_id),allSessionsRevoked:true,resetTokenConsumed:true,occurredAt:new Date().toISOString()})]);
+      await client.query("INSERT INTO aurelink_login_history(user_id,account_id,email,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,$2,$3,'password_reset',TRUE,$4,$5,NULL)",[reset.user_id,reset.account_id,reset.email,ip(req),agent(req)]);
       await client.query("COMMIT");
-      return res.json({success:true,message:"Password reset. Please sign in again."});
+      const resetTime=new Date().toISOString();
+      const safeFirstName=escapeHtml(String(reset.first_name||"there"));
+      const safeAccountId=escapeHtml(String(reset.account_id||"Unavailable"));
+      const safeResetIp=escapeHtml(ip(req)||"Unavailable");
+      const resetHtml=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#17263b"><div style="max-width:600px;margin:24px auto;padding:32px;background:#fff;border-radius:14px"><h1 style="color:#173b78;letter-spacing:3px">AURELINK</h1><h2>Password changed successfully</h2><p>Hi ${safeFirstName},</p><p>The password for your Aurelink account has been changed successfully.</p><p><strong>Account ID:</strong> ${safeAccountId}<br><strong>Request IP:</strong> ${safeResetIp}<br><strong>Time:</strong> ${escapeHtml(resetTime)} (UTC)</p><p>For your security, all active Aurelink sessions have been signed out. Please sign in again using your new password.</p><p>If you made this change, no further action is needed. If you did not change your password, secure your account immediately by contacting Aurelink Support.</p><p><a href="${publicBase()}/" style="display:inline-block;background:#126ac2;color:#fff;text-decoration:none;padding:13px 24px;border-radius:7px;font-weight:bold">Continue to login</a></p><p style="font-size:12px;color:#65758a">This is a security notification. Aurelink Support will never ask you to email your password or verification codes.</p><p>Aurelink Support</p></div></body></html>`;
+      let confirmationEmailSent=false;
+      try { const mail=await resend.emails.send({from:aurelinkSender(),to:reset.email,subject:"Your Aurelink password was changed",html:resetHtml}); confirmationEmailSent=!mail.error; }
+      catch { confirmationEmailSent=false; }
+      await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.confirmation_email',$2,$3,$4::jsonb)",[reset.user_id,ip(req),agent(req),JSON.stringify({sent:confirmationEmailSent,occurredAt:resetTime})]).catch(()=>undefined);
+      return res.json({success:true,message:"Password reset. All active sessions have been signed out. Please sign in again."});
     } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; }
     finally { client.release(); }
   }catch{return res.status(400).json({success:false,message:"Unable to reset password. The link may be invalid or expired."});}
@@ -226,10 +330,9 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       await client.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE id=$1",[challenge.id]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.created',$2,$3,$4::jsonb)",[user.id,challenge.request_ip,agent(req),JSON.stringify({accountId,termsAccepted:true,termsAcceptedAt:new Date().toISOString()})]);
       await client.query("COMMIT");
-      const session=await startSession(req,{id:user.id,email:user.email});
-      const emailHtml=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1 style="color:#173b78">AURELINK</h1><h2>Welcome to Aurelink, ${escapeHtml(firstName)}!</h2><p>Your account has been created successfully.</p><p><strong>Aurelink Account ID:</strong> ${escapeHtml(accountId)}</p><p>If you did not create this account, contact Aurelink support immediately.</p><p>Aurelink, Inc.</p></div>`;
+      const emailHtml=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1 style="color:#173b78">AURELINK</h1><h2>Welcome to Aurelink, ${escapeHtml(firstName)}!</h2><p>Your account has been created successfully.</p><p><strong>Aurelink Account ID:</strong> ${escapeHtml(accountId)}</p><p>For your security, you have not been signed in automatically. Continue to the Aurelink login screen and sign in with your new credentials.</p><p>If you did not create this account, contact Aurelink support immediately.</p><p>Aurelink, Inc.</p></div>`;
       void resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Your Aurelink account is ready",html:emailHtml}).catch(()=>undefined);
-      return res.status(201).json({success:true,message:"Your Aurelink account has been created.",user,session});
+      return res.status(201).json({success:true,message:"Your Aurelink account has been created. Please sign in.",user});
     }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
   }catch(e){return res.status(500).json({success:false,message:"Aurelink could not complete account creation. Please try again."});}
 });
