@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import { isIP } from "node:net";
 import { z } from "zod";
-import { randomBytes, randomUUID, randomInt, createHash } from "node:crypto";
+import { randomBytes, randomUUID, randomInt, createHash, createHmac } from "node:crypto";
 import { checkIP } from "../lib/ipapi";
 import { resend } from "../lib/resend";
 import jwt from "jsonwebtoken";
@@ -94,7 +94,7 @@ function makeRandomAuthKey(){
 }
 function rotateAuthKey(accountId:string,currentKey:string,period:number){
   const secret=authRotationSecret();
-  const aF=accountId.slice(0,4),aM=accountId.slice(4,8),aL=accountId.slice(8,12);
+  const aF=accountId.slice(0,4),aM=accountId.length===12?accountId.slice(4,8):accountId.slice(4,6),aL=accountId.slice(-4);
   const kF=currentKey.slice(0,4),kM=currentKey.slice(4,-4),kL=currentKey.slice(-4);
   const patternDigest=createHash("sha256").update(createHmac("sha256",secret).update("AURELINK_PATTERN|"+accountId+"|"+period).digest()).digest();
   const patternIndex=patternDigest[0]%authKeyPatterns.length;
@@ -103,7 +103,7 @@ function rotateAuthKey(accountId:string,currentKey:string,period:number){
   // Domain separation prevents this derivation from being reused for another purpose.
   const digest=createHmac("sha256",secret).update("AURELINK_AUTH_ROTATION_V1|"+accountId+"|"+period+"|"+patternIndex+"|"+patternCore+"|"+currentKey).digest();
   let middle="";
-  for(let i=0;i<16;i++) middle+=authKeyAlphabet[digest[i]%authKeyAlphabet.length];
+  for(let i=0;i<currentKey.length-8;i++) middle+=authKeyAlphabet[digest[i%digest.length]%authKeyAlphabet.length];
   return {key:kF+middle+kL,patternIndex};
 }
 async function ensureAuthKeySchema(client:any){
@@ -125,10 +125,10 @@ router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(
     await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix) VALUES($1,$2,$3,$4,$5)",[user.id,String(user.account_id),hash(key),key.slice(0,4),key.slice(-4)]);
     await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.account_key.bound',$2,$3,$4::jsonb)",[user.id,ip(req),agent(req),JSON.stringify({keyVersion:1,source:"authenticated_existing_account"})]);
     await client.query("COMMIT");
-    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(user.first_name||"there"))},</p><p>An AUTH key has been bound to your existing Aurelink account.</p><p><strong>Account ID:</strong> ${escapeHtml(String(user.account_id))}</p><p><strong>One-time AUTH key:</strong> <code>${escapeHtml(key)}</code></p><p>Save it in a password manager. Aurelink stores only a hash and cannot show it again. If you did not initiate this while signed in, contact support.</p></div>`;
-    try{const sent=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Your Aurelink account AUTH key",html});if(sent.error)return res.status(503).json({success:false,code:"AURELINK_KEY_EMAIL_FAILED",message:"The key was created but email delivery failed. Contact support before retrying."});}
+    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(user.first_name||"there"))},</p><p>An ASAK-24 key has been bound to your existing Aurelink account.</p><p><strong>Account ID:</strong> ${escapeHtml(String(user.account_id))}</p><p><strong>One-time ASAK-24 key:</strong> <code>${escapeHtml(key)}</code></p><p>Save it in a password manager. Aurelink stores only a hash and cannot show it again. If you did not initiate this while signed in, contact support.</p></div>`;
+    try{const sent=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Your Aurelink account ASAK-24 key",html});if(sent.error)return res.status(503).json({success:false,code:"AURELINK_KEY_EMAIL_FAILED",message:"The key was created but email delivery failed. Contact support before retrying."});}
     catch{return res.status(503).json({success:false,code:"AURELINK_KEY_EMAIL_FAILED",message:"The key was created but email delivery failed. Contact support before retrying."});}
-    return res.status(201).json({success:true,message:"AUTH key bound. It was sent to your verified email address; it will not be shown again."});
+    return res.status(201).json({success:true,message:"ASAK-24 key bound. It was sent to your verified email address; it will not be shown again."});
   }catch{
     await client.query("ROLLBACK").catch(()=>undefined);
     return res.status(500).json({success:false,message:"Unable to bind an AUTH key. Verify server rotation-secret configuration and try again."});
@@ -136,7 +136,7 @@ router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(
 });
 router.post("/aurelink/auth/account-auth-key/verify",async(req,res)=>{
   const parsed=z.object({accountId:z.string().regex(/^\d{10,12}$/),authKey:z.string().regex(/^[A-Za-z0-9]{24}$/)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"A valid Account ID and 24-character AUTH key are required."});
+  if(!parsed.success)return res.status(400).json({success:false,message:"A valid 10- or 12-digit Account ID and its matching 20- or 24-character ASAK key are required."});
   const client=await pool.connect();
   try{
     await client.query("BEGIN");
@@ -145,7 +145,7 @@ router.post("/aurelink/auth/account-auth-key/verify",async(req,res)=>{
     const record=found.rows[0];
     if(!record||record.key_hash!==hash(parsed.data.authKey)){
       await client.query("ROLLBACK");
-      return res.status(401).json({success:false,message:"AUTH key is invalid or revoked."});
+      return res.status(401).json({success:false,message:"ASAK-24 key is invalid or revoked."});
     }
     const baseDate=new Date(record.rotated_at??record.created_at);
     const due=Date.now()-baseDate.getTime()>=30*24*60*60*1000;
@@ -158,8 +158,8 @@ router.post("/aurelink/auth/account-auth-key/verify",async(req,res)=>{
     await client.query("UPDATE aurelink_account_auth_keys SET key_hash=$2,stable_prefix=$3,stable_suffix=$4,rotated_at=NOW(),key_version=key_version+1 WHERE id=$1",[record.id,hash(next.key),next.key.slice(0,4),next.key.slice(-4)]);
     await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.account_key.rotated',$2::jsonb)",[record.user_id,JSON.stringify({keyVersion:Number(record.key_version??1)+1,patternIndex:next.patternIndex,reason:"30_day_rotation"})]);
     await client.query("COMMIT");
-    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(record.first_name||"there"))},</p><p>Your 30-day AUTH key rotation is complete.</p><p><strong>New AUTH key:</strong> <code>${escapeHtml(next.key)}</code></p><p>The first and last four characters remain unchanged; the middle 16 have rotated. Your previous key is no longer valid. Store this key securely.</p><p>If you did not initiate this action, contact Aurelink Support immediately.</p></div>`;
-    try{const sent=await resend.emails.send({from:aurelinkSender(),to:record.email,subject:"Your Aurelink AUTH key has rotated",html});if(sent.error)return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"The key rotated, but email delivery failed. Contact support before retrying.",keyVersion:Number(record.key_version??1)+1});}
+    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(record.first_name||"there"))},</p><p>Your 30-day ASAK-24 rotation is complete.</p><p><strong>New ASAK-24 key:</strong> <code>${escapeHtml(next.key)}</code></p><p>The first and last four characters remain unchanged; the middle 16 have rotated. Your previous key is no longer valid. Store this key securely.</p><p>If you did not initiate this action, contact Aurelink Support immediately.</p></div>`;
+    try{const sent=await resend.emails.send({from:aurelinkSender(),to:record.email,subject:"Your Aurelink ASAK-24 key has rotated",html});if(sent.error)return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"The key rotated, but email delivery failed. Contact support before retrying.",keyVersion:Number(record.key_version??1)+1});}
     catch{return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"The key rotated, but email delivery failed. Contact support before retrying.",keyVersion:Number(record.key_version??1)+1});}
     return res.json({success:true,authorized:true,rotated:true,keyVersion:Number(record.key_version??1)+1,patternIndex:next.patternIndex,message:"A new AUTH key was emailed to your verified address. The previous key is no longer valid."});
   }catch{
@@ -382,7 +382,7 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_auth_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL UNIQUE REFERENCES aurelink_users(id) ON DELETE CASCADE, account_id VARCHAR(32) NOT NULL UNIQUE, key_hash CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), key_version INTEGER NOT NULL DEFAULT 1, stable_prefix VARCHAR(4), stable_suffix VARCHAR(4), revoked_at TIMESTAMPTZ NULL)");
       const authAlphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
       const randomAuthPart=(length:number)=>Array.from({length},()=>authAlphabet[randomInt(authAlphabet.length)]).join("");
-      const accountAuthKey=randomAuthPart(24);
+      const accountAuthKey=randomAuthPart(accountId.length===10?20:24);
       await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix) VALUES($1,$2,$3,$4,$5)",[user.id,String(accountId),hash(accountAuthKey),accountAuthKey.slice(0,4),accountAuthKey.slice(-4)]);
       await client.query("INSERT INTO aurelink_account_security(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.id]);
       await client.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE id=$1",[challenge.id]);
