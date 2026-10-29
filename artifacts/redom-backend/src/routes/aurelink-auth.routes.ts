@@ -147,53 +147,7 @@ router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(
   }finally{client.release();}
 });
 
-/**
- * Controlled ASAK-24 backfill. Protect with a separately provisioned, high-entropy
- * AURELINK_ASAK_MIGRATION_TOKEN. This route never returns or emails the usable key.
- * Repeated calls are idempotent; each newly bound account is notified immediately.
- */
-async function ensureAsakMigrationSchema(client:any){
-  await ensureAuthKeySchema(client);
-  await client.query(`CREATE TABLE IF NOT EXISTS aurelink_asak_migrations (
-    user_id UUID PRIMARY KEY REFERENCES aurelink_users(id) ON DELETE CASCADE,
-    account_id VARCHAR(32) NOT NULL,
-    status VARCHAR(24) NOT NULL DEFAULT 'bound',
-    email_status VARCHAR(24) NOT NULL DEFAULT 'pending',
-    email_attempts INTEGER NOT NULL DEFAULT 0,
-    last_email_error TEXT,
-    bound_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    notified_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`);
-  await client.query("CREATE INDEX IF NOT EXISTS aurelink_asak_migrations_email_retry_idx ON aurelink_asak_migrations(email_status,updated_at)");
-}
-function asakAdminAuthorized(req:Request){
-  const expected=process.env.AURELINK_ASAK_MIGRATION_TOKEN;
-  const supplied=String(req.get("x-aurelink-migration-token")??"");
-  return !!expected && expected.length>=32 && supplied.length>0 && hash(supplied)===hash(expected);
-}
-async function sendAsakMigrationNotice(user:any,status:"Completed"|"Action required"="Completed"){
-  const maskedId=maskAccountId(String(user.account_id));
-  const html=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#182230"><div style="max-width:600px;margin:24px auto;padding:28px;background:#fff;border-radius:14px"><h1 style="color:#173b78">AURELINK</h1><p>Hello ${escapeHtml(String(user.first_name||"there"))},</p><p>Aurelink has introduced <strong>ASAK-24 (Aurelink Sequential Authentication Key)</strong> as part of an initiative to strengthen account authentication and security.</p><p>Your account has been included in Aurelink's security migration.</p><p><strong>Account ID:</strong> ${escapeHtml(maskedId)}</p><p><strong>Security upgrade:</strong> ASAK-24 authentication</p><p><strong>ASAK-24 key:</strong> ${escapeHtml(String(user.key_prefix||"••••"))}${"X".repeat(Math.max(0,Number(user.key_length||20)-8))}${escapeHtml(String(user.key_suffix||"••••"))}</p><p><strong>Migration status:</strong> ${status}</p><p>Your existing Account ID remains unchanged. ${status==="Completed"?"No further action is required at this time.":"Sign in through the official Aurelink application and follow the security instructions shown there."}</p><p>The full authentication key is never displayed in this email or in the user interface. Never share passwords or verification codes with anyone.</p><p>If you did not expect this notification or suspect unauthorized activity, access Aurelink through its official application and contact Aurelink Support.</p><p>Regards,<br><strong>Jess Ursa</strong><br>Aurelink Security Team</p></div></body></html>`;
-  const result=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Aurelink Security Upgrade — ASAK-24 Account Protection",html});
-  if(result.error) throw new Error(String(result.error.message||"Email provider rejected the notification"));
-  return result.data?.id??null;
-}
-router.post("/aurelink/auth/admin/asak24/migrate",async(req,res)=>{
-  if(!asakAdminAuthorized(req)) return res.status(401).json({success:false,message:"Unauthorized migration request."});
-  const parsed=z.object({batchSize:z.number().int().min(1).max(100).optional(),retryEmails:z.boolean().optional()}).safeParse(req.body??{});
-  if(!parsed.success) return res.status(400).json({success:false,message:"Invalid migration batch options."});
-  const batchSize=parsed.data.batchSize??50;
-  const client=await pool.connect();
-  let bound:any[]=[];
-  try{
-    await client.query("BEGIN");
-    await ensureAsakMigrationSchema(client);
-    const candidates=await client.query(`SELECT u.id,u.account_id,u.email,u.first_name
-      FROM aurelink_users u
-      LEFT JOIN aurelink_account_auth_keys k ON k.user_id=u.id
-      WHERE k.user_id IS NULL AND u.account_status='active'
-        AND u.email_verified=TRUE AND u.account_id ~ '^(\\d{10}|\\d{12})
+router.post("/aurelink/auth/account-auth-key/verify",async(req,res)=>{
   const parsed=z.object({accountId:z.string().regex(/^(?:\d{10}|\d{12})$/),authKey:z.string().regex(/^(?:[A-Za-z0-9]{20}|[A-Za-z0-9]{24})$/)}).refine(v=>v.authKey.length===(v.accountId.length===10?20:24)).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"A valid 10- or 12-digit Account ID and its matching 20- or 24-character ASAK key are required."});
   const client=await pool.connect();
