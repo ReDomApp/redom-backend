@@ -72,46 +72,99 @@ router.post("/aurelink/auth/refresh",async(req,res)=>{
     return res.json({success:true,session:{accessToken,refreshToken,expiresIn:900,sessionId:payload.sessionId}});
   }catch{return res.status(401).json({success:false,message:"Invalid, expired or revoked Aurelink refresh token."});}
 });
-// AUTH keys are separate from reset tokens. They must never be embedded in reset URLs.
+// AUTH keys are separate from reset tokens. Never embed an AUTH key in a reset URL.
+const authKeyAlphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const authKeyPatterns=[
+  (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kM+aM+aF,
+  (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kF+aF+kM+aL,
+  (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kL+aL+kM+aF,
+  (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kM+aF+kF+aL,
+  (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kF+aM+kM+aF,
+  (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kM+aL+kF+aM,
+  (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kF+aL+kM+aF+aM,
+  (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kL+aF+kM+aM+aL
+];
+function authRotationSecret(){
+  const secret=process.env.AURELINK_AUTH_KEY_ROTATION_SECRET;
+  if(!secret||secret.length<32) throw new Error("AURELINK_AUTH_KEY_ROTATION_SECRET must be configured with at least 32 characters.");
+  return secret;
+}
+function makeRandomAuthKey(){
+  return Array.from({length:24},()=>authKeyAlphabet[randomInt(authKeyAlphabet.length)]).join("");
+}
+function rotateAuthKey(accountId:string,currentKey:string,period:number){
+  const secret=authRotationSecret();
+  const aF=accountId.slice(0,4),aM=accountId.slice(4,8),aL=accountId.slice(8,12);
+  const kF=currentKey.slice(0,4),kM=currentKey.slice(4,-4),kL=currentKey.slice(-4);
+  const patternDigest=createHash("sha256").update(createHmac("sha256",secret).update("AURELINK_PATTERN|"+accountId+"|"+period).digest()).digest();
+  const patternIndex=patternDigest[0]%authKeyPatterns.length;
+  const patternCore=authKeyPatterns[patternIndex](kF,kM,kL,aF,aM,aL);
+  // HMAC is deterministic for this account/key/period; only the server-held secret can derive the new middle.
+  // Domain separation prevents this derivation from being reused for another purpose.
+  const digest=createHmac("sha256",secret).update("AURELINK_AUTH_ROTATION_V1|"+accountId+"|"+period+"|"+patternIndex+"|"+patternCore+"|"+currentKey).digest();
+  let middle="";
+  for(let i=0;i<16;i++) middle+=authKeyAlphabet[digest[i]%authKeyAlphabet.length];
+  return {key:kF+middle+kL,patternIndex};
+}
+async function ensureAuthKeySchema(client:any){
+  await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_auth_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL UNIQUE REFERENCES aurelink_users(id) ON DELETE CASCADE, account_id VARCHAR(32) NOT NULL UNIQUE, key_hash CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), key_version INTEGER NOT NULL DEFAULT 1, stable_prefix VARCHAR(4), stable_suffix VARCHAR(4), revoked_at TIMESTAMPTZ NULL)");
+  await client.query("ALTER TABLE aurelink_account_auth_keys ADD COLUMN IF NOT EXISTS rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS key_version INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS stable_prefix VARCHAR(4), ADD COLUMN IF NOT EXISTS stable_suffix VARCHAR(4)");
+}
+// Existing signed-in users can bind an AUTH key once. This route never accepts an arbitrary user ID.
+router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(req,res)=>{
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    await ensureAuthKeySchema(client);
+    const found=await client.query("SELECT id,account_id,email,first_name FROM aurelink_users WHERE id=$1 AND account_status='active' FOR UPDATE",[req.user!.userId]);
+    const user=found.rows[0];
+    if(!user){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Active Aurelink account not found."});}
+    const prior=await client.query("SELECT id FROM aurelink_account_auth_keys WHERE user_id=$1",[user.id]);
+    if(prior.rows[0]){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"An AUTH key is already bound to this account. Use the recovery or rotation flow."});}
+    const key=makeRandomAuthKey();
+    await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix) VALUES($1,$2,$3,$4,$5)",[user.id,String(user.account_id),hash(key),key.slice(0,4),key.slice(-4)]);
+    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.account_key.bound',$2,$3,$4::jsonb)",[user.id,ip(req),agent(req),JSON.stringify({keyVersion:1,source:"authenticated_existing_account"})]);
+    await client.query("COMMIT");
+    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(user.first_name||"there"))},</p><p>An AUTH key has been bound to your existing Aurelink account.</p><p><strong>Account ID:</strong> ${escapeHtml(String(user.account_id))}</p><p><strong>One-time AUTH key:</strong> <code>${escapeHtml(key)}</code></p><p>Save it in a password manager. Aurelink stores only a hash and cannot show it again. If you did not initiate this while signed in, contact support.</p></div>`;
+    try{const sent=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Your Aurelink account AUTH key",html});if(sent.error)return res.status(503).json({success:false,code:"AURELINK_KEY_EMAIL_FAILED",message:"The key was created but email delivery failed. Contact support before retrying."});}
+    catch{return res.status(503).json({success:false,code:"AURELINK_KEY_EMAIL_FAILED",message:"The key was created but email delivery failed. Contact support before retrying."});}
+    return res.status(201).json({success:true,message:"AUTH key bound. It was sent to your verified email address; it will not be shown again."});
+  }catch{
+    await client.query("ROLLBACK").catch(()=>undefined);
+    return res.status(500).json({success:false,message:"Unable to bind an AUTH key. Verify server rotation-secret configuration and try again."});
+  }finally{client.release();}
+});
 router.post("/aurelink/auth/account-auth-key/verify",async(req,res)=>{
-  const parsed=z.object({accountId:z.string().regex(/^\d{10,12}$/),authKey:z.string().regex(/^[A-Za-z0-9]{24}$/)}).safeParse(req.body);
+  const parsed=z.object({accountId:z.string().regex(/^\\d{10,12}$/),authKey:z.string().regex(/^[A-Za-z0-9]{24}$/)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"A valid Account ID and 24-character AUTH key are required."});
   const client=await pool.connect();
   try{
     await client.query("BEGIN");
-    await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_auth_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL UNIQUE REFERENCES aurelink_users(id) ON DELETE CASCADE, account_id VARCHAR(32) NOT NULL UNIQUE, key_hash CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), key_version INTEGER NOT NULL DEFAULT 1, stable_prefix VARCHAR(4), stable_suffix VARCHAR(4), revoked_at TIMESTAMPTZ NULL)");
-    await client.query("ALTER TABLE aurelink_account_auth_keys ADD COLUMN IF NOT EXISTS rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS key_version INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS stable_prefix VARCHAR(4), ADD COLUMN IF NOT EXISTS stable_suffix VARCHAR(4)");
+    await ensureAuthKeySchema(client);
     const found=await client.query("SELECT k.*,u.email,u.first_name FROM aurelink_account_auth_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.account_id=$1 AND k.revoked_at IS NULL AND u.account_status='active' FOR UPDATE OF k",[parsed.data.accountId]);
     const record=found.rows[0];
     if(!record||record.key_hash!==hash(parsed.data.authKey)){
       await client.query("ROLLBACK");
       return res.status(401).json({success:false,message:"AUTH key is invalid or revoked."});
     }
-    const due=Date.now()-new Date(record.rotated_at??record.created_at).getTime()>=30*24*60*60*1000;
+    const baseDate=new Date(record.rotated_at??record.created_at);
+    const due=Date.now()-baseDate.getTime()>=30*24*60*60*1000;
     if(!due){
       await client.query("COMMIT");
-      return res.json({success:true,authorized:true,keyVersion:Number(record.key_version??1),rotatesAt:new Date(new Date(record.rotated_at??record.created_at).getTime()+30*24*60*60*1000).toISOString()});
+      return res.json({success:true,authorized:true,keyVersion:Number(record.key_version??1),rotatesAt:new Date(baseDate.getTime()+30*24*60*60*1000).toISOString()});
     }
-    // Preserve only the first/last four characters. The 16-character middle is regenerated securely.
-    const alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    const randomPart=(length:number)=>Array.from({length},()=>alphabet[randomInt(alphabet.length)]).join("");
-    const prefix=String(record.stable_prefix||parsed.data.authKey.slice(0,4));
-    const suffix=String(record.stable_suffix||parsed.data.authKey.slice(-4));
-    const nextKey=prefix+randomPart(16)+suffix;
-    await client.query("UPDATE aurelink_account_auth_keys SET key_hash=$2,stable_prefix=$3,stable_suffix=$4,rotated_at=NOW(),key_version=key_version+1 WHERE id=$1",[record.id,hash(nextKey),prefix,suffix]);
-    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.account_key.rotated',$2::jsonb)",[record.user_id,JSON.stringify({keyVersion:Number(record.key_version??1)+1,reason:"30_day_rotation"})]);
+    const period=Math.floor(Date.now()/(30*24*60*60*1000));
+    const next=rotateAuthKey(String(record.account_id),parsed.data.authKey,period);
+    await client.query("UPDATE aurelink_account_auth_keys SET key_hash=$2,stable_prefix=$3,stable_suffix=$4,rotated_at=NOW(),key_version=key_version+1 WHERE id=$1",[record.id,hash(next.key),next.key.slice(0,4),next.key.slice(-4)]);
+    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.account_key.rotated',$2::jsonb)",[record.user_id,JSON.stringify({keyVersion:Number(record.key_version??1)+1,patternIndex:next.patternIndex,reason:"30_day_rotation"})]);
     await client.query("COMMIT");
-    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(record.first_name||"there"))},</p><p>Your 30-day account AUTH key rotation was completed after a valid key check.</p><p><strong>New AUTH key:</strong> <code>${escapeHtml(nextKey)}</code></p><p>The first and last four characters are unchanged. The middle 16 characters have rotated. Store this new key securely; the previous key is no longer valid.</p><p>If you did not initiate this action, secure your account and contact Aurelink Support.</p></div>`;
-    try {
-      const sent=await resend.emails.send({from:aurelinkSender(),to:record.email,subject:"Your Aurelink AUTH key has rotated",html});
-      if(sent.error) return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"Your key was rotated, but email delivery failed. Contact Aurelink Support before retrying.",keyVersion:Number(record.key_version??1)+1});
-    } catch {
-      return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"Your key was rotated, but email delivery failed. Contact Aurelink Support before retrying.",keyVersion:Number(record.key_version??1)+1});
-    }
-    return res.json({success:true,authorized:true,rotated:true,keyVersion:Number(record.key_version??1)+1,message:"A new AUTH key was emailed to your verified address. The previous key is no longer valid."});
+    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(record.first_name||"there"))},</p><p>Your 30-day AUTH key rotation is complete.</p><p><strong>New AUTH key:</strong> <code>${escapeHtml(next.key)}</code></p><p>The first and last four characters remain unchanged; the middle 16 have rotated. Your previous key is no longer valid. Store this key securely.</p><p>If you did not initiate this action, contact Aurelink Support immediately.</p></div>`;
+    try{const sent=await resend.emails.send({from:aurelinkSender(),to:record.email,subject:"Your Aurelink AUTH key has rotated",html});if(sent.error)return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"The key rotated, but email delivery failed. Contact support before retrying.",keyVersion:Number(record.key_version??1)+1});}
+    catch{return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"The key rotated, but email delivery failed. Contact support before retrying.",keyVersion:Number(record.key_version??1)+1});}
+    return res.json({success:true,authorized:true,rotated:true,keyVersion:Number(record.key_version??1)+1,patternIndex:next.patternIndex,message:"A new AUTH key was emailed to your verified address. The previous key is no longer valid."});
   }catch{
     await client.query("ROLLBACK").catch(()=>undefined);
-    return res.status(500).json({success:false,message:"Unable to verify the account AUTH key."});
+    return res.status(500).json({success:false,message:"Unable to verify the account AUTH key. Confirm AURELINK_AUTH_KEY_ROTATION_SECRET is configured."});
   }finally{client.release();}
 });
 router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
@@ -327,7 +380,6 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       // A secret must not be mathematically derived from a public Account ID.
       // Generate 24 cryptographically random URL-safe characters and store only its digest.
       await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_auth_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL UNIQUE REFERENCES aurelink_users(id) ON DELETE CASCADE, account_id VARCHAR(32) NOT NULL UNIQUE, key_hash CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), key_version INTEGER NOT NULL DEFAULT 1, stable_prefix VARCHAR(4), stable_suffix VARCHAR(4), revoked_at TIMESTAMPTZ NULL)");
-      await client.query("ALTER TABLE aurelink_account_auth_keys ADD COLUMN IF NOT EXISTS rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS key_version INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS stable_prefix VARCHAR(4), ADD COLUMN IF NOT EXISTS stable_suffix VARCHAR(4)");
       const authAlphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
       const randomAuthPart=(length:number)=>Array.from({length},()=>authAlphabet[randomInt(authAlphabet.length)]).join("");
       const accountAuthKey=randomAuthPart(24);
