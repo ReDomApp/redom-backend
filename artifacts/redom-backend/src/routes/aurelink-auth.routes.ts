@@ -16,7 +16,18 @@ const ip = (req: Request) => String(req.ip ?? "").replace(/^::ffff:/, "").slice(
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
 function jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
 function refreshSecret() { const v=process.env.JWT_REFRESH_SECRET; if(!v) throw new Error("JWT_REFRESH_SECRET is not configured."); return v; }
-function validPassword(v:string) { if(v.length<10 || !/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) throw new Error("Password must be at least 10 characters and contain a letter and a number."); }
+const weakPasswords=new Set(["123456","1234567","12345678","123456789","1234567890","password","password1","password123","qwerty","qwerty123","abc123","111111","000000","letmein","welcome","iloveyou","admin","admin123","123123","654321","passw0rd","changeme"]);
+function validPassword(v:string) {
+ if(v.length<6||v.length>200) throw new Error("Password must be between 6 and 200 characters.");
+ if(!/[A-Za-z]/.test(v)||!/[0-9]/.test(v)) throw new Error("Choose a password with at least one letter and one number.");
+ if(/\p{Extended_Pictographic}/u.test(v)||/[\u200D\uFE0F]/u.test(v)) throw new Error("Passwords cannot contain emoji characters.");
+ if(weakPasswords.has(v.toLowerCase())||/^(.)\1{5,}$/.test(v)||/^(012345|123456|234567|345678|456789|qwerty|asdfgh|zxcvbn)/i.test(v)) throw new Error("This password is too common or easy to guess. Choose a different password.");
+}
+function validPersonName(v:string) {
+ const normalized=v.trim().replace(/\s+/g," ");
+ if(normalized.length<2||normalized.length>100||!/^[\p{L}\p{M}]+(?:[ '\u2019-][\p{L}\p{M}]+)*$/u.test(normalized)) throw new Error("Enter a name using letters, spaces, apostrophes, or hyphens only. Numbers and emoji are not accepted.");
+ return normalized;
+}
 async function startSession(req:Request,user:{id:string;email:string}) {
   const sessionId = randomUUID();
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
@@ -129,9 +140,10 @@ router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(
   try{
     await client.query("BEGIN");
     await ensureAuthKeySchema(client);
-    const found=await client.query("SELECT id,account_id,email,first_name FROM aurelink_users WHERE id=$1 AND account_status='active' FOR UPDATE",[req.user!.userId]);
+    const found=await client.query("SELECT id,account_id,email,first_name,created_at FROM aurelink_users WHERE id=$1 AND account_status='active' FOR UPDATE",[req.user!.userId]);
     const user=found.rows[0];
     if(!user){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Active Aurelink account not found."});}
+    if(Date.now()-new Date(user.created_at).getTime()<24*60*60*1000){await client.query("ROLLBACK");return res.status(403).json({success:false,code:"AURELINK_ASAK24_AGE_GATE",message:"ASAK-24 binding becomes available after your account has been active for 24 hours."});}
     const prior=await client.query("SELECT id FROM aurelink_account_auth_keys WHERE user_id=$1",[user.id]);
     if(prior.rows[0]){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"An AUTH key is already bound to this account. Use the recovery or rotation flow."});}
     const accountId=String(user.account_id);
@@ -183,13 +195,13 @@ async function runInitialAsak24Binding(){
     const c=await pool.connect();const notices:any[]=[];let count=0;
     try{
       await c.query("BEGIN");
-      const candidates=await c.query("SELECT u.id,u.account_id,u.email,u.first_name FROM aurelink_users u LEFT JOIN aurelink_account_auth_keys k ON k.user_id=u.id WHERE k.user_id IS NULL AND u.account_status='active' AND u.email_verified=TRUE AND u.account_id ~ '^[0-9]{10}$|^[0-9]{12}$' ORDER BY u.created_at LIMIT 50 FOR UPDATE OF u SKIP LOCKED");
+      const candidates=await c.query("SELECT u.id,u.account_id,u.email,u.first_name FROM aurelink_users u LEFT JOIN aurelink_account_auth_keys k ON k.user_id=u.id WHERE k.user_id IS NULL AND u.account_status='active' AND u.email_verified=TRUE AND u.created_at<=NOW()-INTERVAL '1 day' AND u.account_id ~ '^[0-9]{10}$|^[0-9]{12}$' ORDER BY u.created_at LIMIT 50 FOR UPDATE OF u SKIP LOCKED");
       for(const user of candidates.rows){
         const accountId=String(user.account_id);
         const key=makeRandomAuthKey(accountId.length===10?20:24);
         const ins=await c.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix,encrypted_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id",[user.id,accountId,hash(key),key.slice(0,4),key.slice(-4),encryptAuthKey(key)]);
         if(!ins.rows[0]) continue;
-        await c.query("INSERT INTO aurelink_asak_migrations(user_id,account_id,status,email_status) VALUES($1,$2,'bound','pending') ON CONFLICT(user_id) DO NOTHING",[user.id,accountId]);
+        await c.query("INSERT INTO aurelink_asak_migrations(user_id,account_id,status,email_status) VALUES($1,$2,'bound','pending') ON CONFLICT(user_id) DO UPDATE SET status='bound',email_status=CASE WHEN aurelink_asak_migrations.email_status='sent' THEN 'sent' ELSE 'pending' END,updated_at=NOW(),bound_at=NOW()",[user.id,accountId]);
         await c.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.asak24.migration.bound',$2::jsonb)",[user.id,JSON.stringify({accountIdMasked:maskAccountId(accountId),keyLength:key.length,source:"startup_migration"})]);
         notices.push({id:user.id,account_id:accountId,email:user.email,first_name:user.first_name,key_prefix:key.slice(0,4),key_suffix:key.slice(-4),key_length:key.length});
         count++;
@@ -217,6 +229,7 @@ async function runInitialAsak24Binding(){
   console.info("[ASAK-24] initial account binding finished",JSON.stringify({bound:boundTotal,emailsSent:sentTotal,emailsFailed:failedTotal}));
 }
 void runInitialAsak24Binding().catch(error=>console.error("[ASAK-24] startup binding failed",error instanceof Error?error.message:"unknown error"));
+setInterval(()=>void runInitialAsak24Binding().catch(error=>console.error("[ASAK-24] scheduled binding failed",error instanceof Error?error.message:"unknown error")),60*60*1000).unref?.();
 
 router.post("/aurelink/auth/admin/asak24/migrate",async(req,res)=>{
   if(!asakAdminAuthorized(req)) return res.status(401).json({success:false,message:"Unauthorized migration request."});
@@ -229,14 +242,14 @@ router.post("/aurelink/auth/admin/asak24/migrate",async(req,res)=>{
   try{
     await client.query("BEGIN");
     await ensureAsakMigrationSchema(client);
-    const candidates=await client.query("SELECT u.id,u.account_id,u.email,u.first_name FROM aurelink_users u LEFT JOIN aurelink_account_auth_keys k ON k.user_id=u.id WHERE k.user_id IS NULL AND u.account_status='active' AND u.email_verified=TRUE AND u.account_id ~ '^[0-9]{10}$|^[0-9]{12}$' ORDER BY u.created_at LIMIT $1 FOR UPDATE OF u SKIP LOCKED",[batchSize]);
+    const candidates=await client.query("SELECT u.id,u.account_id,u.email,u.first_name FROM aurelink_users u LEFT JOIN aurelink_account_auth_keys k ON k.user_id=u.id WHERE k.user_id IS NULL AND u.account_status='active' AND u.email_verified=TRUE AND u.created_at<=NOW()-INTERVAL '1 day' AND u.account_id ~ '^[0-9]{10}$|^[0-9]{12}$' ORDER BY u.created_at LIMIT $1 FOR UPDATE OF u SKIP LOCKED",[batchSize]);
     for(const user of candidates.rows){
       const accountId=String(user.account_id);
       if(!/^(?:[0-9]{10}|[0-9]{12})$/.test(accountId)) continue;
       const key=makeRandomAuthKey(accountId.length===10?20:24);
       const ins=await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix,encrypted_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id",[user.id,accountId,hash(key),key.slice(0,4),key.slice(-4),encryptAuthKey(key)]);
       if(!ins.rows[0]) continue;
-      await client.query("INSERT INTO aurelink_asak_migrations(user_id,account_id,status,email_status) VALUES($1,$2,'bound','pending') ON CONFLICT(user_id) DO NOTHING",[user.id,accountId]);
+      await client.query("INSERT INTO aurelink_asak_migrations(user_id,account_id,status,email_status) VALUES($1,$2,'bound','pending') ON CONFLICT(user_id) DO UPDATE SET status='bound',email_status=CASE WHEN aurelink_asak_migrations.email_status='sent' THEN 'sent' ELSE 'pending' END,updated_at=NOW(),bound_at=NOW()",[user.id,accountId]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.asak24.migration.bound',$2::jsonb)",[user.id,JSON.stringify({accountIdMasked:maskAccountId(accountId),keyLength:key.length,source:"protected_bulk_migration"})]);
       notices.push({id:user.id,account_id:accountId,email:user.email,first_name:user.first_name,key_prefix:key.slice(0,4),key_suffix:key.slice(-4),key_length:key.length});
       newlyBound++;
@@ -355,7 +368,7 @@ router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
   }catch{return res.json(generic);}
 });
 router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
-  const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(10).max(200),confirmPassword:z.string().min(10).max(200),clientIp:z.string().min(3).max(45)}).safeParse(req.body);
+  const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(6).max(200),confirmPassword:z.string().min(6).max(200),clientIp:z.string().min(3).max(45)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"A valid reset token and password are required."});
   try{
     validPassword(parsed.data.password);
@@ -379,6 +392,9 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
       }
       const reset=result.rows[0];
       if(!reset){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Reset link is invalid or expired."});}
+      const current=await client.query("SELECT password_hash FROM aurelink_users WHERE id=$1 FOR UPDATE",[reset.user_id]);
+      if(!current.rows[0]){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"This account could not be found. Request a new reset link."});}
+      if(await verifyPassword(parsed.data.password,String(current.rows[0].password_hash))){await client.query("ROLLBACK");return res.status(400).json({success:false,code:"AURELINK_PASSWORD_UNCHANGED",message:"Your new password must be different from your current password."});}
       const passwordHash=await hashPassword(parsed.data.password);
       await client.query("UPDATE aurelink_users SET password_hash=$2,updated_at=NOW() WHERE id=$1",[reset.user_id,passwordHash]);
       await client.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
@@ -478,11 +494,12 @@ router.post("/aurelink/auth/signup/email/verify",async(req,res)=>{
   }catch{return res.status(500).json({success:false,message:"Unable to verify this email link."});}
 });
 router.post("/aurelink/auth/signup/complete",async(req,res)=>{
-  const parsed=z.object({token:z.string().min(30).max(300),fullName:z.string().trim().min(2).max(200),password:z.string().min(10).max(200),confirmPassword:z.string().min(10).max(200),acceptedTerms:z.literal(true)}).safeParse(req.body);
+  const parsed=z.object({token:z.string().min(30).max(300),fullName:z.string().trim().min(2).max(100),password:z.string().min(6).max(200),confirmPassword:z.string().min(6).max(200),acceptedTerms:z.literal(true)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"Enter your full name, a valid password, confirm the password, and accept Aurelink Terms."});
   if(parsed.data.password!==parsed.data.confirmPassword)return res.status(400).json({success:false,message:"The passwords do not match."});
   try{
     validPassword(parsed.data.password);
+    const fullName=validPersonName(parsed.data.fullName);
     const client=await pool.connect();
     try{
       await client.query("BEGIN");
@@ -492,7 +509,7 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       const email=String(challenge.email);
       const exists=await client.query("SELECT id FROM aurelink_users WHERE LOWER(email)=LOWER($1)",[email]);
       if(exists.rows[0]){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"An Aurelink account already exists for this email."});}
-      const words=parsed.data.fullName.trim().split(/\s+/);
+      const words=fullName.split(/\s+/);
       const firstName=words.shift()!;
       const lastName=words.join(" ")||firstName;
       const passwordHash=await hashPassword(parsed.data.password);
@@ -504,13 +521,10 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
         catch(err){if(!(err instanceof Error)||!err.message.includes("duplicate key")||attempt===11)throw err;}
       }
       const user=created.rows[0];
-      // A secret must not be mathematically derived from a public Account ID.
-      // Generate 24 cryptographically random URL-safe characters and store only its digest.
+      // ASAK-24 binding is delayed until the account has completed its first 24 hours.
       await ensureAuthKeySchema(client);
-      const authAlphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-      const randomAuthPart=(length:number)=>Array.from({length},()=>authAlphabet[randomInt(authAlphabet.length)]).join("");
-      const accountAuthKey=randomAuthPart(accountId.length===10?20:24);
-      await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix,encrypted_key) VALUES($1,$2,$3,$4,$5,$6)",[user.id,String(accountId),hash(accountAuthKey),accountAuthKey.slice(0,4),accountAuthKey.slice(-4),encryptAuthKey(accountAuthKey)]);
+      await ensureAsakMigrationSchema(client);
+      await client.query("INSERT INTO aurelink_asak_migrations(user_id,account_id,status,email_status) VALUES($1,$2,'waiting_age','pending') ON CONFLICT(user_id) DO NOTHING",[user.id,String(accountId)]);
       await client.query("INSERT INTO aurelink_account_security(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.id]);
       await client.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE id=$1",[challenge.id]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.created',$2,$3,$4::jsonb)",[user.id,challenge.request_ip,agent(req),JSON.stringify({accountId,termsAccepted:true,termsAcceptedAt:new Date().toISOString()})]);
