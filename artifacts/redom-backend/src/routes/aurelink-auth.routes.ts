@@ -370,6 +370,7 @@ router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
 router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
   const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(6).max(200),confirmPassword:z.string().min(6).max(200),clientIp:z.string().min(3).max(45)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"A valid reset token and password are required."});
+  if(parsed.data.password!==parsed.data.confirmPassword)return res.status(400).json({success:false,message:"The passwords do not match."});
   try{
     validPassword(parsed.data.password);
     const client=await pool.connect();
