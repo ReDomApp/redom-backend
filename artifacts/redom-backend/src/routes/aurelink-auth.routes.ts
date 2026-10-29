@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import { isIP } from "node:net";
 import { z } from "zod";
-import { randomBytes, randomUUID, randomInt, createHash, createHmac } from "node:crypto";
+import { randomBytes, randomUUID, randomInt, createHash, createHmac, createCipheriv, createDecipheriv } from "node:crypto";
 import { checkIP } from "../lib/ipapi";
 import { resend } from "../lib/resend";
 import jwt from "jsonwebtoken";
@@ -84,6 +84,9 @@ const authKeyPatterns=[
   (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kF+aL+kM+aF+aM,
   (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kL+aF+kM+aM+aL
 ];
+function authEncryptionKey(){return createHash("sha256").update(authRotationSecret()).update("|AURELINK_ASAK24_ENCRYPTION_V1").digest();}
+function encryptAuthKey(value:string){const iv=randomBytes(12);const cipher=createCipheriv("aes-256-gcm",authEncryptionKey(),iv);const ciphertext=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);return [iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),ciphertext.toString("base64url")].join(".");}
+function decryptAuthKey(value:string){const parts=value.split(".");if(parts.length!==3)throw new Error("Invalid encrypted ASAK-24 value.");const decipher=createDecipheriv("aes-256-gcm",authEncryptionKey(),Buffer.from(parts[0],"base64url"));decipher.setAuthTag(Buffer.from(parts[1],"base64url"));return Buffer.concat([decipher.update(Buffer.from(parts[2],"base64url")),decipher.final()]).toString("utf8");}
 function authRotationSecret(){
   const secret=process.env.AURELINK_AUTH_KEY_ROTATION_SECRET;
   if(!secret||secret.length<32) throw new Error("AURELINK_AUTH_KEY_ROTATION_SECRET must be configured with at least 32 characters.");
@@ -117,8 +120,8 @@ function rotateAuthKey(accountId:string,currentKey:string,period:number){
   return {key:kF+middle+kL,patternIndex};
 }
 async function ensureAuthKeySchema(client:any){
-  await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_auth_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL UNIQUE REFERENCES aurelink_users(id) ON DELETE CASCADE, account_id VARCHAR(32) NOT NULL UNIQUE, key_hash CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), key_version INTEGER NOT NULL DEFAULT 1, stable_prefix VARCHAR(4), stable_suffix VARCHAR(4), revoked_at TIMESTAMPTZ NULL)");
-  await client.query("ALTER TABLE aurelink_account_auth_keys ADD COLUMN IF NOT EXISTS rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS key_version INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS stable_prefix VARCHAR(4), ADD COLUMN IF NOT EXISTS stable_suffix VARCHAR(4)");
+  await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_auth_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL UNIQUE REFERENCES aurelink_users(id) ON DELETE CASCADE, account_id VARCHAR(32) NOT NULL UNIQUE, key_hash CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), key_version INTEGER NOT NULL DEFAULT 1, stable_prefix VARCHAR(4), stable_suffix VARCHAR(4), revoked_at TIMESTAMPTZ NULL, encrypted_key TEXT NULL)");
+  await client.query("ALTER TABLE aurelink_account_auth_keys ADD COLUMN IF NOT EXISTS rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS key_version INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS stable_prefix VARCHAR(4), ADD COLUMN IF NOT EXISTS stable_suffix VARCHAR(4), ADD COLUMN IF NOT EXISTS encrypted_key TEXT NULL");
 }
 // Existing signed-in users can bind an AUTH key once. This route never accepts an arbitrary user ID.
 router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(req,res)=>{
@@ -134,7 +137,7 @@ router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(
     const accountId=String(user.account_id);
     if(!/^(?:\d{10}|\d{12})$/.test(accountId)){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"This account has an unsupported Account ID format. Contact Aurelink Support."});}
     const key=makeRandomAuthKey(accountId.length===10?20:24);
-    await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix) VALUES($1,$2,$3,$4,$5)",[user.id,String(user.account_id),hash(key),key.slice(0,4),key.slice(-4)]);
+    await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix,encrypted_key) VALUES($1,$2,$3,$4,$5,$6)",[user.id,String(user.account_id),hash(key),key.slice(0,4),key.slice(-4),encryptAuthKey(key)]);
     await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.account_key.bound',$2,$3,$4::jsonb)",[user.id,ip(req),agent(req),JSON.stringify({keyVersion:1,source:"authenticated_existing_account"})]);
     await client.query("COMMIT");
     const html=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#182230"><div style="max-width:600px;margin:24px auto;padding:28px;background:#fff;border-radius:14px"><h1 style="color:#173b78">AURELINK</h1><p>Hello ${escapeHtml(String(user.first_name||"there"))},</p><p>Aurelink has introduced ASAK-24 (Aurelink Sequential Authentication Key) to strengthen account authentication and security.</p><p>Your account has been included in Aurelink's security migration.</p><p><strong>Account ID:</strong> ${escapeHtml(maskAccountId(String(user.account_id)))}</p><p><strong>Security upgrade:</strong> ASAK-24 authentication</p><p><strong>ASAK-24 key (masked):</strong> ${escapeHtml(maskAuthKey(key))}</p><p><strong>Migration status:</strong> Completed</p><p>Your existing Account ID remains unchanged. No further action is required at this time.</p><p>Never share your full authentication key, password, or verification codes with anyone. If you did not expect this notification or suspect unauthorized activity, access Aurelink through its official application and contact support.</p><p>Regards,<br><strong>Jess Ursa</strong><br>Aurelink Security Team</p></div></body></html>`;
@@ -182,7 +185,7 @@ router.post("/aurelink/auth/admin/asak24/migrate",async(req,res)=>{
       const accountId=String(user.account_id);
       if(!/^(?:[0-9]{10}|[0-9]{12})$/.test(accountId)) continue;
       const key=makeRandomAuthKey(accountId.length===10?20:24);
-      const ins=await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING id",[user.id,accountId,hash(key),key.slice(0,4),key.slice(-4)]);
+      const ins=await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix,encrypted_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id",[user.id,accountId,hash(key),key.slice(0,4),key.slice(-4),encryptAuthKey(key)]);
       if(!ins.rows[0]) continue;
       await client.query("INSERT INTO aurelink_asak_migrations(user_id,account_id,status,email_status) VALUES($1,$2,'bound','pending') ON CONFLICT(user_id) DO NOTHING",[user.id,accountId]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.asak24.migration.bound',$2::jsonb)",[user.id,JSON.stringify({accountIdMasked:maskAccountId(accountId),keyLength:key.length,source:"protected_bulk_migration"})]);
@@ -458,7 +461,7 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       const authAlphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
       const randomAuthPart=(length:number)=>Array.from({length},()=>authAlphabet[randomInt(authAlphabet.length)]).join("");
       const accountAuthKey=randomAuthPart(accountId.length===10?20:24);
-      await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix) VALUES($1,$2,$3,$4,$5)",[user.id,String(accountId),hash(accountAuthKey),accountAuthKey.slice(0,4),accountAuthKey.slice(-4)]);
+      await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix,encrypted_key) VALUES($1,$2,$3,$4,$5,$6)",[user.id,String(accountId),hash(accountAuthKey),accountAuthKey.slice(0,4),accountAuthKey.slice(-4),encryptAuthKey(accountAuthKey)]);
       await client.query("INSERT INTO aurelink_account_security(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.id]);
       await client.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE id=$1",[challenge.id]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.created',$2,$3,$4::jsonb)",[user.id,challenge.request_ip,agent(req),JSON.stringify({accountId,termsAccepted:true,termsAcceptedAt:new Date().toISOString()})]);
