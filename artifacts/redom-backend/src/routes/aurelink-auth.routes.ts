@@ -135,7 +135,7 @@ router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(
   }finally{client.release();}
 });
 router.post("/aurelink/auth/account-auth-key/verify",async(req,res)=>{
-  const parsed=z.object({accountId:z.string().regex(/^\\d{10,12}$/),authKey:z.string().regex(/^[A-Za-z0-9]{24}$/)}).safeParse(req.body);
+  const parsed=z.object({accountId:z.string().regex(/^\d{10,12}$/),authKey:z.string().regex(/^[A-Za-z0-9]{24}$/)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"A valid Account ID and 24-character AUTH key are required."});
   const client=await pool.connect();
   try{
