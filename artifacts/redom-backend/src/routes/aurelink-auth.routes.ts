@@ -154,7 +154,7 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
 
 const escapeHtml=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
 function newAccountId(){const prefixes=[{p:"100",n:9},{p:"221",n:9},{p:"660",n:9},{p:"234",n:7}];const choice=prefixes[randomInt(prefixes.length)];let digits="";for(let i=0;i<choice.n;i++)digits+=String(randomInt(10));return choice.p+digits;}
-function publicBase(){return (process.env.AURELINK_PUBLIC_URL??"https://aurelink-public.onrender.com").replace(/\/$/,"");}
+function publicBase(){return (process.env.AURELINK_PUBLIC_URL??"https://aurelink-react.onrender.com").replace(/\/$/,"");}
 function aurelinkSender(){return process.env.AURELINK_EMAIL_FROM??"Aurelink <noreply@wnncompany.com>";}
 router.post("/aurelink/auth/signup/email/request",async(req,res)=>{
   const parsed=z.object({email:z.string().email().max(255)}).safeParse(req.body);
@@ -264,14 +264,18 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
         catch(err){if(!(err instanceof Error)||!err.message.includes("duplicate key")||attempt===11)throw err;}
       }
       const user=created.rows[0];
+      // A secret must not be mathematically derived from a public Account ID.
+      // Generate 24 cryptographically random URL-safe characters and store only its digest.
+      await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_auth_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL UNIQUE REFERENCES aurelink_users(id) ON DELETE CASCADE, account_id VARCHAR(32) NOT NULL UNIQUE, key_hash CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), revoked_at TIMESTAMPTZ NULL)");
+      const accountAuthKey=randomBytes(18).toString("base64url");
+      await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash) VALUES($1,$2,$3)",[user.id,String(accountId),hash(accountAuthKey)]);
       await client.query("INSERT INTO aurelink_account_security(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.id]);
       await client.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE id=$1",[challenge.id]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.created',$2,$3,$4::jsonb)",[user.id,challenge.request_ip,agent(req),JSON.stringify({accountId,termsAccepted:true,termsAcceptedAt:new Date().toISOString()})]);
       await client.query("COMMIT");
-      const session=await startSession(req,{id:user.id,email:user.email});
-      const emailHtml=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1 style="color:#173b78">AURELINK</h1><h2>Welcome to Aurelink, ${escapeHtml(firstName)}!</h2><p>Your account has been created successfully.</p><p><strong>Aurelink Account ID:</strong> ${escapeHtml(accountId)}</p><p>If you did not create this account, contact Aurelink support immediately.</p><p>Aurelink, Inc.</p></div>`;
+      const emailHtml=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1 style="color:#173b78">AURELINK</h1><h2>Welcome to Aurelink, ${escapeHtml(firstName)}!</h2><p>Your account has been created successfully.</p><p><strong>Aurelink Account ID:</strong> ${escapeHtml(accountId)}</p><p><strong>One-time Account AUTH key:</strong> <code>${escapeHtml(accountAuthKey)}</code></p><p>This key is randomly generated and cannot be reconstructed from your Account ID. Save it in a password manager. Aurelink stores only a hash, so it cannot show the key again. Never share it with anyone claiming to be support.</p><p>For your security, you have not been signed in automatically. Continue to the Aurelink login screen and sign in with your new credentials.</p><p>If you did not create this account, contact Aurelink support immediately.</p><p><a href="${publicBase()}/?screen=login">Continue to Aurelink login</a></p><p>Aurelink, Inc.</p></div>`;
       void resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Your Aurelink account is ready",html:emailHtml}).catch(()=>undefined);
-      return res.status(201).json({success:true,message:"Your Aurelink account has been created.",user,session});
+      return res.status(201).json({success:true,message:"Your Aurelink account has been created. Please sign in.",user});
     }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
   }catch(e){return res.status(500).json({success:false,message:"Aurelink could not complete account creation. Please try again."});}
 });
