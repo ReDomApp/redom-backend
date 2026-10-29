@@ -103,6 +103,9 @@ router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
         return res.json(generic);
       }
       await resetClient.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[user.id]);
+      await resetClient.query("CREATE TABLE IF NOT EXISTS aurelink_reset_token_context (token_hash CHAR(64) PRIMARY KEY, user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE, ip_prefix VARCHAR(80) NOT NULL, country_code VARCHAR(8), company_name TEXT, asn BIGINT, user_agent_hash CHAR(64) NOT NULL, expires_at TIMESTAMPTZ NOT NULL, consumed_at TIMESTAMPTZ)");
+      const ipPrefix=(value:string)=>value.includes(".")?value.split(".").slice(0,3).join(".")+".0/24":value.split(":").filter(Boolean).slice(0,4).join(":")+"::/64";
+      await resetClient.query("INSERT INTO aurelink_reset_token_context(token_hash,user_id,ip_prefix,country_code,company_name,asn,user_agent_hash,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[hash(token),user.id,ipPrefix(suppliedIp),network.location?.country_code??null,network.company?.name??network.ISP??network.organization??null,network.asn?.asn??network.ASN??null,hash(agent(req)),expiresAt]);
       await resetClient.query("INSERT INTO aurelink_password_resets(user_id,token_hash,expires_at,request_ip) VALUES($1,$2,$3,$4)",[user.id,hash(token),expiresAt,suppliedIp]);
       await resetClient.query("COMMIT");
     } catch(error) {
@@ -130,7 +133,7 @@ router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
   }catch{return res.json(generic);}
 });
 router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
-  const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(10).max(200)}).safeParse(req.body);
+  const parsed=z.object({token:z.string().min(20).max(300),password:z.string().min(10).max(200),confirmPassword:z.string().min(10).max(200),clientIp:z.string().min(3).max(45)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"A valid reset token and password are required."});
   try{
     validPassword(parsed.data.password);
@@ -138,11 +141,26 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
     try {
       await client.query("BEGIN");
       const result=await client.query("SELECT id,user_id FROM aurelink_password_resets WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);
+      const contextResult=await client.query("SELECT * FROM aurelink_reset_token_context WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);
+      const tokenContext=contextResult.rows[0];
+      if(tokenContext) {
+        let currentNetwork:Awaited<ReturnType<typeof checkIP>>;
+        try { currentNetwork=await checkIP(parsed.data.clientIp); } catch { await client.query("ROLLBACK"); return res.status(503).json({success:false,message:"Aurelink could not verify this network securely. Reopen the email link and try again."}); }
+        const currentPrefix=parsed.data.clientIp.includes(".")?parsed.data.clientIp.split(".").slice(0,3).join(".")+".0/24":parsed.data.clientIp.split(":").filter(Boolean).slice(0,4).join(":")+"::/64";
+        const provider=String(currentNetwork.company?.name??currentNetwork.ISP??currentNetwork.organization??"");
+        const mismatch=currentPrefix!==tokenContext.ip_prefix ||
+          (tokenContext.country_code && currentNetwork.location?.country_code && tokenContext.country_code!==currentNetwork.location.country_code) ||
+          (tokenContext.asn && Number(currentNetwork.asn?.asn??currentNetwork.ASN??0)!==Number(tokenContext.asn)) ||
+          (tokenContext.company_name && provider && tokenContext.company_name.toLowerCase()!==provider.toLowerCase()) ||
+          hash(agent(req))!==tokenContext.user_agent_hash;
+        if(mismatch) { await client.query("ROLLBACK"); return res.status(403).json({success:false,code:"AURELINK_RESET_CONTEXT_MISMATCH",message:"For your security, this reset link must be opened in the same browser and a matching network as the request. Reopen the email on the original device and network. If your connection changed, request a new link."}); }
+      }
       const reset=result.rows[0];
       if(!reset){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Reset link is invalid or expired."});}
       const passwordHash=await hashPassword(parsed.data.password);
       await client.query("UPDATE aurelink_users SET password_hash=$2,updated_at=NOW() WHERE id=$1",[reset.user_id,passwordHash]);
       await client.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
+      await client.query("UPDATE aurelink_reset_token_context SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
       await client.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL",[reset.user_id]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.password_reset',$2,$3)",[reset.user_id,ip(req),agent(req)]);
       await client.query("COMMIT");
