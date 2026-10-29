@@ -183,7 +183,43 @@ async function runInitialAsak24Binding(){
     const c=await pool.connect();const notices:any[]=[];let count=0;
     try{
       await c.query("BEGIN");
-      const candidates=await c.query("SELECT u.id,u.account_id,u.email,u.first_name FROM aurelink_users u LEFT JOIN aurelink_account_auth_keys k ON k.user_id=u.id WHERE k.user_id IS NULL AND u.account_status='active' AND u.email_verified=TRUE AND u.account_id ~ '^(?:[0-9]{10}|[0-9]{12})
+      const candidates=await c.query("SELECT u.id,u.account_id,u.email,u.first_name FROM aurelink_users u LEFT JOIN aurelink_account_auth_keys k ON k.user_id=u.id WHERE k.user_id IS NULL AND u.account_status='active' AND u.email_verified=TRUE AND u.account_id ~ '^[0-9]{10}$|^[0-9]{12}$' ORDER BY u.created_at LIMIT 50 FOR UPDATE OF u SKIP LOCKED");
+      for(const user of candidates.rows){
+        const accountId=String(user.account_id);
+        const key=makeRandomAuthKey(accountId.length===10?20:24);
+        const ins=await c.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix,encrypted_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id",[user.id,accountId,hash(key),key.slice(0,4),key.slice(-4),encryptAuthKey(key)]);
+        if(!ins.rows[0]) continue;
+        await c.query("INSERT INTO aurelink_asak_migrations(user_id,account_id,status,email_status) VALUES($1,$2,'bound','pending') ON CONFLICT(user_id) DO NOTHING",[user.id,accountId]);
+        await c.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.asak24.migration.bound',$2::jsonb)",[user.id,JSON.stringify({accountIdMasked:maskAccountId(accountId),keyLength:key.length,source:"startup_migration"})]);
+        notices.push({id:user.id,account_id:accountId,email:user.email,first_name:user.first_name,key_prefix:key.slice(0,4),key_suffix:key.slice(-4),key_length:key.length});
+        count++;
+      }
+      await c.query("COMMIT");
+    }catch(error){await c.query("ROLLBACK").catch(()=>undefined);throw error;}
+    finally{c.release();}
+    boundTotal+=count;
+    const pending=await pool.query("SELECT m.user_id AS id,m.account_id,u.email,u.first_name,k.stable_prefix AS key_prefix,k.stable_suffix AS key_suffix,CASE WHEN length(m.account_id)=10 THEN 20 ELSE 24 END AS key_length FROM aurelink_asak_migrations m JOIN aurelink_users u ON u.id=m.user_id JOIN aurelink_account_auth_keys k ON k.user_id=m.user_id WHERE m.email_status IN ('pending','failed') AND m.status='bound' ORDER BY m.updated_at LIMIT 50");
+    for(const user of pending.rows) if(!notices.some(n=>n.id===user.id)) notices.push(user);
+    for(const user of notices){
+      try{
+        const messageId=await sendAsakMigrationNotice(user);
+        await pool.query("UPDATE aurelink_asak_migrations SET email_status='sent',notified_at=NOW(),email_attempts=email_attempts+1,last_email_error=NULL,updated_at=NOW() WHERE user_id=$1",[user.id]);
+        await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.asak24.migration.notified',$2::jsonb)",[user.id,JSON.stringify({accountIdMasked:maskAccountId(String(user.account_id)),messageId})]);
+        sentTotal++;
+      }catch(error){
+        const detail=String(error instanceof Error?error.message:"Email delivery failed").slice(0,500);
+        await pool.query("UPDATE aurelink_asak_migrations SET email_status='failed',email_attempts=email_attempts+1,last_email_error=$2,updated_at=NOW() WHERE user_id=$1",[user.id,detail]).catch(()=>undefined);
+        failedTotal++;
+      }
+    }
+    if(count===0) break;
+  }
+  console.info("[ASAK-24] initial account binding finished",JSON.stringify({bound:boundTotal,emailsSent:sentTotal,emailsFailed:failedTotal}));
+}
+void runInitialAsak24Binding().catch(error=>console.error("[ASAK-24] startup binding failed",error instanceof Error?error.message:"unknown error"));
+
+router.post("/aurelink/auth/admin/asak24/migrate",async(req,res)=>{
+  if(!asakAdminAuthorized(req)) return res.status(401).json({success:false,message:"Unauthorized migration request."});
   const parsed=z.object({batchSize:z.number().int().min(1).max(100).optional(),retryEmails:z.boolean().optional()}).safeParse(req.body||{});
   if(!parsed.success) return res.status(400).json({success:false,message:"Invalid migration batch options."});
   const batchSize=parsed.data.batchSize||50;
