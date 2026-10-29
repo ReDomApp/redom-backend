@@ -84,7 +84,7 @@ const authKeyPatterns=[
   (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kF+aL+kM+aF+aM,
   (kF:string,kM:string,kL:string,aF:string,aM:string,aL:string)=>kL+aF+kM+aM+aL
 ];
-function authEncryptionKey(){return createHash("sha256").update(authRotationSecret()).update("|AURELINK_ASAK24_ENCRYPTION_V1").digest();}
+function authEncryptionKey(){const secret=process.env.AURELINK_AUTH_KEY_ENCRYPTION_SECRET||process.env.AURELINK_AUTH_KEY_ROTATION_SECRET||process.env.JWT_ACCESS_SECRET;if(!secret||secret.length<32)throw new Error("Configure AURELINK_AUTH_KEY_ENCRYPTION_SECRET (32+ characters) or a 32+ character JWT_ACCESS_SECRET.");return createHash("sha256").update(secret).update("|AURELINK_ASAK24_ENCRYPTION_V1").digest();}
 function encryptAuthKey(value:string){const iv=randomBytes(12);const cipher=createCipheriv("aes-256-gcm",authEncryptionKey(),iv);const ciphertext=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);return [iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),ciphertext.toString("base64url")].join(".");}
 function decryptAuthKey(value:string){const parts=value.split(".");if(parts.length!==3)throw new Error("Invalid encrypted ASAK-24 value.");const decipher=createDecipheriv("aes-256-gcm",authEncryptionKey(),Buffer.from(parts[0],"base64url"));decipher.setAuthTag(Buffer.from(parts[1],"base64url"));return Buffer.concat([decipher.update(Buffer.from(parts[2],"base64url")),decipher.final()]).toString("utf8");}
 function authRotationSecret(){
@@ -457,7 +457,7 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       const user=created.rows[0];
       // A secret must not be mathematically derived from a public Account ID.
       // Generate 24 cryptographically random URL-safe characters and store only its digest.
-      await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_auth_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL UNIQUE REFERENCES aurelink_users(id) ON DELETE CASCADE, account_id VARCHAR(32) NOT NULL UNIQUE, key_hash CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), rotated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), key_version INTEGER NOT NULL DEFAULT 1, stable_prefix VARCHAR(4), stable_suffix VARCHAR(4), revoked_at TIMESTAMPTZ NULL)");
+      await ensureAuthKeySchema(client);
       const authAlphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
       const randomAuthPart=(length:number)=>Array.from({length},()=>authAlphabet[randomInt(authAlphabet.length)]).join("");
       const accountAuthKey=randomAuthPart(accountId.length===10?20:24);
