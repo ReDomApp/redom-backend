@@ -140,7 +140,7 @@ router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(
     const html=`<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#182230"><div style="max-width:600px;margin:24px auto;padding:28px;background:#fff;border-radius:14px"><h1 style="color:#173b78">AURELINK</h1><p>Hello ${escapeHtml(String(user.first_name||"there"))},</p><p>Aurelink has introduced ASAK-24 (Aurelink Sequential Authentication Key) to strengthen account authentication and security.</p><p>Your account has been included in Aurelink's security migration.</p><p><strong>Account ID:</strong> ${escapeHtml(maskAccountId(String(user.account_id)))}</p><p><strong>Security upgrade:</strong> ASAK-24 authentication</p><p><strong>ASAK-24 key (masked):</strong> ${escapeHtml(maskAuthKey(key))}</p><p><strong>Migration status:</strong> Completed</p><p>Your existing Account ID remains unchanged. No further action is required at this time.</p><p>Never share your full authentication key, password, or verification codes with anyone. If you did not expect this notification or suspect unauthorized activity, access Aurelink through its official application and contact support.</p><p>Regards,<br><strong>Jess Ursa</strong><br>Aurelink Security Team</p></div></body></html>`;
     try{const sent=await resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Your Aurelink account ASAK-24 key",html});if(sent.error)return res.status(503).json({success:false,code:"AURELINK_KEY_EMAIL_FAILED",message:"The key was created but email delivery failed. Contact support before retrying."});}
     catch{return res.status(503).json({success:false,code:"AURELINK_KEY_EMAIL_FAILED",message:"The key was created but email delivery failed. Contact support before retrying."});}
-    return res.status(201).json({success:true,message:"ASAK-24 key bound. It was sent to your verified email address; it will not be shown again."});
+    return res.status(201).json({success:true,message:"ASAK-24 key bound internally. Only its masked identifier was emailed."});
   }catch{
     await client.query("ROLLBACK").catch(()=>undefined);
     return res.status(500).json({success:false,message:"Unable to bind an AUTH key. Verify server rotation-secret configuration and try again."});
@@ -216,37 +216,30 @@ router.post("/aurelink/auth/admin/asak24/migrate",async(req,res)=>{
   return res.json({success:true,boundThisRun:newlyBound,emailsSentThisRun:sent,emailsFailedThisRun:failed,totals:totals.rows[0],hasMore:newlyBound===batchSize});
 });
 
-router.post("/aurelink/auth/account-auth-key/verify",async(req,res)=>{
-  const parsed=z.object({accountId:z.string().regex(/^(?:\d{10}|\d{12})$/),authKey:z.string().regex(/^(?:[A-Za-z0-9]{20}|[A-Za-z0-9]{24})$/)}).refine(v=>v.authKey.length===(v.accountId.length===10?20:24)).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"A valid 10- or 12-digit Account ID and its matching 20- or 24-character ASAK key are required."});
+// ASAK-24 is an internal, server-managed account credential. A masked display is not an authentication factor.
+router.post("/aurelink/auth/account-auth-key/verify",aurelinkAuthMiddleware,async(req,res)=>{
   const client=await pool.connect();
   try{
     await client.query("BEGIN");
     await ensureAuthKeySchema(client);
-    const found=await client.query("SELECT k.*,u.email,u.first_name FROM aurelink_account_auth_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.account_id=$1 AND k.revoked_at IS NULL AND u.account_status='active' FOR UPDATE OF k",[parsed.data.accountId]);
+    const found=await client.query("SELECT k.*,u.email,u.first_name FROM aurelink_account_auth_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.user_id=$1 AND k.revoked_at IS NULL AND u.account_status='active' FOR UPDATE OF k",[req.user!.userId]);
     const record=found.rows[0];
-    if(!record||record.key_hash!==hash(parsed.data.authKey)){
-      await client.query("ROLLBACK");
-      return res.status(401).json({success:false,message:"ASAK-24 key is invalid or revoked."});
-    }
+    if(!record){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"No active ASAK-24 key is bound to this account."});}
     const baseDate=new Date(record.rotated_at??record.created_at);
     const due=Date.now()-baseDate.getTime()>=30*24*60*60*1000;
-    if(!due){
-      await client.query("COMMIT");
-      return res.json({success:true,authorized:true,keyVersion:Number(record.key_version??1),rotatesAt:new Date(baseDate.getTime()+30*24*60*60*1000).toISOString()});
-    }
-    const period=Math.floor(Date.now()/(30*24*60*60*1000));
-    const next=rotateAuthKey(String(record.account_id),parsed.data.authKey,period);
-    await client.query("UPDATE aurelink_account_auth_keys SET key_hash=$2,stable_prefix=$3,stable_suffix=$4,rotated_at=NOW(),key_version=key_version+1 WHERE id=$1",[record.id,hash(next.key),next.key.slice(0,4),next.key.slice(-4)]);
-    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.account_key.rotated',$2::jsonb)",[record.user_id,JSON.stringify({keyVersion:Number(record.key_version??1)+1,patternIndex:next.patternIndex,reason:"30_day_rotation"})]);
+    if(!due){await client.query("COMMIT");return res.json({success:true,authorized:true,maskedKey:String(record.stable_prefix)+"•".repeat(String(record.account_id).length===10?12:16)+String(record.stable_suffix),keyVersion:Number(record.key_version??1),rotatesAt:new Date(baseDate.getTime()+30*24*60*60*1000).toISOString()});}
+    const length=String(record.account_id).length===10?20:24;
+    const nextKey=String(record.stable_prefix)+makeRandomAuthKey(length-8===12?20:24).slice(4,-4)+String(record.stable_suffix);
+    await client.query("UPDATE aurelink_account_auth_keys SET key_hash=$2,rotated_at=NOW(),key_version=key_version+1 WHERE id=$1",[record.id,hash(nextKey)]);
+    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,metadata) VALUES($1,'auth.account_key.rotated',$2::jsonb)",[record.user_id,JSON.stringify({keyVersion:Number(record.key_version??1)+1,reason:"30_day_rotation",mode:"server_managed"})]);
     await client.query("COMMIT");
-    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(record.first_name||"there"))},</p><p>Your 30-day ASAK-24 rotation is complete.</p><p><strong>ASAK-24 key (masked):</strong> <code>${escapeHtml(maskAuthKey(next.key))}</code></p><p>The first and last four characters remain visible for identification; the middle characters are never displayed. Your previous key is no longer valid.</p><p>If you did not initiate this action, contact Aurelink Support immediately.</p></div>`;
-    try{const sent=await resend.emails.send({from:aurelinkSender(),to:record.email,subject:"Your Aurelink ASAK-24 key has rotated",html});if(sent.error)return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"The key rotated, but email delivery failed. Contact support before retrying.",keyVersion:Number(record.key_version??1)+1});}
-    catch{return res.status(503).json({success:false,code:"AURELINK_KEY_ROTATED_EMAIL_FAILED",message:"The key rotated, but email delivery failed. Contact support before retrying.",keyVersion:Number(record.key_version??1)+1});}
-    return res.json({success:true,authorized:true,rotated:true,keyVersion:Number(record.key_version??1)+1,patternIndex:next.patternIndex,message:"A new AUTH key was emailed to your verified address. The previous key is no longer valid."});
+    const masked=maskAuthKey(nextKey);
+    const html=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1>AURELINK</h1><p>Hi ${escapeHtml(String(record.first_name||"there"))},</p><p>Your 30-day ASAK-24 rotation is complete.</p><p><strong>ASAK-24 key (masked):</strong> <code>${escapeHtml(masked)}</code></p><p>The full key is managed internally by Aurelink and is never disclosed. You do not need to enter this key.</p></div>`;
+    void resend.emails.send({from:aurelinkSender(),to:record.email,subject:"Your Aurelink ASAK-24 key has rotated",html}).catch(()=>undefined);
+    return res.json({success:true,authorized:true,rotated:true,maskedKey:masked,keyVersion:Number(record.key_version??1)+1,message:"ASAK-24 rotated securely. Only the masked identifier is available."});
   }catch{
     await client.query("ROLLBACK").catch(()=>undefined);
-    return res.status(500).json({success:false,message:"Unable to verify the account AUTH key. Confirm AURELINK_AUTH_KEY_ROTATION_SECRET is configured."});
+    return res.status(500).json({success:false,message:"Unable to check ASAK-24 status."});
   }finally{client.release();}
 });
 router.post("/aurelink/auth/password-reset/request",async(req,res)=>{
@@ -470,7 +463,7 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       await client.query("UPDATE aurelink_signup_email_tokens SET consumed_at=NOW() WHERE id=$1",[challenge.id]);
       await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.created',$2,$3,$4::jsonb)",[user.id,challenge.request_ip,agent(req),JSON.stringify({accountId,termsAccepted:true,termsAcceptedAt:new Date().toISOString()})]);
       await client.query("COMMIT");
-      const emailHtml=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1 style="color:#173b78">AURELINK</h1><h2>Welcome to Aurelink, ${escapeHtml(firstName)}!</h2><p>Your account has been created successfully.</p><p><strong>Aurelink Account ID:</strong> ${escapeHtml(accountId)}</p><p><strong>One-time Account AUTH key:</strong> <code>${escapeHtml(accountAuthKey)}</code></p><p>This key is randomly generated and cannot be reconstructed from your Account ID. Save it in a password manager. Aurelink stores only a hash, so it cannot show the key again. Never share it with anyone claiming to be support.</p><p>For your security, you have not been signed in automatically. Continue to the Aurelink login screen and sign in with your new credentials.</p><p>If you did not create this account, contact Aurelink support immediately.</p><p><a href="${publicBase()}/?screen=login">Continue to Aurelink login</a></p><p>Aurelink, Inc.</p></div>`;
+      const emailHtml=`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h1 style="color:#173b78">AURELINK</h1><h2>Welcome to Aurelink, ${escapeHtml(firstName)}!</h2><p>Your account has been created successfully.</p><p><strong>Aurelink Account ID:</strong> ${escapeHtml(accountId)}</p><p><strong>ASAK-24 key (masked):</strong> <code>${escapeHtml(maskAuthKey(accountAuthKey))}</code></p><p>Your ASAK-24 key is created silently and managed internally by Aurelink. Only the first four and last four characters are displayed. You do not need to enter or save this key.</p><p>For your security, you have not been signed in automatically. Continue to the Aurelink login screen and sign in with your new credentials.</p><p>If you did not create this account, contact Aurelink support immediately.</p><p><a href="${publicBase()}/?screen=login">Continue to Aurelink login</a></p><p>Aurelink, Inc.</p></div>`;
       void resend.emails.send({from:aurelinkSender(),to:user.email,subject:"Your Aurelink account is ready",html:emailHtml}).catch(()=>undefined);
       return res.status(201).json({success:true,message:"Your Aurelink account has been created. Please sign in.",user});
     }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
