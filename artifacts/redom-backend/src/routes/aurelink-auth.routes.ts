@@ -89,8 +89,9 @@ function authRotationSecret(){
   if(!secret||secret.length<32) throw new Error("AURELINK_AUTH_KEY_ROTATION_SECRET must be configured with at least 32 characters.");
   return secret;
 }
-function makeRandomAuthKey(){
-  return Array.from({length:24},()=>authKeyAlphabet[randomInt(authKeyAlphabet.length)]).join("");
+function makeRandomAuthKey(length:number){
+  if(length!==20&&length!==24) throw new Error("ASAK-24 keys must be 20 or 24 characters.");
+  return Array.from({length},()=>authKeyAlphabet[randomInt(authKeyAlphabet.length)]).join("");
 }
 function rotateAuthKey(accountId:string,currentKey:string,period:number){
   const secret=authRotationSecret();
@@ -121,7 +122,9 @@ router.post("/aurelink/auth/account-auth-key/bind",aurelinkAuthMiddleware,async(
     if(!user){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Active Aurelink account not found."});}
     const prior=await client.query("SELECT id FROM aurelink_account_auth_keys WHERE user_id=$1",[user.id]);
     if(prior.rows[0]){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"An AUTH key is already bound to this account. Use the recovery or rotation flow."});}
-    const key=makeRandomAuthKey();
+    const accountId=String(user.account_id);
+    if(!/^(?:\d{10}|\d{12})$/.test(accountId)){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"This account has an unsupported Account ID format. Contact Aurelink Support."});}
+    const key=makeRandomAuthKey(accountId.length===10?20:24);
     await client.query("INSERT INTO aurelink_account_auth_keys(user_id,account_id,key_hash,stable_prefix,stable_suffix) VALUES($1,$2,$3,$4,$5)",[user.id,String(user.account_id),hash(key),key.slice(0,4),key.slice(-4)]);
     await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.account_key.bound',$2,$3,$4::jsonb)",[user.id,ip(req),agent(req),JSON.stringify({keyVersion:1,source:"authenticated_existing_account"})]);
     await client.query("COMMIT");
