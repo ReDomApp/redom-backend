@@ -29,6 +29,12 @@ function validPersonName(v:string) {
  if(normalized.length<2||normalized.length>100||!/^[\p{L}\p{M}]+(?:[ '\u2019-][\p{L}\p{M}]+)*$/u.test(normalized)) throw new Error("Enter a name using letters, spaces, apostrophes, or hyphens only. Numbers and emoji are not accepted.");
  return normalized;
 }
+async function enforceAurelinkIpAllowlist(userId:string,sourceIp:string) {
+ const row=(await pool.query("SELECT enabled,entries FROM aurelink_ip_allowlists WHERE user_id=$1",[userId])).rows[0];
+ if(!row?.enabled||!Array.isArray(row.entries)||!row.entries.length)return;
+ const allowed=row.entries.some((entry:string)=>{const [base,prefix]=entry.split("/");const version=isIP(base);if(!version||version!==isIP(sourceIp))return false;const bits=version===4?32:128,n=prefix===undefined?bits:Number(prefix);if(!Number.isInteger(n)||n<0||n>bits)return false;if(version===4){const toN=(s:string)=>s.split(".").reduce((v,x)=>(v<<8n)|BigInt(Number(x)),0n),shift=BigInt(bits-n);return(toN(sourceIp)>>shift)===(toN(base)>>shift);}return sourceIp===base;});
+ if(!allowed)throw Object.assign(new Error("This IP address is not on your Aurelink allowlist. Use verified-email recovery."),{status:403,code:"AURELINK_IP_NOT_ALLOWED"});
+}
 async function startSession(req:Request,user:{id:string;email:string}) {
   const sessionId = randomUUID();
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
@@ -62,13 +68,18 @@ router.post("/aurelink/auth/login",async(req,res)=>{
       return res.status(401).json({success:false,message:"Invalid email or password."});
     }
     if(user.account_status!=="active")return res.status(403).json({success:false,message:"This Aurelink account is not active."});
-    const sec=await pool.query("SELECT two_factor_enabled,two_factor_method FROM aurelink_account_security WHERE user_id=$1",[user.id]);
-    if(sec.rows[0]?.two_factor_enabled) return res.status(501).json({success:false,code:"AURELINK_2FA_SETUP_REQUIRED",message:"Two-factor authentication is enabled, but challenge delivery is not yet available for this account. Contact Aurelink support; password-only login is blocked."});
+    await enforceAurelinkIpAllowlist(user.id,clientIp(req));
+    const sec=await pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[user.id]);
+    if(sec.rows[0]?.two_factor_enabled && sec.rows[0]?.totp_enabled) {
+      const challenge=await pool.query("INSERT INTO aurelink_totp_login_challenges(user_id,device_id,ip_address,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '5 minutes') RETURNING id,expires_at",[user.id,String(req.body?.deviceId??"").slice(0,255)||null,clientIp(req)]);
+      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,device_name,platform,browser) VALUES($1,'login_2fa_required',FALSE,$2,$3,$4,$5,$6)",[user.id,clientIp(req),agent(req),req.body?.deviceName??null,req.body?.platform??null,req.body?.browser??null]);
+      return res.status(202).json({success:false,requiresTwoFactor:true,challengeId:challenge.rows[0].id,expiresAt:challenge.rows[0].expires_at,message:"Enter the current code from your authenticator app."});
+    }
     const session=await startSession(req,{id:user.id,email:user.email});
     await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.login',$2,$3)",[user.id,clientIp(req),agent(req)]);
     delete user.password_hash;
     return res.json({success:true,user,session});
-  }catch(e){return res.status(500).json({success:false,message:"Aurelink login failed."});}
+  }catch(e){const status=Number((e as any)?.status)||500;return res.status(status).json({success:false,code:(e as any)?.code,message:status===500?"Aurelink login failed.":(e instanceof Error?e.message:"Login blocked.")});}
 });
 router.post("/aurelink/auth/session-security/action",async(req,res)=>{
  const parsed=z.object({token:z.string().min(20).max(300),action:z.enum(["logout-session","change-password"]),password:z.string().min(6).max(200).optional(),confirmPassword:z.string().min(6).max(200).optional()}).safeParse(req.body);
