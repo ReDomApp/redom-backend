@@ -405,7 +405,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
     const expiry = expiryDate(data);
     const aurelinkOrderId = newAurelinkOrderId();
     await pool.query(
-      "INSERT INTO aurelink_provider_orders (aurelink_order_id,user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,$3,'activation',$4,$5,$6,$7,'pending',$8,$9,$10,'verified',NOW(),$11,$12::jsonb)",
+      "INSERT INTO aurelink_provider_orders (aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,$3,'activation',$4,$5,$6,$7,'pending',$8,$9,$10,'verified',NOW(),$11,$12::jsonb)",
       [aurelinkOrderId, req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, assessment.carrier, assessment.lineType ?? "mobile", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } })],
     );
     return res.status(201).json({ success: true, order: { aurelinkOrderId, orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
