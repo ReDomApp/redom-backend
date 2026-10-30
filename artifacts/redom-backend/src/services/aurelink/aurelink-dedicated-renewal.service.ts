@@ -52,7 +52,7 @@ async function initializeTopup(attempt: Row): Promise<void> {
   } catch(e) { await client.query("ROLLBACK").catch(()=>undefined); throw e; } finally { client.release(); }
   const link = baseUrl() + "/aurelink/renewal/topup/" + token;
   const html = "<h2>Aurelink dedicated number renewal</h2><p>Your Aurelink wallet needs funds before your dedicated number can renew.</p><p>Account: "+String(user.account_id)+"</p><p>Number: "+String(order.phone_number||"—")+"</p><p>Renewal amount: "+(Number(attempt.amount_minor)/100).toFixed(2)+" "+String(attempt.currency)+"</p><p><a href=\""+link+"\">Continue secure top-up</a></p><p>This secure link expires in 24 hours and can be used once. Payment credits only your Aurelink wallet.</p>";
-  await sendEmail(String(user.email), "Action required: fund your Aurelink renewal", html, "Aurelink account "+user.account_id+" needs "+(Number(attempt.amount_minor)/100).toFixed(2)+" "+attempt.currency+" for number "+order.phone_number+". Secure link (expires in 24 hours): "+link);
+  try { await sendEmail(String(user.email), "Action required: fund your Aurelink renewal", html, "Aurelink account "+user.account_id+" needs "+(Number(attempt.amount_minor)/100).toFixed(2)+" "+attempt.currency+" for number "+order.phone_number+". Secure link (expires in 24 hours): "+link); } catch (error) { await pool.query("UPDATE aurelink_renewal_topup_tokens SET revoked_at=NOW() WHERE token_hash=$1 AND consumed_at IS NULL", [tokenHash]); throw error; }
 }
 async function ensureAttempts(): Promise<void> {
   await pool.query(`INSERT INTO aurelink_dedicated_renewal_attempts(order_id,aurelink_user_id,scheduled_expiry_at,amount_minor,currency,next_attempt_at)
