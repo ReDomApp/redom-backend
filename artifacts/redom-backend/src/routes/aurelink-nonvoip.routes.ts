@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { logger } from "../lib/logger";
 import { randomUUID } from "node:crypto";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
@@ -8,6 +9,13 @@ import { aurelinkPriceBreakdown } from "../services/aurelink/aurelink-pricing.se
 import { nonVoipClient, NonVoipError, nvRows, nvRecord, nonVoipIdempotencyKey, type NvRow } from "../services/aurelink/nonvoip.client";
 
 const router=Router();
+function nonVoipFailure(res: import("express").Response, error: unknown, operation: string) {
+ const status = error instanceof NonVoipError ? error.status : 502;
+ const code = error instanceof NonVoipError ? error.code : "NONVOIP_UNEXPECTED_ERROR";
+ const message = error instanceof Error ? error.message : "NonVoip request failed.";
+ logger.error({ provider: "NonVoip", operation, status, code, message }, "Aurelink NonVoip catalog request failed");
+ return res.status(status).json({ success: false, code, message });
+}
 function text(v:unknown){return v==null?"":String(v);}
 function providerPrice(row:Record<string,unknown>){for(const k of ["customer_price","price","cost","amount","quoted_price"]) {const n=Number(row[k]);if(Number.isFinite(n)&&n>0)return n;}return 0;}
 function retailMinor(price:number){return aurelinkPriceBreakdown(price,"long_term")?.totalMinor ?? 0;}
@@ -18,7 +26,7 @@ function productFields(row:Record<string,unknown>){
  return {serviceId,offerId,providerPrice:price,retailMinor:retailMinor(price),service:text(row.service_name??row.service??row.name??row.title),logo:text(row.logo_url??row.logo??row.icon_url??row.icon),countryCode:text(row.country_code??row.countryCode??row.iso2??row.country),countryName:text(row.country_name??row.countryName??row.country_label),dialCode:text(row.dial_code??row.dialCode??row.phone_code),offerLabel:text(row.offer_name??row.name??row.label),available:row.available!==false&&row.in_stock!==false&&Number(row.stock??row.available_count??1)>0};
 }
 router.use(aurelinkAuthMiddleware);
-router.get("/aurelink/nonvoip/countries",async(_req,res)=>{try{const d=await nonVoipClient.products("long-term",undefined,1,50);const rows=nvRows(d);const map=new Map<string,Record<string,unknown>>();for(const r of rows){const f=productFields(r);if(f.countryCode)map.set(f.countryCode,{code:f.countryCode,name:f.countryName||f.countryCode,dialCode:f.dialCode});}return res.json({success:true,countries:[...map.values()]});}catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip countries unavailable."});}});
+router.get("/aurelink/nonvoip/countries",async(_req,res)=>{try{const d=await nonVoipClient.products("long-term",undefined,1,50);const rows=nvRows(d);const map=new Map<string,Record<string,unknown>>();for(const r of rows){const f=productFields(r);if(f.countryCode)map.set(f.countryCode,{code:f.countryCode,name:f.countryName||f.countryCode,dialCode:f.dialCode});}return res.json({success:true,countries:[...map.values()]});}catch(e){return nonVoipFailure(res,e,"long-term countries");}});
 router.get("/aurelink/nonvoip/products",async(req,res)=>{const country=String(req.query.country||"").trim();const page=Math.max(1,Math.min(1000,Number(req.query.page)||1));if(!country)return res.status(400).json({success:false,message:"Choose a country first."});try{const d=await nonVoipClient.products("long-term",country,page,50);const rows=nvRows(d).map(productFields).filter(x=>x.serviceId&&x.offerId&&x.providerPrice>0&&x.available);return res.json({success:true,products:rows.map(x=>({...x,retailPriceUsd:(x.retailMinor/100).toFixed(2),priceBreakdown:aurelinkPriceBreakdown(x.providerPrice,"long_term")})),page,perPage:50,total:Number(nvRecord(d).total)||null,hasMore:rows.length>=50});}catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip catalog unavailable."});}});
 router.post("/aurelink/nonvoip/orders",async(req,res)=>{
  const userId=req.user?.userId;
@@ -103,7 +111,7 @@ function dedicatedFields(row:Record<string,unknown>){
 function dedicatedRetailMinor(price:number){return aurelinkPriceBreakdown(price,"dedicated")?.totalMinor ?? 0;}
 router.get("/aurelink/dedicated/countries",async(_req,res)=>{
  try{const d=await nonVoipClient.products("dedicated",undefined,1,100);const map=new Map<string,{code:string;name:string;dialCode:string}>();for(const row of nvRows(d)){const x=dedicatedFields(row);if(x.countryCode)map.set(x.countryCode,{code:x.countryCode,name:x.countryName||x.countryCode,dialCode:x.dialCode});}return res.json({success:true,countries:[...map.values()]});}
- catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:"Aurelink could not load dedicated-number countries."});}
+ catch(e){return nonVoipFailure(res,e,"dedicated countries");}
 });
 router.post("/aurelink/dedicated/quote",async(req,res)=>{
  const countryCode=text(req.body?.countryCode).toUpperCase();const lineType=text(req.body?.lineType).toLowerCase();
