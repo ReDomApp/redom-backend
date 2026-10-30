@@ -204,10 +204,13 @@ async function isCountryAvailable(country: string): Promise<boolean> {
   } catch { return false; }
 }
 async function isRentalAvailable(rentalId: number): Promise<boolean> {
-  try {
-    const catalogs = await Promise.all([smsPoolClient.rentals(1), smsPoolClient.rentals(0)]);
-    return catalogs.some(catalog => rentalCountryEntries(catalog).some(row => row.id===String(rentalId)));
-  } catch { return false; }
+  // SMSPool can return 404 for one rental mode when that catalogue has no
+  // inventory. That must not discard a valid match from the other mode.
+  const catalogs = await Promise.allSettled([smsPoolClient.rentals(1), smsPoolClient.rentals(0)]);
+  return catalogs.some(result =>
+    result.status === "fulfilled" &&
+    rentalCountryEntries(result.value).some(row => row.id === String(rentalId))
+  );
 }
 function providerFields(value: unknown, output: Array<{ key: string; value: string }> = []): Array<{ key: string; value: string }> {
   if (Array.isArray(value)) { for (const item of value) providerFields(item, output); return output; }
