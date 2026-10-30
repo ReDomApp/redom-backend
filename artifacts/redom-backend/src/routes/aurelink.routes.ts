@@ -38,6 +38,9 @@ async function isServiceAllowed(service: string): Promise<boolean> {
     const entries = serviceEntries(await smsPoolClient.services());
     const match = entries.find((entry) => entry.id === normalized || entry.name === normalized);
     if (!match) return false;
+    if (/bank|crypto|exchange|government|telecom|carrier/.test(match.name)) return false;
+    // WhatsApp remains a separate premium NonVoip channel until SMSPool explicitly approves it.
+    if (match.name.includes("whatsapp") && process.env.SMSPOOL_WHATSAPP_APPROVED !== "true") return false;
     return true;
   } catch {
     return false;
