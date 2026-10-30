@@ -15,9 +15,9 @@ export class NonVoipClient {
    return nvRecord(root.data??body);
   }catch(e){if(e instanceof NonVoipError)throw e;if(e instanceof Error&&e.name==="AbortError")throw new NonVoipError("NonVoip request timed out.",504,"TIMEOUT");throw new NonVoipError("Unable to reach NonVoip.",502,"NETWORK_ERROR");}finally{clearTimeout(timer);}
  }
- products(type:"long-term"|"dedicated",countryCode?:string,page=1,perPage=50){const q=new URLSearchParams({type,page:String(page),per_page:String(perPage)});if(countryCode)q.set("country",countryCode);return this.request("/products?"+q);}
+ products(type:"short-term"|"long-term"|"dedicated",countryCode?:string,page=1,perPage=50){const q=new URLSearchParams({type,page:String(page),per_page:String(perPage)});if(countryCode)q.set("country",countryCode);return this.request("/products?"+q);}
  account(){return this.request("/account");}
- createOrder(input:{serviceId:string;offerId:string;quotedPrice:string;idempotencyKey:string;type?:"long-term"|"dedicated"}){return this.request("/orders",{method:"POST",headers:{"Idempotency-Key":input.idempotencyKey},body:JSON.stringify({type:input.type||"long-term",service_id:input.serviceId,offer_id:input.offerId,quoted_price:input.quotedPrice})});}
+ createOrder(input:{serviceId:string;offerId:string;quotedPrice:string;idempotencyKey:string;type?:"short-term"|"long-term"|"dedicated"}){return this.request("/orders",{method:"POST",headers:{"Idempotency-Key":input.idempotencyKey},body:JSON.stringify({type:input.type||"long-term",service_id:input.serviceId,offer_id:input.offerId,quoted_price:input.quotedPrice})});}
  order(id:string){return this.request("/orders/"+encodeURIComponent(id));}
  messages(id:string){return this.request("/orders/"+encodeURIComponent(id)+"/messages?sync=0");}
  renew(id:string,idempotencyKey=randomUUID()){return this.request("/orders/"+encodeURIComponent(id)+"/renew",{method:"POST",headers:{"Idempotency-Key":idempotencyKey},body:JSON.stringify({})});}
