@@ -9,7 +9,7 @@ export interface AurelinkPriceBreakdown {
 
 const USD_MINOR = 100;
 
-function checkFeeMinor(envName: string): number {
+function readCheckFeeMinor(envName: string): number {
   const raw = process.env[envName];
   if (raw == null || raw.trim() === "") return 100;
   const parsed = Number(raw);
@@ -30,10 +30,10 @@ export function aurelinkPriceBreakdown(
   const providerAmountMinor = Math.ceil(providerPriceUsd * USD_MINOR - 1e-8);
   const aurelinkChargeMinor = providerAmountMinor;
   const checkFeeMinor = product === "short_term"
-    ? checkFeeMinorFromEnv("AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS")
+    ? readCheckFeeMinor("AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS")
     : product === "long_term"
-      ? checkFeeMinorFromEnv("AURELINK_LONG_TERM_CHECK_FEE_USD_CENTS")
-      : checkFeeMinorFromEnv("AURELINK_DEDICATED_CHECK_FEE_USD_CENTS");
+      ? readCheckFeeMinor("AURELINK_LONG_TERM_CHECK_FEE_USD_CENTS")
+      : readCheckFeeMinor("AURELINK_DEDICATED_CHECK_FEE_USD_CENTS");
 
   return {
     providerAmountMinor,
@@ -43,6 +43,6 @@ export function aurelinkPriceBreakdown(
   };
 }
 
-function checkFeeMinorFromEnv(envName: string): number {
+function readCheckFeeMinor(envName: string): number {
   return checkFeeMinor(envName);
 }
