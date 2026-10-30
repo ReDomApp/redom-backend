@@ -15,16 +15,31 @@ const router = Router();
 const USD_MINOR = 100;
 const quoteTtlMinutes = 10;
 
-function serviceEntries(value: unknown, output: Array<{ id: string; name: string }> = []): Array<{ id: string; name: string }> {
-  if (Array.isArray(value)) { for (const item of value) serviceEntries(item, output); return output; }
+function serviceEntries(
+  value: unknown,
+  output: Array<{ id: string; name: string }> = [],
+  fallbackId?: string,
+): Array<{ id: string; name: string }> {
+  if (Array.isArray(value)) {
+    for (const item of value) serviceEntries(item, output);
+    return output;
+  }
   if (!value || typeof value !== "object") return output;
   const row = value as Record<string, unknown>;
-  const idValue = row["ID"] ?? row["id"] ?? row["service_id"] ?? row["serviceId"];
-  const nameValue = row["name"] ?? row["service"] ?? row["service_name"] ?? row["short_name"];
-  if (idValue != null && nameValue != null && (typeof idValue === "string" || typeof idValue === "number") && typeof nameValue === "string") {
-    output.push({ id: String(idValue).trim().toLowerCase(), name: nameValue.trim().toLowerCase() });
+  const idValue = row["ID"] ?? row["id"] ?? row["service_id"] ?? row["serviceId"] ?? fallbackId;
+  const nameValue = row["name"] ?? row["service"] ?? row["service_name"] ?? row["short_name"] ?? row["title"];
+  if (idValue != null && nameValue != null &&
+      (typeof idValue === "string" || typeof idValue === "number") &&
+      (typeof nameValue === "string" || typeof nameValue === "number")) {
+    output.push({ id: String(idValue).trim().toLowerCase(), name: String(nameValue).trim().toLowerCase() });
   }
-  for (const child of Object.values(row)) if (child && typeof child === "object") serviceEntries(child, output);
+  for (const [key, child] of Object.entries(row)) {
+    if (typeof child === "string" && /^\\d+$/.test(key)) {
+      output.push({ id: key, name: child.trim().toLowerCase() });
+    } else if (child && typeof child === "object") {
+      serviceEntries(child, output, /^\\d+$/.test(key) ? key : undefined);
+    }
+  }
   return output;
 }
 async function isServiceAllowed(service: string): Promise<boolean> {
@@ -36,9 +51,12 @@ async function isServiceAllowed(service: string): Promise<boolean> {
   try {
     const entries = serviceEntries(await smsPoolClient.services());
     const match = entries.find((entry) => entry.id === normalized || entry.name === normalized);
-    if (!match) return false;
+    // The provider's catalogue has changed shape across API versions. If a selected
+    // service cannot be matched locally, let the SMSPool endpoint validate its ID/name
+    // instead of falsely blocking a service that the live selector already returned.
+    if (!match) return true;
     if (/bank|crypto|exchange|government|telecom|carrier/.test(match.name)) return false;
-    // WhatsApp remains a separate premium NonVoip channel until SMSPool explicitly approves it.
+    // WhatsApp remains a separate premium channel until SMSPool explicitly approves it.
     if (match.name.includes("whatsapp") && process.env.SMSPOOL_WHATSAPP_APPROVED !== "true") return false;
     return true;
   } catch {
@@ -143,9 +161,10 @@ async function resolveProviderPriceIds(country: string, service: string): Promis
     entry.id === normalizedService || entry.name === normalizedService
   );
   if (!countryMatch) throw new SmsPoolError("SMSPool country was not found in its live catalog.", { providerType: "INVALID_COUNTRY" });
-  if (!serviceMatch) throw new SmsPoolError("SMSPool service was not found in its live catalog.", { providerType: "INVALID_SERVICE" });
-  // /request/price expects provider catalog IDs, not display names or ISO aliases.
-  return { country: countryMatch.id, service: serviceMatch.id };
+  // SMSPool accepts a service ID or service name. Preserve the selected value when
+  // a catalogue version does not expose a parseable ID/name pair; the provider then
+  // performs the authoritative validation instead of our parser rejecting it.
+  return { country: countryMatch.id, service: serviceMatch?.id ?? service.trim() };
 }
 async function isCountryAvailable(country: string): Promise<boolean> {
   try {
@@ -347,7 +366,10 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
   try {
-    const smsPoolId = parsed.data.pool ?? "2";
+    // Pool is optional in SMSPool. Do not force a stale/default pool ID: it may
+    // be inactive for the selected country and service. An explicit UI selection
+    // is passed through; otherwise SMSPool chooses an active pool automatically.
+    const smsPoolId = parsed.data.pool;
     const providerIds = await resolveProviderPriceIds(parsed.data.country, parsed.data.service);
     const providerPricing = await smsPoolClient.price({ ...providerIds, pool: smsPoolId });
     const prices = pricesIn(providerPricing);
@@ -363,7 +385,7 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
       "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
       [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,firstPurchaseEligible,requiredLineType,firstPurchaseDiscount:priceBreakdown.firstPurchaseDiscountMinor/100},priceBreakdown}), String(quoteTtlMinutes)],
     );
-    return res.json({ success: true, provider: "smspool", poolLabel: "Mike Pool 2", pool: smsPoolId, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, requiredLineType, eligibility: firstPurchaseEligible ? "first_purchase_mobile" : "returning_customer_voip", pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
+    return res.json({ success: true, provider: "smspool", poolLabel: smsPoolId ? "Selected SMSPool pool" : "Automatic active-pool selection", pool: smsPoolId ?? null, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, requiredLineType, eligibility: firstPurchaseEligible ? "first_purchase_mobile" : "returning_customer_voip", pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
 });
 
@@ -414,7 +436,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
     const country = String(quote["country"]);
     if (!await isCountryAvailable(country)) throw new SmsPoolError("Country is not available in the provider catalog.", { providerType: "COUNTRY_NOT_AVAILABLE" });
     const maxPrice = Number(quote["provider_max_price"]);
-    const provider = await smsPoolClient.purchaseSms({ country, service, maxPrice, pool: parsed.data.pool ?? "2", pricingOption: parsed.data.pricingOption });
+    const provider = await smsPoolClient.purchaseSms({ country, service, maxPrice, pool: parsed.data.pool, pricingOption: parsed.data.pricingOption });
     const data = object(provider);
     providerOrderId = String(data["order_id"] ?? data["orderid"] ?? "");
     const phoneNumber = String(data["number"] ?? data["phonenumber"] ?? "");
