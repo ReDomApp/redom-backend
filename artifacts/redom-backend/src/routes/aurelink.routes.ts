@@ -416,7 +416,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
       await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
       throw new SmsPoolError("Carrier verification failed. The number was not accepted and cancellation was requested.", { providerType: "CARRIER_LOOKUP_FAILED" });
     }
-    const lineAssessment=veriphoneLineAssessment(lookup as Record<string,unknown>);
+    const lineAssessment=veriphoneLineAssessment(lookup as unknown as {status?:string;phone_valid?:boolean;phone_type?:string;carrier?:string;current_carrier?:string});
     const assessment={result:lineAssessment.accepted?"mobile":String(lineAssessment.lineType).includes("voip")?"voip":"unknown",carrier:lineAssessment.carrier,lineType:lineAssessment.lineType};
     if (assessment.result !== "mobile") {
       await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
@@ -433,7 +433,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
   } catch (error) {
     if (providerOrderId) await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
     if(parsed.data.paymentReference)await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2",[parsed.data.paymentReference,req.user.userId]).catch(()=>undefined);else{const refundClient=await pool.connect();try{await refundClient.query("BEGIN");await walletCredit(refundClient,{userId:req.user.userId,amountMinor:String(quote?.["retail_amount_minor"]??0),reference:"refund:purchase:"+parsed.data.quoteId,type:"refund",description:"Automatic refund: provider purchase or mobile verification failed",metadata:{quoteId:parsed.data.quoteId}});await refundClient.query("COMMIT");}catch(e){await refundClient.query("ROLLBACK").catch(()=>undefined);logger.error({errorType:e instanceof Error?e.name:typeof e},"AURELINK wallet purchase refund failed");}finally{refundClient.release();}}
-    await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND user_id=$2", [parsed.data.quoteId, req.user.userId]).catch(() => undefined);
+    await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND aurelink_user_id=$2", [parsed.data.quoteId, req.user.userId]).catch(() => undefined);
     return providerFailure(res, error);
   }
 });
@@ -485,7 +485,7 @@ router.get("/aurelink/orders", aurelinkAuthMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try {
     const result = await pool.query(
-      "SELECT id,aurelink_order_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 100",
+      "SELECT id,aurelink_order_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,refund_reference,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 100",
       [req.user.userId],
     );
     return res.json({ success: true, orders: result.rows });
