@@ -132,6 +132,21 @@ function filterVirtualInventory(value: unknown): unknown {
   }
   return filtered;
 }
+async function resolveProviderPriceIds(country: string, service: string): Promise<{ country: string; service: string }> {
+  const [countryCatalog, serviceCatalog] = await Promise.all([smsPoolClient.countries(), smsPoolClient.services()]);
+  const normalizedCountry = country.trim().toLowerCase();
+  const normalizedService = service.trim().toLowerCase();
+  const countryMatch = countryEntries(countryCatalog).find((entry) =>
+    entry.id === normalizedCountry || entry.code === normalizedCountry || entry.name === normalizedCountry
+  );
+  const serviceMatch = serviceEntries(serviceCatalog).find((entry) =>
+    entry.id === normalizedService || entry.name === normalizedService
+  );
+  if (!countryMatch) throw new SmsPoolError("SMSPool country was not found in its live catalog.", { providerType: "INVALID_COUNTRY" });
+  if (!serviceMatch) throw new SmsPoolError("SMSPool service was not found in its live catalog.", { providerType: "INVALID_SERVICE" });
+  // /request/price expects provider catalog IDs, not display names or ISO aliases.
+  return { country: countryMatch.id, service: serviceMatch.id };
+}
 async function isCountryAvailable(country: string): Promise<boolean> {
   try {
     const entries = countryEntries(await smsPoolClient.countries());
@@ -263,7 +278,8 @@ router.get("/aurelink/catalog/pricing", aurelinkAuthMiddleware, async (req, res)
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
   try {
-    const pricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
+    const providerIds = await resolveProviderPriceIds(parsed.data.country, parsed.data.service);
+    const pricing = await smsPoolClient.price({ ...providerIds, pool: parsed.data.pool });
     const prices = pricesIn(pricing);
     return res.json({ success: true, pricing, lowestDetectedPrice: prices.length ? Math.min(...prices) : null, currency: "USD" });
   } catch (error) { return providerFailure(res, error); }
@@ -332,7 +348,8 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
   if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
   try {
     const smsPoolId = parsed.data.pool ?? "2";
-    const providerPricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: smsPoolId });
+    const providerIds = await resolveProviderPriceIds(parsed.data.country, parsed.data.service);
+    const providerPricing = await smsPoolClient.price({ ...providerIds, pool: smsPoolId });
     const prices = pricesIn(providerPricing);
     if (!prices.length) return res.status(502).json({ success: false, message: "SMSPool returned pricing that could not be normalized. No quote was created." });
     const providerMaxPrice = Math.min(...prices);
