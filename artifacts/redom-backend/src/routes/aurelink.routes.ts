@@ -79,8 +79,9 @@ function pricesIn(value: unknown, output: number[] = []): number[] {
 function newAurelinkOrderId(): string { return String(randomInt(112, 115)) + String(randomInt(0, 100_000)).padStart(5, "0"); }
 
 function retailPriceMinor(providerPrice: number, firstPurchaseEligible = false): number {
-  const base = Math.ceil(providerPrice * USD_MINOR * 2) + 20;
-  return firstPurchaseEligible ? Math.ceil(base / 2) : base;
+  // Launch promotion: a $1.00 provider number is $1.50 for the first-ever successful OTP buyer.
+  // Standard pricing is 2x provider cost plus the $0.20 verification/checking fee.
+  return firstPurchaseEligible ? Math.ceil(providerPrice * USD_MINOR * 1.5) : Math.ceil(providerPrice * USD_MINOR * 2) + 20;
 }
 function rentalPriceForDays(value: unknown, days: number): number | null {
   if (typeof value === "string") {
