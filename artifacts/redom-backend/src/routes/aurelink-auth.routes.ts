@@ -388,19 +388,23 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
         const currentAsn=Number(currentNetwork.asn?.asn??currentNetwork.ASN??0);
         const originalAsn=Number(tokenContext.asn??0);
         const sameBrowser=hash(agent(req))===tokenContext.user_agent_hash;
-        const countryMismatch=Boolean(originalCountry&&currentCountry&&originalCountry!==currentCountry);
-        const asnMismatch=Boolean(originalAsn&&currentAsn&&originalAsn!==currentAsn);
-        const ipRangeMismatch=currentPrefix!==tokenContext.ip_prefix;
-        // Mobile carriers and residential ISPs routinely rotate public IPs within the same ASN.
-        // Treat the same country + ASN as the same network even if its public /24 or /64 changes.
-        // If ASN data is unavailable, fall back to the original IP range and provider.
-        const provider=String(currentNetwork.company?.name??currentNetwork.ISP??currentNetwork.organization??"").trim().toLowerCase();
-        const originalProvider=String(tokenContext.company_name??"").trim().toLowerCase();
-        const providerMismatch=Boolean(originalProvider&&provider&&originalProvider!==provider);
-        const networkMismatch=countryMismatch||asnMismatch||(!(originalAsn&&currentAsn)&&ipRangeMismatch&&providerMismatch);
-        const mismatch=!sameBrowser||networkMismatch;
+        const ipRangeMatch=currentPrefix===tokenContext.ip_prefix;
+        const asnMatch=Boolean(originalAsn&&currentAsn&&originalAsn===currentAsn);
+        const normalizeProvider=(value:unknown)=>{
+          let name=String(value??"").toLowerCase().replace(/\\b(nigeria|nigerian|ng|ghana|gh|kenya|ke|south africa|za)\\b/g," ").replace(/[^a-z0-9]+/g," ").trim();
+          return name.replace(/\\s+/g," ");
+        };
+        const provider=normalizeProvider(currentNetwork.company?.name??currentNetwork.ISP??currentNetwork.organization);
+        const originalProvider=normalizeProvider(tokenContext.company_name);
+        // Match recognizable carrier/provider names despite IPAPI country suffixes such as
+        // "MTN NG" versus "MTN Nigeria". Exact normalized identity is required.
+        const providerMatch=Boolean(provider&&originalProvider&&provider===originalProvider);
+        // Network identity uses OR semantics: any one reliable identifier is sufficient.
+        // Country/ASN/provider differences must not veto a positive match from another identifier.
+        const networkMatch=ipRangeMatch||asnMatch||providerMatch;
+        const mismatch=!sameBrowser||!networkMatch;
         if(mismatch) {
-          await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.context_mismatch',$2,$3,$4::jsonb)",[tokenContext.user_id,parsed.data.clientIp,agent(req),JSON.stringify({sameBrowser,countryMismatch,asnMismatch,ipRangeMismatch,providerMismatch,originalAsn:originalAsn||null,currentAsn:currentAsn||null,originalCountry:originalCountry||null,currentCountry:currentCountry||null})]).catch(()=>undefined);
+          await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.context_mismatch',$2,$3,$4::jsonb)",[tokenContext.user_id,parsed.data.clientIp,agent(req),JSON.stringify({sameBrowser,ipRangeMatch,asnMatch,providerMatch,originalProvider,currentProvider:provider,originalAsn:originalAsn||null,currentAsn:currentAsn||null,originalCountry:originalCountry||null,currentCountry:currentCountry||null})]).catch(()=>undefined);
           await client.query("ROLLBACK");
           return res.status(403).json({success:false,code:"AURELINK_RESET_CONTEXT_MISMATCH",message:"For your security, this reset link must be opened in the same browser and a matching network as the request. Reopen the email on the original device and network. If your connection changed, request a new link."});
         }
