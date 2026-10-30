@@ -70,6 +70,7 @@ router.post("/aurelink/auth/login",async(req,res)=>{
     if(user.account_status!=="active")return res.status(403).json({success:false,message:"This Aurelink account is not active."});
     await enforceAurelinkIpAllowlist(user.id,clientIp(req));
     const sec=await pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[user.id]);
+    if(sec.rows[0]?.two_factor_enabled && !sec.rows[0]?.totp_enabled) return res.status(423).json({success:false,code:"AURELINK_2FA_METHOD_UNAVAILABLE",message:"This account has a legacy two-factor method that cannot be verified in this sign-in flow. Contact Aurelink Support; password-only sign-in remains blocked."});
     if(sec.rows[0]?.two_factor_enabled && sec.rows[0]?.totp_enabled) {
       const challenge=await pool.query("INSERT INTO aurelink_totp_login_challenges(user_id,device_id,ip_address,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '5 minutes') RETURNING id,expires_at",[user.id,String(req.body?.deviceId??"").slice(0,255)||null,clientIp(req)]);
       await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,device_name,platform,browser) VALUES($1,'login_2fa_required',FALSE,$2,$3,$4,$5,$6)",[user.id,clientIp(req),agent(req),req.body?.deviceName??null,req.body?.platform??null,req.body?.browser??null]);
