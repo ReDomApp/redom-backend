@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { pool } from "../database/db";
-import { authMiddleware } from "../middleware/auth.middleware";
+import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { logger } from "../lib/logger";
 import { SmsPoolError, smsPoolClient, type SmsPoolPayload } from "../services/aurelink/smspool.client";
 import { createAurelinkStripeCheckout } from "../services/payments/stripe-payment.service";
@@ -73,10 +73,9 @@ function pricesIn(value: unknown, output: number[] = []): number[] {
   }
   return output;
 }
-function retailPriceMinor(providerPrice: number): number {
-  const markupPercent = Math.max(0, Number(process.env.AURELINK_MARKUP_PERCENT ?? "35"));
-  const fixedFeeMinor = Math.max(0, Math.round(Number(process.env.AURELINK_FIXED_FEE_USD_CENTS ?? "20")));
-  return Math.ceil(providerPrice * USD_MINOR * (1 + markupPercent / 100)) + fixedFeeMinor;
+function retailPriceMinor(providerPrice: number, firstPurchaseEligible = false): number {
+  const base = Math.ceil(providerPrice * USD_MINOR * 2) + 20;
+  return firstPurchaseEligible ? Math.ceil(base / 2) : base;
 }
 function rentalPriceForDays(value: unknown, days: number): number | null {
   if (typeof value === "string") {
@@ -204,13 +203,13 @@ function expiryDate(value: unknown, fallbackSeconds?: number): Date | null {
 
 async function ownedOrder(userId: string, orderId: string, kind?: string) {
   const result = await pool.query(
-    "SELECT * FROM aurelink_provider_orders WHERE user_id=$1 AND provider_order_id=$2 AND ($3::text IS NULL OR product_kind=$3) LIMIT 1",
+    "SELECT * FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND provider_order_id=$2 AND ($3::text IS NULL OR product_kind=$3) LIMIT 1",
     [userId, orderId, kind ?? null],
   );
   return result.rows[0] ?? null;
 }
 
-router.get("/aurelink/status", authMiddleware, (_req, res) => {
+router.get("/aurelink/status", aurelinkAuthMiddleware, (_req, res) => {
   return res.json({
     success: true,
     provider: "smspool",
@@ -222,25 +221,25 @@ router.get("/aurelink/status", authMiddleware, (_req, res) => {
   });
 });
 
-router.get("/aurelink/provider/balance", authMiddleware, async (req, res) => {
+router.get("/aurelink/provider/balance", aurelinkAuthMiddleware, async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Administrator access required." });
   try { return res.json({ success: true, balance: await smsPoolClient.balance() }); }
   catch (error) { return providerFailure(res, error); }
 });
 
-router.get("/aurelink/catalog/services", authMiddleware, async (_req, res) => {
+router.get("/aurelink/catalog/services", aurelinkAuthMiddleware, async (_req, res) => {
   try { return res.json({ success: true, services: await smsPoolClient.services() }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/countries", authMiddleware, async (_req, res) => {
+router.get("/aurelink/catalog/countries", aurelinkAuthMiddleware, async (_req, res) => {
   try { return res.json({ success: true, countries: filterVirtualInventory(await smsPoolClient.countries()) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/pools", authMiddleware, async (_req, res) => {
+router.get("/aurelink/catalog/pools", aurelinkAuthMiddleware, async (_req, res) => {
   try { return res.json({ success: true, pools: await smsPoolClient.pools() }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/pricing", authMiddleware, async (req, res) => {
+router.get("/aurelink/catalog/pricing", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
@@ -251,7 +250,7 @@ router.get("/aurelink/catalog/pricing", authMiddleware, async (req, res) => {
     return res.json({ success: true, pricing, lowestDetectedPrice: prices.length ? Math.min(...prices) : null, currency: "USD" });
   } catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/stock", authMiddleware, async (req, res) => {
+router.get("/aurelink/catalog/stock", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
@@ -259,14 +258,14 @@ router.get("/aurelink/catalog/stock", authMiddleware, async (req, res) => {
   try { return res.json({ success: true, stock: await smsPoolClient.stock(parsed.data) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/suggested-countries", authMiddleware, async (req, res) => {
+router.get("/aurelink/catalog/suggested-countries", aurelinkAuthMiddleware, async (req, res) => {
   const service = typeof req.query.service === "string" ? req.query.service : "";
   if (!service) return res.status(400).json({ success: false, message: "Service is required." });
   if (!await isServiceAllowed(service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   try { return res.json({ success: true, countries: await smsPoolClient.suggestedCountries(service) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/success-rate", authMiddleware, async (req, res) => {
+router.get("/aurelink/catalog/success-rate", aurelinkAuthMiddleware, async (req, res) => {
   const service = typeof req.query.service === "string" ? req.query.service : "";
   const country = typeof req.query.country === "string" ? req.query.country : undefined;
   if (!service) return res.status(400).json({ success: false, message: "Service is required." });
@@ -274,7 +273,7 @@ router.get("/aurelink/catalog/success-rate", authMiddleware, async (req, res) =>
   try { return res.json({ success: true, successRate: await smsPoolClient.successRate(service, country) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/valid-pools", authMiddleware, async (req, res) => {
+router.get("/aurelink/catalog/valid-pools", aurelinkAuthMiddleware, async (req, res) => {
   const service = typeof req.query.service === "string" ? req.query.service : "";
   const country = typeof req.query.country === "string" ? req.query.country : "";
   if (!service || !country) return res.status(400).json({ success: false, message: "Service and country are required." });
@@ -282,19 +281,19 @@ router.get("/aurelink/catalog/valid-pools", authMiddleware, async (req, res) => 
   try { return res.json({ success: true, pools: await smsPoolClient.validPools(service, country) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/rentals", authMiddleware, async (req, res) => {
+router.get("/aurelink/catalog/rentals", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ extendable: z.enum(["0", "1"]).default("1") }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid rental catalog request." });
   try { return res.json({ success: true, rentals: filterVirtualInventory(await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0)) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/rentals/:rentalId/services", authMiddleware, async (req, res) => {
+router.get("/aurelink/catalog/rentals/:rentalId/services", aurelinkAuthMiddleware, async (req, res) => {
   const id = z.string().regex(/^[0-9]+$/).safeParse(req.params.rentalId);
   if (!id.success) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try { return res.json({ success: true, services: await smsPoolClient.rentalServices(id.data) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/catalog/rentals/:rentalId/pricing", authMiddleware, async (req, res) => {
+router.get("/aurelink/catalog/rentals/:rentalId/pricing", aurelinkAuthMiddleware, async (req, res) => {
   const id = z.string().regex(/^[0-9]+$/).safeParse(req.params.rentalId);
   const service = typeof req.query.service === "string" ? req.query.service : undefined;
   if (!id.success) return res.status(400).json({ success: false, message: "Invalid rental ID." });
@@ -303,7 +302,7 @@ router.get("/aurelink/catalog/rentals/:rentalId/pricing", authMiddleware, async 
   catch (error) { return providerFailure(res, error); }
 });
 
-router.post("/aurelink/quotes", authMiddleware, async (req, res) => {
+router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({
     kind: z.literal("activation"),
     country: z.string().min(1).max(8),
@@ -318,16 +317,18 @@ router.post("/aurelink/quotes", authMiddleware, async (req, res) => {
     const prices = pricesIn(providerPricing);
     if (!prices.length) return res.status(502).json({ success: false, message: "SMSPool returned pricing that could not be normalized. No quote was created." });
     const providerMaxPrice = Math.min(...prices);
-    const retailAmountMinor = retailPriceMinor(providerMaxPrice);
+    const priorOtp = await pool.query("SELECT 1 FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND product_kind='activation' AND sms_received_at IS NOT NULL LIMIT 1", [req.user.userId]);
+    const firstPurchaseEligible = priorOtp.rowCount === 0;
+    const retailAmountMinor = retailPriceMinor(providerMaxPrice, firstPurchaseEligible);
     const result = await pool.query(
-      "INSERT INTO aurelink_quotes (user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
-      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify(providerPricing), String(quoteTtlMinutes)],
+      "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
+      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,fixedFeeUsd:0.20,firstPurchaseDiscount:firstPurchaseEligible?0.5:0}}), String(quoteTtlMinutes)],
     );
     return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
 });
 
-router.post("/aurelink/checkout", authMiddleware, async (req, res) => {
+router.post("/aurelink/checkout", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ quoteId: z.string().uuid() }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "A valid AURELINK quote is required." });
   try {
@@ -339,7 +340,7 @@ router.post("/aurelink/checkout", authMiddleware, async (req, res) => {
   }
 });
 
-router.post("/aurelink/activations", authMiddleware, async (req, res) => {
+router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ quoteId: z.string().uuid(), paymentReference: z.string().min(8).max(100), pool: z.string().max(32).optional(), pricingOption: z.union([z.literal(0), z.literal(1)]).optional() }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Valid quote and payment reference are required." });
   const client = await pool.connect();
@@ -347,7 +348,7 @@ router.post("/aurelink/activations", authMiddleware, async (req, res) => {
   try {
     await client.query("BEGIN");
     const quoteResult = await client.query(
-      "SELECT * FROM aurelink_quotes WHERE id=$1 AND user_id=$2 AND product_kind='activation' AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",
+      "SELECT * FROM aurelink_quotes WHERE id=$1 AND aurelink_user_id=$2 AND product_kind='activation' AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",
       [parsed.data.quoteId, req.user.userId],
     );
     quote = quoteResult.rows[0] as Record<string, unknown> | undefined;
@@ -412,7 +413,7 @@ router.post("/aurelink/activations", authMiddleware, async (req, res) => {
   }
 });
 
-router.get("/aurelink/activations/:orderId/messages", authMiddleware, async (req, res) => {
+router.get("/aurelink/activations/:orderId/messages", aurelinkAuthMiddleware, async (req, res) => {
   const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
   if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
   try {
@@ -429,7 +430,7 @@ router.get("/aurelink/activations/:orderId/messages", authMiddleware, async (req
     return res.json({ success: true, message: { status: message["status"], sms: message["sms"] ?? null, fullSms: message["full_sms"] ?? null, smsReceivedAt: arrived ? (order["sms_received_at"] ?? new Date().toISOString()) : null, expiresAt: expiry?.toISOString() ?? order["expires_at"] ?? null, timeLeft: message["time_left"] ?? null } });
   } catch (error) { return providerFailure(res, error); }
 });
-router.post("/aurelink/activations/:orderId/resend", authMiddleware, async (req, res) => {
+router.post("/aurelink/activations/:orderId/resend", aurelinkAuthMiddleware, async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Resend is administrator-only until provider resend fees are billed to customers." });
   const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
   if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
@@ -438,7 +439,7 @@ router.post("/aurelink/activations/:orderId/resend", authMiddleware, async (req,
     return res.json({ success: true, resend: await smsPoolClient.resendSms(orderId.data) });
   } catch (error) { return providerFailure(res, error); }
 });
-router.post("/aurelink/activations/:orderId/cancel", authMiddleware, async (req, res) => {
+router.post("/aurelink/activations/:orderId/cancel", aurelinkAuthMiddleware, async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Cancellation is administrator-only until customer refunds are integrated." });
   const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
   if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
@@ -450,18 +451,18 @@ router.post("/aurelink/activations/:orderId/cancel", authMiddleware, async (req,
     return res.json({ success: true, cancellation: result });
   } catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/orders", authMiddleware, async (req, res) => {
+router.get("/aurelink/orders", aurelinkAuthMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try {
     const result = await pool.query(
-      "SELECT id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,created_at,updated_at FROM aurelink_provider_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",
+      "SELECT id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 100",
       [req.user.userId],
     );
     return res.json({ success: true, orders: result.rows });
   } catch (error) { return providerFailure(res, error); }
 });
 
-router.post("/aurelink/rental-quotes", authMiddleware, async (req, res) => {
+router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({
     rentalId: z.number().int().min(0),
     days: z.number().int().min(1).max(365),
@@ -487,7 +488,7 @@ router.post("/aurelink/rental-quotes", authMiddleware, async (req, res) => {
   } catch (error) { return providerFailure(res, error); }
 });
 
-router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
+router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ quoteId: z.string().uuid(), paymentReference: z.string().min(8).max(100) }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "A valid rental quote and payment reference are required." });
   const client = await pool.connect();
@@ -568,7 +569,7 @@ router.post("/aurelink/rentals", authMiddleware, async (req, res) => {
     return providerFailure(res, error);
   }
 });
-router.get("/aurelink/rentals/:rentalId/messages", authMiddleware, async (req, res) => {
+router.get("/aurelink/rentals/:rentalId/messages", aurelinkAuthMiddleware, async (req, res) => {
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try {
@@ -584,7 +585,7 @@ router.get("/aurelink/rentals/:rentalId/messages", authMiddleware, async (req, r
     return res.json({ success: true, messages, smsReceivedAt: hasMessage ? (order["sms_received_at"] ?? new Date().toISOString()) : null, expiresAt: expiry?.toISOString() ?? order["expires_at"] ?? null });
   } catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/rentals/:rentalId/status", authMiddleware, async (req, res) => {
+router.get("/aurelink/rentals/:rentalId/status", aurelinkAuthMiddleware, async (req, res) => {
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try {
@@ -602,7 +603,7 @@ router.get("/aurelink/rentals/:rentalId/status", authMiddleware, async (req, res
     return res.json({ success: true, status, expiresAt: expiry?.toISOString() ?? order["expires_at"] ?? null });
   } catch (error) { return providerFailure(res, error); }
 });
-router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res) => {
+router.post("/aurelink/rentals/:rentalId/renew", aurelinkAuthMiddleware, async (req, res) => {
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   const parsed = z.object({ days: z.number().int().min(1).max(365), paymentReference: z.string().min(8).max(100) }).safeParse(req.body);
   if (!rentalId.success || !parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental renewal request." });
@@ -640,7 +641,7 @@ router.post("/aurelink/rentals/:rentalId/renew", authMiddleware, async (req, res
     return providerFailure(res, error);
   }
 });
-router.post("/aurelink/rentals/:rentalId/cancel", authMiddleware, async (req, res) => {
+router.post("/aurelink/rentals/:rentalId/cancel", aurelinkAuthMiddleware, async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Cancellation is administrator-only until customer refunds are integrated." });
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
@@ -653,7 +654,7 @@ router.post("/aurelink/rentals/:rentalId/cancel", authMiddleware, async (req, re
   } catch (error) { return providerFailure(res, error); }
 });
 
-router.post("/aurelink/carrier-lookup", authMiddleware, async (req, res) => {
+router.post("/aurelink/carrier-lookup", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ phoneNumber: z.string().min(5).max(32).regex(/^\+?[0-9 ()-]+$/) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ success: false, message: "A valid phone number is required." });
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Carrier lookups require billing integration or administrator access." });
@@ -661,30 +662,30 @@ router.post("/aurelink/carrier-lookup", authMiddleware, async (req, res) => {
   catch (error) { return providerFailure(res, error); }
 });
 
-router.get("/aurelink/esim/plans", authMiddleware, async (req, res) => {
+router.get("/aurelink/esim/plans", aurelinkAuthMiddleware, async (req, res) => {
   const country = typeof req.query.country === "string" ? req.query.country : "";
   if (!country) return res.status(400).json({ success: false, message: "Country is required for eSIM plans." });
   try { return res.json({ success: true, plans: await smsPoolClient.esimPlans(country) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/esim/pricing", authMiddleware, async (_req, res) => {
+router.get("/aurelink/esim/pricing", aurelinkAuthMiddleware, async (_req, res) => {
   try { return res.json({ success: true, pricing: await smsPoolClient.esimPricing() }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/esim/profile", authMiddleware, async (req, res) => {
+router.get("/aurelink/esim/profile", aurelinkAuthMiddleware, async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Administrator access required until AURELINK eSIM ownership is implemented." });
   const transactionId = typeof req.query.transactionId === "string" ? req.query.transactionId : undefined;
   try { return res.json({ success: true, profile: await smsPoolClient.esimProfile(transactionId) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.get("/aurelink/esim/topup-plans", authMiddleware, async (req, res) => {
+router.get("/aurelink/esim/topup-plans", aurelinkAuthMiddleware, async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Administrator access required until AURELINK eSIM ownership is implemented." });
   const transactionId = typeof req.query.transactionId === "string" ? req.query.transactionId : "";
   if (!transactionId) return res.status(400).json({ success: false, message: "Transaction ID is required." });
   try { return res.json({ success: true, plans: await smsPoolClient.esimTopupPlans(transactionId) }); }
   catch (error) { return providerFailure(res, error); }
 });
-router.post("/aurelink/esim/purchase", authMiddleware, async (_req, res) => {
+router.post("/aurelink/esim/purchase", aurelinkAuthMiddleware, async (_req, res) => {
   return res.status(501).json({ success: false, message: "eSIM purchases are disabled until payment reconciliation is implemented. SMSPool eSIMs are data-only and do not include a phone number." });
 });
 
