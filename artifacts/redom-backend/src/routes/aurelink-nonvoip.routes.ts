@@ -130,7 +130,7 @@ router.get("/aurelink/nonvoip/short-term/products",async(req,res)=>{
    rows.push(...batch);
    if(batch.length<50)break;
   }
-  const products=rows.map(shortTermFields).filter(x=>x.serviceId&&x.offerId&&x.countryCode.toUpperCase()===country&&x.providerPrice>0&&x.available);
+  const products=rows.map(shortTermFields).filter(x=>x.serviceId&&x.offerId&&x.countryCode.toUpperCase()===country&&x.providerPrice>0&&x.available&&!/bank|crypto|exchange|government|telecom|carrier/i.test(x.service));
   return res.json({success:true,products:products.map(x=>({...x,provider:"nonvoip",poolLabel:"Lisa Pool 1",retailPriceUsd:(x.retailMinor/100).toFixed(2)})),country,availableCount:products.length});
  }catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip Short-term catalog unavailable."});}
 });
@@ -151,6 +151,7 @@ router.post("/aurelink/nonvoip/short-term/quote",async(req,res)=>{
   }
   if(!offer)return res.status(409).json({success:false,message:"This NonVoip Short-term offer is unavailable. Refresh the catalog."});
   const fields=shortTermFields(offer);
+  if(/bank|crypto|exchange|government|telecom|carrier/i.test(fields.service))return res.status(403).json({success:false,message:"This service is not enabled for Aurelink."});
   const priorOtp=await pool.query("SELECT 1 FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND product_kind='activation' AND sms_received_at IS NOT NULL LIMIT 1",[userId]);
   const firstPurchaseEligible=priorOtp.rowCount===0;
   const requiredLineType=firstPurchaseEligible?"mobile":"voip";
