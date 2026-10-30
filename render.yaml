@@ -15,7 +15,7 @@ services:
 
   - type: web
     runtime: static
-    name: aurelink-react
+    name: aurelink-react-app
     buildCommand: pnpm install --no-frozen-lockfile && pnpm --filter @workspace/aurelink-react run typecheck && pnpm --filter @workspace/aurelink-react run build
     staticPublishPath: artifacts/aurelink-react/dist
     pullRequestPreviewsEnabled: false
