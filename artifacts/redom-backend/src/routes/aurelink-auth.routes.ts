@@ -463,7 +463,27 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
 });
 
 const escapeHtml=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
-function newAccountId(){const prefixes=[{p:"100",n:9},{p:"221",n:9},{p:"111",n:9},{p:"152",n:7}];const choice=prefixes[randomInt(prefixes.length)];let digits="";for(let i=0;i<choice.n;i++)digits+=String(randomInt(10));return choice.p+digits;}
+/**
+ * Account ID prefixes are registry-managed. Retiring a prefix means setting
+ * status='archived'; never delete its registry row or rewrite IDs already issued.
+ * Archived prefixes remain recognized because existing account IDs are stored
+ * unchanged in aurelink_users.account_id.
+ */
+async function ensureAurelinkAccountRangeSchema(client:any){
+  await client.query("CREATE TABLE IF NOT EXISTS aurelink_account_id_ranges (prefix VARCHAR(3) PRIMARY KEY, suffix_digits SMALLINT NOT NULL CHECK (suffix_digits BETWEEN 1 AND 12), status VARCHAR(16) NOT NULL CHECK (status IN ('active','archived')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), archived_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await client.query("INSERT INTO aurelink_account_id_ranges(prefix,suffix_digits,status) VALUES ('100',9,'active'),('221',9,'active'),('111',9,'active'),('152',7,'active'),('660',9,'archived'),('234',7,'archived') ON CONFLICT(prefix) DO NOTHING");
+  await client.query("CREATE INDEX IF NOT EXISTS aurelink_account_id_ranges_active_idx ON aurelink_account_id_ranges(status) WHERE status='active'");
+}
+async function newAccountId(client:any){
+  await ensureAurelinkAccountRangeSchema(client);
+  const result=await client.query("SELECT prefix,suffix_digits FROM aurelink_account_id_ranges WHERE status='active' ORDER BY prefix");
+  const ranges=result.rows as Array<{prefix:string;suffix_digits:number}>;
+  if(!ranges.length) throw new Error("No active Aurelink account ID ranges are configured.");
+  const choice=ranges[randomInt(ranges.length)];
+  let digits="";
+  for(let i=0;i<Number(choice.suffix_digits);i++)digits+=String(randomInt(10));
+  return String(choice.prefix)+digits;
+}
 function aurelinkAppBase(){return "https://aurelink-react.onrender.com";}
 function aurelinkSender(){return process.env.AURELINK_EMAIL_FROM??"Aurelink <noreply@wnncompany.com>";}
 router.post("/aurelink/auth/signup/email/request",async(req,res)=>{
@@ -570,7 +590,7 @@ router.post("/aurelink/auth/signup/complete",async(req,res)=>{
       let accountId="";
       let created:any;
       for(let attempt=0;attempt<12;attempt++){
-        accountId=newAccountId();
+        accountId=await newAccountId(client);
         try{created=await client.query("INSERT INTO aurelink_users(account_id,first_name,last_name,email,password_hash,email_verified,account_status) VALUES($1,$2,$3,$4,$5,TRUE,'active') RETURNING id,account_id,email,first_name,last_name,email_verified,account_status,created_at",[accountId,firstName,lastName,email,passwordHash]);break;}
         catch(err){if(!(err instanceof Error)||!err.message.includes("duplicate key")||attempt===11)throw err;}
       }
