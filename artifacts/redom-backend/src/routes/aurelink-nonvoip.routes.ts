@@ -39,7 +39,7 @@ function dedicatedFields(row:Record<string,unknown>){
  const lineType=text(row.line_type??row.number_type??row.type??row.category).toLowerCase();
  return {serviceId,offerId,providerPrice:price,countryCode,countryName,dialCode,lineType,available:row.available!==false&&row.in_stock!==false&&Number(row.stock??row.available_count??1)>0};
 }
-function dedicatedRetailMinor(price:number,lineType:"mobile"|"voip"){return Math.ceil(price*(lineType==="mobile"?2:0.5)*100);}
+function dedicatedRetailMinor(price:number,lineType:"mobile"|"voip"){return Math.ceil(price*(lineType==="mobile"?2:0.5)*100)+(lineType==="mobile"?100:0);}
 router.get("/aurelink/dedicated/countries",async(_req,res)=>{
  try{const d=await nonVoipClient.products("dedicated",undefined,1,100);const map=new Map<string,{code:string;name:string;dialCode:string}>();for(const row of nvRows(d)){const x=dedicatedFields(row);if(x.countryCode)map.set(x.countryCode,{code:x.countryCode,name:x.countryName||x.countryCode,dialCode:x.dialCode});}return res.json({success:true,countries:[...map.values()]});}
  catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:"Aurelink could not load dedicated-number countries."});}
