@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
+import { randomInt } from "node:crypto";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { logger } from "../lib/logger";
@@ -73,6 +74,8 @@ function pricesIn(value: unknown, output: number[] = []): number[] {
   }
   return output;
 }
+function newAurelinkOrderId(): string { return String(randomInt(112, 115)) + String(randomInt(0, 100_000)).padStart(5, "0"); }
+
 function retailPriceMinor(providerPrice: number, firstPurchaseEligible = false): number {
   const base = Math.ceil(providerPrice * USD_MINOR * 2) + 20;
   return firstPurchaseEligible ? Math.ceil(base / 2) : base;
@@ -400,11 +403,12 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
       throw new SmsPoolError(reason, { providerType: assessment.result === "voip" ? "VOIP_NUMBER_REJECTED" : "CARRIER_TYPE_UNVERIFIED" });
     }
     const expiry = expiryDate(data);
+    const aurelinkOrderId = newAurelinkOrderId();
     await pool.query(
-      "INSERT INTO aurelink_provider_orders (user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,'activation',$3,$4,$5,$6,'pending',$7,$8,$9,'verified',NOW(),$10,$11::jsonb)",
-      [req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, assessment.carrier, assessment.lineType ?? "mobile", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } })],
+      "INSERT INTO aurelink_provider_orders (aurelink_order_id,user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,$3,'activation',$4,$5,$6,$7,'pending',$8,$9,$10,'verified',NOW(),$11,$12::jsonb)",
+      [aurelinkOrderId, req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, assessment.carrier, assessment.lineType ?? "mobile", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } })],
     );
-    return res.status(201).json({ success: true, order: { orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
+    return res.status(201).json({ success: true, order: { aurelinkOrderId, orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
   } catch (error) {
     if (providerOrderId) await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
     await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
@@ -455,7 +459,7 @@ router.get("/aurelink/orders", aurelinkAuthMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try {
     const result = await pool.query(
-      "SELECT id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 100",
+      "SELECT id,aurelink_order_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 100",
       [req.user.userId],
     );
     return res.json({ success: true, orders: result.rows });
