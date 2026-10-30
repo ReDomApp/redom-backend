@@ -377,7 +377,7 @@ router.get("/aurelink/catalog/stock", aurelinkAuthMiddleware, async (req, res) =
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not currently available for the selected service." });
+  if (!await isCountryAvailable(parsed.data.country, parsed.data.service)) return res.status(403).json({ success: false, message: "This country is not currently available for the selected service." });
   try { return res.json({ success: true, stock: await smsPoolClient.stock(parsed.data) }); }
   catch (error) { return providerFailure(res, error); }
 });
@@ -438,7 +438,7 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid quote request." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not currently available for the selected service." });
+  if (!await isCountryAvailable(parsed.data.country, parsed.data.service)) return res.status(403).json({ success: false, message: "This country is not currently available for the selected service." });
   try {
     // Pool is optional in SMSPool. Do not force a stale/default pool ID: it may
     // be inactive for the selected country and service. An explicit UI selection
