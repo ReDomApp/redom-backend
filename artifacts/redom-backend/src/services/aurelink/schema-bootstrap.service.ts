@@ -4,7 +4,8 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aurelink_quotes (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      aurelink_user_id UUID,
       product_kind VARCHAR(20) NOT NULL CHECK (product_kind IN ('activation','rental','esim')),
       country VARCHAR(8) NOT NULL,
       service VARCHAR(100),
@@ -27,7 +28,9 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
 
     CREATE TABLE IF NOT EXISTS aurelink_provider_orders (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      aurelink_user_id UUID,
+      aurelink_order_id VARCHAR(8),
       quote_id UUID REFERENCES aurelink_quotes(id),
       product_kind VARCHAR(20) NOT NULL CHECK (product_kind IN ('activation','rental','esim','carrier_lookup')),
       provider VARCHAR(30) NOT NULL DEFAULT 'smspool',
@@ -52,6 +55,13 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
       UNIQUE(provider, provider_order_id)
     );
     ALTER TABLE aurelink_provider_orders ALTER COLUMN user_id DROP NOT NULL;
+    ALTER TABLE aurelink_quotes ALTER COLUMN user_id DROP NOT NULL;
+    ALTER TABLE aurelink_quotes ADD COLUMN IF NOT EXISTS aurelink_user_id UUID;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS aurelink_user_id UUID;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS aurelink_order_id VARCHAR(8);
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_orders_display_id_unique ON aurelink_provider_orders(aurelink_order_id) WHERE aurelink_order_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS aurelink_quotes_aurelink_user_idx ON aurelink_quotes(aurelink_user_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS aurelink_orders_aurelink_user_idx ON aurelink_provider_orders(aurelink_user_id,created_at DESC);
     ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS admin_account_id UUID REFERENCES aurelink_admin_identity(id) ON DELETE CASCADE;
     CREATE INDEX IF NOT EXISTS aurelink_orders_admin_created_idx ON aurelink_provider_orders(admin_account_id, created_at DESC);
     -- Additive migration for databases that already created the initial AURELINK schema.
