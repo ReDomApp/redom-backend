@@ -190,7 +190,6 @@ router.post("/aurelink/nonvoip/short-term/orders",async(req,res)=>{
   return res.status(e instanceof NonVoipError?e.status:500).json({success:false,message:e instanceof Error?e.message:"Unable to reserve the quote."});
  }finally{client.release();}
  const pricing=nvRecord(quote?.provider_pricing);
- const offer=nvRecord(pricing.offer);
  const serviceId=text(pricing.serviceId);
  const offerId=text(pricing.offerId);
  const providerPrice=Number(quote?.provider_max_price);
