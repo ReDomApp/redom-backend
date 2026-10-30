@@ -393,7 +393,7 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
       }
       const reset=result.rows[0];
       if(!reset){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Reset link is invalid or expired."});}
-      const current=await client.query("SELECT password_hash FROM aurelink_users WHERE id=$1 FOR UPDATE",[reset.user_id]);
+      const current=await client.query("SELECT password_hash,email,first_name,last_name,account_id FROM aurelink_users WHERE id=$1 FOR UPDATE",[reset.user_id]);
       if(!current.rows[0]){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"This account could not be found. Request a new reset link."});}
       if(await verifyPassword(parsed.data.password,String(current.rows[0].password_hash))){await client.query("ROLLBACK");return res.status(400).json({success:false,code:"AURELINK_PASSWORD_UNCHANGED",message:"Your new password must be different from your current password."});}
       const passwordHash=await hashPassword(parsed.data.password);
@@ -401,9 +401,37 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
       await client.query("UPDATE aurelink_password_resets SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
       await client.query("UPDATE aurelink_reset_token_context SET consumed_at=NOW() WHERE user_id=$1 AND consumed_at IS NULL",[reset.user_id]);
       await client.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL",[reset.user_id]);
-      await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.password_reset',$2,$3)",[reset.user_id,ip(req),agent(req)]);
+      await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset',$2,$3,$4::jsonb)",[reset.user_id,ip(req),agent(req),JSON.stringify({timezoneSource:"ip_geolocation",notification:"password_change_confirmation"})]);
       await client.query("COMMIT");
-      return res.json({success:true,message:"Password reset. Please sign in again."});
+
+      // Send a security confirmation only after the password update has committed.
+      // Resolve the display timezone from the actual client IP, not the server or UTC.
+      try {
+        const changedIp=parsed.data.clientIp;
+        let network:Awaited<ReturnType<typeof checkIP>>|null=null;
+        try { network=await checkIP(changedIp); } catch { network=null; }
+        const timezone=String(network?.location?.timezone||"UTC");
+        const changedAt=new Date();
+        let localTime:string;
+        try {
+          localTime=new Intl.DateTimeFormat("en-US",{timeZone:timezone,hour:"2-digit",minute:"2-digit",hour12:true,day:"2-digit",month:"long",year:"numeric"}).format(changedAt);
+        } catch {
+          localTime=new Intl.DateTimeFormat("en-US",{timeZone:"UTC",hour:"2-digit",minute:"2-digit",hour12:true,day:"2-digit",month:"long",year:"numeric"}).format(changedAt)+" (UTC; IP timezone unavailable)";
+        }
+        const displayLocation=[network?.location?.city,network?.location?.state,network?.location?.country].filter(Boolean).map(String).join(", ")||"Unavailable";
+        const firstName=escapeHtml(String(current.rows[0].first_name||"there"));
+        const accountId=escapeHtml(String(current.rows[0].account_id||"Unavailable"));
+        const safeIp=escapeHtml(changedIp);
+        const safeLocation=escapeHtml(displayLocation);
+        const loginLink=aurelinkAppBase()+"/?screen=login";
+        const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:24px 12px;background:#f2f5f9;font-family:Arial,Helvetica,sans-serif;color:#17263b"><div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #e1e7ef;border-radius:12px;overflow:hidden"><div style="padding:26px 30px;background:#173b78;color:#fff"><div style="font-size:23px;font-weight:700;letter-spacing:3px">AURELINK</div><div style="margin-top:7px;font-size:13px;color:#dce9fa">Account Security Notification</div></div><div style="padding:30px"><p style="margin:0 0 18px">Hello ${firstName},</p><h1 style="margin:0 0 16px;font-size:23px;line-height:1.35;color:#173b78">Your password was successfully changed</h1><p style="line-height:1.65;margin:0 0 22px">This email confirms that the password for your Aurelink account was successfully changed. All existing sessions were signed out as a security precaution. Sign in again using your new password.</p><div style="padding:18px;background:#f5f8fc;border:1px solid #dce5ef;border-radius:8px"><div style="font-size:12px;font-weight:700;letter-spacing:.6px;color:#53657c;text-transform:uppercase;margin-bottom:12px">Password change details</div><p style="margin:7px 0"><strong>Account ID:</strong> ${accountId}</p><p style="margin:7px 0"><strong>IP address:</strong> ${safeIp}</p><p style="margin:7px 0"><strong>Approximate location:</strong> ${safeLocation}</p><p style="margin:7px 0"><strong>Time:</strong> On ${escapeHtml(localTime)} (${escapeHtml(timezone)})</p></div><div style="margin:24px 0;padding:17px;border-left:4px solid #c43b3b;background:#fff6f5"><p style="margin:0 0 8px;font-weight:700;color:#9f2525">Did you make this change?</p><p style="margin:0;line-height:1.6">If you did not change your password, your account may be at risk. Secure your account immediately and contact Aurelink Support. Do not ignore this notification.</p></div><h2 style="font-size:16px;color:#173b78;margin:24px 0 10px">Recommended security actions</h2><ul style="padding-left:20px;line-height:1.7;margin-top:8px"><li>Enable two-factor authentication (2FA) when available.</li><li>Whitelist only trusted IP ranges and block access from other ranges when IP access controls become available in your Aurelink dashboard.</li><li>Changing your account email will be available soon in the dashboard.</li><li>Use a unique password and never share it or your verification codes.</li></ul><p style="text-align:center;margin:28px 0"><a href="${loginLink}" style="display:inline-block;padding:14px 26px;background:#087be5;color:#fff;text-decoration:none;border-radius:6px;font-weight:700">Sign in to Aurelink</a></p><p style="font-size:12px;line-height:1.6;color:#66758a">For your protection, Aurelink Support will never ask you to email your password or one-time verification code. If this activity was not yours, contact Aurelink Support through the official Aurelink service.</p><p style="margin:24px 0 0;line-height:1.6">Regards,<br><strong>Aurelink Support</strong><br>Aurelink Account Security</p></div><div style="padding:16px 30px;background:#f7f9fc;border-top:1px solid #e7edf4;font-size:11px;color:#718096">This is an automated security notification about a change to your Aurelink account.</div></div></body></html>`;
+        const notification=await resend.emails.send({from:aurelinkSender(),to:String(current.rows[0].email),subject:"Your Aurelink password was changed",html});
+        if(notification.error) throw new Error(String(notification.error.message||"Email provider rejected notification"));
+        await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.notification_sent',$2,$3,$4::jsonb)",[reset.user_id,changedIp,agent(req),JSON.stringify({messageId:notification.data?.id??null,timezone,localTime})]);
+      } catch(notificationError) {
+        await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.notification_failed',$2,$3,$4::jsonb)",[reset.user_id,ip(req),agent(req),JSON.stringify({reason:String(notificationError instanceof Error?notificationError.message:"Notification delivery failed").slice(0,300)})]).catch(()=>undefined);
+      }
+      return res.json({success:true,message:"Your password was changed successfully. Please sign in again."});
     } catch(error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; }
     finally { client.release(); }
   }catch{return res.status(400).json({success:false,message:"Unable to reset password. The link may be invalid or expired."});}
