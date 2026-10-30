@@ -4,7 +4,8 @@ import { authMiddleware } from "../middleware/auth.middleware";
 import { pool } from "../database/db";
 import { initializeSubscriptionRenewal, verifyPayment, handlePaymentWebhook, verifyPaymentFromCallback, sendPaymentEmailForReference } from "../services/payments/payment.service";
 import { verifyStripePayment, verifyStripeStarsCheckout, handleStripeWebhook, stripeCallbackRedirect } from "../services/payments/stripe-payment.service";
-import { verifyStarsTrialSetup } from "../services/payments/stripe-stars-trial.service";\nimport { handleAurelinkRenewalWebhook, redirectRenewalTopup } from "../services/aurelink/aurelink-dedicated-renewal.service";
+import { verifyStarsTrialSetup } from "../services/payments/stripe-stars-trial.service";
+import { handleAurelinkRenewalWebhook, redirectRenewalTopup } from "../services/aurelink/aurelink-dedicated-renewal.service";
 
 const router = Router();
 
@@ -75,11 +76,18 @@ router.get("/callback", async (req, res) => {
   }
 });
 
-router.get("/aurelink/renewal/topup/:token", async (req,res) => {\n  const token=z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/).safeParse(req.params.token);\n  if(!token.success)return res.status(404).send("Renewal link is invalid or expired.");\n  try { const url=await redirectRenewalTopup(token.data); if(!url)return res.status(410).send("Renewal link has expired or was already used."); return res.redirect(303,url); } catch { return res.status(503).send("Renewal checkout is temporarily unavailable."); }\n});\n\nrouter.post("/webhook", async (req, res) => {
+router.get("/aurelink/renewal/topup/:token", async (req,res) => {
+  const token=z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/).safeParse(req.params.token);
+  if(!token.success)return res.status(404).send("Renewal link is invalid or expired.");
+  try { const url=await redirectRenewalTopup(token.data); if(!url)return res.status(410).send("Renewal link has expired or was already used."); return res.redirect(303,url); } catch { return res.status(503).send("Renewal checkout is temporarily unavailable."); }
+});
+
+router.post("/webhook", async (req, res) => {
   const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
   try {
     const payload = Buffer.isBuffer(req.body) ? JSON.parse(raw.toString("utf8")) : req.body;
-    const handled = await handleAurelinkRenewalWebhook(raw, req.header("x-paystack-signature") ?? undefined, payload);\n    if (!handled) await handlePaymentWebhook(raw, req.header("x-paystack-signature") ?? undefined, payload);
+    const handled = await handleAurelinkRenewalWebhook(raw, req.header("x-paystack-signature") ?? undefined, payload);
+    if (!handled) await handlePaymentWebhook(raw, req.header("x-paystack-signature") ?? undefined, payload);
     if (payload?.event === "charge.success" && payload?.data?.reference) await sendPaymentEmailForReference(String(payload.data.reference));
     return res.status(200).json({ received: true });
   } catch (error) {
