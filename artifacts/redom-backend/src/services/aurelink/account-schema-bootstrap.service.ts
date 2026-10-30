@@ -199,4 +199,14 @@ export async function ensureAurelinkAccountSchema(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS aurelink_signup_email_tokens_email_idx
       ON aurelink_signup_email_tokens(LOWER(email), created_at DESC);
   `);
+  await pool.query(`
+    ALTER TABLE aurelink_account_security ADD COLUMN IF NOT EXISTS two_factor_enabled_at TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS aurelink_name_change_codes (id UUID PRIMARY KEY DEFAULT gen_random_uuid(),user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,code_hash CHAR(64) NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,expires_at TIMESTAMPTZ NOT NULL,consumed_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE INDEX IF NOT EXISTS aurelink_name_codes_user_idx ON aurelink_name_change_codes(user_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS aurelink_profile_security (user_id UUID PRIMARY KEY REFERENCES aurelink_users(id) ON DELETE CASCADE,last_changed_at TIMESTAMPTZ);
+    CREATE TABLE IF NOT EXISTS aurelink_api_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid(),user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,label VARCHAR(60) NOT NULL,key_hash CHAR(64) NOT NULL UNIQUE,key_prefix VARCHAR(16) NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),last_used_at TIMESTAMPTZ,revoked_at TIMESTAMPTZ);
+    CREATE TABLE IF NOT EXISTS aurelink_totp_login_challenges (id UUID PRIMARY KEY DEFAULT gen_random_uuid(),user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,device_id VARCHAR(255),ip_address VARCHAR(45),expires_at TIMESTAMPTZ NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,consumed_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS aurelink_ip_allowlists (user_id UUID PRIMARY KEY REFERENCES aurelink_users(id) ON DELETE CASCADE,enabled BOOLEAN NOT NULL DEFAULT FALSE,entries JSONB NOT NULL DEFAULT '[]'::jsonb,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS aurelink_security_email_codes (id UUID PRIMARY KEY DEFAULT gen_random_uuid(),user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,purpose VARCHAR(50) NOT NULL,code_hash CHAR(64) NOT NULL,expires_at TIMESTAMPTZ NOT NULL,consumed_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+  `);
 }
