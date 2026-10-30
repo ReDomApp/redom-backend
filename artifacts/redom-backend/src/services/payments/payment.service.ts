@@ -155,7 +155,7 @@ async function ensurePlan(client: import("pg").PoolClient, planKey: string, name
   return { id: String(inserted.rows[0].id), code: plan.plan_code };
 }
 
-export async function initializeSubscriptionRenewal(userId: string, subscriptionId: string): Promise<{ authorizationUrl: string; reference: string }> {
+export async function initializeSubscriptionRenewal(userId: string, subscriptionId: string): Promise<{ checkoutUrl: string; reference: string }> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -184,7 +184,7 @@ export async function initializeSubscriptionRenewal(userId: string, subscription
     );
     await client.query("UPDATE verification_subscriptions SET payment_reference = $1, updated_at = now() WHERE id = $2", [checkout.reference, subscriptionId]);
     await client.query("COMMIT");
-    return { authorizationUrl: checkout.authorization_url, reference: checkout.reference };
+    return { checkoutUrl: checkout.authorization_url, reference: checkout.reference };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
