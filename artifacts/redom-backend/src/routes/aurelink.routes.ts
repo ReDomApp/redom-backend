@@ -359,7 +359,8 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
   if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
   try {
-    const providerPricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
+    const smsPoolId = parsed.data.pool ?? "2";
+    const providerPricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: smsPoolId });
     const prices = pricesIn(providerPricing);
     if (!prices.length) return res.status(502).json({ success: false, message: "SMSPool returned pricing that could not be normalized. No quote was created." });
     const providerMaxPrice = Math.min(...prices);
@@ -373,7 +374,7 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
       "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
       [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,firstPurchaseEligible,requiredLineType,firstPurchaseDiscount:priceBreakdown.firstPurchaseDiscountMinor/100},priceBreakdown}), String(quoteTtlMinutes)],
     );
-    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, requiredLineType, eligibility: firstPurchaseEligible ? "first_purchase_mobile" : "returning_customer_voip", pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
+    return res.json({ success: true, provider: "smspool", poolLabel: "Mike Pool 2", pool: smsPoolId, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, requiredLineType, eligibility: firstPurchaseEligible ? "first_purchase_mobile" : "returning_customer_voip", pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
 });
 
@@ -424,7 +425,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
     const country = String(quote["country"]);
     if (!await isCountryAvailable(country)) throw new SmsPoolError("Country is not available in the provider catalog.", { providerType: "COUNTRY_NOT_AVAILABLE" });
     const maxPrice = Number(quote["provider_max_price"]);
-    const provider = await smsPoolClient.purchaseSms({ country, service, maxPrice, pool: parsed.data.pool, pricingOption: parsed.data.pricingOption });
+    const provider = await smsPoolClient.purchaseSms({ country, service, maxPrice, pool: parsed.data.pool ?? "2", pricingOption: parsed.data.pricingOption });
     const data = object(provider);
     providerOrderId = String(data["order_id"] ?? data["orderid"] ?? "");
     const phoneNumber = String(data["number"] ?? data["phonenumber"] ?? "");
