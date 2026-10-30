@@ -79,10 +79,9 @@ function pricesIn(value: unknown, output: number[] = []): number[] {
 }
 function newAurelinkOrderId(): string { return String(randomInt(112, 115)) + String(randomInt(0, 100_000)).padStart(5, "0"); }
 
-function retailPriceMinor(providerPrice: number, firstPurchaseEligible = false): number {
-  // Launch promotion: a $1.00 provider number is $1.50 for the first-ever successful OTP buyer.
-  // Standard pricing is 2x provider cost plus the $0.20 verification/checking fee.
-  return firstPurchaseEligible ? Math.ceil(providerPrice * USD_MINOR * 1.5) : Math.ceil(providerPrice * USD_MINOR * 2) + 20;
+function retailPriceMinor(providerPrice: number): number {
+  // Short-term activation retail price is exactly 2x the provider cost.
+  return Math.ceil(providerPrice * USD_MINOR * 2);
 }
 function rentalPriceForDays(value: unknown, days: number): number | null {
   if (typeof value === "string") {
@@ -136,12 +135,11 @@ function filterVirtualInventory(value: unknown): unknown {
   }
   return filtered;
 }
-async function isCountryNonVoip(country: string): Promise<boolean> {
+async function isCountryAvailable(country: string): Promise<boolean> {
   try {
     const entries = countryEntries(await smsPoolClient.countries());
     const normalized = country.trim().toLowerCase();
-    const match = entries.find((entry) => entry.id === normalized || entry.code === normalized || entry.name === normalized);
-    return Boolean(match && !/virtual|voip/.test(match.name));
+    return entries.some((entry) => entry.id === normalized || entry.code === normalized || entry.name === normalized);
   } catch { return false; }
 }
 async function isRentalNonVoip(rentalId: number): Promise<boolean> {
@@ -256,7 +254,7 @@ router.get("/aurelink/catalog/services", aurelinkAuthMiddleware, async (_req, re
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/countries", aurelinkAuthMiddleware, async (_req, res) => {
-  try { return res.json({ success: true, countries: filterVirtualInventory(await smsPoolClient.countries()) }); }
+  try { return res.json({ success: true, countries: await smsPoolClient.countries() }); }
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/pools", aurelinkAuthMiddleware, async (_req, res) => {
@@ -267,7 +265,7 @@ router.get("/aurelink/catalog/pricing", aurelinkAuthMiddleware, async (req, res)
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isCountryNonVoip(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not confirmed as non-VoIP mobile inventory. Select a country from the filtered catalog." });
+  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
   try {
     const pricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
     const prices = pricesIn(pricing);
@@ -278,7 +276,7 @@ router.get("/aurelink/catalog/stock", aurelinkAuthMiddleware, async (req, res) =
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isCountryNonVoip(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not confirmed as non-VoIP mobile inventory." });
+  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
   try { return res.json({ success: true, stock: await smsPoolClient.stock(parsed.data) }); }
   catch (error) { return providerFailure(res, error); }
 });
@@ -308,7 +306,7 @@ router.get("/aurelink/catalog/valid-pools", aurelinkAuthMiddleware, async (req, 
 router.get("/aurelink/catalog/rentals", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ extendable: z.enum(["0", "1"]).default("1") }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid rental catalog request." });
-  try { return res.json({ success: true, rentals: filterVirtualInventory(await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0)) }); }
+  try { return res.json({ success: true, rentals: await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0) }); }
   catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/rentals/:rentalId/services", aurelinkAuthMiddleware, async (req, res) => {
@@ -335,7 +333,7 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid quote request." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isCountryNonVoip(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not confirmed as non-VoIP mobile inventory." });
+  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
   try {
     const providerPricing = await smsPoolClient.price({ country: parsed.data.country, service: parsed.data.service, pool: parsed.data.pool });
     const prices = pricesIn(providerPricing);
@@ -343,10 +341,11 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
     const providerMaxPrice = Math.min(...prices);
     const priorOtp = await pool.query("SELECT 1 FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND product_kind='activation' AND sms_received_at IS NOT NULL LIMIT 1", [req.user.userId]);
     const firstPurchaseEligible = priorOtp.rowCount === 0;
-    const retailAmountMinor = retailPriceMinor(providerMaxPrice, firstPurchaseEligible);
+    const requiredLineType = firstPurchaseEligible ? "mobile" : "voip";
+    const retailAmountMinor = retailPriceMinor(providerMaxPrice);
     const result = await pool.query(
       "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
-      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,fixedFeeUsd:0.20,firstPurchaseDiscount:firstPurchaseEligible?0.5:0}}), String(quoteTtlMinutes)],
+      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,firstPurchaseEligible,requiredLineType,firstPurchaseDiscount:0}}), String(quoteTtlMinutes)],
     );
     return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
@@ -397,7 +396,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
   try {
     const service = String(quote["service"]);
     const country = String(quote["country"]);
-    if (!await isCountryNonVoip(country)) throw new SmsPoolError("Country inventory is not confirmed as non-VoIP.", { providerType: "COUNTRY_NOT_VERIFIED" });
+    if (!await isCountryAvailable(country)) throw new SmsPoolError("Country is not available in the provider catalog.", { providerType: "COUNTRY_NOT_AVAILABLE" });
     const maxPrice = Number(quote["provider_max_price"]);
     const provider = await smsPoolClient.purchaseSms({ country, service, maxPrice, pool: parsed.data.pool, pricingOption: parsed.data.pricingOption });
     const data = object(provider);
@@ -417,17 +416,20 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
       throw new SmsPoolError("Carrier verification failed. The number was not accepted and cancellation was requested.", { providerType: "CARRIER_LOOKUP_FAILED" });
     }
     const lineAssessment=veriphoneLineAssessment(lookup as unknown as {status?:string;phone_valid?:boolean;phone_type?:string;carrier?:string;current_carrier?:string});
-    const assessment={result:lineAssessment.accepted?"mobile":String(lineAssessment.lineType).includes("voip")?"voip":"unknown",carrier:lineAssessment.carrier,lineType:lineAssessment.lineType};
-    if (assessment.result !== "mobile") {
-      await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
-      const reason = assessment.result === "voip" ? "SMSPool identified this number as VoIP. The number was rejected and cancellation was requested." : "SMSPool did not confirm this number as a mobile line. The number was not accepted and cancellation was requested.";
-      throw new SmsPoolError(reason, { providerType: assessment.result === "voip" ? "VOIP_NUMBER_REJECTED" : "CARRIER_TYPE_UNVERIFIED" });
+    const assessment={result:lineAssessment.lineType.includes("mobile")?"mobile":lineAssessment.lineType.includes("voip")?"voip":"unknown",carrier:lineAssessment.carrier,lineType:lineAssessment.lineType};
+    const pricingRule=(quote["provider_pricing"] as Record<string,unknown>)?.["pricingRule"] as Record<string,unknown>|undefined;
+    const requiredLineType=String(pricingRule?.["requiredLineType"]??"mobile");
+    if (!lineAssessment.valid || assessment.result !== requiredLineType) {
+      const cancelled=object(await smsPoolClient.cancelSms(providerOrderId).catch(() => ({})));
+      const cancelConfirmed=cancelled["success"]===true||cancelled["success"]===1||/^(success|cancelled|canceled|refunded)$/i.test(String(cancelled["status"]??cancelled["message"]??""));
+      if(!cancelConfirmed) logger.error({providerOrderId,requiredLineType,actualLineType:assessment.result},"AURELINK line-type mismatch; provider cancellation is unconfirmed");
+      throw new SmsPoolError(assessment.result==="unknown"?"Veriphone could not classify this number. It was not shown to the customer.":"This number does not match the line type required for this customer's short-term eligibility. It was not shown to the customer.", { providerType: assessment.result==="unknown"?"LINE_TYPE_UNKNOWN":"LINE_TYPE_MISMATCH" });
     }
     const expiry = expiryDate(data);
     const aurelinkOrderId = newAurelinkOrderId();
     await pool.query(
-      "INSERT INTO aurelink_provider_orders (aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,first_purchase_discount,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,$3,'activation',$4,$5,$6,$7,'pending',$8,$9,$10,$11,$12,$13,'verified',NOW(),$14,$15::jsonb)",
-      [aurelinkOrderId, req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, String(quote["retail_amount_minor"]), parsed.data.paymentReference ? null : "purchase:"+parsed.data.quoteId, Boolean((quote["provider_pricing"] as Record<string,unknown>)?.["pricingRule"] && ((quote["provider_pricing"] as Record<string,unknown>)["pricingRule"] as Record<string,unknown>)["firstPurchaseDiscount"]), assessment.carrier, assessment.lineType ?? "mobile", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } })],
+      "INSERT INTO aurelink_provider_orders (aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,first_purchase_discount,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,$3,'activation',$4,$5,$6,$7,'pending',$8,$9,$10,FALSE,$11,$12,'verified',NOW(),$13,$14::jsonb)",
+      [aurelinkOrderId, req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, String(quote["retail_amount_minor"]), parsed.data.paymentReference ? null : "purchase:"+parsed.data.quoteId, assessment.carrier, assessment.lineType ?? "unknown", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } })],
     );
     return res.status(201).json({ success: true, order: { aurelinkOrderId, orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
   } catch (error) {
