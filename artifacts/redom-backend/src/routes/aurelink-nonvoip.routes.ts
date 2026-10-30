@@ -130,14 +130,20 @@ router.post("/aurelink/nonvoip/orders/:id/cancel",async(req,res)=>{const userId=
 
 
 function dedicatedFields(row:Record<string,unknown>){
- const serviceId=text(row.service_id??row.serviceId??row.id??row.product_id);
- const offerId=text(row.offer_id??row.offerId??row.id??row.offer?.id);
- const price=providerPrice(row);
- const countryCode=text(row.country_code??row.countryCode??row.iso2??row.country);
- const countryName=text(row.country_name??row.countryName??row.country_label);
- const dialCode=text(row.dial_code??row.dialCode??row.phone_code);
- const lineType=text(row.line_type??row.number_type??row.type??row.category).toLowerCase();
- return {serviceId,offerId,providerPrice:price,countryCode,countryName,dialCode,lineType,available:row.available!==false&&row.in_stock!==false&&Number(row.stock??row.available_count??1)>0};
+ const countryObj=row.country&&typeof row.country==="object"?row.country as Record<string,unknown>:{};
+ const serviceObj=row.service&&typeof row.service==="object"?row.service as Record<string,unknown>:{};
+ const offerObj=row.offer&&typeof row.offer==="object"?row.offer as Record<string,unknown>:{};
+ const serviceId=text(row.service_id??row.serviceId??serviceObj.id??row.product_id??row.productId);
+ const offerId=text(row.offer_id??row.offerId??offerObj.id??row.id??row.product_offer_id);
+ const price=providerPrice(row)||providerPrice(offerObj);
+ const rawCountry=row.country_code??row.countryCode??row.iso2??row.country_iso??row.countryIso??countryObj.code??countryObj.iso2??(typeof row.country==="string"?row.country:"");
+ const countryCode=text(rawCountry).trim().toUpperCase();
+ const countryName=text(row.country_name??row.countryName??row.country_label??countryObj.name??(countryCode==="US"?"United States":countryCode));
+ const dialCode=text(row.dial_code??row.dialCode??row.phone_code??countryObj.dial_code);
+ const lineType=text(row.line_type??row.number_type??row.type??row.category??row.network_type).toLowerCase();
+ const stockValue=row.stock??row.available_count??row.quantity??row.remaining;
+ const available=row.available!==false&&row.in_stock!==false&&row.is_available!==false&&!(stockValue!==undefined&&Number(stockValue)<=0);
+ return {serviceId,offerId,providerPrice:price,countryCode,countryName,dialCode,lineType,available};
 }
 function dedicatedRetailMinor(price:number,lineType:"mobile"|"voip"){return aurelinkRentalPriceBreakdown(price,lineType)?.totalMinor ?? 0;}
 router.get("/aurelink/dedicated/countries",async(_req,res)=>{
