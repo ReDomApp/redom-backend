@@ -20,7 +20,8 @@ import { ensureOpsIntelligenceSchema, startDailyOpsIntelligence, stopDailyOpsInt
 import { startFbiSecurityWorker, stopFbiSecurityWorker } from "./services/fbi-security/fbi-security-worker.service";
 import { ensureAurelinkSchema } from "./services/aurelink/schema-bootstrap.service";
 import { ensureAurelinkAccountSchema } from "./services/aurelink/account-schema-bootstrap.service";
-import { startAurelinkLifecycleWorker, stopAurelinkLifecycleWorker } from "./services/aurelink/aurelink-lifecycle-worker.service";\nimport { startAurelinkDedicatedRenewalWorker, stopAurelinkDedicatedRenewalWorker } from "./services/aurelink/aurelink-dedicated-renewal.service";
+import { startAurelinkLifecycleWorker, stopAurelinkLifecycleWorker } from "./services/aurelink/aurelink-lifecycle-worker.service";
+import { startAurelinkDedicatedRenewalWorker, stopAurelinkDedicatedRenewalWorker } from "./services/aurelink/aurelink-dedicated-renewal.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -31,8 +32,8 @@ async function start(): Promise<void> {
   await ensureMessagingCompletionSchema();
   await ensureRecognizedDeviceSchema();
   await ensurePaymentSchema();
-  await ensureAurelinkSchema(pool);
   await ensureAurelinkAccountSchema(pool);
+  await ensureAurelinkSchema(pool);
   await ensureBugReportSchema();
   await ensureStarsSchema();
   await ensureRefundSchema();
@@ -47,7 +48,8 @@ async function start(): Promise<void> {
     startStarsTrialWorker();
     startDailyOpsIntelligence();
     startFbiSecurityWorker();
-    startAurelinkLifecycleWorker();\n    startAurelinkDedicatedRenewalWorker();
+    startAurelinkLifecycleWorker();
+    startAurelinkDedicatedRenewalWorker();
     logger.info({ host, port }, "Server listening");
   });
 
@@ -66,7 +68,8 @@ async function start(): Promise<void> {
     stopStarsTrialWorker();
     stopDailyOpsIntelligence();
     stopFbiSecurityWorker();
-    stopAurelinkLifecycleWorker();\n    stopAurelinkDedicatedRenewalWorker();
+    stopAurelinkLifecycleWorker();
+    stopAurelinkDedicatedRenewalWorker();
     server.close(async (error) => {
       if (error) { logger.error({ error: serializeError(error) }, "Error closing HTTP server"); process.exitCode = 1; }
       try { await pool.end(); } catch (poolError) { logger.error({ error: serializeError(poolError) }, "Error closing database pool"); process.exitCode = 1; }
