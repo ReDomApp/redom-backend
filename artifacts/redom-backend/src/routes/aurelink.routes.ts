@@ -434,8 +434,27 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
     );
     return res.status(201).json({ success: true, order: { aurelinkOrderId, orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
   } catch (error) {
-    if (providerOrderId) await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
-    if(parsed.data.paymentReference)await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2",[parsed.data.paymentReference,req.user.userId]).catch(()=>undefined);else{const refundClient=await pool.connect();try{await refundClient.query("BEGIN");await walletCredit(refundClient,{userId:req.user.userId,amountMinor:String(quote?.["retail_amount_minor"]??0),reference:"refund:purchase:"+parsed.data.quoteId,type:"refund",description:"Automatic refund: provider purchase or mobile verification failed",metadata:{quoteId:parsed.data.quoteId}});await refundClient.query("COMMIT");}catch(e){await refundClient.query("ROLLBACK").catch(()=>undefined);logger.error({errorType:e instanceof Error?e.name:typeof e},"AURELINK wallet purchase refund failed");}finally{refundClient.release();}}
+    let providerCancellationConfirmed = !providerOrderId;
+    if (providerOrderId) {
+      const cancellation = object(await smsPoolClient.cancelSms(providerOrderId).catch(() => ({})));
+      providerCancellationConfirmed = cancellation["success"] === true || cancellation["success"] === 1 ||
+        /^(success|cancelled|canceled|refunded)$/i.test(String(cancellation["status"] ?? cancellation["message"] ?? ""));
+      if (!providerCancellationConfirmed) {
+        logger.error({ providerOrderId }, "AURELINK provider cancellation is unconfirmed; wallet debit retained for reconciliation");
+      }
+    }
+    if(parsed.data.paymentReference)await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2",[parsed.data.paymentReference,req.user.userId]).catch(()=>undefined);
+    else if (providerCancellationConfirmed) {
+      const refundClient=await pool.connect();
+      try {
+        await refundClient.query("BEGIN");
+        await walletCredit(refundClient,{userId:req.user.userId,amountMinor:String(quote?.["retail_amount_minor"]??0),reference:"refund:purchase:"+parsed.data.quoteId,type:"refund",description:"Automatic refund after provider purchase failure or confirmed cancellation",metadata:{quoteId:parsed.data.quoteId,providerOrderId}});
+        await refundClient.query("COMMIT");
+      } catch(e) {
+        await refundClient.query("ROLLBACK").catch(()=>undefined);
+        logger.error({errorType:e instanceof Error?e.name:typeof e},"AURELINK wallet purchase refund failed");
+      } finally { refundClient.release(); }
+    }
     await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND aurelink_user_id=$2", [parsed.data.quoteId, req.user.userId]).catch(() => undefined);
     return providerFailure(res, error);
   }
