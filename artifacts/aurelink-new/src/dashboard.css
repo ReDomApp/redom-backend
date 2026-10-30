@@ -98,3 +98,31 @@
 .al-provider-card strong{font-size:15px;color:#263b55}
 .al-provider-card small{font-size:10px;line-height:1.4;color:#78889b}
 @media(max-width:480px){.al-provider-choice{gap:9px;margin:16px 0}.al-provider-card{min-height:100px;padding:12px!important}.al-provider-card-top b{font-size:12px}}
+
+
+/* Aurelink phone rental configuration and active-rental table */
+.al-rental-policy{padding:16px 18px;margin:14px 0 20px;border:1px solid #e4eaf1;border-radius:14px;background:#f8fbff;color:#34465a}
+.al-rental-policy h3{margin:0 0 8px;font-size:16px;font-weight:750;color:#1b2c40}
+.al-rental-policy p{margin:6px 0;font-size:13px;line-height:1.55;color:#5b6b7d}
+.al-dedicated-select{display:flex;align-items:center;gap:10px;min-height:54px;padding:9px 13px;margin:10px 0;border:1px solid #dce4ed;border-radius:12px;background:#fff}
+.al-dedicated-select>span:first-child{min-width:112px;color:#42546a;font-size:13px;font-weight:650}
+.al-dedicated-select select{flex:1;min-width:0;border:0;background:transparent;color:#1d2b3b;font:inherit;outline:none}
+.al-rental-filter{display:flex;gap:10px;align-items:center;margin:14px 0}
+.al-rental-filter input{flex:1;min-width:0;height:44px;padding:0 13px;border:1px solid #dce4ed;border-radius:10px;background:#fff;color:#24364b}
+.al-rental-filter select{height:44px;padding:0 12px;border:1px solid #dce4ed;border-radius:10px;background:#fff;color:#24364b}
+.al-rental-table-wrap{width:100%;overflow-x:auto;border:1px solid #e2e8ef;border-radius:12px;background:#fff}
+.al-rental-table{width:100%;min-width:720px;border-collapse:collapse;text-align:left}
+.al-rental-table th{padding:13px 12px;background:#f7f9fc;color:#64748b;font-size:11px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
+.al-rental-table td{padding:13px 12px;border-top:1px solid #edf1f5;color:#34465a;font-size:13px;vertical-align:top}
+.al-rental-table td b,.al-rental-table td small{display:block}
+.al-rental-table td small{margin-top:4px;color:#8290a0;font-size:11px}
+.al-rental-actions{display:flex;flex-wrap:wrap;gap:7px}
+.al-rental-actions button{padding:7px 10px;border:1px solid #d9e3ee;border-radius:8px;background:#fff;color:#24558c;font-size:12px;font-weight:650}
+.al-rental-sms-list{min-width:210px;max-width:330px;margin-top:9px;padding:10px;border-radius:9px;background:#f7f9fc}
+.al-rental-sms-list p{display:grid;gap:4px;margin:0 0 9px;padding-bottom:9px;border-bottom:1px solid #e5ebf2;overflow-wrap:anywhere}
+.al-rental-sms-list p:last-child{margin-bottom:0;border-bottom:0}
+.al-rental-sms-list p small,.al-rental-sms-list>small{color:#718096;font-size:11px}
+.al-rental-pagination{display:flex;align-items:center;justify-content:flex-end;gap:9px;padding:13px 2px;color:#718096;font-size:12px}
+.al-rental-pagination span{margin-right:auto}
+.al-rental-pagination button{width:36px;height:34px;border:1px solid #dce4ed;border-radius:8px;background:#fff;color:#34465a}
+.al-rental-pagination button:disabled{opacity:.4;cursor:not-allowed}
