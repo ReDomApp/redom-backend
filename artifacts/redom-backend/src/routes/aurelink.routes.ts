@@ -10,7 +10,7 @@ import { createAurelinkWalletTopupCheckout } from "../services/payments/payment.
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
 import { aurelinkPriceBreakdown, type AurelinkNumberProduct } from "../services/aurelink/aurelink-pricing.service";
-import { nonVoipClient, NonVoipError, nvRows } from "../services/aurelink/nonvoip.client";
+import { nonVoipClient, nvRows } from "../services/aurelink/nonvoip.client";
 
 const router = Router();
 const USD_MINOR = 100;
