@@ -116,7 +116,8 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
       revoked_at TIMESTAMPTZ,
       amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
       currency CHAR(3) NOT NULL,
-      paystack_reference VARCHAR(120) NOT NULL UNIQUE,\n      checkout_url TEXT NOT NULL,
+      paystack_reference VARCHAR(120) NOT NULL UNIQUE,
+      checkout_url TEXT NOT NULL,
       paystack_transaction_id VARCHAR(120),
       gateway_status VARCHAR(40),
       receipt_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -124,7 +125,8 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS aurelink_renewal_tokens_expiry_idx
       ON aurelink_renewal_topup_tokens(expires_at) WHERE consumed_at IS NULL AND revoked_at IS NULL;
-\n    CREATE TABLE IF NOT EXISTS aurelink_wallets (
+
+    CREATE TABLE IF NOT EXISTS aurelink_wallets (
       user_id UUID PRIMARY KEY REFERENCES aurelink_users(id) ON DELETE CASCADE,
       balance_minor BIGINT NOT NULL DEFAULT 0 CHECK (balance_minor >= 0),
       currency CHAR(3) NOT NULL DEFAULT 'USD',
@@ -169,7 +171,8 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
         FOREIGN KEY (user_id) REFERENCES aurelink_users(id) ON DELETE CASCADE;
     END
     $aurelink_wallet_migration$;
-\n    CREATE INDEX IF NOT EXISTS aurelink_wallet_ledger_user_created_idx ON aurelink_wallet_ledger(user_id,created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS aurelink_wallet_ledger_user_created_idx ON aurelink_wallet_ledger(user_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS aurelink_wallet_topups (
       reference VARCHAR(120) PRIMARY KEY,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
