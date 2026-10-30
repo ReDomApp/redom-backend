@@ -2,6 +2,7 @@ import { pool } from "../../database/db";
 import { logger } from "../../lib/logger";
 import { smsPoolClient, type SmsPoolPayload } from "./smspool.client";
 import { sendAurelinkFinalReceipt } from "./aurelink-receipts.service";
+import { walletCredit } from "./aurelink-wallet.service";
 
 const configuredIntervalMs = Number(process.env.AURELINK_LIFECYCLE_POLL_MS ?? 60_000);
 const configuredBatchSize = Number(process.env.AURELINK_LIFECYCLE_BATCH_SIZE ?? 25);
@@ -42,6 +43,12 @@ function containsSms(value: unknown): boolean {
   return scalarFields(value).some((field) => /^(sms|full_sms|message_body|code)$/.test(field.key) && field.value.length > 0);
 }
 
+function providerConfirmed(value:unknown):boolean{const row=asRecord(value);return row.success===true||row.success===1||/^(success|cancelled|canceled|refunded)$/i.test(String(row.status??row.message??""));}
+async function refundExpiredWalletOrder(order:Record<string,unknown>,label:string):Promise<void>{
+  const debit=String(order["wallet_debit_reference"]??"");const amount=String(order["retail_amount_minor"]??"");const userId=String(order["aurelink_user_id"]??"");
+  if(!debit||!amount||!userId||order["refund_reference"])return;
+  const client=await pool.connect();try{await client.query("BEGIN");await walletCredit(client,{userId,amountMinor:amount,reference:"refund:"+debit,type:"refund",description:"Automatic wallet refund: "+label+" provider expiry",orderId:String(order["id"]),metadata:{providerOrderId:order["provider_order_id"]}});await client.query("UPDATE aurelink_provider_orders SET refund_reference=$2 WHERE id=$1",[order["id"],"refund:"+debit]);await client.query("COMMIT");}catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
+}
 async function pollActivation(order: Record<string, unknown>): Promise<void> {
   const response = await smsPoolClient.checkSms(String(order["provider_order_id"]));
   const data = asRecord(response as SmsPoolPayload);
@@ -90,12 +97,17 @@ export async function runAurelinkLifecyclePoll(): Promise<void> {
       "UPDATE aurelink_provider_orders SET status='expired',updated_at=NOW() WHERE product_kind='activation' AND status='pending' AND expires_at IS NOT NULL AND expires_at<=NOW() RETURNING *",
     );
     for (const order of expiredActivations.rows as Array<Record<string, unknown>>) {
-      try { await sendAurelinkFinalReceipt(order, "Expired"); }
-      catch (error) { logger.warn({ orderId: order["id"], errorType: error instanceof Error ? error.name : typeof error }, "AURELINK expired receipt failed"); }
+      try {
+        const cancellation=await smsPoolClient.cancelSms(String(order["provider_order_id"]));
+        if(providerConfirmed(cancellation))await refundExpiredWalletOrder(order,"activation");
+        await sendAurelinkFinalReceipt(order,"Expired");
+      } catch (error) { logger.warn({orderId:order["id"],errorType:error instanceof Error?error.name:typeof error},"AURELINK expired activation reconciliation failed"); }
     }
-    await pool.query(
-      "UPDATE aurelink_provider_orders SET status='expired',updated_at=NOW() WHERE product_kind='rental' AND status='active' AND expires_at IS NOT NULL AND expires_at<=NOW()",
-    );
+    const expiredRentals=await pool.query("UPDATE aurelink_provider_orders SET status='expired',updated_at=NOW() WHERE product_kind='rental' AND status='active' AND expires_at IS NOT NULL AND expires_at<=NOW() RETURNING *");
+    for(const order of expiredRentals.rows as Array<Record<string,unknown>>){
+      try{const cancellation=await smsPoolClient.cancelRental(String(order["provider_order_id"]));if(providerConfirmed(cancellation))await refundExpiredWalletOrder(order,"rental");}
+      catch(error){logger.warn({orderId:order["id"],errorType:error instanceof Error?error.name:typeof error},"AURELINK expired rental reconciliation failed");}
+    }
     const result = await pool.query(
       "SELECT * FROM aurelink_provider_orders WHERE product_kind IN ('activation','rental') AND status IN ('pending','active','cancelled','cancellation_pending','expired') AND (last_provider_check_at IS NULL OR last_provider_check_at<NOW()-($2::text||' milliseconds')::interval) ORDER BY COALESCE(last_provider_check_at,created_at) ASC LIMIT $1",
       [BATCH_SIZE, String(Math.max(10_000, INTERVAL_MS - 5_000))],
