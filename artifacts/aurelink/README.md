@@ -1,8 +1,20 @@
-# AURELINK — SMSPool backend integration
+# AURELINK — Short-term and number-provider integration
 
-AURELINK is mounted into the existing ReDom general backend. This folder documents the feature; the executable TypeScript lives under `artifacts/redom-backend/src/services/aurelink` and `artifacts/redom-backend/src/routes/aurelink.routes.ts`.
+AURELINK is mounted into the existing ReDom backend. Short-term inventory is served by two separate providers: Lisa Pool 1 (NonVoip) and Mike Pool 2 (SMSPool). The executable TypeScript lives under `artifacts/redom-backend/src/services/aurelink` and `artifacts/redom-backend/src/routes`.
 
-## Provider
+## Providers
+
+### Lisa Pool 1 — NonVoip
+
+- Base URL: `https://nonvoip.com/api/v1`
+- API key: `NONVOIP_API_KEY`, server-side only
+- API reference: https://nonvoip.com/api-docs
+- Short-term catalog: `GET /products?type=short-term`
+- Short-term order: `POST /orders` with `type=short-term`, service/offer IDs, catalog `customer_price`, and an `Idempotency-Key`
+- Messages: `GET /orders/:id/messages?sync=0`
+- Cancellation: `PATCH /orders/:id/cancel`
+
+### Mike Pool 2 — SMSPool
 
 - Base URL: `https://api.smspool.net`
 - API key: `SMSPOOL_API_KEY`, server-side only
@@ -32,12 +44,17 @@ All routes require a valid ReDom access token unless noted otherwise. They are s
 
 ### One-time SMS activation
 
-- `POST /aurelink/quotes` — fetches live SMSPool service pricing, applies configured retail markup and stores a 10-minute, single-use quote. Request: `{ "kind":"activation", "country":"US", "service":"1" }`.
+- `GET /aurelink/short-term/providers` — returns Lisa Pool 1 and Mike Pool 2 with live provider country counts.
+- `GET /aurelink/nonvoip/short-term/countries` and `GET /aurelink/nonvoip/short-term/products?country=US` — Lisa Pool 1 catalog.
+- `POST /aurelink/nonvoip/short-term/quote` — creates a 10-minute, single-use quote for a selected NonVoip service/offer.
+- `POST /aurelink/nonvoip/short-term/orders` — consumes the quote and creates a NonVoip Short-term order.
+- `GET /aurelink/nonvoip/short-term/orders/:id/messages` and `POST /aurelink/nonvoip/short-term/orders/:id/cancel` — provider-specific order management.
+- `POST /aurelink/quotes` — fetches live SMSPool pricing from Mike Pool 2, applies the server-side Short-term pricing rule and stores a 10-minute, single-use quote. Request: `{ "kind":"activation", "country":"US", "service":"1" }`.
 - `POST /aurelink/checkout` — creates a hosted Stripe Checkout session for a valid AURELINK quote and stores a purpose-specific payment transaction.
 - `POST /aurelink/activations` — consumes a quote after verifying a paid `payment_transactions` row for the same user, purpose `aurelink_otp`, USD, and sufficient amount. Request: `{ "quoteId":"<uuid>", "paymentReference":"<paid-reference>" }`.
-- `GET /aurelink/activations/:orderId/messages` — polls SMSPool and returns status/code for the owner only; persists first-SMS-arrival time and expiry.
+- `GET /aurelink/activations/:orderId/messages` — provider-aware message polling for the owner; persists first-SMS-arrival time and expiry.
 - `POST /aurelink/activations/:orderId/resend` — administrator-only until resend fees are billed
-- `POST /aurelink/activations/:orderId/cancel` — administrator-only until customer refunds are integrated
+- `POST /aurelink/activations/:orderId/cancel` — provider-aware cancellation and wallet refund after provider confirmation
 - `GET /aurelink/orders` — user's own recorded orders.
 
 SMSPool uses polling rather than an SMS push webhook for temporary activations. Client apps should poll the AURELINK messages route with a modest interval and stop when the order completes, expires, or is refunded.
@@ -76,6 +93,7 @@ SMSPool uses polling rather than an SMS push webhook for temporary activations. 
 
 Add these to the deployment environment, never to source control:
 
+- `NONVOIP_API_KEY`
 - `SMSPOOL_API_KEY`
 - `VERIPHONE_API_KEY` — required for purchased-number line-type checks
 - `AURELINK_ALLOWED_SERVICES` — comma-separated SMSPool service names/IDs approved for sale. Empty means customer purchases are disabled.
@@ -86,7 +104,7 @@ Add these to the deployment environment, never to source control:
 - `AURELINK_ADMIN_USER_IDS` — comma-separated ReDom user IDs allowed to inspect provider balance and use unmetered carrier lookup.
 - `AURELINK_SMSPOOL_TIMEOUT_MS=12000`
 
-AURELINK calculates every customer total as the live provider amount plus an equal Aurelink charge plus the applicable product-specific number-check fee. Short-term, long-term, and dedicated numbers have separate fee settings. For example, a $0.50 provider amount with a $0.50 check fee produces a $1.50 customer total. A zero or invalid provider amount is unavailable and cannot be quoted or purchased. The branch creates hosted Stripe Checkout sessions in USD for activation and rental quotes. The payment callback verifies Stripe’s session amount and currency against the recorded transaction before marking it paid. AURELINK then checks that paid transaction before ordering from SMSPool. Never trust a client-provided price.
+Standard AURELINK customer totals are calculated server-side as the live provider amount plus an equal Aurelink charge plus the applicable product-specific check fee. Short-term, long-term, and dedicated numbers have separate fee settings. The Short-term check fee defaults to $0.20; long-term and dedicated retain independent $1.00 defaults. The first-time Short-term offer preserves the agreed $1.00 provider → $1.50 customer example. A zero or invalid provider amount is unavailable and cannot be quoted or purchased. The branch creates hosted Stripe Checkout sessions in USD for activation and rental quotes. The payment callback verifies Stripe’s session amount and currency against the recorded transaction before marking it paid. AURELINK then checks that paid transaction before ordering from SMSPool. Never trust a client-provided price.
 
 ## Safety, pricing and provider restrictions
 
@@ -101,7 +119,7 @@ AURELINK calculates every customer total as the live provider amount plus an equ
 
 ## Database
 
-Startup creates `aurelink_quotes` and `aurelink_provider_orders` with indexes and performs additive migrations for lifecycle fields. Quotes expire after ten minutes and are single-use. Provider orders are scoped to the owner. A background lifecycle worker starts with the backend when `SMSPOOL_API_KEY` is present; by default it checks up to 25 pending activations/rentals each minute, records first SMS receipt and provider status/expiry, and marks expired pending activations. Configure `AURELINK_LIFECYCLE_POLL_MS` (minimum 30 seconds) and `AURELINK_LIFECYCLE_BATCH_SIZE` (1–100) if needed.
+Startup creates `aurelink_quotes` and `aurelink_provider_orders` with indexes and performs additive migrations for lifecycle fields. Quotes expire after ten minutes and are single-use. Provider orders are scoped to the owner. A provider-aware background lifecycle worker starts with the backend when either `SMSPOOL_API_KEY` or `NONVOIP_API_KEY` is present; by default it checks up to 25 pending activations/rentals each minute, records first SMS receipt and provider status/expiry, and marks expired pending activations. Configure `AURELINK_LIFECYCLE_POLL_MS` (minimum 30 seconds) and `AURELINK_LIFECYCLE_BATCH_SIZE` (1–100) if needed.
 
 ## Validation status
 
