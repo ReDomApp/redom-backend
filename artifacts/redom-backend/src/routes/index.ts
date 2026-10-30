@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import aurelinkRoutes from "./aurelink.routes";
 import aurelinkNonVoipRoutes from "./aurelink-nonvoip.routes";
 import aurelinkAuthRoutes from "./aurelink-auth.routes";
+import aurelinkSecurityRoutes from "./aurelink-security.routes";
 import aurelinkAdminRoutes from "./aurelink-admin.routes";
 import whatsappCloudRoutes from "./whatsapp-cloud.routes";
 import healthRouter from "./health";
@@ -62,6 +63,7 @@ import operationsRoutes from "./operations.routes";
 
 const router: IRouter = Router();
 router.use(aurelinkAuthRoutes);
+router.use(aurelinkSecurityRoutes);
 router.use(aurelinkRoutes);
 router.use(aurelinkNonVoipRoutes);
 router.use(aurelinkAdminRoutes);
