@@ -60,9 +60,10 @@ async function pollActivation(order: Record<string, unknown>): Promise<void> {
     const statusData = nvRecord(statusResponse);
     const messagesData = nvRecord(messagesResponse);
     const messages = Array.isArray(messagesData.messages) ? messagesData.messages : [];
-    const smsArrived = messages.length > 0 || containsSms(messagesResponse);
     const rawStatus = String(statusData.status ?? statusData.state ?? "").toLowerCase();
-    const nextStatus = smsArrived || /^(completed|complete|received)$/.test(rawStatus) ? "completed"
+    const statusCompleted = /^(completed|complete|received)$/.test(rawStatus);
+    const smsArrived = messages.length > 0 || containsSms(messagesResponse) || statusCompleted;
+    const nextStatus = smsArrived ? "completed"
       : /^(refunded|refund)$/.test(rawStatus) ? "refunded"
       : /^(cancelled|canceled)$/.test(rawStatus) ? "cancelled"
       : /^(expired|timeout|timed out)$/.test(rawStatus) ? "expired"
@@ -73,6 +74,12 @@ async function pollActivation(order: Record<string, unknown>): Promise<void> {
       "UPDATE aurelink_provider_orders SET status=COALESCE($2,status),sms_received_at=CASE WHEN $3 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,expires_at=COALESCE($4,expires_at),last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $5::jsonb WHERE id=$1",
       [order["id"], nextStatus, smsArrived, expiry, JSON.stringify({ lifecyclePoll: { provider: "nonvoip", status: rawStatus || null, smsReceived: smsArrived, checkedAt: new Date().toISOString() }, lastMessages: messages })],
     );
+    if (nextStatus && !smsArrived && ["refunded", "cancelled"].includes(nextStatus)) {
+      await refundExpiredWalletOrder(order, "activation " + nextStatus);
+    } else if (nextStatus === "expired" && !smsArrived) {
+      const cancellation = await nonVoipClient.cancel(id).catch(() => null);
+      if (providerConfirmed(cancellation)) await refundExpiredWalletOrder(order, "activation");
+    }
     if (nextStatus && nextStatus !== previous && ["completed", "refunded", "cancelled", "expired"].includes(nextStatus)) {
       await sendAurelinkFinalReceipt({ ...order, status: nextStatus }, nextStatus === "completed" ? "Completed" : nextStatus === "refunded" ? "Refunded" : nextStatus === "cancelled" ? "Canceled" : "Expired");
     }
@@ -94,6 +101,12 @@ async function pollActivation(order: Record<string, unknown>): Promise<void> {
     "UPDATE aurelink_provider_orders SET status=COALESCE($2,status),sms_received_at=CASE WHEN $3 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,expires_at=COALESCE($4,expires_at),last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $5::jsonb WHERE id=$1",
     [order["id"], nextStatus, smsArrived, expiry, JSON.stringify({ lifecyclePoll: { status: status ?? null, smsReceived: smsArrived, checkedAt: new Date().toISOString() }, lastPoll: response })],
   );
+  if (nextStatus && !smsArrived && ["refunded", "cancelled"].includes(nextStatus)) {
+    await refundExpiredWalletOrder(order, "activation " + nextStatus);
+  } else if (nextStatus === "expired" && !smsArrived) {
+    const cancellation = await smsPoolClient.cancelSms(String(order["provider_order_id"])).catch(() => null);
+    if (providerConfirmed(cancellation)) await refundExpiredWalletOrder(order, "activation");
+  }
   if (nextStatus && nextStatus !== previous && ["completed", "refunded", "cancelled", "expired"].includes(nextStatus)) {
     const amount = scalarFields(response).find((field) => /^(refund_amount|amount_refunded|refunded_amount)$/.test(field.key) && Number(field.value) >= 0)?.value ?? null;
     const finalPayload = { ...asRecord(order["provider_payload"]), lastPoll: response };
