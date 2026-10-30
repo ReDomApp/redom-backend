@@ -6,6 +6,7 @@ import profileShareRouter from "./routes/profile-share.routes";
 import { logger } from "./lib/logger";
 import { apiRateLimit } from "./middleware/rate-limit.middleware";
 import { recordOpsIncident } from "./services/operations/daily-ops-intelligence.service";
+import healthRouter from "./routes/health";
 
 const app: Express = express();
 app.set("trust proxy", 1);
@@ -23,6 +24,9 @@ app.use("/redom-backend/ops/email/webhook", express.raw({ type: "application/jso
 app.use(express.json({ limit: "16mb" }));
 app.use(express.urlencoded({ extended: true, limit: "16mb" }));
 app.use(profileShareRouter);
+// Render probes must bypass every feature/auth router so deploy readiness is independent of Aurelink auth middleware.
+app.use("/redom-backend", healthRouter);
+app.use("/", healthRouter);
 app.use("/redom-backend", profileShareRouter);
 app.use("/redom-backend", apiRateLimit, router);
 app.use("/", apiRateLimit, router);
