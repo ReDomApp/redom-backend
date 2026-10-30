@@ -10,6 +10,7 @@ import { createAurelinkWalletTopupCheckout } from "../services/payments/payment.
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
 import { aurelinkPriceBreakdown, type AurelinkNumberProduct } from "../services/aurelink/aurelink-pricing.service";
+import { nonVoipClient, NonVoipError, nvRows } from "../services/aurelink/nonvoip.client";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -232,6 +233,38 @@ router.get("/aurelink/status", aurelinkAuthMiddleware, (_req, res) => {
     features: { oneTimeSms: true, rentals: true, carrierLookup: true, carrierVerificationBeforeAcceptance: true, lifecycleTracking: Boolean(process.env.SMSPOOL_API_KEY?.trim()), esimCatalog: true, esimPurchaseEnabled: false, voiceAndFlash: true, whatsapp: false },
     note: "WhatsApp is a separate premium channel and is not supplied by SMSPool. SMSPool eSIMs are data-only and do not provide a phone number.",
   });
+});
+
+
+router.get("/aurelink/short-term/providers", aurelinkAuthMiddleware, async (_req,res)=>{
+  let nonVoipCountryCount=0;
+  let smsPoolCountryCount=0;
+  let nonVoipAvailable=Boolean(process.env.NONVOIP_API_KEY?.trim());
+  let smsPoolAvailable=Boolean(process.env.SMSPOOL_API_KEY?.trim());
+  try{
+    if(nonVoipAvailable){
+      const countries=new Set<string>();
+      for(let page=1;page<=20;page++){
+        const rows=nvRows(await nonVoipClient.products("short-term",undefined,page,50));
+        for(const row of rows){
+          const code=String(row.country_code??row.countryCode??row.iso2??row.country??"").trim().toUpperCase();
+          if(code) countries.add(code);
+        }
+        if(rows.length<50)break;
+      }
+      nonVoipCountryCount=countries.size;
+    }
+  }catch(error){nonVoipAvailable=false;logger.warn({provider:"nonvoip",errorType:error instanceof Error?error.name:typeof error},"AURELINK Short-term NonVoip country count unavailable");}
+  try{
+    if(smsPoolAvailable){
+      const countries=countryEntries(filterVirtualInventory(await smsPoolClient.countries()));
+      smsPoolCountryCount=new Set(countries.map(x=>x.code||x.id)).size;
+    }
+  }catch(error){smsPoolAvailable=false;logger.warn({provider:"smspool",errorType:error instanceof Error?error.name:typeof error},"AURELINK Short-term SMSPool country count unavailable");}
+  return res.json({success:true,product:"short_term",providers:[
+    {id:"nonvoip",label:"Lisa Pool 1",pool:1,provider:"NonVoip",available:nonVoipAvailable,countryCount:nonVoipCountryCount},
+    {id:"smspool",label:"Mike Pool 2",pool:2,provider:"SMSPool",available:smsPoolAvailable,countryCount:smsPoolCountryCount}
+  ]});
 });
 
 router.get("/aurelink/provider/balance", aurelinkAuthMiddleware, async (req, res) => {
