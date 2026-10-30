@@ -6,6 +6,8 @@ import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { logger } from "../lib/logger";
 import { SmsPoolError, smsPoolClient, type SmsPoolPayload } from "../services/aurelink/smspool.client";
 import { createAurelinkStripeCheckout } from "../services/payments/stripe-payment.service";
+import { createAurelinkWalletTopupCheckout } from "../services/payments/stripe-payment.service";
+import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -212,6 +214,23 @@ async function ownedOrder(userId: string, orderId: string, kind?: string) {
   return result.rows[0] ?? null;
 }
 
+router.get("/aurelink/wallet",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!req.user?.userId)return res.status(401).json({success:false,message:"Authentication required."});
+  try{
+    const client=await pool.connect();try{await client.query("BEGIN");const q=await client.query("INSERT INTO aurelink_wallets(user_id) VALUES($1) ON CONFLICT(user_id) DO UPDATE SET updated_at=NOW() RETURNING balance_minor,currency,updated_at",[req.user.userId]);await client.query("COMMIT");return res.json({success:true,wallet:{balanceMinor:String(q.rows[0].balance_minor),balanceUsd:(Number(q.rows[0].balance_minor)/100).toFixed(2),currency:q.rows[0].currency}});}catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+  }catch{return res.status(500).json({success:false,message:"Unable to load Aurelink wallet."});}
+});
+router.get("/aurelink/wallet/ledger",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!req.user?.userId)return res.status(401).json({success:false,message:"Authentication required."});
+  const limit=Math.min(100,Math.max(1,Number(req.query.limit)||30));
+  try{const q=await pool.query("SELECT entry_type,direction,amount_minor,balance_after_minor,currency,reference,order_id,payment_reference,description,created_at FROM aurelink_wallet_ledger WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",[req.user.userId,limit]);return res.json({success:true,entries:q.rows});}catch{return res.status(500).json({success:false,message:"Unable to load wallet ledger."});}
+});
+router.post("/aurelink/wallet/topup",aurelinkAuthMiddleware,async(req,res)=>{
+  const parsed=z.object({amountUsd:z.number().min(5).max(5000)}).safeParse(req.body);
+  if(!parsed.success||!req.user?.userId)return res.status(400).json({success:false,message:"Enter a wallet top-up between $5 and $5,000 USD."});
+  try{const checkout=await createAurelinkWalletTopupCheckout({userId:req.user.userId,amountMinor:Math.round(parsed.data.amountUsd*100)});return res.status(201).json({success:true,...checkout});}
+  catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to create wallet top-up."});}
+});
 router.get("/aurelink/status", aurelinkAuthMiddleware, (_req, res) => {
   return res.json({
     success: true,
@@ -344,7 +363,7 @@ router.post("/aurelink/checkout", aurelinkAuthMiddleware, async (req, res) => {
 });
 
 router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) => {
-  const parsed = z.object({ quoteId: z.string().uuid(), paymentReference: z.string().min(8).max(100), pool: z.string().max(32).optional(), pricingOption: z.union([z.literal(0), z.literal(1)]).optional() }).safeParse(req.body);
+  const parsed = z.object({ quoteId: z.string().uuid(), paymentReference: z.string().min(8).max(100).optional(), pool: z.string().max(32).optional(), pricingOption: z.union([z.literal(0), z.literal(1)]).optional() }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Valid quote and payment reference are required." });
   const client = await pool.connect();
   let quote: Record<string, unknown> | undefined;
@@ -356,17 +375,16 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
     );
     quote = quoteResult.rows[0] as Record<string, unknown> | undefined;
     if (!quote) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "Quote expired, consumed, or not found." }); }
-    const paid = await client.query(
-      "SELECT id FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_otp' AND currency='USD' AND amount_minor >= $3 LIMIT 1",
-      [parsed.data.paymentReference, req.user.userId, String(quote["retail_amount_minor"])],
-    );
-    if (paid.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(402).json({ success: false, message: "A verified, paid AURELINK OTP transaction covering this quote is required." }); }
-    const redemption = await client.query(
-      "INSERT INTO aurelink_payment_redemptions (payment_reference,user_id,quote_id,product_kind) VALUES ($1,$2,$3,'activation') ON CONFLICT DO NOTHING RETURNING payment_reference",
-      [parsed.data.paymentReference, req.user.userId, parsed.data.quoteId],
-    );
-    if (redemption.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This payment has already been used for an AURELINK order." }); }
-    await client.query("UPDATE aurelink_quotes SET consumed_at=NOW() WHERE id=$1", [parsed.data.quoteId]);
+    if(parsed.data.paymentReference){
+      const paid=await client.query("SELECT id FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_otp' AND currency='USD' AND amount_minor >= $3 LIMIT 1",[parsed.data.paymentReference,req.user.userId,String(quote["retail_amount_minor"])]);
+      if(paid.rowCount!==1){await client.query("ROLLBACK");return res.status(402).json({success:false,message:"A verified paid transaction is required."});}
+      const redemption=await client.query("INSERT INTO aurelink_payment_redemptions(payment_reference,user_id,quote_id,product_kind) VALUES($1,$2,$3,'activation') ON CONFLICT DO NOTHING RETURNING payment_reference",[parsed.data.paymentReference,req.user.userId,parsed.data.quoteId]);
+      if(redemption.rowCount!==1){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"This payment has already been used."});}
+    }else{
+      try{await walletDebit(client,{userId:req.user.userId,amountMinor:String(quote["retail_amount_minor"]),reference:"purchase:"+parsed.data.quoteId,type:"purchase",description:"Short-term mobile number purchase",metadata:{quoteId:parsed.data.quoteId,service:quote["service"],country:quote["country"]}});}
+      catch(e){await client.query("ROLLBACK");if(e instanceof Error&&e.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this purchase."});throw e;}
+    }
+    await client.query("UPDATE aurelink_quotes SET consumed_at=NOW() WHERE id=$1",[parsed.data.quoteId]);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -411,7 +429,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
     return res.status(201).json({ success: true, order: { aurelinkOrderId, orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
   } catch (error) {
     if (providerOrderId) await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
-    await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
+    if(parsed.data.paymentReference)await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2",[parsed.data.paymentReference,req.user.userId]).catch(()=>undefined);else{const refundClient=await pool.connect();try{await refundClient.query("BEGIN");await walletCredit(refundClient,{userId:req.user.userId,amountMinor:String(quote?.["retail_amount_minor"]??0),reference:"refund:purchase:"+parsed.data.quoteId,type:"refund",description:"Automatic refund: provider purchase or mobile verification failed",metadata:{quoteId:parsed.data.quoteId}});await refundClient.query("COMMIT");}catch(e){await refundClient.query("ROLLBACK").catch(()=>undefined);logger.error({errorType:e instanceof Error?e.name:typeof e},"AURELINK wallet purchase refund failed");}finally{refundClient.release();}}
     await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND user_id=$2", [parsed.data.quoteId, req.user.userId]).catch(() => undefined);
     return providerFailure(res, error);
   }
