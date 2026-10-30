@@ -9,7 +9,7 @@ import { createAurelinkStripeCheckout } from "../services/payments/stripe-paymen
 import { createAurelinkWalletTopupCheckout } from "../services/payments/payment.service";
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
-import { aurelinkPriceBreakdown, type AurelinkNumberProduct } from "../services/aurelink/aurelink-pricing.service";
+import { aurelinkPriceBreakdown, aurelinkRentalPriceBreakdown, type AurelinkNumberProduct } from "../services/aurelink/aurelink-pricing.service";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -500,7 +500,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
       "INSERT INTO aurelink_provider_orders (aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,first_purchase_discount,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,$3,'activation',$4,$5,$6,$7,'pending',$8,$9,$10,$15,$11,$12,'verified',NOW(),$13,$14::jsonb)",
       [aurelinkOrderId, req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, String(quote["retail_amount_minor"]), parsed.data.paymentReference ? null : "purchase:"+parsed.data.quoteId, assessment.carrier, assessment.lineType ?? "unknown", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } }), Boolean(((quote["provider_pricing"] as Record<string,unknown>)?.["pricingRule"] as Record<string,unknown>|undefined)?.["firstPurchaseEligible"])],
     );
-    return res.status(201).json({ success: true, order: { aurelinkOrderId, orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
+    return res.status(201).json({ success: true, order: { aurelinkOrderId, orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? requestedLineType, verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
   } catch (error) {
     let providerCancellationConfirmed = !providerOrderId;
     if (providerOrderId) {
@@ -587,6 +587,7 @@ router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) 
     rentalId: z.number().int().min(0),
     days: z.number().int().min(1).max(365),
     serviceId: z.string().max(100).optional(),
+    lineType: z.enum(["mobile", "voip"]).default("mobile"),
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental quote request." });
   if (parsed.data.serviceId && !await isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
@@ -598,10 +599,10 @@ router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) 
     const stockResponse = object(await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days, parsed.data.serviceId));
     const stockCount = Number(stockResponse["stock"] ?? stockResponse["available"] ?? 1);
     if (Number.isFinite(stockCount) && stockCount <= 0) return res.status(409).json({ success: false, message: "No inventory is currently available for this rental." });
-    const priceBreakdown = aurelinkPriceBreakdown(providerMaxPrice, "long_term");
+    const priceBreakdown = aurelinkRentalPriceBreakdown(providerMaxPrice, parsed.data.lineType);
     if (!priceBreakdown) return res.status(409).json({ success: false, message: "This long-term number is unavailable because the provider returned a zero or invalid price." });
     const retailAmountMinor = priceBreakdown.totalMinor;
-    const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: parsed.data.serviceId ?? null, pricing: providerPricing, priceBreakdown };
+    const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: parsed.data.serviceId ?? null, lineType: parsed.data.lineType, pricing: providerPricing, priceBreakdown };
     const result = await pool.query(
       "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'rental',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,provider_max_price,retail_amount_minor,currency,expires_at",
       [req.user.userId, String(parsed.data.rentalId), parsed.data.serviceId ?? "always_on", providerMaxPrice, retailAmountMinor, JSON.stringify(quoteMetadata), String(quoteTtlMinutes)],
@@ -631,7 +632,7 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
       const redemption = await client.query("INSERT INTO aurelink_payment_redemptions(payment_reference,user_id,quote_id,product_kind) VALUES($1,$2,$3,'rental') ON CONFLICT DO NOTHING RETURNING payment_reference", [parsed.data.paymentReference, req.user.userId, parsed.data.quoteId]);
       if (redemption.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This payment has already been used." }); }
     } else {
-      try { await walletDebit(client, { userId: req.user.userId, amountMinor: String(quote["retail_amount_minor"]), reference: "purchase:" + parsed.data.quoteId, type: "purchase", description: "Long-term number rental" }); }
+      try { await walletDebit(client, { userId: req.user.userId, amountMinor: String(quote["retail_amount_minor"]), reference: "purchase:" + parsed.data.quoteId, type: "purchase", description: "Aurelink phone number rental" }); }
       catch (error) { await client.query("ROLLBACK"); if (error instanceof Error && error.message === "INSUFFICIENT_AURELINK_CREDIT") return res.status(402).json({ success: false, code: "INSUFFICIENT_CREDIT", message: "Your Aurelink wallet balance is insufficient." }); throw error; }
     }
     await client.query("UPDATE aurelink_quotes SET consumed_at=NOW() WHERE id=$1", [parsed.data.quoteId]);
@@ -648,6 +649,7 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
     if (!await isRentalAvailable(rentalCatalogId)) throw new SmsPoolError("Rental inventory is not available in the provider catalog.", { providerType: "INVENTORY_NOT_AVAILABLE" });
     const days = Number(quoteMetadata?.["days"]);
     const serviceId = quoteMetadata?.["serviceId"] == null ? undefined : String(quoteMetadata["serviceId"]);
+    const requestedLineType = quoteMetadata?.["lineType"] === "voip" ? "voip" : "mobile";
     if (!Number.isInteger(rentalCatalogId) || rentalCatalogId < 0 || !Number.isInteger(days) || days <= 0) throw new SmsPoolError("Rental quote is missing its provider metadata.", { providerType: "INVALID_QUOTE" });
     const provider = await smsPoolClient.purchaseRental({ id: rentalCatalogId, days, service_id: serviceId });
     const data = object(provider);
@@ -671,16 +673,19 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
     }
     const lineAssessment=veriphoneLineAssessment(lookup as Record<string,unknown>);
     const assessment={result:lineAssessment.lineType.includes("mobile")?"mobile":lineAssessment.lineType.includes("voip")?"voip":"other",carrier:lineAssessment.carrier,lineType:lineAssessment.lineType};
-    if (!lineAssessment.valid) {
+    if (!lineAssessment.valid || !lineAssessment.lineType.toLowerCase().includes(requestedLineType)) {
       await smsPoolClient.cancelRental(providerOrderId).catch(() => undefined);
       purchasedRentalId = null;
-      throw new SmsPoolError("Veriphone could not validate this long-term number. It was not accepted and cancellation was requested.", { providerType: "LINE_VALIDATION_FAILED" });
+      throw new SmsPoolError(requestedLineType === "voip"
+        ? "This number did not pass Aurelink's VoIP verification. It was rejected and cancellation was requested."
+        : "This number did not pass Aurelink's mobile-line verification. It was rejected and cancellation was requested.",
+        { providerType: "LINE_TYPE_MISMATCH" });
     }
     const startedAt = new Date();
     const expiry = expiryDate(data, days * 86400) ?? new Date(startedAt.getTime() + days * 86400000);
     await pool.query(
       "INSERT INTO aurelink_provider_orders (aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,carrier_name,line_type,verification_status,verified_at,rental_started_at,expires_at,provider_payload) VALUES ($1,$2,$3,'rental',$4,$5,$6,$7,'active',$8,$9,$10,$11,$12,'verified',NOW(),$13,$14,$15::jsonb)",
-      [newAurelinkOrderId(),req.user.userId,parsed.data.quoteId,providerOrderId,phoneNumber,String(data["country"]??quote?.["country"]??""),serviceId??null,actualCost,String(quote?.["retail_amount_minor"]),parsed.data.paymentReference?null:"purchase:"+parsed.data.quoteId,assessment.carrier,assessment.lineType??"mobile",startedAt,expiry,JSON.stringify({provider,carrierLookup:lookup,verification:{result:assessment.result,checkedAt:new Date().toISOString()},rentalCatalogId,serviceId,days})],
+      [newAurelinkOrderId(),req.user.userId,parsed.data.quoteId,providerOrderId,phoneNumber,String(data["country"]??quote?.["country"]??""),serviceId??null,actualCost,String(quote?.["retail_amount_minor"]),parsed.data.paymentReference?null:"purchase:"+parsed.data.quoteId,assessment.carrier,assessment.lineType??"mobile",startedAt,expiry,JSON.stringify({provider,carrierLookup:lookup,verification:{result:assessment.result,checkedAt:new Date().toISOString()},rentalCatalogId,serviceId,days,requestedLineType})],
     );
     return res.status(201).json({ success: true, rental: { rentalId: providerOrderId, phoneNumber, days, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), startedAt: startedAt.toISOString(), expiresAt: expiry.toISOString(), providerCostUsd: actualCost, details: provider } });
   } catch (error) {
