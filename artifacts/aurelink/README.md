@@ -80,12 +80,13 @@ Add these to the deployment environment, never to source control:
 - `VERIPHONE_API_KEY` — required for purchased-number line-type checks
 - `AURELINK_ALLOWED_SERVICES` — comma-separated SMSPool service names/IDs approved for sale. Empty means customer purchases are disabled.
 - `SMSPOOL_WHATSAPP_APPROVED=false` — keep false until SMSPool explicitly approves AURELINK's customer-facing WhatsApp resale/API use.
-- `AURELINK_MARKUP_PERCENT=35`
-- `AURELINK_FIXED_FEE_USD_CENTS=20`
+- `AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS=100`
+- `AURELINK_LONG_TERM_CHECK_FEE_USD_CENTS=100`
+- `AURELINK_DEDICATED_CHECK_FEE_USD_CENTS=100`
 - `AURELINK_ADMIN_USER_IDS` — comma-separated ReDom user IDs allowed to inspect provider balance and use unmetered carrier lookup.
 - `AURELINK_SMSPOOL_TIMEOUT_MS=12000`
 
-The example markup is a configurable default, not a recommended retail price. The quote API returns a USD price calculated from the live provider quote. The branch creates hosted Stripe Checkout sessions in USD for activation and rental quotes. The payment callback verifies Stripe’s session amount and currency against the recorded transaction before marking it paid. AURELINK then checks that paid transaction before ordering from SMSPool. Never trust a client-provided price.
+AURELINK calculates every customer total as the live provider amount plus an equal Aurelink charge plus the applicable product-specific number-check fee. Short-term, long-term, and dedicated numbers have separate fee settings. For example, a $0.50 provider amount with a $0.50 check fee produces a $1.50 customer total. A zero or invalid provider amount is unavailable and cannot be quoted or purchased. The branch creates hosted Stripe Checkout sessions in USD for activation and rental quotes. The payment callback verifies Stripe’s session amount and currency against the recorded transaction before marking it paid. AURELINK then checks that paid transaction before ordering from SMSPool. Never trust a client-provided price.
 
 ## Safety, pricing and provider restrictions
 
