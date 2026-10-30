@@ -124,6 +124,7 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE aurelink_renewal_topup_tokens ADD COLUMN IF NOT EXISTS checkout_url TEXT;
+    ALTER TABLE aurelink_renewal_topup_tokens ADD COLUMN IF NOT EXISTS wallet_confirmation_sent_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS aurelink_renewal_tokens_expiry_idx
       ON aurelink_renewal_topup_tokens(expires_at) WHERE consumed_at IS NULL AND revoked_at IS NULL;
 
