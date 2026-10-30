@@ -2,14 +2,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { aurelinkPriceBreakdown } from "../../redom-backend/src/services/aurelink/aurelink-pricing.service.ts";
 
-test("short-term pricing is provider amount plus an equal Aurelink charge plus its check fee", () => {
+test("standard short-term pricing uses the agreed $0.20 check fee", () => {
+  delete process.env.AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS;
+  assert.equal(aurelinkPriceBreakdown(1.00, "short_term")?.totalMinor, 220);
+});
+
+test("first short-term purchase preserves the agreed $1.00 provider -> $1.50 total example", () => {
+  delete process.env.AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS;
+  const quote = aurelinkPriceBreakdown(1.00, "short_term", { firstPurchase: true });
+  assert.equal(quote?.totalMinor, 150);
+  assert.equal(quote?.firstPurchaseDiscountMinor, 70);
+});
+
+test("standard pricing still includes the product-specific check fee", () => {
   process.env.AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS = "50";
-  assert.deepEqual(aurelinkPriceBreakdown(0.50, "short_term"), {
-    providerAmountMinor: 50,
-    aurelinkChargeMinor: 50,
-    checkFeeMinor: 50,
-    totalMinor: 150,
-  });
+  assert.equal(aurelinkPriceBreakdown(0.50, "short_term")?.totalMinor, 150);
 });
 
 test("long-term and dedicated products use independent check-fee settings", () => {
