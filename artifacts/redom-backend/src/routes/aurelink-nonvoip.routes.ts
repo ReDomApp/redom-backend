@@ -19,15 +19,46 @@ function nonVoipFailure(res: import("express").Response, error: unknown, operati
 function text(v:unknown){return v==null?"":String(v);}
 function providerPrice(row:Record<string,unknown>){for(const k of ["customer_price","price","cost","amount","quoted_price"]) {const n=Number(row[k]);if(Number.isFinite(n)&&n>0)return n;}return 0;}
 function retailMinor(price:number){return aurelinkPriceBreakdown(price,"long_term")?.totalMinor ?? 0;}
-function productFields(row:Record<string,unknown>){
+function productFields(row:Record<string,unknown>,fallbackCountry=""){
+ const countryValue=row.country_code??row.countryCode??row.iso2??row.country_iso??row.countryIso??row.country;
+ const countryObject=countryValue&&typeof countryValue==="object"?countryValue as Record<string,unknown>:{};
+ const rawCountry=countryObject.code??countryObject.iso2??countryObject.iso??countryValue;
+ const countryName=text(row.country_name??row.countryName??row.country_label??countryObject.name??(typeof countryValue==="string"&&!/^[A-Z]{2}$/i.test(countryValue)?countryValue:""));
+ const countryCode=text(rawCountry||fallbackCountry).trim().toUpperCase();
  const serviceId=text(row.service_id??row.serviceId??row.id??row.product_id);
  const offerId=text(row.offer_id??row.offerId??row.id??row.offer?.id);
  const price=providerPrice(row);
- return {serviceId,offerId,providerPrice:price,retailMinor:retailMinor(price),service:text(row.service_name??row.service??row.name??row.title),logo:text(row.logo_url??row.logo??row.icon_url??row.icon),countryCode:text(row.country_code??row.countryCode??row.iso2??row.country),countryName:text(row.country_name??row.countryName??row.country_label),dialCode:text(row.dial_code??row.dialCode??row.phone_code),offerLabel:text(row.offer_name??row.name??row.label),available:row.available!==false&&row.in_stock!==false&&Number(row.stock??row.available_count??1)>0};
+ return {serviceId,offerId,providerPrice:price,retailMinor:retailMinor(price),service:text(row.service_name??row.service??row.name??row.title),logo:text(row.logo_url??row.logo??row.icon_url??row.icon),countryCode,countryName:countryName||(countryCode==="US"?"United States":countryCode),dialCode:text(row.dial_code??row.dialCode??row.phone_code??countryObject.dial_code),offerLabel:text(row.offer_name??row.name??row.label),available:row.available!==false&&row.in_stock!==false&&Number(row.stock??row.available_count??1)>0};
 }
 router.use(aurelinkAuthMiddleware);
-router.get("/aurelink/nonvoip/countries",async(_req,res)=>{try{const d=await nonVoipClient.products("long-term",undefined,1,50);const rows=nvRows(d);const map=new Map<string,Record<string,unknown>>();for(const r of rows){const f=productFields(r);if(f.countryCode)map.set(f.countryCode,{code:f.countryCode,name:f.countryName||f.countryCode,dialCode:f.dialCode});}return res.json({success:true,countries:[...map.values()]});}catch(e){return nonVoipFailure(res,e,"long-term countries");}});
-router.get("/aurelink/nonvoip/products",async(req,res)=>{const country=String(req.query.country||"").trim();const page=Math.max(1,Math.min(1000,Number(req.query.page)||1));if(!country)return res.status(400).json({success:false,message:"Choose a country first."});try{const d=await nonVoipClient.products("long-term",country,page,50);const rows=nvRows(d).map(productFields).filter(x=>x.serviceId&&x.offerId&&x.providerPrice>0&&x.available);return res.json({success:true,products:rows.map(x=>({...x,retailPriceUsd:(x.retailMinor/100).toFixed(2),priceBreakdown:aurelinkPriceBreakdown(x.providerPrice,"long_term")})),page,perPage:50,total:Number(nvRecord(d).total)||null,hasMore:rows.length>=50});}catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip catalog unavailable."});}});
+router.get("/aurelink/nonvoip/countries",async(_req,res)=>{
+ try{
+  const first=await nonVoipClient.products("long-term",undefined,1,50);
+  const firstRows=nvRows(first);
+  const total=Math.max(firstRows.length,Number(nvRecord(first).total)||firstRows.length);
+  const pages=Math.min(100,Math.ceil(total/50));
+  const all=[...firstRows];
+  for(let start=2;start<=pages;start+=8){
+   const batch=await Promise.all(Array.from({length:Math.min(8,pages-start+1)},(_,i)=>nonVoipClient.products("long-term",undefined,start+i,50)));
+   for(const response of batch)all.push(...nvRows(response));
+  }
+  const map=new Map<string,Record<string,unknown>>();
+  for(const row of all){const f=productFields(row);if(f.countryCode)map.set(f.countryCode,{code:f.countryCode,name:f.countryName||f.countryCode,dialCode:f.dialCode});}
+  // NonVoip's long-term catalogue is its US non-VoIP offering. Some catalogue rows omit country metadata.
+  if(!map.size&&all.length)map.set("US",{code:"US",name:"United States",dialCode:"+1"});
+  return res.json({success:true,countries:[...map.values()],catalogCount:all.length,catalogTotal:total});
+ }catch(e){return nonVoipFailure(res,e,"long-term countries");}
+});
+router.get("/aurelink/nonvoip/products",async(req,res)=>{
+ const country=String(req.query.country||"").trim().toUpperCase();
+ const page=Math.max(1,Math.min(1000,Number(req.query.page)||1));
+ if(!country)return res.status(400).json({success:false,message:"Choose a country first."});
+ try{
+  const d=await nonVoipClient.products("long-term",country,page,50);
+  const rows=nvRows(d).map(row=>productFields(row,country)).filter(x=>x.serviceId&&x.offerId&&x.providerPrice>0&&x.available);
+  return res.json({success:true,products:rows.map(x=>({...x,retailPriceUsd:(x.retailMinor/100).toFixed(2),priceBreakdown:aurelinkPriceBreakdown(x.providerPrice,"long_term")})),page,perPage:50,total:Number(nvRecord(d).total)||null,hasMore:rows.length>=50});
+ }catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip catalog unavailable."});}
+});
 router.post("/aurelink/nonvoip/orders",async(req,res)=>{
  const userId=req.user?.userId;
  if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
