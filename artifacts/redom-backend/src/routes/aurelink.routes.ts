@@ -143,7 +143,7 @@ async function isCountryAvailable(country: string): Promise<boolean> {
     return entries.some((entry) => entry.id === normalized || entry.code === normalized || entry.name === normalized);
   } catch { return false; }
 }
-async function isRentalNonVoip(rentalId: number): Promise<boolean> {
+async function isRentalAvailable(rentalId: number): Promise<boolean> {
   try {
     const catalogs = await Promise.all([smsPoolClient.rentals(1), smsPoolClient.rentals(0)]);
     for (const catalog of catalogs) {
@@ -152,10 +152,7 @@ async function isRentalNonVoip(rentalId: number): Promise<boolean> {
         if (!value || typeof value !== "object") continue;
         const row = value as Record<string, unknown>;
         const id = String(row["ID"] ?? row["id"] ?? key);
-        if (id === String(rentalId)) {
-          const name = String(row["name"] ?? row["country"] ?? "").toLowerCase();
-          return Boolean(name && !/virtual|voip/.test(name));
-        }
+        if (id === String(rentalId)) return true;
       }
     }
     return false;
@@ -522,7 +519,7 @@ router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) 
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental quote request." });
   if (parsed.data.serviceId && !await isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isRentalNonVoip(parsed.data.rentalId)) return res.status(403).json({ success: false, message: "This rental inventory is not confirmed as non-VoIP mobile inventory." });
+  if (!await isRentalAvailable(parsed.data.rentalId)) return res.status(403).json({ success: false, message: "This rental inventory is not available in the provider catalog." });
   try {
     const providerPricing = await smsPoolClient.rentalPricing(String(parsed.data.rentalId), parsed.data.serviceId);
     const providerMaxPrice = rentalPriceForDays(providerPricing, parsed.data.days);
@@ -575,7 +572,7 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
   try {
     const quoteMetadata = typeof quote?.["provider_pricing"] === "string" ? JSON.parse(String(quote["provider_pricing"])) as Record<string, unknown> : quote?.["provider_pricing"] as Record<string, unknown>;
     const rentalCatalogId = Number(quoteMetadata?.["rentalCatalogId"]);
-    if (!await isRentalNonVoip(rentalCatalogId)) throw new SmsPoolError("Rental inventory is not confirmed as non-VoIP mobile inventory.", { providerType: "COUNTRY_NOT_VERIFIED" });
+    if (!await isRentalAvailable(rentalCatalogId)) throw new SmsPoolError("Rental inventory is not available in the provider catalog.", { providerType: "INVENTORY_NOT_AVAILABLE" });
     const days = Number(quoteMetadata?.["days"]);
     const serviceId = quoteMetadata?.["serviceId"] == null ? undefined : String(quoteMetadata["serviceId"]);
     if (!Number.isInteger(rentalCatalogId) || rentalCatalogId < 0 || !Number.isInteger(days) || days <= 0) throw new SmsPoolError("Rental quote is missing its provider metadata.", { providerType: "INVALID_QUOTE" });
@@ -600,12 +597,11 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
       throw new SmsPoolError("Carrier verification failed. The rental was not accepted and cancellation was requested.", { providerType: "CARRIER_LOOKUP_FAILED" });
     }
     const lineAssessment=veriphoneLineAssessment(lookup as Record<string,unknown>);
-    const assessment={result:lineAssessment.accepted?"mobile":String(lineAssessment.lineType).includes("voip")?"voip":"unknown",carrier:lineAssessment.carrier,lineType:lineAssessment.lineType};
-    if (assessment.result !== "mobile") {
+    const assessment={result:lineAssessment.lineType.includes("mobile")?"mobile":lineAssessment.lineType.includes("voip")?"voip":"other",carrier:lineAssessment.carrier,lineType:lineAssessment.lineType};
+    if (!lineAssessment.valid) {
       await smsPoolClient.cancelRental(providerOrderId).catch(() => undefined);
       purchasedRentalId = null;
-      const reason = assessment.result === "voip" ? "SMSPool identified this rental number as VoIP. It was rejected and cancellation was requested." : "SMSPool did not confirm this rental as a mobile line. It was not accepted and cancellation was requested.";
-      throw new SmsPoolError(reason, { providerType: assessment.result === "voip" ? "VOIP_NUMBER_REJECTED" : "CARRIER_TYPE_UNVERIFIED" });
+      throw new SmsPoolError("Veriphone could not validate this long-term number. It was not accepted and cancellation was requested.", { providerType: "LINE_VALIDATION_FAILED" });
     }
     const startedAt = new Date();
     const expiry = expiryDate(data, days * 86400) ?? new Date(startedAt.getTime() + days * 86400000);
