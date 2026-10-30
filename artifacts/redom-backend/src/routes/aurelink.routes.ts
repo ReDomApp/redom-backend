@@ -10,7 +10,6 @@ import { createAurelinkWalletTopupCheckout } from "../services/payments/payment.
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
 import { aurelinkPriceBreakdown, type AurelinkNumberProduct } from "../services/aurelink/aurelink-pricing.service";
-import { nonVoipClient, nvRows } from "../services/aurelink/nonvoip.client";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -239,38 +238,6 @@ router.get("/aurelink/status", aurelinkAuthMiddleware, (_req, res) => {
 });
 
 
-router.get("/aurelink/short-term/providers", aurelinkAuthMiddleware, async (_req,res)=>{
-  let nonVoipCountryCount=0;
-  let smsPoolCountryCount=0;
-  let nonVoipAvailable=Boolean(process.env.NONVOIP_API_KEY?.trim());
-  let smsPoolAvailable=Boolean(process.env.SMSPOOL_API_KEY?.trim());
-  try{
-    if(nonVoipAvailable){
-      const countries=new Set<string>();
-      for(let page=1;page<=20;page++){
-        const rows=nvRows(await nonVoipClient.products("short-term",undefined,page,50));
-        for(const row of rows){
-          const code=String(row.country_code??row.countryCode??row.iso2??row.country??"").trim().toUpperCase();
-          const price=Number(row.customer_price??row.price??row.cost??row.amount??0);
-          const available=row.available!==false&&row.in_stock!==false&&Number(row.stock??row.available_count??1)>0;
-          if(code&&available&&Number.isFinite(price)&&price>0) countries.add(code);
-        }
-        if(rows.length<50)break;
-      }
-      nonVoipCountryCount=countries.size;
-    }
-  }catch(error){nonVoipAvailable=false;logger.warn({provider:"nonvoip",errorType:error instanceof Error?error.name:typeof error},"AURELINK Short-term NonVoip country count unavailable");}
-  try{
-    if(smsPoolAvailable){
-      const countries=countryEntries(filterVirtualInventory(await smsPoolClient.countries()));
-      smsPoolCountryCount=new Set(countries.map(x=>x.code||x.id)).size;
-    }
-  }catch(error){smsPoolAvailable=false;logger.warn({provider:"smspool",errorType:error instanceof Error?error.name:typeof error},"AURELINK Short-term SMSPool country count unavailable");}
-  return res.json({success:true,product:"short_term",providers:[
-    {id:"nonvoip",label:"Lisa Pool 1",pool:1,provider:"NonVoip",available:nonVoipAvailable,countryCount:nonVoipCountryCount},
-    {id:"smspool",label:"Mike Pool 2",pool:2,provider:"SMSPool",available:smsPoolAvailable,countryCount:smsPoolCountryCount}
-  ]});
-});
 
 router.get("/aurelink/provider/balance", aurelinkAuthMiddleware, async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Administrator access required." });
@@ -497,17 +464,6 @@ router.get("/aurelink/activations/:orderId/messages", aurelinkAuthMiddleware, as
   try {
     const order = await ownedOrder(req.user.userId, orderId.data, "activation");
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
-    if (String(order["provider"] ?? "smspool").toLowerCase() === "nonvoip") {
-      const response = await nonVoipClient.messages(orderId.data);
-      const body = nvRecord(response);
-      const messages = Array.isArray(body.messages) ? body.messages : [];
-      const arrived = messages.length > 0;
-      await pool.query(
-        "UPDATE aurelink_provider_orders SET sms_received_at=CASE WHEN $2 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $3::jsonb WHERE id=$1",
-        [order["id"], arrived, JSON.stringify({ lastNonVoipMessages: messages })],
-      );
-      return res.json({ success: true, message: { status: arrived ? "completed" : order["status"], messages, smsReceivedAt: arrived ? (order["sms_received_at"] ?? new Date().toISOString()) : null, expiresAt: order["expires_at"] ?? null } });
-    }
     const message = object(await smsPoolClient.checkSms(orderId.data));
     const arrived = message["status"] === 3 || Boolean(message["sms"] ?? message["full_sms"]);
     const expiry = expiryDate(message);
@@ -535,25 +491,6 @@ router.post("/aurelink/activations/:orderId/cancel", aurelinkAuthMiddleware, asy
     const order = await ownedOrder(req.user.userId, orderId.data, "activation");
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
     if(["completed","refunded","cancelled","expired"].includes(String(order["status"])))return res.status(409).json({success:false,message:"This activation is no longer cancellable."});
-    if (String(order["provider"] ?? "smspool").toLowerCase() === "nonvoip") {
-      const result = nvRecord(await nonVoipClient.cancel(orderId.data));
-      const confirmed = result["success"] === true || result["success"] === 1 || /^(success|cancelled|canceled|refunded)$/i.test(String(result["status"] ?? result["message"] ?? ""));
-      if (!confirmed) return res.status(409).json({ success: false, message: "NonVoip has not confirmed cancellation. No wallet refund has been issued.", provider: result });
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        await client.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1", [order["id"], JSON.stringify({ cancellation: result })]);
-        if (order["wallet_debit_reference"] && order["retail_amount_minor"]) {
-          await walletCredit(client, { userId: req.user.userId, amountMinor: String(order["retail_amount_minor"]), reference: "refund:" + String(order["wallet_debit_reference"]), type: "refund", description: "Provider-confirmed NonVoip activation cancellation refund", orderId: String(order["id"]), metadata: { providerCancellation: result } });
-          await client.query("UPDATE aurelink_provider_orders SET refund_reference=$2 WHERE id=$1", [order["id"], "refund:" + String(order["wallet_debit_reference"])]);
-        }
-        await client.query("COMMIT");
-        return res.json({ success: true, cancellation: result, refunded: Boolean(order["wallet_debit_reference"]) });
-      } catch (error) {
-        await client.query("ROLLBACK").catch(() => undefined);
-        throw error;
-      } finally { client.release(); }
-    }
     const result=object(await smsPoolClient.cancelSms(orderId.data));
     const cancelOk=result["success"]===1||result["success"]===true||/cancel|refund|success/i.test(String(result["message"]??result["status"]??""));
     if(!cancelOk)return res.status(409).json({success:false,message:"The provider has not confirmed cancellation. No wallet refund has been issued.",provider:result});
