@@ -16,7 +16,7 @@ Configure these in the backend Render service before enabling login:
 - `AURELINK_ADMIN_PASSWORD`: long, unique admin password (never commit it).
 - `AURELINK_ADMIN_SESSION_SECRET`: random secret dedicated to signing admin sessions (recommended); otherwise the backend JWT secret is used.
 - `SMSPOOL_API_KEY`: existing SMSPool API key.
-- `AURELINK_ALLOWED_SERVICES`: server-side allowlist of enabled service IDs/names.
+- Aurelink service availability is sourced dynamically from the live SMSPool service catalogue; no second service allowlist is required.
 
 A stable admin identity UUID is created once in the database and is separate from normal user accounts. Admin order records use the `admin_account_id` extension on the existing AURELINK provider-order table, while customer orders remain tied to their normal user IDs.
 
