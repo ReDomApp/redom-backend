@@ -49,7 +49,6 @@ async function initializeTopup(attempt: Row): Promise<void> {
       [user.id,user.account_id,order.id,attempt.id,tokenHash,attempt.amount_minor,attempt.currency,checkout.reference,checkout.authorization_url]);
     await client.query("UPDATE aurelink_dedicated_renewal_attempts SET status='awaiting_topup',updated_at=NOW() WHERE id=$1 AND status<>'succeeded'", [attempt.id]);
     await client.query("COMMIT");
-    }
   } catch(e) { await client.query("ROLLBACK").catch(()=>undefined); throw e; } finally { client.release(); }
   const link = baseUrl() + "/payments/aurelink/renewal/topup/" + token;
   const html = "<h2>Aurelink dedicated number renewal</h2><p>Your Aurelink wallet needs funds before your dedicated number can renew.</p><p>Account: "+String(user.account_id)+"</p><p>Number: "+String(order.phone_number||"—")+"</p><p>Renewal amount: "+(Number(attempt.amount_minor)/100).toFixed(2)+" "+String(attempt.currency)+"</p><p><a href=\""+link+"\">Continue secure top-up</a></p><p>This secure link expires in 24 hours and can be used once. Payment credits only your Aurelink wallet.</p>";
@@ -161,6 +160,7 @@ export async function handleAurelinkRenewalWebhook(rawBody: Buffer, signature: s
     await client.query("UPDATE aurelink_dedicated_renewal_attempts SET status='scheduled',next_attempt_at=NOW(),updated_at=NOW() WHERE id=$1",[token.renewal_attempt_id]);
     ownerEmail=String(token.email||"");
     await client.query("COMMIT");
+    }
   } catch(e) { await client.query("ROLLBACK").catch(()=>undefined); throw e; } finally { client.release(); }
   if(ownerEmail) { await sendEmail(ownerEmail,"Aurelink wallet credited","<h2>Wallet top-up confirmed</h2><p>Your Paystack payment has been verified and credited to your Aurelink wallet. Your dedicated-number renewal will now be retried.</p>","Your Paystack payment has been verified and credited to your Aurelink wallet. Your dedicated-number renewal will now be retried."); await pool.query("UPDATE aurelink_renewal_topup_tokens SET wallet_confirmation_sent_at=NOW() WHERE id=$1 AND wallet_confirmation_sent_at IS NULL",[tokenRowId]); }
   return true;
