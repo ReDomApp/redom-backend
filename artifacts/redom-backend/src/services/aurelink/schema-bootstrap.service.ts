@@ -78,7 +78,53 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS aurelink_orders_expiry_idx ON aurelink_provider_orders(expires_at) WHERE expires_at IS NOT NULL;
 
 
-    CREATE TABLE IF NOT EXISTS aurelink_wallets (
+
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT FALSE;
+    CREATE TABLE IF NOT EXISTS aurelink_dedicated_renewal_attempts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_id UUID NOT NULL REFERENCES aurelink_provider_orders(id) ON DELETE CASCADE,
+      aurelink_user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      scheduled_expiry_at TIMESTAMPTZ NOT NULL,
+      amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      status VARCHAR(32) NOT NULL DEFAULT 'scheduled'
+        CHECK (status IN ('scheduled','awaiting_topup','processing','succeeded','failed','reconciliation_required')),
+      idempotency_key UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL,
+      provider_expiry_at TIMESTAMPTZ,
+      provider_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+      failure_code VARCHAR(100),
+      failure_message TEXT,
+      wallet_debit_reference VARCHAR(140) UNIQUE,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(order_id, scheduled_expiry_at)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_dedicated_renewal_due_idx
+      ON aurelink_dedicated_renewal_attempts(status,next_attempt_at);
+    CREATE TABLE IF NOT EXISTS aurelink_renewal_topup_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      aurelink_user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      account_id VARCHAR(16) NOT NULL,
+      order_id UUID NOT NULL REFERENCES aurelink_provider_orders(id) ON DELETE CASCADE,
+      renewal_attempt_id UUID NOT NULL REFERENCES aurelink_dedicated_renewal_attempts(id) ON DELETE CASCADE,
+      token_hash CHAR(64) NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ,
+      amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+      currency CHAR(3) NOT NULL,
+      paystack_reference VARCHAR(120) NOT NULL UNIQUE,
+      paystack_transaction_id VARCHAR(120),
+      gateway_status VARCHAR(40),
+      receipt_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_renewal_tokens_expiry_idx
+      ON aurelink_renewal_topup_tokens(expires_at) WHERE consumed_at IS NULL AND revoked_at IS NULL;
+\n    CREATE TABLE IF NOT EXISTS aurelink_wallets (
       user_id UUID PRIMARY KEY REFERENCES aurelink_users(id) ON DELETE CASCADE,
       balance_minor BIGINT NOT NULL DEFAULT 0 CHECK (balance_minor >= 0),
       currency CHAR(3) NOT NULL DEFAULT 'USD',
