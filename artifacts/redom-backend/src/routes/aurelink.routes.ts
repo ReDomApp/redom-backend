@@ -811,8 +811,8 @@ router.post("/aurelink/rentals/:rentalId/cancel", aurelinkAuthMiddleware, async 
       return res.status(409).json({ success: false, message: "This rental has already received messages and is no longer refundable." });
     }
     const purchasedAt = new Date(String(rental["rental_started_at"] ?? rental["created_at"] ?? ""));
-    if (!Number.isFinite(purchasedAt.getTime()) || Date.now() - purchasedAt.getTime() > 2 * 60 * 60 * 1000)
-      return res.status(409).json({ success: false, message: "Rentals can only be refunded within 2 hours of purchase." });
+    if (!Number.isFinite(purchasedAt.getTime()) || Date.now() - purchasedAt.getTime() > 1 * 60 * 60 * 1000)
+      return res.status(409).json({ success: false, message: "Rentals can only be refunded within 1 hour of purchase." });
     if (String(rental["status"]).toLowerCase() !== "active") return res.status(409).json({ success: false, message: "Only active rentals can be refunded." });
     const result = await smsPoolClient.cancelRental(rentalId.data);
     const fields = providerFields(result);
