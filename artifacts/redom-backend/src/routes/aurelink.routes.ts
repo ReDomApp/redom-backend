@@ -511,7 +511,7 @@ router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) 
     const retailAmountMinor = retailPriceMinor(providerMaxPrice);
     const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: parsed.data.serviceId ?? null, pricing: providerPricing };
     const result = await pool.query(
-      "INSERT INTO aurelink_quotes (user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'rental',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,provider_max_price,retail_amount_minor,currency,expires_at",
+      "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'rental',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,provider_max_price,retail_amount_minor,currency,expires_at",
       [req.user.userId, String(parsed.data.rentalId), parsed.data.serviceId ?? "always_on", providerMaxPrice, retailAmountMinor, JSON.stringify(quoteMetadata), String(quoteTtlMinutes)],
     );
     return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
@@ -519,7 +519,7 @@ router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) 
 });
 
 router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
-  const parsed = z.object({ quoteId: z.string().uuid(), paymentReference: z.string().min(8).max(100) }).safeParse(req.body);
+  const parsed = z.object({ quoteId: z.string().uuid(), paymentReference: z.string().min(8).max(100).optional() }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "A valid rental quote and payment reference are required." });
   const client = await pool.connect();
   let quote: Record<string, unknown> | undefined;
@@ -528,21 +528,20 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
   try {
     await client.query("BEGIN");
     const quoteResult = await client.query(
-      "SELECT * FROM aurelink_quotes WHERE id=$1 AND user_id=$2 AND product_kind='rental' AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",
+      "SELECT * FROM aurelink_quotes WHERE id=$1 AND aurelink_user_id=$2 AND product_kind='rental' AND consumed_at IS NULL AND expires_at>NOW() FOR UPDATE",
       [parsed.data.quoteId, req.user.userId],
     );
     quote = quoteResult.rows[0] as Record<string, unknown> | undefined;
     if (!quote) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "Rental quote expired, consumed, or not found." }); }
-    const paid = await client.query(
-      "SELECT id FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_rental' AND currency='USD' AND amount_minor >= $3 LIMIT 1",
-      [parsed.data.paymentReference, req.user.userId, String(quote["retail_amount_minor"])],
-    );
-    if (paid.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(402).json({ success: false, message: "A verified, paid AURELINK rental transaction covering this quote is required." }); }
-    const redemption = await client.query(
-      "INSERT INTO aurelink_payment_redemptions (payment_reference,user_id,quote_id,product_kind) VALUES ($1,$2,$3,'rental') ON CONFLICT DO NOTHING RETURNING payment_reference",
-      [parsed.data.paymentReference, req.user.userId, parsed.data.quoteId],
-    );
-    if (redemption.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This payment has already been used for an AURELINK order." }); }
+    if (parsed.data.paymentReference) {
+      const paid = await client.query("SELECT id FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_rental' AND currency='USD' AND amount_minor >= $3 LIMIT 1", [parsed.data.paymentReference, req.user.userId, String(quote["retail_amount_minor"])]);
+      if (paid.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(402).json({ success: false, message: "A verified paid rental transaction is required." }); }
+      const redemption = await client.query("INSERT INTO aurelink_payment_redemptions(payment_reference,user_id,quote_id,product_kind) VALUES($1,$2,$3,'rental') ON CONFLICT DO NOTHING RETURNING payment_reference", [parsed.data.paymentReference, req.user.userId, parsed.data.quoteId]);
+      if (redemption.rowCount !== 1) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This payment has already been used." }); }
+    } else {
+      try { await walletDebit(client, { userId: req.user.userId, amountMinor: String(quote["retail_amount_minor"]), reference: "purchase:" + parsed.data.quoteId, type: "purchase", description: "Long-term number rental" }); }
+      catch (error) { await client.query("ROLLBACK"); if (error instanceof Error && error.message === "INSUFFICIENT_AURELINK_CREDIT") return res.status(402).json({ success: false, code: "INSUFFICIENT_CREDIT", message: "Your Aurelink wallet balance is insufficient." }); throw error; }
+    }
     await client.query("UPDATE aurelink_quotes SET consumed_at=NOW() WHERE id=$1", [parsed.data.quoteId]);
     await client.query("COMMIT");
     paymentReserved = true;
