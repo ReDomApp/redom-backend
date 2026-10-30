@@ -143,12 +143,14 @@ export async function handleAurelinkRenewalWebhook(rawBody: Buffer, signature: s
   if(verified.status!=="success")throw new Error("Paystack has not confirmed a successful renewal top-up.");
   const client=await pool.connect();
   let ownerEmail="";
+  let tokenRowId="";
   try {
     await client.query("BEGIN");
     const tokenResult=await client.query("SELECT t.*,u.email,u.account_id FROM aurelink_renewal_topup_tokens t JOIN aurelink_users u ON u.id=t.aurelink_user_id WHERE t.id=$1 FOR UPDATE",[found.rows[0].id]);
     const token=tokenResult.rows[0] as Row|undefined;
     if(!token)throw new Error("Renewal top-up token not found.");
-    if(token.consumed_at) { await client.query("COMMIT"); return true; }
+    tokenRowId=String(token.id);
+    if(token.consumed_at) { ownerEmail=token.wallet_confirmation_sent_at ? "" : String(token.email||""); await client.query("COMMIT"); } else {
     if(token.revoked_at||new Date(token.expires_at).getTime()<=Date.now())throw new Error("Renewal top-up token expired or revoked.");
     if(String(token.paystack_reference)!==String(verified.reference)||String(token.amount_minor)!==String(verified.requested_amount??verified.amount)||String(token.currency)!==String(verified.currency))throw new Error("Paystack amount, currency, or reference mismatch.");
     const attempt=await client.query("SELECT * FROM aurelink_dedicated_renewal_attempts WHERE id=$1 AND order_id=$2 AND aurelink_user_id=$3 FOR UPDATE",[token.renewal_attempt_id,token.order_id,token.aurelink_user_id]);
@@ -159,6 +161,6 @@ export async function handleAurelinkRenewalWebhook(rawBody: Buffer, signature: s
     ownerEmail=String(token.email||"");
     await client.query("COMMIT");
   } catch(e) { await client.query("ROLLBACK").catch(()=>undefined); throw e; } finally { client.release(); }
-  if(ownerEmail) await sendEmail(ownerEmail,"Aurelink wallet credited","<h2>Wallet top-up confirmed</h2><p>Your Paystack payment has been verified and credited to your Aurelink wallet. Your dedicated-number renewal will now be retried.</p>","Your Paystack payment has been verified and credited to your Aurelink wallet. Your dedicated-number renewal will now be retried.");
+  if(ownerEmail) { await sendEmail(ownerEmail,"Aurelink wallet credited","<h2>Wallet top-up confirmed</h2><p>Your Paystack payment has been verified and credited to your Aurelink wallet. Your dedicated-number renewal will now be retried.</p>","Your Paystack payment has been verified and credited to your Aurelink wallet. Your dedicated-number renewal will now be retried."); await pool.query("UPDATE aurelink_renewal_topup_tokens SET wallet_confirmation_sent_at=NOW() WHERE id=$1 AND wallet_confirmation_sent_at IS NULL",[tokenRowId]); }
   return true;
 }
