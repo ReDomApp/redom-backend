@@ -4,6 +4,7 @@ import { env } from "../../config/env";
 import { applyStarsRefundWebhook } from "../refund/refund.service";
 import { pool } from "../../database/db";
 import { sendPaymentConfirmationEmail } from "./paymentEmail.service";
+import { walletCredit } from "../aurelink/aurelink-wallet.service";
 
 const API = "https://api.paystack.co";
 const STANDARD_NGN = 4500;
@@ -192,6 +193,33 @@ export async function initializeSubscriptionRenewal(userId: string, subscription
   }
 }
 
+export async function createAurelinkWalletTopupCheckout(input: { userId: string; amountMinor: number }): Promise<{ authorizationUrl: string; reference: string }> {
+  if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor < 500 || input.amountMinor > 500000) {
+    throw new Error("Wallet deposits must be between 5 and 5,000 USD.");
+  }
+  const user = await pool.query("SELECT email FROM users WHERE id=$1 LIMIT 1", [input.userId]);
+  const email = user.rows[0]?.email ? String(user.rows[0].email) : "";
+  if (!email) throw new Error("A verified account email is required before depositing.");
+  const reference = makeReference();
+  const currency = "USD";
+  const checkout = await paystack<InitializeData>("post", "/transaction/initialize", {
+    email,
+    amount: String(input.amountMinor),
+    currency,
+    reference,
+    callback_url: "https://redom-backend.onrender.com/redom-backend/payments/callback",
+    metadata: { user_id: input.userId, purpose: "aurelink_wallet_topup", reference },
+  });
+  await pool.query(
+    `INSERT INTO payment_transactions
+      (user_id,reference,amount_minor,currency,purpose,status,checkout_url,access_code,metadata,customer_email,payment_provider)
+     VALUES($1,$2,$3,$4,'aurelink_wallet_topup','initialized',$5,$6,$7::jsonb,$8,'paystack')`,
+    [input.userId, checkout.reference, input.amountMinor, currency, checkout.authorization_url, checkout.access_code,
+      JSON.stringify({ provider: "paystack", purpose: "aurelink_wallet_topup", userId: input.userId, amountMinor: input.amountMinor, currency, paymentDetails: { channel: "paystack_checkout" } }), email],
+  );
+  return { authorizationUrl: checkout.authorization_url, reference: checkout.reference };
+}
+
 async function applyVerifiedPayment(referenceValue: string, verified: VerifyData): Promise<PaymentContext> {
   const client = await pool.connect();
   try {
@@ -234,6 +262,17 @@ async function applyVerifiedPayment(referenceValue: string, verified: VerifyData
     await client.query("UPDATE payment_transactions SET status='paid', external_transaction_id=$1, provider_transaction_id=$2, payment_provider='paystack', gateway_status=$3, paid_at=$4, metadata=$5::jsonb, redom_transaction_id=$6, updated_at=now() WHERE id=$7", [String(verified.id), String(verified.reference), verified.status, verified.paid_at ? new Date(verified.paid_at) : new Date(), JSON.stringify(metadata), redomTransactionId, row.id]);
     if (String(row.purpose) !== "payment_method_setup") {
       await saveReusableAuthorization(String(row.id), verified, String(row.user_id), String(row.currency), row.customer_email ? String(row.customer_email) : (verified.customer?.email ? String(verified.customer.email) : null));
+    }
+    if (String(row.purpose) === "aurelink_wallet_topup") {
+      await walletCredit(client, {
+        userId: String(row.user_id),
+        amountMinor: String(row.amount_minor),
+        reference: "aurelink_topup:" + referenceValue,
+        type: "topup",
+        description: "Aurelink wallet deposit via Paystack",
+        paymentReference: referenceValue,
+        metadata: { provider: "paystack", providerTransactionId: String(verified.id), currency: String(row.currency) },
+      });
     }
     if (String(row.purpose) === "stars_purchase") {
       const stars = Number(metadata?.stars ?? 0);
