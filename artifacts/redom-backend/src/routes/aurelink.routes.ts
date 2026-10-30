@@ -256,7 +256,7 @@ function fairUseRentalMessages(value: unknown): { payload: unknown; shown: numbe
   };
   const visit = (node: unknown, key = ""): unknown => {
     if (Array.isArray(node)) {
-      if (/messages?|sms|inbox/i.test(key)) {
+      if (!key || /messages?|sms|inbox/i.test(key)) {
         const counts = new Map<string,number>();
         return node.filter(item => { const day=dayOf(item), count=counts.get(day)??0; if(count>=25){omitted++;return false;} counts.set(day,count+1);shown++;return true; });
       }
@@ -802,6 +802,12 @@ router.post("/aurelink/rentals/:rentalId/cancel", aurelinkAuthMiddleware, async 
     const rental = await ownedOrder(req.user.userId, rentalId.data, "rental");
     if (!rental) return res.status(404).json({ success: false, message: "Rental not found." });
     if (rental["sms_received_at"]) return res.status(409).json({ success: false, message: "This rental has received messages and is no longer refundable." });
+    const providerMessages = await smsPoolClient.rentalMessages(rentalId.data);
+    const alreadyReceived = providerFields(providerMessages).some((field) => /^(sms|message|full_sms|message_body|body|code)$/.test(field.key) && field.value.length > 0);
+    if (alreadyReceived) {
+      await pool.query("UPDATE aurelink_provider_orders SET sms_received_at=COALESCE(sms_received_at,NOW()),last_provider_check_at=NOW(),updated_at=NOW() WHERE id=$1", [rental["id"]]);
+      return res.status(409).json({ success: false, message: "This rental has already received messages and is no longer refundable." });
+    }
     const purchasedAt = new Date(String(rental["rental_started_at"] ?? rental["created_at"] ?? ""));
     if (!Number.isFinite(purchasedAt.getTime()) || Date.now() - purchasedAt.getTime() > 2 * 60 * 60 * 1000)
       return res.status(409).json({ success: false, message: "Rentals can only be refunded within 2 hours of purchase." });
