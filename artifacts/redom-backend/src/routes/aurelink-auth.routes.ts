@@ -67,8 +67,8 @@ router.post("/aurelink/auth/login",async(req,res)=>{
       await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'invalid_credentials')",[user?.id??null,clientIp(req),agent(req)]).catch(()=>undefined);
       return res.status(401).json({success:false,message:"Invalid email or password."});
     }
-    if(user.account_status!=="active")return res.status(403).json({success:false,message:"This Aurelink account is not active."});
-    await enforceAurelinkIpAllowlist(user.id,clientIp(req));
+    if(user.account_status!=="active"){await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login_blocked',FALSE,$2,$3,'account_inactive')",[user.id,clientIp(req),agent(req)]);return res.status(403).json({success:false,message:"This Aurelink account is not active."});}
+    try{await enforceAurelinkIpAllowlist(user.id,clientIp(req));}catch(e){await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login_blocked',FALSE,$2,$3,'ip_allowlist')",[user.id,clientIp(req),agent(req)]).catch(()=>undefined);throw e;}
     const sec=await pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[user.id]);
     if(sec.rows[0]?.two_factor_enabled && !sec.rows[0]?.totp_enabled) return res.status(423).json({success:false,code:"AURELINK_2FA_METHOD_UNAVAILABLE",message:"This account has a legacy two-factor method that cannot be verified in this sign-in flow. Contact Aurelink Support; password-only sign-in remains blocked."});
     if(sec.rows[0]?.two_factor_enabled && sec.rows[0]?.totp_enabled) {
