@@ -74,8 +74,8 @@ function pricesIn(value: unknown, output: number[] = []): number[] {
 function newAurelinkOrderId(): string { return String(randomInt(112, 115)) + String(randomInt(0, 100_000)).padStart(5, "0"); }
 
 function retailPriceMinor(providerPrice: number): number {
-  // Short-term activation retail price is exactly 2x the provider cost.
-  return Math.ceil(providerPrice * USD_MINOR * 2);
+  // User-facing total: 2x live provider amount plus the fixed $1.00 mobile-line verification fee.
+  return Math.ceil(providerPrice * USD_MINOR * 2) + 100;
 }
 function rentalPriceForDays(value: unknown, days: number): number | null {
   if (typeof value === "string") {
