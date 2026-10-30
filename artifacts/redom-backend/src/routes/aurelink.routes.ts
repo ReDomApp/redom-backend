@@ -148,17 +148,18 @@ function rentalPriceForDays(value: unknown, days: number): number | null {
   }
   return null;
 }
-function countryEntries(value: unknown, output: Array<{ id: string; code: string; name: string }> = []): Array<{ id: string; code: string; name: string }> {
-  if (Array.isArray(value)) { for (const item of value) countryEntries(item, output); return output; }
+function rentalCountryEntries(value: unknown, output: Array<{ id: string; code: string; name: string; dialCode: string }> = [], fallbackId?: string): Array<{ id: string; code: string; name: string; dialCode: string }> {
+  if (typeof value === "string") { try { return rentalCountryEntries(JSON.parse(value) as unknown, output, fallbackId); } catch { return output; } }
+  if (Array.isArray(value)) { for (const item of value) rentalCountryEntries(item, output); return output; }
   if (!value || typeof value !== "object") return output;
-  const row = value as Record<string, unknown>;
-  const idValue = row["ID"] ?? row["id"] ?? row["country_id"] ?? row["countryId"];
-  const nameValue = row["name"] ?? row["country"] ?? row["country_name"];
-  const codeValue = row["iso"] ?? row["iso2"] ?? row["code"] ?? row["short_name"] ?? row["country_code"] ?? "";
-  if (idValue != null && nameValue != null && (typeof idValue === "string" || typeof idValue === "number") && typeof nameValue === "string") {
-    output.push({ id: String(idValue).toLowerCase(), code: String(codeValue).toLowerCase(), name: nameValue.trim().toLowerCase() });
-  }
-  for (const child of Object.values(row)) if (child && typeof child === "object") countryEntries(child, output);
+  const row=value as Record<string,unknown>;
+  const countryObj=row.country && typeof row.country==="object" ? row.country as Record<string,unknown> : {};
+  const id=row.ID??row.id??row.country_id??row.countryId??row.rental_id??row.rentalId??fallbackId;
+  const name=row.name??row.country_name??row.countryName??(typeof row.country==="string"?row.country:undefined)??countryObj.name;
+  const code=row.iso??row.iso2??row.code??row.country_code??row.countryCode??countryObj.iso2??countryObj.code??"";
+  const dialCode=row.dial_code??row.dialCode??row.phone_code??countryObj.dial_code??"";
+  if(id!=null&&name!=null&&(typeof id==="string"||typeof id==="number")) output.push({id:String(id),code:String(code),name:String(name),dialCode:String(dialCode)});
+  for(const [key,child] of Object.entries(row)) if(child&&typeof child==="object") rentalCountryEntries(child,output,/^\\d+$/.test(key)?key:undefined);
   return output;
 }
 function filterVirtualInventory(value: unknown): unknown {
@@ -205,16 +206,7 @@ async function isCountryAvailable(country: string): Promise<boolean> {
 async function isRentalAvailable(rentalId: number): Promise<boolean> {
   try {
     const catalogs = await Promise.all([smsPoolClient.rentals(1), smsPoolClient.rentals(0)]);
-    for (const catalog of catalogs) {
-      const rows = catalog !== null && typeof catalog === "object" ? catalog as Record<string, unknown> : {};
-      for (const [key, value] of Object.entries(rows)) {
-        if (!value || typeof value !== "object") continue;
-        const row = value as Record<string, unknown>;
-        const id = String(row["ID"] ?? row["id"] ?? key);
-        if (id === String(rentalId)) return true;
-      }
-    }
-    return false;
+    return catalogs.some(catalog => rentalCountryEntries(catalog).some(row => row.id===String(rentalId)));
   } catch { return false; }
 }
 function providerFields(value: unknown, output: Array<{ key: string; value: string }> = []): Array<{ key: string; value: string }> {
@@ -390,8 +382,12 @@ router.get("/aurelink/catalog/valid-pools", aurelinkAuthMiddleware, async (req, 
 router.get("/aurelink/catalog/rentals", aurelinkAuthMiddleware, async (req, res) => {
   const parsed = z.object({ extendable: z.enum(["0", "1"]).default("1") }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid rental catalog request." });
-  try { return res.json({ success: true, rentals: await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0) }); }
-  catch (error) { return providerFailure(res, error); }
+  try {
+    const raw=await smsPoolClient.rentals(parsed.data.extendable === "1" ? 1 : 0);
+    const countries=rentalCountryEntries(raw);
+    const unique=[...new Map(countries.map(row=>[row.id,row])).values()];
+    return res.json({ success:true, countries:unique, rentals:raw, count:unique.length, extendable:parsed.data.extendable==="1" });
+  } catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/rentals/:rentalId/services", aurelinkAuthMiddleware, async (req, res) => {
   const id = z.string().regex(/^[0-9]+$/).safeParse(req.params.rentalId);
