@@ -42,7 +42,3 @@ export function aurelinkPriceBreakdown(
     totalMinor: providerAmountMinor + aurelinkChargeMinor + checkFeeMinor,
   };
 }
-
-function readCheckFeeMinor(envName: string): number {
-  return checkFeeMinor(envName);
-}
