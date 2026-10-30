@@ -50,9 +50,15 @@ export default function AurelinkDashboard({onLogout}:{onLogout:()=>void}){
    <div className="al-plan-grid">{[{id:"activation" as Plan,title:"Short Term Number",sub:"Fast number access for verification",icon:"phone"},{id:"rental" as Plan,title:"Long Term Number",sub:"Keep your number for 30 days",icon:"clock"},{id:"dedicated" as Plan,title:"Dedicated Number",sub:"A number reserved for your account",icon:"infinity"}].map(p=><button key={p.id} className={"al-plan "+(plan===p.id?"selected":"")} onClick={()=>{setPlan(p.id);setQuote(null);setMessage(p.id==="activation"?"Short term activation selected.":"This plan's purchase flow is being connected to live rental inventory.");}}><span className="al-plan-icon"><Icon name={p.icon} size={27}/></span><span><b>{p.title}</b><small>{p.sub}</small></span>{plan===p.id&&<span className="al-selected-dot"/>}</button>)}</div>
    {plan==="rental"&&<section className="al-longterm">
  <div className="al-lt-heading"><b>30-Day Numbers</b><span>Stable. Private & Renewable</span><small>AURELINK — 30 DAYS</small></div>
- <div className="al-lt-pools" role="group" aria-label="Long-term number provider pool">
-  <button className={nvPool==="lisa"?"selected":""} disabled={nvCountriesLoading} onClick={()=>{setNvPool("lisa");void loadNvPoolCountries("lisa");}}><b>Lisa Pool 1</b><small>NonVoip · {nvPool==="lisa"&&nvCountriesLoading?"Loading…":nvPool==="lisa"?nvCountries.length+" available countries":"NonVoip long-term inventory"}</small></button>
-  <button className={nvPool==="mike"?"selected":""} disabled={nvCountriesLoading} onClick={()=>{setNvPool("mike");void loadNvPoolCountries("mike");}}><b>Mike Pool 2</b><small>SMSPool · {nvPool==="mike"&&nvCountriesLoading?"Loading…":nvPool==="mike"?nvCountries.length+" available countries":"SMSPool rental inventory"}</small></button>
+ <div className="al-provider-choice" role="group" aria-label="Choose long-term provider pool">
+  <button type="button" className={"al-provider-card "+(nvPool==="lisa"?"is-active":"")} aria-pressed={nvPool==="lisa"} onClick={()=>{setNvPool("lisa");void loadNvPoolCountries("lisa");}}>
+   <span className="al-provider-card-top"><b>Lisa Pool 1</b><i>{nvPool==="lisa"?"Selected":"Select pool"}</i></span>
+   <strong>NonVoip</strong><small>{nvPool==="lisa"&&nvCountriesLoading?"Loading countries…":nvPool==="lisa"?nvCountries.length+" available countries":"30-day dedicated number inventory"}</small>
+  </button>
+  <button type="button" className={"al-provider-card "+(nvPool==="mike"?"is-active":"")} aria-pressed={nvPool==="mike"} onClick={()=>{setNvPool("mike");void loadNvPoolCountries("mike");}}>
+   <span className="al-provider-card-top"><b>Mike Pool 2</b><i>{nvPool==="mike"?"Selected":"Select pool"}</i></span>
+   <strong>SMSPool</strong><small>{nvPool==="mike"&&nvCountriesLoading?"Loading countries…":nvPool==="mike"?nvCountries.length+" available countries":"30-day rental inventory"}</small>
+  </button>
  </div>
  <label className="al-lt-country">Country{nvCountry&&<Flag code={nvCountry.code}/>}<select value={nvCountry?.id||""} disabled={nvCountriesLoading} onChange={e=>{const c=nvCountries.find(x=>x.id===e.target.value)||null;setNvCountry(c);setNvProducts([]);setNvRentalQuote(null);setNvRentalSelection(null);if(c){if(nvPool==="lisa")void loadNvProducts(c,1,false);else void loadSmsPoolRentalServices(c);}}}><option value="">{nvCountriesLoading?"Loading countries…":"Select country"}</option>{nvCountries.map(c=><option key={c.id} value={c.id}>{c.name} {c.dialCode}</option>)}</select></label>
  <div className="al-lt-search"><Icon name="search"/><input value={nvSearch} onChange={e=>setNvSearch(e.target.value)} placeholder={"Search from "+nvProducts.length+" supported services ..."}/></div>
