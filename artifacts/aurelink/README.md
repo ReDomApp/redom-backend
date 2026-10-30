@@ -69,7 +69,7 @@ SMSPool uses polling rather than an SMS push webhook for temporary activations. 
 - `POST /aurelink/wallet/topup` accepts `{ "amountUsd": 10 }` and returns a Stripe Checkout URL. Supported top-ups are $5–$5,000 USD.
 - `POST /aurelink/activations` accepts `{ "quoteId": "<uuid>" }` and debits the Aurelink wallet atomically before ordering. The legacy paid-transaction redemption path remains available when a `paymentReference` is supplied.
 - Provider-confirmed customer activation cancellations credit the wallet ledger. Expiry reconciliation is handled by the lifecycle worker and only credits wallet-funded orders after the provider confirms cancellation/refund.
-- First successful-OTP eligibility is account-scoped: a purchase does not consume the first-time offer until an OTP has arrived. A $1.00 provider price quotes at $1.50 for the first eligible purchase; subsequent short-term purchases use 2× provider price plus $0.20.
+- First successful-OTP eligibility is account-scoped: a purchase does not consume the first-time offer until an OTP has arrived. A $1.00 provider price quotes at $1.50 for the first eligible purchase; subsequent short-term purchases use 2× provider price plus the agreed $0.20 check fee (a $2.20 standard total).
 - Number line checks now use the Veriphone v3 static verification API and accept only valid `mobile` classifications. A missing or failed lookup fails closed.
 
 ## Configuration
@@ -80,7 +80,7 @@ Add these to the deployment environment, never to source control:
 - `VERIPHONE_API_KEY` — required for purchased-number line-type checks
 - `AURELINK_ALLOWED_SERVICES` — comma-separated SMSPool service names/IDs approved for sale. Empty means customer purchases are disabled.
 - `SMSPOOL_WHATSAPP_APPROVED=false` — keep false until SMSPool explicitly approves AURELINK's customer-facing WhatsApp resale/API use.
-- `AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS=100`
+- `AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS=20`
 - `AURELINK_LONG_TERM_CHECK_FEE_USD_CENTS=100`
 - `AURELINK_DEDICATED_CHECK_FEE_USD_CENTS=100`
 - `AURELINK_ADMIN_USER_IDS` — comma-separated ReDom user IDs allowed to inspect provider balance and use unmetered carrier lookup.
