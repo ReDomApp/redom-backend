@@ -383,13 +383,27 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
         let currentNetwork:Awaited<ReturnType<typeof checkIP>>;
         try { currentNetwork=await checkIP(parsed.data.clientIp); } catch { await client.query("ROLLBACK"); return res.status(503).json({success:false,message:"Aurelink could not verify this network securely. Reopen the email link and try again."}); }
         const currentPrefix=parsed.data.clientIp.includes(".")?parsed.data.clientIp.split(".").slice(0,3).join(".")+".0/24":parsed.data.clientIp.split(":").filter(Boolean).slice(0,4).join(":")+"::/64";
-        const provider=String(currentNetwork.company?.name??currentNetwork.ISP??currentNetwork.organization??"");
-        const mismatch=currentPrefix!==tokenContext.ip_prefix ||
-          (tokenContext.country_code && currentNetwork.location?.country_code && tokenContext.country_code!==currentNetwork.location.country_code) ||
-          (tokenContext.asn && Number(currentNetwork.asn?.asn??currentNetwork.ASN??0)!==Number(tokenContext.asn)) ||
-          (tokenContext.company_name && provider && tokenContext.company_name.toLowerCase()!==provider.toLowerCase()) ||
-          hash(agent(req))!==tokenContext.user_agent_hash;
-        if(mismatch) { await client.query("ROLLBACK"); return res.status(403).json({success:false,code:"AURELINK_RESET_CONTEXT_MISMATCH",message:"For your security, this reset link must be opened in the same browser and a matching network as the request. Reopen the email on the original device and network. If your connection changed, request a new link."}); }
+        const currentCountry=String(currentNetwork.location?.country_code??"").toUpperCase();
+        const originalCountry=String(tokenContext.country_code??"").toUpperCase();
+        const currentAsn=Number(currentNetwork.asn?.asn??currentNetwork.ASN??0);
+        const originalAsn=Number(tokenContext.asn??0);
+        const sameBrowser=hash(agent(req))===tokenContext.user_agent_hash;
+        const countryMismatch=Boolean(originalCountry&&currentCountry&&originalCountry!==currentCountry);
+        const asnMismatch=Boolean(originalAsn&&currentAsn&&originalAsn!==currentAsn);
+        const ipRangeMismatch=currentPrefix!==tokenContext.ip_prefix;
+        // Mobile carriers and residential ISPs routinely rotate public IPs within the same ASN.
+        // Treat the same country + ASN as the same network even if its public /24 or /64 changes.
+        // If ASN data is unavailable, fall back to the original IP range and provider.
+        const provider=String(currentNetwork.company?.name??currentNetwork.ISP??currentNetwork.organization??"").trim().toLowerCase();
+        const originalProvider=String(tokenContext.company_name??"").trim().toLowerCase();
+        const providerMismatch=Boolean(originalProvider&&provider&&originalProvider!==provider);
+        const networkMismatch=countryMismatch||asnMismatch||(!(originalAsn&&currentAsn)&&ipRangeMismatch&&providerMismatch);
+        const mismatch=!sameBrowser||networkMismatch;
+        if(mismatch) {
+          await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'auth.password_reset.context_mismatch',$2,$3,$4::jsonb)",[tokenContext.user_id,parsed.data.clientIp,agent(req),JSON.stringify({sameBrowser,countryMismatch,asnMismatch,ipRangeMismatch,providerMismatch,originalAsn:originalAsn||null,currentAsn:currentAsn||null,originalCountry:originalCountry||null,currentCountry:currentCountry||null})]).catch(()=>undefined);
+          await client.query("ROLLBACK");
+          return res.status(403).json({success:false,code:"AURELINK_RESET_CONTEXT_MISMATCH",message:"For your security, this reset link must be opened in the same browser and a matching network as the request. Reopen the email on the original device and network. If your connection changed, request a new link."});
+        }
       }
       const reset=result.rows[0];
       if(!reset){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Reset link is invalid or expired."});}
