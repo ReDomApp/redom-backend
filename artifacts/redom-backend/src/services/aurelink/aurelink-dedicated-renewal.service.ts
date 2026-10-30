@@ -18,7 +18,7 @@ async function paystack<T>(method: "GET"|"POST", path: string, body?: unknown): 
   if (!response.ok || payload.status !== true || !payload.data) throw new Error("Paystack request failed: " + String(payload.message || response.status));
   return payload.data;
 }
-function baseUrl() { return (process.env.AURELINK_PUBLIC_URL || process.env.PUBLIC_APP_URL || "").replace(/\/$/, ""); }
+function baseUrl() { return (process.env.AURELINK_API_URL || process.env.API_BASE_URL || "https://redom-backend.onrender.com/redom-backend").replace(/\/$/, ""); }
 async function sendEmail(to: string, subject: string, html: string, textBody: string): Promise<void> {
   const key = process.env.RESEND_API_KEY?.trim();
   const from = process.env.AURELINK_RECEIPT_FROM?.trim();
@@ -30,7 +30,7 @@ async function initializeTopup(attempt: Row): Promise<void> {
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
   const reference = "ALRN-" + crypto.randomUUID().replace(/-/g, "").slice(0, 24).toUpperCase();
-  const userResult = await pool.query("SELECT id,account_id,email FROM aurelink_users WHERE id=$1 AND account_status='active' LIMIT 1", [attempt.aurelink_user_id]);
+  const userResult = await pool.query("SELECT id,account_id,email FROM aurelink_users WHERE id=$1 AND account_status='active' AND email_verified=TRUE LIMIT 1", [attempt.aurelink_user_id]);
   const user = userResult.rows[0] as Row | undefined;
   if (!user?.email || !user.account_id) throw new Error("Aurelink customer account or verified email is unavailable.");
   const orderResult = await pool.query("SELECT id,aurelink_order_id,phone_number,provider_order_id FROM aurelink_provider_orders WHERE id=$1 AND aurelink_user_id=$2 AND product_kind='dedicated'", [attempt.order_id, attempt.aurelink_user_id]);
@@ -38,7 +38,7 @@ async function initializeTopup(attempt: Row): Promise<void> {
   if (!order) throw new Error("Aurelink dedicated order ownership check failed.");
   const checkout = await paystack<{ authorization_url: string; reference: string }>("POST", "/transaction/initialize", {
     email: String(user.email), amount: String(attempt.amount_minor), currency: String(attempt.currency),
-    reference, callback_url: baseUrl() ? baseUrl()+"/renewal/payment-return" : undefined,
+    reference, callback_url: baseUrl() ? baseUrl()+"/payments/callback" : undefined,
     metadata: { service: "aurelink", purpose: "dedicated_renewal_wallet_topup", aurelink_user_id: String(user.id), aurelink_account_id: String(user.account_id), aurelink_order_id: String(order.aurelink_order_id), renewal_attempt_id: String(attempt.id), amount_minor: String(attempt.amount_minor), currency: String(attempt.currency) }
   });
   const client = await pool.connect();
@@ -50,7 +50,7 @@ async function initializeTopup(attempt: Row): Promise<void> {
     await client.query("UPDATE aurelink_dedicated_renewal_attempts SET status='awaiting_topup',updated_at=NOW() WHERE id=$1 AND status<>'succeeded'", [attempt.id]);
     await client.query("COMMIT");
   } catch(e) { await client.query("ROLLBACK").catch(()=>undefined); throw e; } finally { client.release(); }
-  const link = baseUrl() + "/aurelink/renewal/topup/" + token;
+  const link = baseUrl() + "/payments/aurelink/renewal/topup/" + token;
   const html = "<h2>Aurelink dedicated number renewal</h2><p>Your Aurelink wallet needs funds before your dedicated number can renew.</p><p>Account: "+String(user.account_id)+"</p><p>Number: "+String(order.phone_number||"—")+"</p><p>Renewal amount: "+(Number(attempt.amount_minor)/100).toFixed(2)+" "+String(attempt.currency)+"</p><p><a href=\""+link+"\">Continue secure top-up</a></p><p>This secure link expires in 24 hours and can be used once. Payment credits only your Aurelink wallet.</p>";
   try { await sendEmail(String(user.email), "Action required: fund your Aurelink renewal", html, "Aurelink account "+user.account_id+" needs "+(Number(attempt.amount_minor)/100).toFixed(2)+" "+attempt.currency+" for number "+order.phone_number+". Secure link (expires in 24 hours): "+link); } catch (error) { await pool.query("UPDATE aurelink_renewal_topup_tokens SET revoked_at=NOW() WHERE token_hash=$1 AND consumed_at IS NULL", [tokenHash]); throw error; }
 }
