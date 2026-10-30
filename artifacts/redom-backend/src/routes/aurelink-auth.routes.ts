@@ -13,6 +13,7 @@ import { emailService } from "../services/auth/email.service";
 const router = Router();
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 const ip = (req: Request) => String(req.ip ?? "").replace(/^::ffff:/, "").slice(0,45);
+const clientIp = (req: Request) => { const supplied=typeof req.body?.clientIp==="string"?req.body.clientIp.trim(): ""; return supplied && isIP(supplied)!==0 ? supplied.replace(/^::ffff:/,"").slice(0,45) : ip(req); };
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
 function jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
 function refreshSecret() { const v=process.env.JWT_REFRESH_SECRET; if(!v) throw new Error("JWT_REFRESH_SECRET is not configured."); return v; }
@@ -32,8 +33,8 @@ async function startSession(req:Request,user:{id:string;email:string}) {
   const sessionId = randomUUID();
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
-  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),ip(req)]);
-  await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type) VALUES($1,$2,$3,$4,'login')",[user.id,sessionId,ip(req),agent(req)]);
+  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),clientIp(req)]);
+  await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type) VALUES($1,$2,$3,$4,'login')",[user.id,sessionId,clientIp(req),agent(req)]);
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
   const device=String(req.body?.deviceName??"Device not identified").slice(0,150).replace(/[&<>"']/g,"");
   const platform=String(req.body?.platform??"Unknown").slice(0,80).replace(/[&<>"']/g,"");
@@ -44,27 +45,27 @@ async function startSession(req:Request,user:{id:string;email:string}) {
   await pool.query("INSERT INTO aurelink_session_security_actions(user_id,session_id,token_hash,expires_at) VALUES($1,$2,$3,$4)",[user.id,sessionId,hash(securityToken),securityExpires]);
   const securityLink=aurelinkAppBase()+"/?screen=session-security&token="+encodeURIComponent(securityToken);
   const safeEmailName=String(user.first_name??"there").replace(/[&<>"']/g,"");
-  const safeIp=ip(req).replace(/[&<>"']/g,"");
+  const safeIp=clientIp(req).replace(/[&<>"']/g,"");
   void resend.emails.send({from:aurelinkSender(),to:user.email,subject:"New sign-in to Aurelink",html:`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:28px;color:#17263b"><h2>Aurelink sign-in alert</h2><p>Hello ${safeEmailName}, a sign-in to your account just occurred.</p><p><b>Device:</b> ${device}<br><b>Platform:</b> ${platform}<br><b>Browser:</b> ${browser}<br><b>IP address:</b> ${safeIp}<br><b>Time:</b> ${new Date().toISOString()} UTC</p><p>If this was you, no action is needed. If it wasn't, use the secure link below within five minutes.</p><p><a href="${securityLink}" style="display:inline-block;background:#126ac2;color:#fff;text-decoration:none;padding:14px 22px;border-radius:7px;font-weight:bold">Review sign-in and secure account</a></p><p>The one-time link lets you change your password and sign out all sessions, or terminate only this session. It expires in five minutes.</p></div>`}).catch(()=>undefined);
   return {accessToken,refreshToken,expiresIn:900,sessionId};
 }
 router.post("/aurelink/auth/register",(_req,res)=>res.status(410).json({success:false,message:"Direct registration is disabled. Use the email-confirmation signup flow."}));
 router.post("/aurelink/auth/login",async(req,res)=>{
-  const parsed=z.object({email:z.string().email().max(255),password:z.string().min(1).max(200)}).safeParse(req.body);
+  const parsed=z.object({email:z.string().email().max(255),password:z.string().min(1).max(200),clientIp:z.string().optional()}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"Valid email and password are required."});
   try{
     const email=emailService.normalize(parsed.data.email);
     const found=await pool.query("SELECT id,email,first_name,last_name,password_hash,email_verified,account_status FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
     const user=found.rows[0];
     if(!user || user.email_verified!==true || !await verifyPassword(parsed.data.password,String(user.password_hash))) {
-      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'invalid_credentials')",[user?.id??null,ip(req),agent(req)]).catch(()=>undefined);
+      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'invalid_credentials')",[user?.id??null,clientIp(req),agent(req)]).catch(()=>undefined);
       return res.status(401).json({success:false,message:"Invalid email or password."});
     }
     if(user.account_status!=="active")return res.status(403).json({success:false,message:"This Aurelink account is not active."});
     const sec=await pool.query("SELECT two_factor_enabled,two_factor_method FROM aurelink_account_security WHERE user_id=$1",[user.id]);
     if(sec.rows[0]?.two_factor_enabled) return res.status(501).json({success:false,code:"AURELINK_2FA_SETUP_REQUIRED",message:"Two-factor authentication is enabled, but challenge delivery is not yet available for this account. Contact Aurelink support; password-only login is blocked."});
     const session=await startSession(req,{id:user.id,email:user.email});
-    await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.login',$2,$3)",[user.id,ip(req),agent(req)]);
+    await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.login',$2,$3)",[user.id,clientIp(req),agent(req)]);
     delete user.password_hash;
     return res.json({success:true,user,session});
   }catch(e){return res.status(500).json({success:false,message:"Aurelink login failed."});}
