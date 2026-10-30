@@ -113,7 +113,7 @@ router.get("/aurelink/nonvoip/short-term/countries",async(_req,res)=>{
   for(let page=1;page<=20;page++){
    const d=await nonVoipClient.products("short-term",undefined,page,50);
    const rows=nvRows(d);
-   for(const row of rows){const f=shortTermFields(row);if(f.countryCode)seen.set(f.countryCode,{code:f.countryCode,name:f.countryName||f.countryCode,dialCode:f.dialCode});}
+   for(const row of rows){const f=shortTermFields(row);if(f.countryCode&&f.available&&f.providerPrice>0)seen.set(f.countryCode,{code:f.countryCode,name:f.countryName||f.countryCode,dialCode:f.dialCode});}
    if(rows.length<50)break;
   }
   return res.json({success:true,countries:[...seen.values()].sort((a,b)=>a.name.localeCompare(b.name)),availableCountryCount:seen.size,provider:"nonvoip",poolLabel:"Lisa Pool 1"});
