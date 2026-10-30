@@ -246,6 +246,28 @@ function carrierAssessment(value: unknown): { carrier: string | null; lineType: 
   if (mobileFlag && /^(true|1|yes)$/i.test(mobileFlag.value)) return { carrier: carrierField?.value ?? null, lineType: "mobile", result: "mobile" };
   return { carrier: carrierField?.value ?? null, lineType: typeText || null, result: "unknown" };
 }
+function fairUseRentalMessages(value: unknown): { payload: unknown; shown: number; omitted: number } {
+  let shown = 0, omitted = 0;
+  const dayOf = (item: unknown): string => {
+    const row = item && typeof item === "object" ? item as Record<string,unknown> : {};
+    const raw = row["received_at"] ?? row["created_at"] ?? row["timestamp"] ?? row["date"];
+    const date = raw == null ? new Date() : new Date(typeof raw === "number" ? (raw < 100000000000 ? raw * 1000 : raw) : String(raw));
+    return Number.isFinite(date.getTime()) ? date.toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+  };
+  const visit = (node: unknown, key = ""): unknown => {
+    if (Array.isArray(node)) {
+      if (/messages?|sms|inbox/i.test(key)) {
+        const counts = new Map<string,number>();
+        return node.filter(item => { const day=dayOf(item), count=counts.get(day)??0; if(count>=25){omitted++;return false;} counts.set(day,count+1);shown++;return true; });
+      }
+      return node.map(item => visit(item,key));
+    }
+    if (!node || typeof node !== "object") return node;
+    return Object.fromEntries(Object.entries(node as Record<string,unknown>).map(([k,v])=>[k,visit(v,k)]));
+  };
+  return { payload: visit(value), shown, omitted };
+}
+
 function expiryDate(value: unknown, fallbackSeconds?: number): Date | null {
   const direct = value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
   const raw = direct["expires_at"] ?? direct["expiration"] ?? direct["expiry"] ?? direct["expires"];
@@ -707,14 +729,14 @@ router.get("/aurelink/rentals/:rentalId/messages", aurelinkAuthMiddleware, async
   try {
     const order = await ownedOrder(req.user.userId, rentalId.data, "rental");
     if (!order) return res.status(404).json({ success: false, message: "Rental not found." });
-    const messages = await smsPoolClient.rentalMessages(rentalId.data);
+    const rawMessages = await smsPoolClient.rentalMessages(rentalId.data);\n    const capped = fairUseRentalMessages(rawMessages);\n    const messages = capped.payload;
     const hasMessage = providerFields(messages).some((field) => /^(sms|message|full_sms|message_body|body|code)$/.test(field.key) && field.value.length > 0);
     const expiry = expiryDate(messages);
     await pool.query(
       "UPDATE aurelink_provider_orders SET sms_received_at=CASE WHEN $2 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,expires_at=COALESCE($3,expires_at),last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $4::jsonb WHERE id=$1",
       [order["id"], hasMessage, expiry, JSON.stringify({ lastMessagePoll: { hasMessage, checkedAt: new Date().toISOString() } })],
     );
-    return res.json({ success: true, messages, smsReceivedAt: hasMessage ? (order["sms_received_at"] ?? new Date().toISOString()) : null, expiresAt: expiry?.toISOString() ?? order["expires_at"] ?? null });
+    return res.json({ success: true, messages, fairUse: { dailyLimit: 25, shown: capped.shown, omitted: capped.omitted }, smsReceivedAt: hasMessage ? (order["sms_received_at"] ?? new Date().toISOString()) : null, expiresAt: expiry?.toISOString() ?? order["expires_at"] ?? null });
   } catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/rentals/:rentalId/status", aurelinkAuthMiddleware, async (req, res) => {
