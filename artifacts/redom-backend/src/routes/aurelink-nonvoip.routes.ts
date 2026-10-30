@@ -20,12 +20,71 @@ function productFields(row:Record<string,unknown>){
 router.use(aurelinkAuthMiddleware);
 router.get("/aurelink/nonvoip/countries",async(_req,res)=>{try{const d=await nonVoipClient.products("long-term",undefined,1,50);const rows=nvRows(d);const map=new Map<string,Record<string,unknown>>();for(const r of rows){const f=productFields(r);if(f.countryCode)map.set(f.countryCode,{code:f.countryCode,name:f.countryName||f.countryCode,dialCode:f.dialCode});}return res.json({success:true,countries:[...map.values()]});}catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip countries unavailable."});}});
 router.get("/aurelink/nonvoip/products",async(req,res)=>{const country=String(req.query.country||"").trim();const page=Math.max(1,Math.min(1000,Number(req.query.page)||1));if(!country)return res.status(400).json({success:false,message:"Choose a country first."});try{const d=await nonVoipClient.products("long-term",country,page,50);const rows=nvRows(d).map(productFields).filter(x=>x.serviceId&&x.offerId&&x.providerPrice>0&&x.available);return res.json({success:true,products:rows.map(x=>({...x,retailPriceUsd:(x.retailMinor/100).toFixed(2),priceBreakdown:aurelinkPriceBreakdown(x.providerPrice,"long_term")})),page,perPage:50,total:Number(nvRecord(d).total)||null,hasMore:rows.length>=50});}catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip catalog unavailable."});}});
-router.post("/aurelink/nonvoip/orders",async(req,res)=>{const userId=req.user?.userId;if(!userId)return res.status(401).json({success:false,message:"Authentication required."});const parsed=req.body as Record<string,unknown>;const serviceId=text(parsed.serviceId),offerId=text(parsed.offerId);if(!serviceId||!offerId)return res.status(400).json({success:false,message:"A live NonVoip offer is required."});const quotedPrice=Number(parsed.providerPrice);if(!Number.isFinite(quotedPrice)||quotedPrice<=0)return res.status(400).json({success:false,message:"Invalid live provider price."});const total=retailMinor(quotedPrice);const client=await pool.connect();let debitRef="";let createdId="";try{
- await client.query("BEGIN");const debit=await walletDebit(client,{userId,amountMinor:total,reference:"nonvoip-purchase:"+randomUUID(),type:"purchase",description:"Aurelink 30-day mobile number purchase",metadata:{provider:"NonVoip",serviceId,offerId}});void debit;debitRef=String((await client.query("SELECT reference FROM aurelink_wallet_ledger WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1",[userId])).rows[0]?.reference||"");await client.query("COMMIT");
- const idempotency=nonVoipIdempotencyKey();const order=await nonVoipClient.createOrder({serviceId,offerId,quotedPrice:quotedPrice.toFixed(2),idempotencyKey:idempotency});const data=nvRecord(order);createdId=text(data.id??data.order_id??data.verification_id);const number=text(data.phone_number??data.number??data.phoneNumber);if(!createdId||!number)throw new NonVoipError("NonVoip returned an incomplete order. Aurelink is reconciling the provider result.",502,"INCOMPLETE_ORDER");
- const check=await verifyAurelinkNumber(number);const assessment=veriphoneLineAssessment(check as Record<string,unknown>);if(!assessment.valid||!assessment.lineType.toLowerCase().includes("mobile")){await nonVoipClient.cancel(createdId).catch(()=>undefined);throw new NonVoipError("This allocation did not pass the mobile-line check. The order was rejected and a wallet refund was initiated.",409,"MOBILE_CHECK_FAILED");}
- const orderId=String(440+Math.floor(Math.random()*120))+String(Math.floor(10000+Math.random()*90000));const saved=await pool.query("INSERT INTO aurelink_provider_orders(aurelink_order_id,aurelink_user_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,carrier_name,line_type,verification_status,verified_at,rental_started_at,expires_at,provider_payload) VALUES($1,$2,'rental',$3,$4,$5,$6,'active',$7,$8,$9,$10,$11,'verified',NOW(),NOW(),COALESCE($12::timestamptz,NOW()+INTERVAL '30 days'),$13::jsonb) RETURNING id,aurelink_order_id,provider_order_id,phone_number,country,service,status,expires_at,created_at",[orderId,userId,createdId,number,text(data.country_code??parsed.countryCode),text(data.service??parsed.serviceName),quotedPrice,String(total),debitRef||null,assessment.carrier,assessment.lineType, data.expires_at??null,JSON.stringify({provider:"NonVoip",providerOrder:data,offerId,serviceId,verified:true})]);return res.status(201).json({success:true,order:saved.rows[0]});
- }catch(e){await client.query("ROLLBACK").catch(()=>undefined);if(debitRef){const refund=await pool.connect();try{await refund.query("BEGIN");await walletCredit(refund,{userId,amountMinor:total,reference:"refund:"+debitRef,type:"refund",description:"Automatic refund for failed NonVoip mobile number purchase",metadata:{provider:"NonVoip",reason:e instanceof Error?e.message:"order failed"}});await refund.query("COMMIT");}catch{await refund.query("ROLLBACK").catch(()=>undefined);}finally{refund.release();}}return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip order failed; wallet reconciliation was attempted."});}finally{client.release();}});
+router.post("/aurelink/nonvoip/orders",async(req,res)=>{
+ const userId=req.user?.userId;
+ if(!userId)return res.status(401).json({success:false,message:"Authentication required."});
+ const parsed=req.body as Record<string,unknown>;
+ const serviceId=text(parsed.serviceId),offerId=text(parsed.offerId),countryCode=text(parsed.countryCode).toUpperCase();
+ const quotedPrice=Number(parsed.providerPrice);
+ if(!serviceId||!offerId||!countryCode)return res.status(400).json({success:false,message:"A live NonVoip offer and country are required."});
+ if(!Number.isFinite(quotedPrice)||quotedPrice<=0)return res.status(409).json({success:false,message:"This number is unavailable because its provider price is zero or invalid."});
+ let liveOffer:NvRow|undefined;
+ try{
+  // Refresh the provider catalog before wallet debit; never trust a client-supplied amount.
+  const catalog=await nonVoipClient.products("long-term",countryCode,1,1000);
+  liveOffer=nvRows(catalog).find(row=>{
+   const fields=productFields(row);
+   return fields.serviceId===serviceId&&fields.offerId===offerId&&fields.countryCode.toUpperCase()===countryCode&&fields.available&&fields.providerPrice>0;
+  });
+  if(!liveOffer){
+   for(let page=2;page<=20&&!liveOffer;page++){
+    const next=await nonVoipClient.products("long-term",countryCode,page,50);
+    const rows=nvRows(next);
+    liveOffer=rows.find(row=>{
+     const fields=productFields(row);
+     return fields.serviceId===serviceId&&fields.offerId===offerId&&fields.countryCode.toUpperCase()===countryCode&&fields.available&&fields.providerPrice>0;
+    });
+    if(rows.length<50)break;
+   }
+  }
+ }catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"Aurelink could not refresh the live NonVoip offer."});}
+ if(!liveOffer)return res.status(409).json({success:false,message:"This NonVoip offer is no longer available. Refresh the catalog and try again."});
+ const liveFields=productFields(liveOffer);
+ const providerAmount=liveFields.providerPrice;
+ if(Math.abs(providerAmount-quotedPrice)>0.000001){
+  const currentBreakdown=aurelinkPriceBreakdown(providerAmount,"long_term");
+  return res.status(409).json({success:false,message:"The provider price changed. Refresh the quote before purchasing.",providerPrice:providerAmount,retailMinor:currentBreakdown?.totalMinor??0,priceBreakdown:currentBreakdown});
+ }
+ const priceBreakdown=aurelinkPriceBreakdown(providerAmount,"long_term");
+ if(!priceBreakdown)return res.status(409).json({success:false,message:"This number is unavailable because the provider returned a zero or invalid price."});
+ const total=priceBreakdown.totalMinor;
+ const client=await pool.connect();let debitRef="";let createdId="";
+ try{
+  await client.query("BEGIN");
+  await walletDebit(client,{userId,amountMinor:total,reference:"nonvoip-purchase:"+randomUUID(),type:"purchase",description:"Aurelink 30-day mobile number purchase",metadata:{provider:"NonVoip",serviceId,offerId,priceBreakdown}});
+  debitRef=String((await client.query("SELECT reference FROM aurelink_wallet_ledger WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1",[userId])).rows[0]?.reference||"");
+  await client.query("COMMIT");
+  const idempotency=nonVoipIdempotencyKey();
+  const order=await nonVoipClient.createOrder({serviceId,offerId,quotedPrice:providerAmount.toFixed(2),idempotencyKey:idempotency});
+  const data=nvRecord(order);createdId=text(data.id??data.order_id??data.verification_id);
+  const number=text(data.phone_number??data.number??data.phoneNumber);
+  if(!createdId||!number)throw new NonVoipError("NonVoip returned an incomplete order. Aurelink is reconciling the provider result.",502,"INCOMPLETE_ORDER");
+  const check=await verifyAurelinkNumber(number);
+  const assessment=veriphoneLineAssessment(check as Record<string,unknown>);
+  if(!assessment.valid||!assessment.lineType.toLowerCase().includes("mobile")){
+   await nonVoipClient.cancel(createdId).catch(()=>undefined);
+   throw new NonVoipError("This allocation did not pass the mobile-line check. The order was rejected and a wallet refund was initiated.",409,"MOBILE_CHECK_FAILED");
+  }
+  const orderId=String(440+Math.floor(Math.random()*120))+String(Math.floor(10000+Math.random()*90000));
+  const saved=await pool.query("INSERT INTO aurelink_provider_orders(aurelink_order_id,aurelink_user_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,carrier_name,line_type,verification_status,verified_at,rental_started_at,expires_at,provider_payload) VALUES($1,$2,'rental',$3,$4,$5,$6,'active',$7,$8,$9,$10,$11,'verified',NOW(),NOW(),COALESCE($12::timestamptz,NOW()+INTERVAL '30 days'),$13::jsonb) RETURNING id,aurelink_order_id,provider_order_id,phone_number,country,service,status,expires_at,created_at",
+   [orderId,userId,createdId,number,text(data.country_code??countryCode),text(data.service??parsed.serviceName),providerAmount,String(total),debitRef||null,assessment.carrier,assessment.lineType,data.expires_at??null,JSON.stringify({provider:"NonVoip",providerOrder:data,offerId,serviceId,priceBreakdown,verified:true})]);
+  return res.status(201).json({success:true,order:saved.rows[0],priceBreakdown});
+ }catch(e){
+  await client.query("ROLLBACK").catch(()=>undefined);
+  if(debitRef){const refund=await pool.connect();try{await refund.query("BEGIN");await walletCredit(refund,{userId,amountMinor:total,reference:"refund:"+debitRef,type:"refund",description:"Automatic refund for failed NonVoip mobile number purchase",metadata:{provider:"NonVoip",reason:e instanceof Error?e.message:"order failed"}});await refund.query("COMMIT");}catch{await refund.query("ROLLBACK").catch(()=>undefined);}finally{refund.release();}}
+  return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip order failed; wallet reconciliation was attempted."});
+ }finally{client.release();}
+});
 router.get("/aurelink/nonvoip/orders/:id/messages",async(req,res)=>{try{const result=await pool.query("SELECT provider_order_id FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND provider_order_id=$2 AND product_kind='rental'",[req.user?.userId,req.params.id]);if(!result.rows[0])return res.status(404).json({success:false,message:"Order not found."});const messages=await nonVoipClient.messages(req.params.id);const body=nvRecord(messages);const hasSms=Array.isArray(body.messages)&&(body.messages as unknown[]).length>0;await pool.query("UPDATE aurelink_provider_orders SET sms_received_at=CASE WHEN $2 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $3::jsonb WHERE aurelink_user_id=$1 AND provider_order_id=$4",[req.user?.userId,hasSms,JSON.stringify({lastNonVoipMessages:messages}),req.params.id]);return res.json({success:true,messages:body.messages??[],smsReceived:hasSms});}catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"SMS status unavailable."});}});
 
 router.post("/aurelink/nonvoip/orders/:id/cancel",async(req,res)=>{const userId=req.user?.userId;if(!userId)return res.status(401).json({success:false,message:"Authentication required."});const db=await pool.query("SELECT * FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND provider_order_id=$2 AND product_kind='rental'",[userId,req.params.id]);const order=db.rows[0] as Record<string,unknown>|undefined;if(!order)return res.status(404).json({success:false,message:"Order not found."});if(order.sms_received_at)return res.status(409).json({success:false,message:"This order has received an SMS and cannot be cancelled."});if(Date.now()-new Date(String(order.created_at)).getTime()>3600000)return res.status(409).json({success:false,message:"The one-hour cancellation window has expired."});try{const result=await nonVoipClient.cancel(req.params.id);const status=text(result.status??result.state).toLowerCase();if(result.success===false||/failed|rejected/.test(status))return res.status(409).json({success:false,message:"NonVoip did not confirm cancellation. No wallet refund was issued."});const client=await pool.connect();try{await client.query("BEGIN");await client.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1",[order.id,JSON.stringify({nonVoipCancellation:result})]);if(order.wallet_debit_reference&&order.retail_amount_minor)await walletCredit(client,{userId,amountMinor:String(order.retail_amount_minor),reference:"refund:"+String(order.wallet_debit_reference),type:"refund",description:"NonVoip confirmed cancellation within one hour",orderId:String(order.id)});await client.query("COMMIT");return res.json({success:true,cancelled:true,refunded:true});}catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}}catch(e){return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"Unable to cancel NonVoip order."});}});
