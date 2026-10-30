@@ -590,9 +590,14 @@ router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) 
     lineType: z.enum(["mobile", "voip"]).default("mobile"),
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental quote request." });
-  if (parsed.data.serviceId && !await isServiceAllowed(parsed.data.serviceId)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
+  if (!parsed.data.serviceId) return res.status(400).json({ success: false, message: "Select a provider-supported rental service. Multi-service rentals are not available because financial services are prohibited." });
   if (!await isRentalAvailable(parsed.data.rentalId)) return res.status(403).json({ success: false, message: "This rental inventory is not available in the provider catalog." });
   try {
+    const providerServices = await smsPoolClient.rentalServices(String(parsed.data.rentalId));
+    const selectedService = serviceEntries(providerServices).find((entry) => entry.id === parsed.data.serviceId || entry.name.toLowerCase() === parsed.data.serviceId!.toLowerCase());
+    if (!selectedService) return res.status(409).json({ success: false, message: "The selected rental service is no longer available from SMSPool." });
+    if (/bank|financial|finance|payment|cashapp|paypal|venmo|wise|revolut|stripe|coinbase|crypto|wallet|credit.?card|debit.?card|money.?transfer|western.?union|moneygram/i.test(selectedService.name))
+      return res.status(403).json({ success: false, message: "Financial-service rentals are not permitted under Aurelink's rental policy." });
     const providerPricing = await smsPoolClient.rentalPricing(String(parsed.data.rentalId), parsed.data.serviceId);
     const providerMaxPrice = rentalPriceForDays(providerPricing, parsed.data.days);
     if (providerMaxPrice === null) return res.status(409).json({ success: false, message: "SMSPool did not return an exact live price for this rental duration." });
