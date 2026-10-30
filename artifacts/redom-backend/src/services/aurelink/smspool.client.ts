@@ -54,7 +54,11 @@ export class SmsPoolClient {
 
       const obj = record(data);
       const type = typeof obj.type === "string" ? obj.type : "";
-      const providerMessage = typeof obj.message === "string" ? obj.message : "";
+      const errors = Array.isArray(obj.errors) ? obj.errors.filter((item) => item && typeof item === "object") as Array<Record<string, unknown>> : [];
+      const firstError = errors[0];
+      const providerMessage = (typeof obj.message === "string" ? obj.message : "")
+        || (typeof firstError?.message === "string" ? firstError.message : "");
+      const errorParam = typeof firstError?.param === "string" ? firstError.param : "";
       if (!response.ok || obj.success === 0 || obj.success === false) {
         const friendly: Record<string, string> = {
           OUT_OF_STOCK: "SMSPool has no available numbers for this service and country. Try another country or service.",
@@ -62,10 +66,18 @@ export class SmsPoolClient {
           BALANCE_ERROR: "SMSPool rejected the order because the account balance is insufficient. Check the SMSPool account balance.",
           INVALID_SERVICE: "SMSPool rejected the selected service ID. Refresh the service catalog and select the service again.",
           INVALID_COUNTRY: "SMSPool rejected the selected country ID. Refresh the country catalog and select the country again.",
+          INVALID_POOL: "SMSPool rejected the selected pool ID. Refresh the pool catalog and select a valid pool.",
         };
-        const safeType = type || (response.status === 422 ? "VALIDATION_ERROR" : "PROVIDER_REJECTED");
+        const paramType: Record<string, string> = { service: "INVALID_SERVICE", country: "INVALID_COUNTRY", pool: "INVALID_POOL" };
+        const safeType = type || paramType[errorParam] || (response.status === 422 ? "VALIDATION_ERROR" : "PROVIDER_REJECTED");
         const message = friendly[safeType] || (providerMessage ? `SMSPool rejected ${path}: ${providerMessage.slice(0, 240)}` : `SMSPool request to ${path} failed with HTTP ${response.status}.`);
-        console.warn("[SMSPool]", JSON.stringify({ path, status: response.status, type: safeType, message: providerMessage.slice(0, 240) }));
+        console.warn("[SMSPool]", JSON.stringify({
+          path, status: response.status, type: safeType,
+          message: providerMessage.slice(0, 240),
+          param: errorParam || undefined,
+          description: typeof firstError?.description === "string" ? firstError.description.slice(0, 240) : undefined,
+          responseKeys: Object.keys(obj).slice(0, 20),
+        }));
         throw new SmsPoolError(message, { status: response.status, providerType: safeType });
       }
       return data as T;
