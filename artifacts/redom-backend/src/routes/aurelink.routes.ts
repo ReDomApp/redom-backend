@@ -673,15 +673,16 @@ router.post("/aurelink/rentals/:rentalId/renew", aurelinkAuthMiddleware, async (
   }
 });
 router.post("/aurelink/rentals/:rentalId/cancel", aurelinkAuthMiddleware, async (req, res) => {
-  if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Cancellation is administrator-only until customer refunds are integrated." });
   const rentalId = z.string().min(1).max(160).safeParse(req.params.rentalId);
   if (!rentalId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental ID." });
   try {
     const rental = await ownedOrder(req.user.userId, rentalId.data, "rental");
     if (!rental) return res.status(404).json({ success: false, message: "Rental not found." });
-    const result = await smsPoolClient.cancelRental(rentalId.data);
-    await pool.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1", [rental["id"], JSON.stringify({ cancellation: result })]);
-    return res.json({ success: true, cancellation: result });
+    if(["completed","refunded","cancelled","expired"].includes(String(rental["status"])))return res.status(409).json({success:false,message:"This rental is no longer cancellable."});
+    const result=object(await smsPoolClient.cancelRental(rentalId.data));
+    const confirmed=result["success"]===true||result["success"]===1||/^(success|cancelled|canceled|refunded)$/i.test(String(result["status"]??result["message"]??""));
+    if(!confirmed)return res.status(409).json({success:false,message:"Provider has not confirmed cancellation. No wallet refund was issued.",provider:result});
+    const client=await pool.connect();try{await client.query("BEGIN");await client.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1",[rental["id"],JSON.stringify({cancellation:result})]);if(rental["wallet_debit_reference"]&&rental["retail_amount_minor"]){await walletCredit(client,{userId:req.user.userId,amountMinor:String(rental["retail_amount_minor"]),reference:"refund:"+String(rental["wallet_debit_reference"]),type:"refund",description:"Provider-confirmed rental cancellation refund",orderId:String(rental["id"])});await client.query("UPDATE aurelink_provider_orders SET refund_reference=$2 WHERE id=$1",[rental["id"],"refund:"+String(rental["wallet_debit_reference"])]);}await client.query("COMMIT");return res.json({success:true,cancellation:result,refunded:Boolean(rental["wallet_debit_reference"])});}catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
   } catch (error) { return providerFailure(res, error); }
 });
 
