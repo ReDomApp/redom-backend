@@ -465,15 +465,20 @@ router.post("/aurelink/activations/:orderId/resend", aurelinkAuthMiddleware, asy
   } catch (error) { return providerFailure(res, error); }
 });
 router.post("/aurelink/activations/:orderId/cancel", aurelinkAuthMiddleware, async (req, res) => {
-  if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Cancellation is administrator-only until customer refunds are integrated." });
   const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
   if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
   try {
     const order = await ownedOrder(req.user.userId, orderId.data, "activation");
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
-    const result = await smsPoolClient.cancelSms(orderId.data);
-    await pool.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1", [order["id"], JSON.stringify({ cancellation: result })]);
-    return res.json({ success: true, cancellation: result });
+    if(["completed","refunded","cancelled","expired"].includes(String(order["status"])))return res.status(409).json({success:false,message:"This activation is no longer cancellable."});
+    const result=object(await smsPoolClient.cancelSms(orderId.data));
+    const cancelOk=result["success"]===1||result["success"]===true||/cancel|refund|success/i.test(String(result["message"]??result["status"]??""));
+    if(!cancelOk)return res.status(409).json({success:false,message:"The provider has not confirmed cancellation. No wallet refund has been issued.",provider:result});
+    const client=await pool.connect();
+    try{await client.query("BEGIN");await client.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1",[order["id"],JSON.stringify({cancellation:result})]);
+      if(order["wallet_debit_reference"]&&order["retail_amount_minor"]){await walletCredit(client,{userId:req.user.userId,amountMinor:String(order["retail_amount_minor"]),reference:"refund:"+String(order["wallet_debit_reference"]),type:"refund",description:"Provider-confirmed activation cancellation refund",orderId:String(order["id"]),metadata:{providerCancellation:result}});await client.query("UPDATE aurelink_provider_orders SET refund_reference=$2 WHERE id=$1",[order["id"],"refund:"+String(order["wallet_debit_reference"])]);}
+      await client.query("COMMIT");return res.json({success:true,cancellation:result,refunded:Boolean(order["wallet_debit_reference"])});
+    }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
   } catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/orders", aurelinkAuthMiddleware, async (req, res) => {
