@@ -198,6 +198,8 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
     -- These legacy Aurelink financial tables are owned by Aurelink identities.
     DO $aurelink_finance_identity$
     BEGIN
+      ALTER TABLE aurelink_wallet_topups DROP CONSTRAINT IF EXISTS aurelink_wallet_topups_reference_fkey;
+      ALTER TABLE aurelink_payment_redemptions DROP CONSTRAINT IF EXISTS aurelink_payment_redemptions_payment_reference_fkey;
       ALTER TABLE aurelink_wallet_topups DROP CONSTRAINT IF EXISTS aurelink_wallet_topups_user_id_fkey;
       ALTER TABLE aurelink_wallet_topups ADD CONSTRAINT aurelink_wallet_topups_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES aurelink_users(id) ON DELETE CASCADE;
