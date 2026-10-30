@@ -13,7 +13,8 @@
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.4",
     "react": "^19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "country-flag-icons": "^1.5.19"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
