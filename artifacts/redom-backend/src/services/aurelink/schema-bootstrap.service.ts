@@ -195,6 +195,17 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
       product_kind VARCHAR(20) NOT NULL CHECK (product_kind IN ('activation','rental','esim','carrier_lookup')),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- These legacy Aurelink financial tables are owned by Aurelink identities.
+    DO $aurelink_finance_identity$
+    BEGIN
+      ALTER TABLE aurelink_wallet_topups DROP CONSTRAINT IF EXISTS aurelink_wallet_topups_user_id_fkey;
+      ALTER TABLE aurelink_wallet_topups ADD CONSTRAINT aurelink_wallet_topups_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES aurelink_users(id) ON DELETE CASCADE;
+      ALTER TABLE aurelink_payment_redemptions DROP CONSTRAINT IF EXISTS aurelink_payment_redemptions_user_id_fkey;
+      ALTER TABLE aurelink_payment_redemptions ADD CONSTRAINT aurelink_payment_redemptions_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES aurelink_users(id) ON DELETE CASCADE;
+    END
+    $aurelink_finance_identity$;
     CREATE INDEX IF NOT EXISTS aurelink_redemptions_user_idx ON aurelink_payment_redemptions(user_id, created_at DESC);
   `);
 }
