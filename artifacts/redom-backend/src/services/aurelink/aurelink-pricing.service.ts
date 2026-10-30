@@ -4,6 +4,7 @@ export interface AurelinkPriceBreakdown {
   providerAmountMinor: number;
   aurelinkChargeMinor: number;
   checkFeeMinor: number;
+  firstPurchaseDiscountMinor: number;
   totalMinor: number;
 }
 
@@ -11,9 +12,10 @@ const USD_MINOR = 100;
 
 function readCheckFeeMinor(envName: string): number {
   const raw = process.env[envName];
-  if (raw == null || raw.trim() === "") return 100;
+  const fallback = envName === "AURELINK_SHORT_TERM_CHECK_FEE_USD_CENTS" ? 20 : 100;
+  if (raw == null || raw.trim() === "") return fallback;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : 100;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : fallback;
 }
 
 /**
@@ -24,6 +26,7 @@ function readCheckFeeMinor(envName: string): number {
 export function aurelinkPriceBreakdown(
   providerPriceUsd: number,
   product: AurelinkNumberProduct,
+  options: { firstPurchase?: boolean } = {},
 ): AurelinkPriceBreakdown | null {
   if (!Number.isFinite(providerPriceUsd) || providerPriceUsd <= 0) return null;
 
@@ -35,10 +38,18 @@ export function aurelinkPriceBreakdown(
       ? readCheckFeeMinor("AURELINK_LONG_TERM_CHECK_FEE_USD_CENTS")
       : readCheckFeeMinor("AURELINK_DEDICATED_CHECK_FEE_USD_CENTS");
 
+  // The agreed introductory example is $1.00 provider cost -> $1.50 total.
+  // This is a 50% reduction of the equal Aurelink charge; the introductory
+  // offer absorbs the Short-term check fee. Standard pricing retains the fee.
+  const firstPurchaseDiscountMinor = product === "short_term" && options.firstPurchase
+    ? Math.floor(aurelinkChargeMinor / 2) + checkFeeMinor
+    : 0;
+
   return {
     providerAmountMinor,
     aurelinkChargeMinor,
     checkFeeMinor,
-    totalMinor: providerAmountMinor + aurelinkChargeMinor + checkFeeMinor,
+    firstPurchaseDiscountMinor,
+    totalMinor: providerAmountMinor + aurelinkChargeMinor + checkFeeMinor - firstPurchaseDiscountMinor,
   };
 }
