@@ -729,7 +729,9 @@ router.get("/aurelink/rentals/:rentalId/messages", aurelinkAuthMiddleware, async
   try {
     const order = await ownedOrder(req.user.userId, rentalId.data, "rental");
     if (!order) return res.status(404).json({ success: false, message: "Rental not found." });
-    const rawMessages = await smsPoolClient.rentalMessages(rentalId.data);\n    const capped = fairUseRentalMessages(rawMessages);\n    const messages = capped.payload;
+    const rawMessages = await smsPoolClient.rentalMessages(rentalId.data);
+    const capped = fairUseRentalMessages(rawMessages);
+    const messages = capped.payload;
     const hasMessage = providerFields(messages).some((field) => /^(sms|message|full_sms|message_body|body|code)$/.test(field.key) && field.value.length > 0);
     const expiry = expiryDate(messages);
     await pool.query(
