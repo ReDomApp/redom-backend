@@ -49,6 +49,7 @@ async function initializeTopup(attempt: Row): Promise<void> {
       [user.id,user.account_id,order.id,attempt.id,tokenHash,attempt.amount_minor,attempt.currency,checkout.reference,checkout.authorization_url]);
     await client.query("UPDATE aurelink_dedicated_renewal_attempts SET status='awaiting_topup',updated_at=NOW() WHERE id=$1 AND status<>'succeeded'", [attempt.id]);
     await client.query("COMMIT");
+    }
   } catch(e) { await client.query("ROLLBACK").catch(()=>undefined); throw e; } finally { client.release(); }
   const link = baseUrl() + "/payments/aurelink/renewal/topup/" + token;
   const html = "<h2>Aurelink dedicated number renewal</h2><p>Your Aurelink wallet needs funds before your dedicated number can renew.</p><p>Account: "+String(user.account_id)+"</p><p>Number: "+String(order.phone_number||"—")+"</p><p>Renewal amount: "+(Number(attempt.amount_minor)/100).toFixed(2)+" "+String(attempt.currency)+"</p><p><a href=\""+link+"\">Continue secure top-up</a></p><p>This secure link expires in 24 hours and can be used once. Payment credits only your Aurelink wallet.</p>";
