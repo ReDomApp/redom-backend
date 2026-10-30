@@ -77,6 +77,43 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS aurelink_orders_status_idx ON aurelink_provider_orders(status);
     CREATE INDEX IF NOT EXISTS aurelink_orders_expiry_idx ON aurelink_provider_orders(expires_at) WHERE expires_at IS NOT NULL;
 
+
+    CREATE TABLE IF NOT EXISTS aurelink_wallets (
+      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      balance_minor BIGINT NOT NULL DEFAULT 0 CHECK (balance_minor >= 0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_wallet_ledger (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entry_type VARCHAR(24) NOT NULL CHECK (entry_type IN ('topup','purchase','refund','renewal','adjustment')),
+      direction VARCHAR(8) NOT NULL CHECK (direction IN ('credit','debit')),
+      amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+      balance_after_minor BIGINT NOT NULL CHECK (balance_after_minor >= 0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      reference VARCHAR(120) NOT NULL UNIQUE,
+      order_id UUID,
+      payment_reference VARCHAR(100),
+      description TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_wallet_ledger_user_created_idx ON aurelink_wallet_ledger(user_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS aurelink_wallet_topups (
+      reference VARCHAR(120) PRIMARY KEY REFERENCES payment_transactions(reference) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      credited_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS retail_amount_minor BIGINT;
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS wallet_debit_reference VARCHAR(120);
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS refund_reference VARCHAR(120);
+    ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS first_purchase_discount BOOLEAN NOT NULL DEFAULT FALSE;
+
     CREATE TABLE IF NOT EXISTS aurelink_payment_redemptions (
       payment_reference VARCHAR(100) PRIMARY KEY REFERENCES payment_transactions(reference) ON DELETE CASCADE,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
