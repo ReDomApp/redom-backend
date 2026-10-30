@@ -228,7 +228,7 @@ router.get("/aurelink/status", aurelinkAuthMiddleware, (_req, res) => {
     success: true,
     provider: "smspool",
     configured: Boolean(process.env.SMSPOOL_API_KEY?.trim()),
-    allowedServices: [...allowedServices()],
+    serviceAvailability: "live_provider_catalog",
     whatsappApproved: false,
     features: { oneTimeSms: true, rentals: true, carrierLookup: true, carrierVerificationBeforeAcceptance: true, lifecycleTracking: Boolean(process.env.SMSPOOL_API_KEY?.trim()), esimCatalog: true, esimPurchaseEnabled: false, voiceAndFlash: true, whatsapp: false },
     note: "WhatsApp is a separate premium channel and is not supplied by SMSPool. SMSPool eSIMs are data-only and do not provide a phone number.",
