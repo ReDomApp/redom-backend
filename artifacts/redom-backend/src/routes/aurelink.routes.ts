@@ -180,6 +180,35 @@ function filterVirtualInventory(value: unknown): unknown {
   }
   return filtered;
 }
+function countryEntries(value: unknown, output: Array<{ id: string; code: string; name: string }> = [], fallbackId?: string): Array<{ id: string; code: string; name: string }> {
+  if (typeof value === "string") {
+    try { return countryEntries(JSON.parse(value) as unknown, output, fallbackId); } catch { return output; }
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) countryEntries(item, output);
+    return output;
+  }
+  if (!value || typeof value !== "object") return output;
+  const row = value as Record<string, unknown>;
+  const nested = row.country && typeof row.country === "object" ? row.country as Record<string, unknown> : {};
+  const id = row.ID ?? row.id ?? row.country_id ?? row.countryId ?? fallbackId;
+  const name = row.name ?? row.country_name ?? row.countryName ?? (typeof row.country === "string" ? row.country : undefined) ?? nested.name;
+  const code = row.iso ?? row.iso2 ?? row.code ?? row.country_code ?? row.countryCode ?? nested.iso2 ?? nested.code ?? "";
+  if (id != null && name != null && (typeof id === "string" || typeof id === "number")) {
+    output.push({ id: String(id).trim().toLowerCase(), code: String(code).trim().toLowerCase(), name: String(name).trim().toLowerCase() });
+  }
+  for (const [key, child] of Object.entries(row)) {
+    if (child && typeof child === "object") countryEntries(child, output, /^\\d+$/.test(key) ? key : undefined);
+  }
+  return output;
+}
+async function isCountryAvailable(country: string, service: string): Promise<boolean> {
+  try {
+    const entries = countryEntries(await smsPoolClient.suggestedCountries(service));
+    const normalized = country.trim().toLowerCase();
+    return entries.some(entry => entry.id === normalized || entry.code === normalized || entry.name === normalized);
+  } catch { return false; }
+}
 async function resolveProviderPriceIds(country: string, service: string): Promise<{ country: string; service: string }> {
   const [countryCatalog, serviceCatalog] = await Promise.all([smsPoolClient.countries(), smsPoolClient.services()]);
   const normalizedCountry = country.trim().toLowerCase();
@@ -195,13 +224,6 @@ async function resolveProviderPriceIds(country: string, service: string): Promis
   // a catalogue version does not expose a parseable ID/name pair; the provider then
   // performs the authoritative validation instead of our parser rejecting it.
   return { country: countryMatch.id, service: serviceMatch?.id ?? service.trim() };
-}
-async function isCountryAvailable(country: string): Promise<boolean> {
-  try {
-    const entries = countryEntries(await smsPoolClient.countries());
-    const normalized = country.trim().toLowerCase();
-    return entries.some((entry) => entry.id === normalized || entry.code === normalized || entry.name === normalized);
-  } catch { return false; }
 }
 async function isRentalAvailable(rentalId: number): Promise<boolean> {
   // SMSPool can return 404 for one rental mode when that catalogue has no
@@ -343,7 +365,7 @@ router.get("/aurelink/catalog/pricing", aurelinkAuthMiddleware, async (req, res)
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
+  if (!await isCountryAvailable(parsed.data.country, parsed.data.service)) return res.status(403).json({ success: false, message: "This country is not currently available for the selected service." });
   try {
     const providerIds = await resolveProviderPriceIds(parsed.data.country, parsed.data.service);
     const pricing = await smsPoolClient.price({ ...providerIds, pool: parsed.data.pool });
@@ -355,7 +377,7 @@ router.get("/aurelink/catalog/stock", aurelinkAuthMiddleware, async (req, res) =
   const parsed = z.object({ country: z.string().min(1).max(8), service: z.string().min(1).max(100), pool: z.string().max(32).optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ success: false, message: "Valid country and service are required." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
+  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not currently available for the selected service." });
   try { return res.json({ success: true, stock: await smsPoolClient.stock(parsed.data) }); }
   catch (error) { return providerFailure(res, error); }
 });
@@ -416,7 +438,7 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid quote request." });
   if (!await isServiceAllowed(parsed.data.service)) return res.status(403).json({ success: false, message: "This service is not enabled for AURELINK." });
-  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not available in the provider catalog." });
+  if (!await isCountryAvailable(parsed.data.country)) return res.status(403).json({ success: false, message: "This country is not currently available for the selected service." });
   try {
     // Pool is optional in SMSPool. Do not force a stale/default pool ID: it may
     // be inactive for the selected country and service. An explicit UI selection
@@ -486,7 +508,7 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
   try {
     const service = String(quote["service"]);
     const country = String(quote["country"]);
-    if (!await isCountryAvailable(country)) throw new SmsPoolError("Country is not available in the provider catalog.", { providerType: "COUNTRY_NOT_AVAILABLE" });
+    if (!await isCountryAvailable(country, service)) throw new SmsPoolError("Country is not currently available for the selected service.", { providerType: "COUNTRY_NOT_AVAILABLE" });
     const maxPrice = Number(quote["provider_max_price"]);
     const provider = await smsPoolClient.purchaseSms({ country, service, maxPrice, pool: parsed.data.pool, pricingOption: parsed.data.pricingOption });
     const data = object(provider);
