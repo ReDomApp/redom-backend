@@ -333,12 +333,12 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
     const priorOtp = await pool.query("SELECT 1 FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND product_kind='activation' AND sms_received_at IS NOT NULL LIMIT 1", [req.user.userId]);
     const firstPurchaseEligible = priorOtp.rowCount === 0;
     const requiredLineType = firstPurchaseEligible ? "mobile" : "voip";
-    const priceBreakdown = aurelinkPriceBreakdown(providerMaxPrice, "short_term");
+    const priceBreakdown = aurelinkPriceBreakdown(providerMaxPrice, "short_term", { firstPurchase: firstPurchaseEligible });
     if (!priceBreakdown) return res.status(409).json({ success: false, message: "This number is unavailable because the provider returned a zero or invalid price." });
     const retailAmountMinor = priceBreakdown.totalMinor;
     const result = await pool.query(
       "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
-      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,firstPurchaseEligible,requiredLineType,firstPurchaseDiscount:0},priceBreakdown}), String(quoteTtlMinutes)],
+      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,firstPurchaseEligible,requiredLineType,firstPurchaseDiscount:priceBreakdown.firstPurchaseDiscountMinor/100},priceBreakdown}), String(quoteTtlMinutes)],
     );
     return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, requiredLineType, eligibility: firstPurchaseEligible ? "first_purchase_mobile" : "returning_customer_voip", pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
@@ -421,8 +421,8 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
     const expiry = expiryDate(data);
     const aurelinkOrderId = newAurelinkOrderId();
     await pool.query(
-      "INSERT INTO aurelink_provider_orders (aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,first_purchase_discount,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,$3,'activation',$4,$5,$6,$7,'pending',$8,$9,$10,FALSE,$11,$12,'verified',NOW(),$13,$14::jsonb)",
-      [aurelinkOrderId, req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, String(quote["retail_amount_minor"]), parsed.data.paymentReference ? null : "purchase:"+parsed.data.quoteId, assessment.carrier, assessment.lineType ?? "unknown", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } })],
+      "INSERT INTO aurelink_provider_orders (aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,first_purchase_discount,carrier_name,line_type,verification_status,verified_at,expires_at,provider_payload) VALUES ($1,$2,$3,'activation',$4,$5,$6,$7,'pending',$8,$9,$10,$15,$11,$12,'verified',NOW(),$13,$14::jsonb)",
+      [aurelinkOrderId, req.user.userId, parsed.data.quoteId, providerOrderId, phoneNumber, country, service, actualCost, String(quote["retail_amount_minor"]), parsed.data.paymentReference ? null : "purchase:"+parsed.data.quoteId, assessment.carrier, assessment.lineType ?? "unknown", expiry, JSON.stringify({ provider, carrierLookup: lookup, verification: { result: assessment.result, checkedAt: new Date().toISOString() } }), Boolean(((quote["provider_pricing"] as Record<string,unknown>)?.["pricingRule"] as Record<string,unknown>|undefined)?.["firstPurchaseEligible"])],
     );
     return res.status(201).json({ success: true, order: { aurelinkOrderId, orderId: providerOrderId, phoneNumber, country, service, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), providerCostUsd: actualCost, status: data["status"] ?? "pending", expiresAt: expiry?.toISOString() ?? null, expiresIn: data["expires_in"] ?? null } });
   } catch (error) {
@@ -499,7 +499,7 @@ router.get("/aurelink/orders", aurelinkAuthMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try {
     const result = await pool.query(
-      "SELECT id,aurelink_order_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,refund_reference,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 100",
+      "SELECT id,aurelink_order_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,refund_reference,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 15",
       [req.user.userId],
     );
     return res.json({ success: true, orders: result.rows });
