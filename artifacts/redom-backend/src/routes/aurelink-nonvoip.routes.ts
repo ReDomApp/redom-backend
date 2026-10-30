@@ -5,7 +5,7 @@ import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
 import { aurelinkPriceBreakdown } from "../services/aurelink/aurelink-pricing.service";
-import { nonVoipClient, NonVoipError, nvRows, nvRecord, nonVoipIdempotencyKey } from "../services/aurelink/nonvoip.client";
+import { nonVoipClient, NonVoipError, nvRows, nvRecord, nonVoipIdempotencyKey, type NvRow } from "../services/aurelink/nonvoip.client";
 
 const router=Router();
 function text(v:unknown){return v==null?"":String(v);}
