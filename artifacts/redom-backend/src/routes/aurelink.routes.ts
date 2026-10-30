@@ -348,7 +348,7 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
       "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
       [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,firstPurchaseEligible,requiredLineType,firstPurchaseDiscount:0}}), String(quoteTtlMinutes)],
     );
-    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
+    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), requiredLineType, eligibility: firstPurchaseEligible ? "first_purchase_mobile" : "returning_customer_voip", pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
 });
 
