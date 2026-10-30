@@ -235,8 +235,8 @@ router.post("/aurelink/nonvoip/short-term/orders",async(req,res)=>{
    await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND aurelink_user_id=$2",[quoteId,userId]).catch(()=>undefined);
   }else if(providerOrderId){
    const orderId=String(100+Math.floor(Math.random()*900))+String(Math.floor(10000+Math.random()*90000));
-   await pool.query("INSERT INTO aurelink_provider_orders(aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider,provider_order_id,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,provider_payload) VALUES($1,$2,$3,'activation','nonvoip',$4,$5,$6,'cancellation_pending',$7,$8,$9,$10::jsonb) ON CONFLICT(provider,provider_order_id) DO NOTHING",
-    [orderId,userId,quoteId,providerOrderId,String(quote?.country),String(quote?.service),providerPrice,String(quote?.retail_amount_minor),debitReference,JSON.stringify({provider:"nonvoip",providerOrder,reconciliationRequired:true})]
+   await pool.query("INSERT INTO aurelink_provider_orders(aurelink_order_id,aurelink_user_id,quote_id,product_kind,provider,provider_order_id,country,service,status,provider_cost,retail_amount_minor,wallet_debit_reference,first_purchase_discount,provider_payload) VALUES($1,$2,$3,'activation','nonvoip',$4,$5,$6,'cancellation_pending',$7,$8,$9,$10,$11::jsonb) ON CONFLICT(provider,provider_order_id) DO NOTHING",
+    [orderId,userId,quoteId,providerOrderId,String(quote?.country),String(quote?.service),providerPrice,String(quote?.retail_amount_minor),debitReference,Boolean(nvRecord(pricing.pricingRule).firstPurchaseEligible),JSON.stringify({provider:"nonvoip",providerOrder,reconciliationRequired:true})]
    ).catch(()=>undefined);
   }
   return res.status(e instanceof NonVoipError?e.status:502).json({success:false,message:e instanceof Error?e.message:"NonVoip Short-term order failed; wallet reconciliation was attempted.",reconciliationRequired:Boolean(providerOrderId&&!cancelled)});
@@ -268,7 +268,11 @@ router.post("/aurelink/nonvoip/short-term/orders/:id/cancel",async(req,res)=>{
   try{
    await client.query("BEGIN");
    await client.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1",[order.id,JSON.stringify({nonVoipCancellation:result})]);
-   if(order.wallet_debit_reference&&order.retail_amount_minor)await walletCredit(client,{userId,amountMinor:String(order.retail_amount_minor),reference:"refund:"+String(order.wallet_debit_reference),type:"refund",description:"NonVoip Short-term cancellation refund",orderId:String(order.id)});
+   if(order.wallet_debit_reference&&order.retail_amount_minor){
+     const refundReference="refund:"+String(order.wallet_debit_reference);
+     await walletCredit(client,{userId,amountMinor:String(order.retail_amount_minor),reference:refundReference,type:"refund",description:"NonVoip Short-term cancellation refund",orderId:String(order.id)});
+     await client.query("UPDATE aurelink_provider_orders SET refund_reference=$2 WHERE id=$1",[order.id,refundReference]);
+    }
    await client.query("COMMIT");
    return res.json({success:true,cancelled:true,refunded:Boolean(order.wallet_debit_reference)});
   }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
