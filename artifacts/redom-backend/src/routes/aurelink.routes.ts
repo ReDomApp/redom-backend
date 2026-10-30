@@ -251,7 +251,9 @@ router.get("/aurelink/short-term/providers", aurelinkAuthMiddleware, async (_req
         const rows=nvRows(await nonVoipClient.products("short-term",undefined,page,50));
         for(const row of rows){
           const code=String(row.country_code??row.countryCode??row.iso2??row.country??"").trim().toUpperCase();
-          if(code) countries.add(code);
+          const price=Number(row.customer_price??row.price??row.cost??row.amount??0);
+          const available=row.available!==false&&row.in_stock!==false&&Number(row.stock??row.available_count??1)>0;
+          if(code&&available&&Number.isFinite(price)&&price>0) countries.add(code);
         }
         if(rows.length<50)break;
       }
