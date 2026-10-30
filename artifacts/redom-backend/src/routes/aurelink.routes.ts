@@ -774,11 +774,26 @@ router.post("/aurelink/rentals/:rentalId/cancel", aurelinkAuthMiddleware, async 
   try {
     const rental = await ownedOrder(req.user.userId, rentalId.data, "rental");
     if (!rental) return res.status(404).json({ success: false, message: "Rental not found." });
-    if(["completed","refunded","cancelled","expired"].includes(String(rental["status"])))return res.status(409).json({success:false,message:"This rental is no longer cancellable."});
-    const result=object(await smsPoolClient.cancelRental(rentalId.data));
-    const confirmed=result["success"]===true||result["success"]===1||/^(success|cancelled|canceled|refunded)$/i.test(String(result["status"]??result["message"]??""));
-    if(!confirmed)return res.status(409).json({success:false,message:"Provider has not confirmed cancellation. No wallet refund was issued.",provider:result});
-    const client=await pool.connect();try{await client.query("BEGIN");await client.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1",[rental["id"],JSON.stringify({cancellation:result})]);if(rental["wallet_debit_reference"]&&rental["retail_amount_minor"]){await walletCredit(client,{userId:req.user.userId,amountMinor:String(rental["retail_amount_minor"]),reference:"refund:"+String(rental["wallet_debit_reference"]),type:"refund",description:"Provider-confirmed rental cancellation refund",orderId:String(rental["id"])});await client.query("UPDATE aurelink_provider_orders SET refund_reference=$2 WHERE id=$1",[rental["id"],"refund:"+String(rental["wallet_debit_reference"])]);}await client.query("COMMIT");return res.json({success:true,cancellation:result,refunded:Boolean(rental["wallet_debit_reference"])});}catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
+    if (rental["sms_received_at"]) return res.status(409).json({ success: false, message: "This rental has received messages and is no longer refundable." });
+    const purchasedAt = new Date(String(rental["rental_started_at"] ?? rental["created_at"] ?? ""));
+    if (!Number.isFinite(purchasedAt.getTime()) || Date.now() - purchasedAt.getTime() > 2 * 60 * 60 * 1000)
+      return res.status(409).json({ success: false, message: "Rentals can only be refunded within 2 hours of purchase." });
+    if (String(rental["status"]).toLowerCase() !== "active") return res.status(409).json({ success: false, message: "Only active rentals can be refunded." });
+    const result = await smsPoolClient.cancelRental(rentalId.data);
+    const fields = providerFields(result);
+    const status = fields.find((field) => /^(status|state|type)$/.test(field.key))?.value.toLowerCase() ?? "";
+    if (result === null || (typeof result === "object" && (result as Record<string,unknown>).success === false) || /failed|rejected|error/.test(status))
+      return res.status(409).json({ success: false, message: "SMSPool did not confirm the refund. No wallet credit was issued." });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1", [rental["id"], JSON.stringify({ customerRefund: result, refundedAt: new Date().toISOString() })]);
+      if (rental["wallet_debit_reference"] && rental["retail_amount_minor"])
+        await walletCredit(client, { userId: req.user.userId, amountMinor: String(rental["retail_amount_minor"]), reference: "refund:" + String(rental["wallet_debit_reference"]), type: "refund", description: "SMSPool rental refunded within two hours", orderId: String(rental["id"]) });
+      await client.query("COMMIT");
+      return res.json({ success: true, cancelled: true, refunded: true });
+    } catch (error) { await client.query("ROLLBACK").catch(() => undefined); throw error; }
+    finally { client.release(); }
   } catch (error) { return providerFailure(res, error); }
 });
 
