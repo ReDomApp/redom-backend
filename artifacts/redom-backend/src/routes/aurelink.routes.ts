@@ -44,7 +44,8 @@ async function isServiceAllowed(service: string): Promise<boolean> {
     } catch { return false; }
   }
   if (/bank|crypto|exchange|government|telecom|carrier/.test(serviceName)) return false;
-  if (serviceName.includes("whatsapp") && process.env.SMSPOOL_WHATSAPP_APPROVED !== "true") return false;
+  // WhatsApp is a separate premium channel and must never be routed through SMSPool.
+  if (serviceName.includes("whatsapp")) return false;
   return configured.has(normalized) || configured.has(serviceName) || configured.has(serviceId);
 }
 function adminAllowed(req: Request): boolean {
@@ -237,9 +238,9 @@ router.get("/aurelink/status", aurelinkAuthMiddleware, (_req, res) => {
     provider: "smspool",
     configured: Boolean(process.env.SMSPOOL_API_KEY?.trim()),
     allowedServices: [...allowedServices()],
-    whatsappApproved: process.env.SMSPOOL_WHATSAPP_APPROVED === "true",
-    features: { oneTimeSms: true, rentals: true, carrierLookup: true, carrierVerificationBeforeAcceptance: true, lifecycleTracking: Boolean(process.env.SMSPOOL_API_KEY?.trim()), esimCatalog: true, esimPurchaseEnabled: false, voiceAndFlash: true },
-    note: "SMSPool eSIMs are data-only and do not provide a phone number.",
+    whatsappApproved: false,
+    features: { oneTimeSms: true, rentals: true, carrierLookup: true, carrierVerificationBeforeAcceptance: true, lifecycleTracking: Boolean(process.env.SMSPOOL_API_KEY?.trim()), esimCatalog: true, esimPurchaseEnabled: false, voiceAndFlash: true, whatsapp: false },
+    note: "WhatsApp is a separate premium channel and is not supplied by SMSPool. SMSPool eSIMs are data-only and do not provide a phone number.",
   });
 });
 
