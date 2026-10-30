@@ -79,7 +79,7 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
 
 
     CREATE TABLE IF NOT EXISTS aurelink_wallets (
-      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      user_id UUID PRIMARY KEY REFERENCES aurelink_users(id) ON DELETE CASCADE,
       balance_minor BIGINT NOT NULL DEFAULT 0 CHECK (balance_minor >= 0),
       currency CHAR(3) NOT NULL DEFAULT 'USD',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -87,7 +87,7 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
     );
     CREATE TABLE IF NOT EXISTS aurelink_wallet_ledger (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
       entry_type VARCHAR(24) NOT NULL CHECK (entry_type IN ('topup','purchase','refund','renewal','adjustment')),
       direction VARCHAR(8) NOT NULL CHECK (direction IN ('credit','debit')),
       amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
@@ -100,9 +100,32 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE INDEX IF NOT EXISTS aurelink_wallet_ledger_user_created_idx ON aurelink_wallet_ledger(user_id,created_at DESC);
+
+    -- Aurelink wallets belong to Aurelink identities, never ReDom users.
+    -- Refuse to rebind any existing balance to a different identity.
+    DO $aurelink_wallet_migration$
+    DECLARE
+      invalid_wallets BIGINT;
+      invalid_ledger BIGINT;
+    BEGIN
+      SELECT COUNT(*) INTO invalid_wallets FROM aurelink_wallets w
+        LEFT JOIN aurelink_users u ON u.id = w.user_id WHERE u.id IS NULL;
+      SELECT COUNT(*) INTO invalid_ledger FROM aurelink_wallet_ledger l
+        LEFT JOIN aurelink_users u ON u.id = l.user_id WHERE u.id IS NULL;
+      IF invalid_wallets > 0 OR invalid_ledger > 0 THEN
+        RAISE EXCEPTION 'Aurelink wallet identity migration blocked: existing wallet/ledger rows do not map to aurelink_users. Reconcile balances before migration.';
+      END IF;
+      ALTER TABLE aurelink_wallets DROP CONSTRAINT IF EXISTS aurelink_wallets_user_id_fkey;
+      ALTER TABLE aurelink_wallet_ledger DROP CONSTRAINT IF EXISTS aurelink_wallet_ledger_user_id_fkey;
+      ALTER TABLE aurelink_wallets ADD CONSTRAINT aurelink_wallets_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES aurelink_users(id) ON DELETE CASCADE;
+      ALTER TABLE aurelink_wallet_ledger ADD CONSTRAINT aurelink_wallet_ledger_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES aurelink_users(id) ON DELETE CASCADE;
+    END
+    $aurelink_wallet_migration$;
+\n    CREATE INDEX IF NOT EXISTS aurelink_wallet_ledger_user_created_idx ON aurelink_wallet_ledger(user_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS aurelink_wallet_topups (
-      reference VARCHAR(120) PRIMARY KEY REFERENCES payment_transactions(reference) ON DELETE CASCADE,
+      reference VARCHAR(120) PRIMARY KEY,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
       currency CHAR(3) NOT NULL DEFAULT 'USD',
@@ -115,7 +138,7 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
     ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS first_purchase_discount BOOLEAN NOT NULL DEFAULT FALSE;
 
     CREATE TABLE IF NOT EXISTS aurelink_payment_redemptions (
-      payment_reference VARCHAR(100) PRIMARY KEY REFERENCES payment_transactions(reference) ON DELETE CASCADE,
+      payment_reference VARCHAR(100) PRIMARY KEY,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       quote_id UUID REFERENCES aurelink_quotes(id),
       product_kind VARCHAR(20) NOT NULL CHECK (product_kind IN ('activation','rental','esim','carrier_lookup')),
