@@ -86,3 +86,15 @@
 .al-lt-quote small{display:block;margin-top:6px;color:#7b8999;font-size:11px;line-height:1.5}
 .al-lt-quote button{width:100%;margin-top:12px;padding:12px;border:0;border-radius:10px;background:#1877f2;color:#fff;font-weight:800}
 @media(max-width:480px){.al-lt-pools{gap:8px}.al-lt-pools button{padding:11px}.al-lt-pools b{font-size:12px}.al-lt-pools small{font-size:9px}}
+
+
+/* Explicit, high-visibility long-term pool selector */
+.al-provider-choice{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0 20px;width:100%;visibility:visible!important}
+.al-provider-card{display:flex!important;flex-direction:column;align-items:stretch;gap:7px;min-height:104px;padding:15px!important;border:1.5px solid #dbe5f0!important;border-radius:15px!important;background:#fff!important;color:#24364b!important;text-align:left!important;box-shadow:0 4px 14px #17324d0a;cursor:pointer}
+.al-provider-card.is-active{border-color:#1877f2!important;background:linear-gradient(145deg,#eff7ff,#fff)!important;box-shadow:0 0 0 2px #1877f21a,0 8px 20px #1877f21a!important}
+.al-provider-card-top{display:flex;align-items:center;justify-content:space-between;gap:5px}
+.al-provider-card-top b{font-size:13px;font-weight:800}
+.al-provider-card-top i{font-size:9px;font-style:normal;color:#1877f2;font-weight:800}
+.al-provider-card strong{font-size:15px;color:#263b55}
+.al-provider-card small{font-size:10px;line-height:1.4;color:#78889b}
+@media(max-width:480px){.al-provider-choice{gap:9px;margin:16px 0}.al-provider-card{min-height:100px;padding:12px!important}.al-provider-card-top b{font-size:12px}}
