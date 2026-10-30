@@ -42,7 +42,7 @@ export default function App() {
    if(!savedRefresh){ if(active)setScreen("login"); return; }
    if(active){setBusy(true);setNotice({kind:"info",text:"Restoring your secure session…"});}
    try{
-    let access=savedAccess;
+    let access: string = savedAccess ?? "";
     let valid=false;
     if(access){const check=await fetch(API_BASE+"/aurelink/auth/me",{headers:{Authorization:"Bearer "+access,Accept:"application/json"},cache:"no-store"});valid=check.ok;}
     if(!valid){const response=await fetch(API_BASE+"/aurelink/auth/refresh",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({refreshToken:savedRefresh}),cache:"no-store"});const data=await response.json();if(!response.ok||!data.success||!data.session?.accessToken||!data.session?.refreshToken)throw new Error(data.message||"Your session has expired.");access=data.session.accessToken;localStorage.setItem("aurelink.accessToken",access);localStorage.setItem("aurelink.refreshToken",data.session.refreshToken);}
