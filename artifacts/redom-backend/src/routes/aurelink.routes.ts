@@ -42,9 +42,38 @@ function serviceEntries(
   }
   return output;
 }
+function isExcludedSmsPoolShortTermService(id: unknown, name: unknown): boolean {
+  const normalizedId = String(id ?? "").trim().toLowerCase();
+  const normalizedName = String(name ?? "").trim().toLowerCase();
+  // 1012 is the SMSPool WhatsApp entry. WhatsApp is a separate future product
+  // button and must never appear in the SMSPool Short Term catalogue.
+  return normalizedId === "1012" || normalizedName.includes("whatsapp");
+}
+function filterShortTermSmsPoolServices(value: unknown, fallbackId?: string): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => filterShortTermSmsPoolServices(item))
+      .filter((item) => item !== null && item !== undefined);
+  }
+  if (!value || typeof value !== "object") {
+    if (fallbackId === "1012" || (typeof value === "string" && value.toLowerCase().includes("whatsapp"))) return null;
+    return value;
+  }
+  const row = value as Record<string, unknown>;
+  const id = row["ID"] ?? row["id"] ?? row["service_id"] ?? row["serviceId"] ?? fallbackId;
+  const name = row["name"] ?? row["service"] ?? row["service_name"] ?? row["short_name"] ?? row["title"];
+  if (isExcludedSmsPoolShortTermService(id, name)) return null;
+  const filtered: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(row)) {
+    if (/^1012$/i.test(key)) continue;
+    const next = filterShortTermSmsPoolServices(child, /^\\d+$/.test(key) ? key : undefined);
+    if (next !== null && next !== undefined) filtered[key] = next;
+  }
+  return filtered;
+}
 async function isServiceAllowed(service: string): Promise<boolean> {
   const normalized = service.trim().toLowerCase();
-  if (!normalized) return false;
+  if (!normalized || normalized === "1012" || normalized.includes("whatsapp")) return false;
   // The live SMSPool catalogue is the source of truth. Do not require a second
   // environment allowlist: an empty AURELINK_ALLOWED_SERVICES previously blocked
   // every provider service even when SMSPool returned it in its catalogue.
@@ -280,8 +309,10 @@ router.get("/aurelink/provider/balance", aurelinkAuthMiddleware, async (req, res
 });
 
 router.get("/aurelink/catalog/services", aurelinkAuthMiddleware, async (_req, res) => {
-  try { return res.json({ success: true, services: await smsPoolClient.services() }); }
-  catch (error) { return providerFailure(res, error); }
+  try {
+    const services = await smsPoolClient.services();
+    return res.json({ success: true, services: filterShortTermSmsPoolServices(services) });
+  } catch (error) { return providerFailure(res, error); }
 });
 router.get("/aurelink/catalog/countries", aurelinkAuthMiddleware, async (_req, res) => {
   try { return res.json({ success: true, countries: await smsPoolClient.countries() }); }
