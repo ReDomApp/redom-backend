@@ -62,11 +62,22 @@ SMSPool uses polling rather than an SMS push webhook for temporary activations. 
 - eSIM purchasing/top-ups and some account-changing eSIM actions are intentionally not enabled until the customer-payment and provider-cost reconciliation path is completed. SMSPool eSIMs are data-only; they do not supply a phone number.
 - Voice/flash activation types are represented in the provider client, but should only be exposed in UI where SMSPool reports the selected country/pool supports them.
 
+## Aurelink wallet and number billing
+
+- `GET /aurelink/wallet` returns the authenticated user's USD balance.
+- `GET /aurelink/wallet/ledger?limit=30` returns wallet credits and debits.
+- `POST /aurelink/wallet/topup` accepts `{ "amountUsd": 10 }` and returns a Stripe Checkout URL. Supported top-ups are $5–$5,000 USD.
+- `POST /aurelink/activations` accepts `{ "quoteId": "<uuid>" }` and debits the Aurelink wallet atomically before ordering. The legacy paid-transaction redemption path remains available when a `paymentReference` is supplied.
+- Provider-confirmed customer activation cancellations credit the wallet ledger. Expiry reconciliation is handled by the lifecycle worker and only credits wallet-funded orders after the provider confirms cancellation/refund.
+- First successful-OTP eligibility is account-scoped: a purchase does not consume the first-time offer until an OTP has arrived. A $1.00 provider price quotes at $1.50 for the first eligible purchase; subsequent short-term purchases use 2× provider price plus $0.20.
+- Number line checks now use the Veriphone v3 static verification API and accept only valid `mobile` classifications. A missing or failed lookup fails closed.
+
 ## Configuration
 
 Add these to the deployment environment, never to source control:
 
 - `SMSPOOL_API_KEY`
+- `VERIPHONE_API_KEY` — required for purchased-number line-type checks
 - `AURELINK_ALLOWED_SERVICES` — comma-separated SMSPool service names/IDs approved for sale. Empty means customer purchases are disabled.
 - `SMSPOOL_WHATSAPP_APPROVED=false` — keep false until SMSPool explicitly approves AURELINK's customer-facing WhatsApp resale/API use.
 - `AURELINK_MARKUP_PERCENT=35`
