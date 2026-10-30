@@ -35,6 +35,17 @@ async function startSession(req:Request,user:{id:string;email:string}) {
   await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),ip(req)]);
   await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type) VALUES($1,$2,$3,$4,'login')",[user.id,sessionId,ip(req),agent(req)]);
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
+  const device=String(req.body?.deviceName??"Device not identified").slice(0,150).replace(/[&<>"']/g,"");
+  const platform=String(req.body?.platform??"Unknown").slice(0,80).replace(/[&<>"']/g,"");
+  const browser=String(req.body?.browser??"Unknown").slice(0,80).replace(/[&<>"']/g,"");
+  const securityToken=randomBytes(32).toString("base64url");
+  const securityExpires=new Date(Date.now()+5*60*1000);
+  await pool.query("CREATE TABLE IF NOT EXISTS aurelink_session_security_actions (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE, session_id UUID NOT NULL REFERENCES aurelink_sessions(id) ON DELETE CASCADE, token_hash CHAR(64) NOT NULL UNIQUE, expires_at TIMESTAMPTZ NOT NULL, consumed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await pool.query("INSERT INTO aurelink_session_security_actions(user_id,session_id,token_hash,expires_at) VALUES($1,$2,$3,$4)",[user.id,sessionId,hash(securityToken),securityExpires]);
+  const securityLink=publicBase()+"/?screen=session-security&token="+encodeURIComponent(securityToken);
+  const safeEmailName=String(user.first_name??"there").replace(/[&<>"']/g,"");
+  const safeIp=ip(req).replace(/[&<>"']/g,"");
+  void resend.emails.send({from:aurelinkSender(),to:user.email,subject:"New sign-in to Aurelink",html:`<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:28px;color:#17263b"><h2>Aurelink sign-in alert</h2><p>Hello ${safeEmailName}, a sign-in to your account just occurred.</p><p><b>Device:</b> ${device}<br><b>Platform:</b> ${platform}<br><b>Browser:</b> ${browser}<br><b>IP address:</b> ${safeIp}<br><b>Time:</b> ${new Date().toISOString()} UTC</p><p>If this was you, no action is needed. If it wasn't, use the secure link below within five minutes.</p><p><a href="${securityLink}" style="display:inline-block;background:#126ac2;color:#fff;text-decoration:none;padding:14px 22px;border-radius:7px;font-weight:bold">Review sign-in and secure account</a></p><p>The one-time link lets you change your password and sign out all sessions, or terminate only this session. It expires in five minutes.</p></div>`}).catch(()=>undefined);
   return {accessToken,refreshToken,expiresIn:900,sessionId};
 }
 router.post("/aurelink/auth/register",(_req,res)=>res.status(410).json({success:false,message:"Direct registration is disabled. Use the email-confirmation signup flow."}));
@@ -58,6 +69,15 @@ router.post("/aurelink/auth/login",async(req,res)=>{
     return res.json({success:true,user,session});
   }catch(e){return res.status(500).json({success:false,message:"Aurelink login failed."});}
 });
+router.post("/aurelink/auth/session-security/action",async(req,res)=>{
+ const parsed=z.object({token:z.string().min(20).max(300),action:z.enum(["logout-session","change-password"]),password:z.string().min(6).max(200).optional(),confirmPassword:z.string().min(6).max(200).optional()}).safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({success:false,message:"A valid security action is required."});
+ try{const client=await pool.connect();try{await client.query("BEGIN");const found=await client.query("SELECT a.id,a.user_id,a.session_id,u.email FROM aurelink_session_security_actions a JOIN aurelink_users u ON u.id=a.user_id WHERE a.token_hash=$1 AND a.consumed_at IS NULL AND a.expires_at>NOW() FOR UPDATE",[hash(parsed.data.token)]);const action=found.rows[0];if(!action){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"This security link is invalid, expired, or already used."});}
+ if(parsed.data.action==="logout-session"){await client.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL",[action.session_id,action.user_id]);}
+ else{if(!parsed.data.password||parsed.data.password!==parsed.data.confirmPassword){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Enter matching new passwords."});}validPassword(parsed.data.password);const passwordHash=await hashPassword(parsed.data.password);await client.query("UPDATE aurelink_users SET password_hash=$2,updated_at=NOW() WHERE id=$1",[action.user_id,passwordHash]);await client.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL",[action.user_id]);}
+ await client.query("UPDATE aurelink_session_security_actions SET consumed_at=NOW() WHERE id=$1",[action.id]);await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,$2,$3,$4,$5::jsonb)",[action.user_id,parsed.data.action==="logout-session"?"auth.email_session_logout":"auth.email_password_change",ip(req),agent(req),JSON.stringify({sessionId:action.session_id})]);await client.query("COMMIT");void resend.emails.send({from:aurelinkSender(),to:action.email,subject:"Aurelink security action completed",html:"<p>Your requested Aurelink security action was completed successfully.</p>"}).catch(()=>undefined);return res.json({success:true,message:parsed.data.action==="logout-session"?"The reported session has been signed out.":"Your password has been changed and all sessions have been signed out."});
+ }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}}catch{return res.status(400).json({success:false,message:"Unable to complete this security action."});}
+});
 router.get("/aurelink/auth/me",aurelinkAuthMiddleware,async(req,res)=>{
   const r=await pool.query("SELECT id,email,first_name,last_name,email_verified,phone_number,phone_verified,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
   if(!r.rows[0])return res.status(404).json({success:false,message:"Account not found."});
@@ -75,7 +95,7 @@ router.post("/aurelink/auth/refresh",async(req,res)=>{
   try{
     const payload=jwt.verify(parsed.data.refreshToken,refreshSecret()) as {userId?:string;sessionId?:string;audience?:string};
     if(payload.audience!=="aurelink"||!payload.userId||!payload.sessionId)throw new Error("invalid");
-    const session=await pool.query("SELECT s.id,u.email,u.account_status FROM aurelink_sessions s JOIN aurelink_users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW() AND s.refresh_token_hash=$3 AND s.last_activity_at>NOW()-INTERVAL '10 minutes'",[payload.sessionId,payload.userId,hash(parsed.data.refreshToken)]);
+    const session=await pool.query("SELECT s.id,u.email,u.account_status FROM aurelink_sessions s JOIN aurelink_users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW() AND s.refresh_token_hash=$3 ",[payload.sessionId,payload.userId,hash(parsed.data.refreshToken)]);
     if(!session.rows[0]||session.rows[0].account_status!=="active")throw new Error("invalid");
     const accessToken=jwt.sign({userId:payload.userId,sessionId:payload.sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
     const refreshToken=jwt.sign({userId:payload.userId,sessionId:payload.sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
