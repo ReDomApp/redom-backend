@@ -13,7 +13,7 @@ import { emailService } from "../services/auth/email.service";
 const router = Router();
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 const ip = (req: Request) => String(req.ip ?? "").replace(/^::ffff:/, "").slice(0,45);
-const clientIp = (req: Request) => { const supplied=typeof req.body?.clientIp==="string"?req.body.clientIp.trim(): ""; return supplied && isIP(supplied)!==0 ? supplied.replace(/^::ffff:/,"").slice(0,45) : ip(req); };
+const clientIp = (req: Request) => ip(req);
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
 function jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
 function refreshSecret() { const v=process.env.JWT_REFRESH_SECRET; if(!v) throw new Error("JWT_REFRESH_SECRET is not configured."); return v; }
@@ -91,7 +91,7 @@ router.post("/aurelink/auth/session-security/action",async(req,res)=>{
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}}catch{return res.status(400).json({success:false,message:"Unable to complete this security action."});}
 });
 router.get("/aurelink/auth/me",aurelinkAuthMiddleware,async(req,res)=>{
-  const r=await pool.query("SELECT id,email,first_name,last_name,email_verified,phone_number,phone_verified,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
+  const r=await pool.query("SELECT id,account_id,email,first_name,last_name,email_verified,phone_number,phone_verified,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
   if(!r.rows[0])return res.status(404).json({success:false,message:"Account not found."});
   const security=await pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[req.user!.userId]);
   return res.json({success:true,user:r.rows[0],security:security.rows[0]??{two_factor_enabled:false,two_factor_method:"off",totp_enabled:false}});
