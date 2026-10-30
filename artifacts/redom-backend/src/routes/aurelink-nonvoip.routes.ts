@@ -75,7 +75,7 @@ router.get("/aurelink/dedicated/orders/:id/messages",async(req,res)=>{
 
 router.patch("/aurelink/dedicated/orders/:id/auto-renew",async(req,res)=>{
  const enabled=req.body?.enabled===true;
- const updated=await pool.query("UPDATE aurelink_provider_orders SET provider_payload=jsonb_set(COALESCE(provider_payload,'{}'::jsonb),'{autoRenew}',to_jsonb($3::boolean),true),updated_at=NOW() WHERE aurelink_user_id=$1 AND aurelink_order_id=$2 AND product_kind='dedicated' RETURNING aurelink_order_id",[req.user?.userId,req.params.id,enabled]);
+ const updated=await pool.query("UPDATE aurelink_provider_orders SET auto_renew=$3,provider_payload=jsonb_set(COALESCE(provider_payload,'{}'::jsonb),'{autoRenew}',to_jsonb($3::boolean),true),updated_at=NOW() WHERE aurelink_user_id=$1 AND aurelink_order_id=$2 AND product_kind='dedicated' RETURNING aurelink_order_id",[req.user?.userId,req.params.id,enabled]);
  if(!updated.rows[0])return res.status(404).json({success:false,message:"Dedicated order not found."});
  return res.json({success:true,autoRenew:enabled});
 });
