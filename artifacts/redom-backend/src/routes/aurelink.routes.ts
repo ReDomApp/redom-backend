@@ -36,8 +36,7 @@ async function isServiceAllowed(service: string): Promise<boolean> {
     const entries = serviceEntries(await smsPoolClient.services());
     const match = entries.find((entry) => entry.id === normalized || entry.name === normalized);
     if (!match) return false;
-    // WhatsApp is not an SMSPool SMS service and must use its separate channel.
-    return !match.name.includes("whatsapp");
+    return true;
   } catch {
     return false;
   }
