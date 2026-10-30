@@ -6,7 +6,7 @@ import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { logger } from "../lib/logger";
 import { SmsPoolError, smsPoolClient, type SmsPoolPayload } from "../services/aurelink/smspool.client";
 import { createAurelinkStripeCheckout } from "../services/payments/stripe-payment.service";
-import { createAurelinkWalletTopupCheckout } from "../services/payments/stripe-payment.service";
+import { createAurelinkWalletTopupCheckout } from "../services/payments/payment.service";
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
 
