@@ -413,10 +413,17 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
         const timezone=String(network?.location?.timezone||"UTC");
         const changedAt=new Date();
         let localTime:string;
+        const formatLocalTime=(zone:string)=>{
+          const parts=new Intl.DateTimeFormat("en-US",{timeZone:zone,hour:"2-digit",minute:"2-digit",hour12:true,day:"numeric",month:"long",year:"numeric"}).formatToParts(changedAt);
+          const part=(type:string)=>parts.find(item=>item.type===type)?.value??"";
+          const day=Number(part("day"));
+          const ordinal=day%100>=11&&day%100<=13?"th":day%10===1?"st":day%10===2?"nd":day%10===3?"rd":"th";
+          return part("hour")+":"+part("minute")+part("dayPeriod").toLowerCase()+" "+day+ordinal+", "+part("month")+" "+part("year");
+        };
         try {
-          localTime=new Intl.DateTimeFormat("en-US",{timeZone:timezone,hour:"2-digit",minute:"2-digit",hour12:true,day:"2-digit",month:"long",year:"numeric"}).format(changedAt);
+          localTime=formatLocalTime(timezone);
         } catch {
-          localTime=new Intl.DateTimeFormat("en-US",{timeZone:"UTC",hour:"2-digit",minute:"2-digit",hour12:true,day:"2-digit",month:"long",year:"numeric"}).format(changedAt)+" (UTC; IP timezone unavailable)";
+          localTime=formatLocalTime("UTC")+" (UTC; IP timezone unavailable)";
         }
         const displayLocation=[network?.location?.city,network?.location?.state,network?.location?.country].filter(Boolean).map(String).join(", ")||"Unavailable";
         const firstName=escapeHtml(String(current.rows[0].first_name||"there"));
