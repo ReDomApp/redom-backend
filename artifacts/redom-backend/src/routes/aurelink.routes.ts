@@ -604,33 +604,27 @@ router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) 
   const parsed = z.object({
     rentalId: z.number().int().min(0),
     days: z.number().int().min(1).max(365),
-    serviceId: z.string().max(100).optional(),
     lineType: z.enum(["mobile", "voip"]).default("mobile"),
   }).safeParse(req.body);
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid rental quote request." });
-  if (!parsed.data.serviceId) return res.status(400).json({ success: false, message: "Select a provider-supported rental service. Multi-service rentals are not available because financial services are prohibited." });
   if (!await isRentalAvailable(parsed.data.rentalId)) return res.status(403).json({ success: false, message: "This rental inventory is not available in the provider catalog." });
   try {
-    const providerServices = await smsPoolClient.rentalServices(String(parsed.data.rentalId));
-    const selectedService = serviceEntries(providerServices).find((entry) => entry.id === parsed.data.serviceId || entry.name.toLowerCase() === parsed.data.serviceId!.toLowerCase());
-    if (!selectedService) return res.status(409).json({ success: false, message: "The selected rental service is no longer available from SMSPool." });
-    if (/bank|financial|finance|payment|cashapp|paypal|venmo|wise|revolut|stripe|coinbase|crypto|wallet|credit.?card|debit.?card|money.?transfer|western.?union|moneygram/i.test(selectedService.name))
-      return res.status(403).json({ success: false, message: "Financial-service rentals are not permitted under Aurelink's rental policy." });
-    const providerPricing = await smsPoolClient.rentalPricing(String(parsed.data.rentalId), parsed.data.serviceId);
+    // Dedicated rentals are multi-service numbers: do not bind a service ID.
+    const providerPricing = await smsPoolClient.rentalPricing(String(parsed.data.rentalId));
     const providerMaxPrice = rentalPriceForDays(providerPricing, parsed.data.days);
-    if (providerMaxPrice === null) return res.status(409).json({ success: false, message: "SMSPool did not return an exact live price for this rental duration." });
-    const stockResponse = object(await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days, parsed.data.serviceId));
+    if (providerMaxPrice === null) return res.status(409).json({ success: false, message: "SMSPool did not return an exact live price for this duration." });
+    const stockResponse = object(await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days));
     const stockCount = Number(stockResponse["stock"] ?? stockResponse["available"] ?? 1);
-    if (Number.isFinite(stockCount) && stockCount <= 0) return res.status(409).json({ success: false, message: "No inventory is currently available for this rental." });
+    if (Number.isFinite(stockCount) && stockCount <= 0) return res.status(409).json({ success: false, message: "No inventory is currently available for this duration." });
     const priceBreakdown = aurelinkRentalPriceBreakdown(providerMaxPrice, parsed.data.lineType);
-    if (!priceBreakdown) return res.status(409).json({ success: false, message: "This long-term number is unavailable because the provider returned a zero or invalid price." });
+    if (!priceBreakdown) return res.status(409).json({ success: false, message: "SMSPool returned an invalid rental price." });
     const retailAmountMinor = priceBreakdown.totalMinor;
-    const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: parsed.data.serviceId ?? null, lineType: parsed.data.lineType, pricing: providerPricing, priceBreakdown };
+    const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: null, lineType: parsed.data.lineType, pricing: providerPricing, stock: stockResponse, priceBreakdown };
     const result = await pool.query(
-      "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'rental',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,provider_max_price,retail_amount_minor,currency,expires_at",
-      [req.user.userId, String(parsed.data.rentalId), parsed.data.serviceId ?? "always_on", providerMaxPrice, retailAmountMinor, JSON.stringify(quoteMetadata), String(quoteTtlMinutes)],
+      "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'rental',$2,'multi_service',$3,$4,'USD',$5::jsonb,NOW()+($6::text||' minutes')::interval) RETURNING id,product_kind,provider_max_price,retail_amount_minor,currency,expires_at",
+      [req.user.userId, String(parsed.data.rentalId), providerMaxPrice, retailAmountMinor, JSON.stringify(quoteMetadata), String(quoteTtlMinutes)],
     );
-    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
+    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, pricingSource: "live SMSPool API", availability: stockResponse, expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
 });
 
@@ -671,10 +665,10 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
     const rentalCatalogId = Number(quoteMetadata?.["rentalCatalogId"]);
     if (!await isRentalAvailable(rentalCatalogId)) throw new SmsPoolError("Rental inventory is not available in the provider catalog.", { providerType: "INVENTORY_NOT_AVAILABLE" });
     const days = Number(quoteMetadata?.["days"]);
-    const serviceId = quoteMetadata?.["serviceId"] == null ? undefined : String(quoteMetadata["serviceId"]);
+    const serviceId = undefined;
     const requestedLineType = quoteMetadata?.["lineType"] === "voip" ? "voip" : "mobile";
     if (!Number.isInteger(rentalCatalogId) || rentalCatalogId < 0 || !Number.isInteger(days) || days <= 0) throw new SmsPoolError("Rental quote is missing its provider metadata.", { providerType: "INVALID_QUOTE" });
-    const provider = await smsPoolClient.purchaseRental({ id: rentalCatalogId, days, service_id: serviceId });
+    const provider = await smsPoolClient.purchaseRental({ id: rentalCatalogId, days });
     const data = object(provider);
     const providerOrderId = String(data["rental_code"] ?? data["rental_id"] ?? data["order_id"] ?? "");
     const phoneNumber = String(data["phonenumber"] ?? data["number"] ?? "");
