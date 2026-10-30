@@ -463,7 +463,7 @@ router.post("/aurelink/auth/password-reset/complete",async(req,res)=>{
 });
 
 const escapeHtml=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
-function newAccountId(){const prefixes=[{p:"100",n:9},{p:"221",n:9},{p:"660",n:9},{p:"234",n:7}];const choice=prefixes[randomInt(prefixes.length)];let digits="";for(let i=0;i<choice.n;i++)digits+=String(randomInt(10));return choice.p+digits;}
+function newAccountId(){const prefixes=[{p:"100",n:9},{p:"221",n:9},{p:"111",n:9},{p:"152",n:7}];const choice=prefixes[randomInt(prefixes.length)];let digits="";for(let i=0;i<choice.n;i++)digits+=String(randomInt(10));return choice.p+digits;}
 function aurelinkAppBase(){return "https://aurelink-react.onrender.com";}
 function aurelinkSender(){return process.env.AURELINK_EMAIL_FROM??"Aurelink <noreply@wnncompany.com>";}
 router.post("/aurelink/auth/signup/email/request",async(req,res)=>{
