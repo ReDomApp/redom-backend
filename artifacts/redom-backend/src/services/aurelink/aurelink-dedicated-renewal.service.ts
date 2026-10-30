@@ -133,12 +133,12 @@ export async function redirectRenewalTopup(rawToken: string): Promise<string|nul
   return result.rows[0]?.checkout_url ? String(result.rows[0].checkout_url) : null;
 }
 export async function handleAurelinkRenewalWebhook(rawBody: Buffer, signature: string|undefined, payload: any): Promise<boolean> {
-  const expected=crypto.createHmac("sha512",secret()).update(rawBody).digest("hex");
-  if(!signature||signature.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(signature)))throw new Error("Invalid Paystack signature.");
   const reference=String(payload?.data?.reference||"");
   if(!reference)return false;
   const found=await pool.query("SELECT id FROM aurelink_renewal_topup_tokens WHERE paystack_reference=$1 LIMIT 1",[reference]);
   if(!found.rows[0])return false;
+  const expected=crypto.createHmac("sha512",secret()).update(rawBody).digest("hex");
+  if(!signature||signature.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(signature)))throw new Error("Invalid Paystack signature.");
   const verified=await paystack<{id:number;status:string;reference:string;amount:number;currency:string;requested_amount?:number}>("GET","/transaction/verify/"+encodeURIComponent(reference));
   if(verified.status!=="success")throw new Error("Paystack has not confirmed a successful renewal top-up.");
   const client=await pool.connect();
