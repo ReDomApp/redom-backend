@@ -12,16 +12,3 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
-
-  - type: web
-    runtime: static
-    name: aurelink-react-app
-    buildCommand: pnpm install --no-frozen-lockfile && pnpm --filter @workspace/aurelink-react run typecheck && pnpm --filter @workspace/aurelink-react run build
-    staticPublishPath: artifacts/aurelink-react/dist
-    pullRequestPreviewsEnabled: false
-    previews:
-      generation: off
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
