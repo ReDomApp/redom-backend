@@ -14,9 +14,6 @@ const router = Router();
 const USD_MINOR = 100;
 const quoteTtlMinutes = 10;
 
-function allowedServices(): Set<string> {
-  return new Set((process.env.AURELINK_ALLOWED_SERVICES ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
-}
 function serviceEntries(value: unknown, output: Array<{ id: string; name: string }> = []): Array<{ id: string; name: string }> {
   if (Array.isArray(value)) { for (const item of value) serviceEntries(item, output); return output; }
   if (!value || typeof value !== "object") return output;
@@ -24,7 +21,7 @@ function serviceEntries(value: unknown, output: Array<{ id: string; name: string
   const idValue = row["ID"] ?? row["id"] ?? row["service_id"] ?? row["serviceId"];
   const nameValue = row["name"] ?? row["service"] ?? row["service_name"] ?? row["short_name"];
   if (idValue != null && nameValue != null && (typeof idValue === "string" || typeof idValue === "number") && typeof nameValue === "string") {
-    output.push({ id: String(idValue).toLowerCase(), name: nameValue.trim().toLowerCase() });
+    output.push({ id: String(idValue).trim().toLowerCase(), name: nameValue.trim().toLowerCase() });
   }
   for (const child of Object.values(row)) if (child && typeof child === "object") serviceEntries(child, output);
   return output;
@@ -32,21 +29,18 @@ function serviceEntries(value: unknown, output: Array<{ id: string; name: string
 async function isServiceAllowed(service: string): Promise<boolean> {
   const normalized = service.trim().toLowerCase();
   if (!normalized) return false;
-  const configured = allowedServices();
-  let serviceName = normalized;
-  let serviceId = normalized;
-  if (/^[0-9]+$/.test(normalized)) {
-    try {
-      const match = serviceEntries(await smsPoolClient.services()).find((entry) => entry.id === normalized);
-      if (!match) return false;
-      serviceName = match.name;
-      serviceId = match.id;
-    } catch { return false; }
+  // The live SMSPool catalogue is the source of truth. Do not require a second
+  // environment allowlist: an empty AURELINK_ALLOWED_SERVICES previously blocked
+  // every provider service even when SMSPool returned it in its catalogue.
+  try {
+    const entries = serviceEntries(await smsPoolClient.services());
+    const match = entries.find((entry) => entry.id === normalized || entry.name === normalized);
+    if (!match) return false;
+    // WhatsApp is not an SMSPool SMS service and must use its separate channel.
+    return !match.name.includes("whatsapp");
+  } catch {
+    return false;
   }
-  if (/bank|crypto|exchange|government|telecom|carrier/.test(serviceName)) return false;
-  // WhatsApp is a separate premium channel and must never be routed through SMSPool.
-  if (serviceName.includes("whatsapp")) return false;
-  return configured.has(normalized) || configured.has(serviceName) || configured.has(serviceId);
 }
 function adminAllowed(req: Request): boolean {
   const ids = (process.env.AURELINK_ADMIN_USER_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
