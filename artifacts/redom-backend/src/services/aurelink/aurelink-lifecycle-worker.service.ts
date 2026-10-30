@@ -3,6 +3,7 @@ import { logger } from "../../lib/logger";
 import { smsPoolClient, type SmsPoolPayload } from "./smspool.client";
 import { sendAurelinkFinalReceipt } from "./aurelink-receipts.service";
 import { walletCredit } from "./aurelink-wallet.service";
+import { nonVoipClient, nvRecord } from "./nonvoip.client";
 
 const configuredIntervalMs = Number(process.env.AURELINK_LIFECYCLE_POLL_MS ?? 60_000);
 const configuredBatchSize = Number(process.env.AURELINK_LIFECYCLE_BATCH_SIZE ?? 25);
@@ -50,6 +51,33 @@ async function refundExpiredWalletOrder(order:Record<string,unknown>,label:strin
   const client=await pool.connect();try{await client.query("BEGIN");await walletCredit(client,{userId,amountMinor:amount,reference:"refund:"+debit,type:"refund",description:"Automatic wallet refund: "+label+" provider expiry",orderId:String(order["id"]),metadata:{providerOrderId:order["provider_order_id"]}});await client.query("UPDATE aurelink_provider_orders SET refund_reference=$2 WHERE id=$1",[order["id"],"refund:"+debit]);await client.query("COMMIT");}catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
 }
 async function pollActivation(order: Record<string, unknown>): Promise<void> {
+  if (String(order["provider"] ?? "smspool").toLowerCase() === "nonvoip") {
+    const id = String(order["provider_order_id"]);
+    const [statusResponse, messagesResponse] = await Promise.all([
+      nonVoipClient.order(id),
+      nonVoipClient.messages(id),
+    ]);
+    const statusData = nvRecord(statusResponse);
+    const messagesData = nvRecord(messagesResponse);
+    const messages = Array.isArray(messagesData.messages) ? messagesData.messages : [];
+    const smsArrived = messages.length > 0 || containsSms(messagesResponse);
+    const rawStatus = String(statusData.status ?? statusData.state ?? "").toLowerCase();
+    const nextStatus = smsArrived || /^(completed|complete|received)$/.test(rawStatus) ? "completed"
+      : /^(refunded|refund)$/.test(rawStatus) ? "refunded"
+      : /^(cancelled|canceled)$/.test(rawStatus) ? "cancelled"
+      : /^(expired|timeout|timed out)$/.test(rawStatus) ? "expired"
+      : null;
+    const expiry = expiryFrom(statusResponse) ?? expiryFrom(messagesResponse);
+    const previous = String(order["status"] ?? "").toLowerCase();
+    await pool.query(
+      "UPDATE aurelink_provider_orders SET status=COALESCE($2,status),sms_received_at=CASE WHEN $3 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,expires_at=COALESCE($4,expires_at),last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $5::jsonb WHERE id=$1",
+      [order["id"], nextStatus, smsArrived, expiry, JSON.stringify({ lifecyclePoll: { provider: "nonvoip", status: rawStatus || null, smsReceived: smsArrived, checkedAt: new Date().toISOString() }, lastMessages: messages })],
+    );
+    if (nextStatus && nextStatus !== previous && ["completed", "refunded", "cancelled", "expired"].includes(nextStatus)) {
+      await sendAurelinkFinalReceipt({ ...order, status: nextStatus }, nextStatus === "completed" ? "Completed" : nextStatus === "refunded" ? "Refunded" : nextStatus === "cancelled" ? "Canceled" : "Expired");
+    }
+    return;
+  }
   const response = await smsPoolClient.checkSms(String(order["provider_order_id"]));
   const data = asRecord(response as SmsPoolPayload);
   const status = data["status"];
@@ -90,7 +118,7 @@ async function pollRental(order: Record<string, unknown>): Promise<void> {
 }
 
 export async function runAurelinkLifecyclePoll(): Promise<void> {
-  if (running || !process.env.SMSPOOL_API_KEY?.trim()) return;
+  if (running || (!process.env.SMSPOOL_API_KEY?.trim() && !process.env.NONVOIP_API_KEY?.trim())) return;
   running = true;
   try {
     const expiredActivations = await pool.query(
@@ -98,7 +126,9 @@ export async function runAurelinkLifecyclePoll(): Promise<void> {
     );
     for (const order of expiredActivations.rows as Array<Record<string, unknown>>) {
       try {
-        const cancellation=await smsPoolClient.cancelSms(String(order["provider_order_id"]));
+        const cancellation = String(order["provider"] ?? "smspool").toLowerCase() === "nonvoip"
+          ? await nonVoipClient.cancel(String(order["provider_order_id"]))
+          : await smsPoolClient.cancelSms(String(order["provider_order_id"]));
         if(providerConfirmed(cancellation))await refundExpiredWalletOrder(order,"activation");
         await sendAurelinkFinalReceipt(order,"Expired");
       } catch (error) { logger.warn({orderId:order["id"],errorType:error instanceof Error?error.name:typeof error},"AURELINK expired activation reconciliation failed"); }
@@ -129,7 +159,7 @@ export async function runAurelinkLifecyclePoll(): Promise<void> {
 }
 
 export function startAurelinkLifecycleWorker(): void {
-  if (timer || !process.env.SMSPOOL_API_KEY?.trim()) return;
+  if (timer || (!process.env.SMSPOOL_API_KEY?.trim() && !process.env.NONVOIP_API_KEY?.trim())) return;
   timer = setInterval(() => { void runAurelinkLifecyclePoll(); }, INTERVAL_MS);
   timer.unref?.();
   void runAurelinkLifecyclePoll();
