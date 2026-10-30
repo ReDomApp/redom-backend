@@ -597,7 +597,7 @@ router.get("/aurelink/orders", aurelinkAuthMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try {
     const result = await pool.query(
-      "SELECT id,aurelink_order_id,product_kind,provider,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,refund_reference,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 15",
+      "SELECT id,aurelink_order_id,product_kind,provider,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,refund_reference,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 100",
       [req.user.userId],
     );
     return res.json({ success: true, orders: result.rows });
