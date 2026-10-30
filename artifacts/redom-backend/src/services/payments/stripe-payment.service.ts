@@ -5,6 +5,7 @@ import { pool } from "../../database/db";
 import { sendPaymentEmailForReference } from "./payment.service";
 import { finalizeStarsTrialSetup, markStarsTrialSetupAbandoned } from "./stripe-stars-trial.service";
 import { getStripeCardMethodForUser, finalizeStripeCardSetup, finalizeStripeCardSetupCheckout } from "./stripe-saved-payment.service";
+import { walletCredit } from "../aurelink/aurelink-wallet.service";
 
 const API = "https://api.stripe.com/v1";
 const APP_CALLBACK = "redom://payment/callback";
@@ -590,6 +591,27 @@ export async function createAurelinkStripeCheckout(input: { userId: string; quot
   }
 }
 
+export async function createAurelinkWalletTopupCheckout(input:{userId:string;amountMinor:number}):Promise<{reference:string;checkoutUrl:string;amountMinor:number;currency:string}>{
+  if(!Number.isInteger(input.amountMinor)||input.amountMinor<500||input.amountMinor>500000)throw new Error("Wallet top-ups must be between $5 and $5,000 USD.");
+  const user=await pool.query("SELECT email FROM users WHERE id=$1 LIMIT 1",[input.userId]);
+  const email=String(user.rows[0]?.email??"").trim();
+  if(!email)throw new Error("A verified email address is required for wallet top-up.");
+  const reference="AURELINK-WALLET-"+crypto.randomUUID().replace(/-/g,"").slice(0,20);
+  const metadata={provider:"stripe",purpose:"aurelink_wallet_topup",reference,userId:input.userId};
+  await pool.query("INSERT INTO payment_transactions(user_id,reference,amount_minor,currency,purpose,status,metadata,payment_provider,customer_email) VALUES($1,$2,$3,'USD','aurelink_wallet_topup','initialized',$4::jsonb,'stripe',$5)",[input.userId,reference,input.amountMinor,JSON.stringify(metadata),email]);
+  try{
+    const body=form({mode:"payment",client_reference_id:reference,"line_items[0][price_data][currency]":"usd","line_items[0][price_data][product_data][name]":"Aurelink wallet credit","line_items[0][price_data][product_data][description]":"Wallet top-up for Aurelink number purchases","line_items[0][price_data][unit_amount]":input.amountMinor,"line_items[0][quantity]":1,customer_email:email,success_url:BACKEND_CALLBACK+"?session_id={CHECKOUT_SESSION_ID}&reference="+encodeURIComponent(reference),cancel_url:BACKEND_CALLBACK+"?reference="+encodeURIComponent(reference)+"&status=cancelled","metadata[provider]":metadata.provider,"metadata[purpose]":metadata.purpose,"metadata[reference]":reference,"metadata[userId]":input.userId,"payment_intent_data[metadata][provider]":metadata.provider,"payment_intent_data[metadata][purpose]":metadata.purpose,"payment_intent_data[metadata][reference]":reference,"payment_intent_data[metadata][userId]":input.userId});
+    const session=await stripeRequest<StripeSession>("post","/checkout/sessions",body);
+    if(!session.id||!session.url)throw new Error("Stripe did not return a hosted checkout URL.");
+    await pool.query("UPDATE payment_transactions SET checkout_url=$1,gateway_status='checkout_created',metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{stripeCheckoutSessionId}',to_jsonb($2::text),true),updated_at=now() WHERE reference=$3",[session.url,session.id,reference]);
+    await pool.query("INSERT INTO aurelink_wallet_topups(reference,user_id,amount_minor,currency) VALUES($1,$2,$3,'USD')",[reference,input.userId,input.amountMinor]);
+    return {reference,checkoutUrl:session.url,amountMinor:input.amountMinor,currency:"USD"};
+  }catch(error){
+    await pool.query("UPDATE payment_transactions SET status='failed',failure_message=$1,updated_at=now() WHERE reference=$2",[error instanceof Error?error.message:"Stripe checkout failed",reference]).catch(()=>undefined);
+    throw error;
+  }
+}
+
 async function markLegacyStripePaid(session: StripeSession): Promise<void> {
   const reference=String(session.metadata?.reference??"").trim();
   if(!reference)throw new Error("Stripe Checkout session is missing ReDom payment reference.");
@@ -610,6 +632,19 @@ async function markLegacyStripePaid(session: StripeSession): Promise<void> {
     "UPDATE payment_transactions SET status='paid',payment_provider='stripe',provider_transaction_id=$1,gateway_status='succeeded',paid_at=now(),metadata=$2::jsonb,updated_at=now() WHERE id=$3",
     [pi??session.id,JSON.stringify(metadata),row.id],
   );
+  if(String(row.purpose)==="aurelink_wallet_topup"){
+    const client=await pool.connect();
+    try{
+      await client.query("BEGIN");
+      const topup=await client.query("SELECT * FROM aurelink_wallet_topups WHERE reference=$1 AND user_id=$2 FOR UPDATE",[reference,row.user_id]);
+      if(!topup.rows[0])throw new Error("Aurelink wallet top-up record is missing.");
+      if(!topup.rows[0].credited_at){
+        await walletCredit(client,{userId:String(row.user_id),amountMinor:String(row.amount_minor),reference:"topup:"+reference,type:"topup",description:"Stripe wallet top-up",paymentReference:reference,metadata:{stripePaymentIntent:pi??session.id}});
+        await client.query("UPDATE aurelink_wallet_topups SET credited_at=NOW() WHERE reference=$1",[reference]);
+      }
+      await client.query("COMMIT");
+    }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
+  }
   if(String(row.purpose)==="stars_purchase"){
     const stars=Number(metadata?.stars??0);
     if(!Number.isInteger(stars)||stars<=0)throw new Error("Invalid Stars fulfillment metadata.");
