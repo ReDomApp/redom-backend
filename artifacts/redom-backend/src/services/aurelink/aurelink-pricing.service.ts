@@ -53,3 +53,20 @@ export function aurelinkPriceBreakdown(
     totalMinor: providerAmountMinor + aurelinkChargeMinor + checkFeeMinor - firstPurchaseDiscountMinor,
   };
 }
+
+
+/**
+ * Dedicated SMSPool rental pricing. Mobile uses a 1.0x Aurelink charge;
+ * VoIP uses a 0.5x Aurelink charge. Both retain the dedicated check fee.
+ */
+export function aurelinkRentalPriceBreakdown(
+  providerPriceUsd: number,
+  lineType: "mobile" | "voip",
+): AurelinkPriceBreakdown | null {
+  if (!Number.isFinite(providerPriceUsd) || providerPriceUsd <= 0) return null;
+  const providerAmountMinor = Math.ceil(providerPriceUsd * USD_MINOR - 1e-8);
+  const aurelinkChargeMinor = Math.ceil(providerAmountMinor * (lineType === "voip" ? 0.5 : 1));
+  const checkFeeMinor = readCheckFeeMinor("AURELINK_DEDICATED_CHECK_FEE_USD_CENTS");
+  return { providerAmountMinor, aurelinkChargeMinor, checkFeeMinor, firstPurchaseDiscountMinor: 0,
+    totalMinor: providerAmountMinor + aurelinkChargeMinor + checkFeeMinor };
+}
