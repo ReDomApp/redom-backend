@@ -9,6 +9,7 @@ import { createAurelinkStripeCheckout } from "../services/payments/stripe-paymen
 import { createAurelinkWalletTopupCheckout } from "../services/payments/payment.service";
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
+import { aurelinkPriceBreakdown, type AurelinkNumberProduct } from "../services/aurelink/aurelink-pricing.service";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -73,9 +74,8 @@ function pricesIn(value: unknown, output: number[] = []): number[] {
 }
 function newAurelinkOrderId(): string { return String(randomInt(112, 115)) + String(randomInt(0, 100_000)).padStart(5, "0"); }
 
-function retailPriceMinor(providerPrice: number): number {
-  // User-facing total: 2x live provider amount plus the fixed $1.00 mobile-line verification fee.
-  return Math.ceil(providerPrice * USD_MINOR * 2) + 100;
+function retailPriceMinor(providerPrice: number, product: AurelinkNumberProduct): number {
+  return aurelinkPriceBreakdown(providerPrice, product)?.totalMinor ?? 0;
 }
 function rentalPriceForDays(value: unknown, days: number): number | null {
   if (typeof value === "string") {
@@ -333,12 +333,14 @@ router.post("/aurelink/quotes", aurelinkAuthMiddleware, async (req, res) => {
     const priorOtp = await pool.query("SELECT 1 FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND product_kind='activation' AND sms_received_at IS NOT NULL LIMIT 1", [req.user.userId]);
     const firstPurchaseEligible = priorOtp.rowCount === 0;
     const requiredLineType = firstPurchaseEligible ? "mobile" : "voip";
-    const retailAmountMinor = retailPriceMinor(providerMaxPrice);
+    const priceBreakdown = aurelinkPriceBreakdown(providerMaxPrice, "short_term");
+    if (!priceBreakdown) return res.status(409).json({ success: false, message: "This number is unavailable because the provider returned a zero or invalid price." });
+    const retailAmountMinor = priceBreakdown.totalMinor;
     const result = await pool.query(
       "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'activation',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,expires_at",
-      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,firstPurchaseEligible,requiredLineType,firstPurchaseDiscount:0}}), String(quoteTtlMinutes)],
+      [req.user.userId, parsed.data.country, parsed.data.service, providerMaxPrice, retailAmountMinor, JSON.stringify({providerPricing,pricingRule:{providerMultiplier:2,firstPurchaseEligible,requiredLineType,firstPurchaseDiscount:0},priceBreakdown}), String(quoteTtlMinutes)],
     );
-    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), requiredLineType, eligibility: firstPurchaseEligible ? "first_purchase_mobile" : "returning_customer_voip", pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
+    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, requiredLineType, eligibility: firstPurchaseEligible ? "first_purchase_mobile" : "returning_customer_voip", pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
 });
 
@@ -520,13 +522,15 @@ router.post("/aurelink/rental-quotes", aurelinkAuthMiddleware, async (req, res) 
     const stockResponse = object(await smsPoolClient.rentalStock(String(parsed.data.rentalId), parsed.data.days, parsed.data.serviceId));
     const stockCount = Number(stockResponse["stock"] ?? stockResponse["available"] ?? 1);
     if (Number.isFinite(stockCount) && stockCount <= 0) return res.status(409).json({ success: false, message: "No inventory is currently available for this rental." });
-    const retailAmountMinor = retailPriceMinor(providerMaxPrice);
-    const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: parsed.data.serviceId ?? null, pricing: providerPricing };
+    const priceBreakdown = aurelinkPriceBreakdown(providerMaxPrice, "long_term");
+    if (!priceBreakdown) return res.status(409).json({ success: false, message: "This long-term number is unavailable because the provider returned a zero or invalid price." });
+    const retailAmountMinor = priceBreakdown.totalMinor;
+    const quoteMetadata = { rentalCatalogId: parsed.data.rentalId, days: parsed.data.days, serviceId: parsed.data.serviceId ?? null, pricing: providerPricing, priceBreakdown };
     const result = await pool.query(
       "INSERT INTO aurelink_quotes (aurelink_user_id,product_kind,country,service,provider_max_price,retail_amount_minor,currency,provider_pricing,expires_at) VALUES ($1,'rental',$2,$3,$4,$5,'USD',$6::jsonb,NOW()+($7::text||' minutes')::interval) RETURNING id,product_kind,provider_max_price,retail_amount_minor,currency,expires_at",
       [req.user.userId, String(parsed.data.rentalId), parsed.data.serviceId ?? "always_on", providerMaxPrice, retailAmountMinor, JSON.stringify(quoteMetadata), String(quoteTtlMinutes)],
     );
-    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
+    return res.json({ success: true, quote: result.rows[0], retailPriceUsd: (retailAmountMinor / USD_MINOR).toFixed(2), priceBreakdown, pricingSource: "live SMSPool API", expiresInSeconds: quoteTtlMinutes * 60 });
   } catch (error) { return providerFailure(res, error); }
 });
 
@@ -664,7 +668,7 @@ router.post("/aurelink/rentals/:rentalId/renew", aurelinkAuthMiddleware, async (
     const stockResponse = object(await smsPoolClient.rentalStock(String(catalogId), parsed.data.days, serviceId));
     const stockCount = Number(stockResponse["stock"] ?? stockResponse["available"] ?? 1);
     if (Number.isFinite(stockCount) && stockCount <= 0) return res.status(409).json({ success: false, message: "No inventory is available for this renewal duration." });
-    const retailAmountMinor = retailPriceMinor(providerMaxPrice);
+    const retailAmountMinor = retailPriceMinor(providerMaxPrice, "long_term");
     const redemption = await pool.query(
       "INSERT INTO aurelink_payment_redemptions (payment_reference,user_id,product_kind) SELECT reference,user_id,'rental' FROM payment_transactions WHERE reference=$1 AND user_id=$2 AND status='paid' AND purpose='aurelink_rental' AND currency='USD' AND amount_minor >= $3 ON CONFLICT DO NOTHING RETURNING payment_reference",
       [parsed.data.paymentReference, req.user.userId, String(retailAmountMinor)],
