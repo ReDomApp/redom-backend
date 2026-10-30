@@ -492,6 +492,17 @@ router.get("/aurelink/activations/:orderId/messages", aurelinkAuthMiddleware, as
   try {
     const order = await ownedOrder(req.user.userId, orderId.data, "activation");
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+    if (String(order["provider"] ?? "smspool").toLowerCase() === "nonvoip") {
+      const response = await nonVoipClient.messages(orderId.data);
+      const body = nvRecord(response);
+      const messages = Array.isArray(body.messages) ? body.messages : [];
+      const arrived = messages.length > 0;
+      await pool.query(
+        "UPDATE aurelink_provider_orders SET sms_received_at=CASE WHEN $2 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,last_provider_check_at=NOW(),updated_at=NOW(),provider_payload=provider_payload || $3::jsonb WHERE id=$1",
+        [order["id"], arrived, JSON.stringify({ lastNonVoipMessages: messages })],
+      );
+      return res.json({ success: true, message: { status: arrived ? "completed" : order["status"], messages, smsReceivedAt: arrived ? (order["sms_received_at"] ?? new Date().toISOString()) : null, expiresAt: order["expires_at"] ?? null } });
+    }
     const message = object(await smsPoolClient.checkSms(orderId.data));
     const arrived = message["status"] === 3 || Boolean(message["sms"] ?? message["full_sms"]);
     const expiry = expiryDate(message);
@@ -519,6 +530,25 @@ router.post("/aurelink/activations/:orderId/cancel", aurelinkAuthMiddleware, asy
     const order = await ownedOrder(req.user.userId, orderId.data, "activation");
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
     if(["completed","refunded","cancelled","expired"].includes(String(order["status"])))return res.status(409).json({success:false,message:"This activation is no longer cancellable."});
+    if (String(order["provider"] ?? "smspool").toLowerCase() === "nonvoip") {
+      const result = nvRecord(await nonVoipClient.cancel(orderId.data));
+      const confirmed = result["success"] === true || result["success"] === 1 || /^(success|cancelled|canceled|refunded)$/i.test(String(result["status"] ?? result["message"] ?? ""));
+      if (!confirmed) return res.status(409).json({ success: false, message: "NonVoip has not confirmed cancellation. No wallet refund has been issued.", provider: result });
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("UPDATE aurelink_provider_orders SET status='cancelled',updated_at=NOW(),provider_payload=provider_payload || $2::jsonb WHERE id=$1", [order["id"], JSON.stringify({ cancellation: result })]);
+        if (order["wallet_debit_reference"] && order["retail_amount_minor"]) {
+          await walletCredit(client, { userId: req.user.userId, amountMinor: String(order["retail_amount_minor"]), reference: "refund:" + String(order["wallet_debit_reference"]), type: "refund", description: "Provider-confirmed NonVoip activation cancellation refund", orderId: String(order["id"]), metadata: { providerCancellation: result } });
+          await client.query("UPDATE aurelink_provider_orders SET refund_reference=$2 WHERE id=$1", [order["id"], "refund:" + String(order["wallet_debit_reference"])]);
+        }
+        await client.query("COMMIT");
+        return res.json({ success: true, cancellation: result, refunded: Boolean(order["wallet_debit_reference"]) });
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally { client.release(); }
+    }
     const result=object(await smsPoolClient.cancelSms(orderId.data));
     const cancelOk=result["success"]===1||result["success"]===true||/cancel|refund|success/i.test(String(result["message"]??result["status"]??""));
     if(!cancelOk)return res.status(409).json({success:false,message:"The provider has not confirmed cancellation. No wallet refund has been issued.",provider:result});
@@ -533,7 +563,7 @@ router.get("/aurelink/orders", aurelinkAuthMiddleware, async (req, res) => {
   if (!req.user?.userId) return res.status(401).json({ success: false, message: "Authentication required." });
   try {
     const result = await pool.query(
-      "SELECT id,aurelink_order_id,product_kind,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,refund_reference,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 15",
+      "SELECT id,aurelink_order_id,product_kind,provider,provider_order_id,phone_number,country,service,status,provider_cost,retail_amount_minor,currency,carrier_name,line_type,verification_status,verified_at,sms_received_at,rental_started_at,expires_at,last_provider_check_at,refund_reference,created_at,updated_at FROM aurelink_provider_orders WHERE aurelink_user_id=$1 ORDER BY created_at DESC LIMIT 15",
       [req.user.userId],
     );
     return res.json({ success: true, orders: result.rows });
