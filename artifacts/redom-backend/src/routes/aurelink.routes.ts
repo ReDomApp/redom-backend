@@ -594,8 +594,9 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
     return res.status(201).json({ success: true, rental: { rentalId: providerOrderId, phoneNumber, days, carrier: assessment.carrier, lineType: assessment.lineType ?? "mobile", verificationStatus: "verified", verifiedAt: new Date().toISOString(), startedAt: startedAt.toISOString(), expiresAt: expiry.toISOString(), providerCostUsd: actualCost, details: provider } });
   } catch (error) {
     if (purchasedRentalId) await smsPoolClient.cancelRental(purchasedRentalId).catch(() => undefined);
-    if (paymentReserved) await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2", [parsed.data.paymentReference, req.user.userId]).catch(() => undefined);
-    await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND user_id=$2", [parsed.data.quoteId, req.user.userId]).catch(() => undefined);
+    if(parsed.data.paymentReference)await pool.query("DELETE FROM aurelink_payment_redemptions WHERE payment_reference=$1 AND user_id=$2",[parsed.data.paymentReference,req.user.userId]).catch(()=>undefined);
+    else{const refundClient=await pool.connect();try{await refundClient.query("BEGIN");await walletCredit(refundClient,{userId:req.user.userId,amountMinor:String(quote?.["retail_amount_minor"]??0),reference:"refund:purchase:"+parsed.data.quoteId,type:"refund",description:"Automatic refund: rental provider purchase failed"});await refundClient.query("COMMIT");}catch(e){await refundClient.query("ROLLBACK").catch(()=>undefined);logger.error({errorType:e instanceof Error?e.name:typeof e},"AURELINK rental wallet refund failed");}finally{refundClient.release();}}
+    await pool.query("UPDATE aurelink_quotes SET consumed_at=NULL WHERE id=$1 AND aurelink_user_id=$2",[parsed.data.quoteId,req.user.userId]).catch(()=>undefined);
     return providerFailure(res, error);
   }
 });
