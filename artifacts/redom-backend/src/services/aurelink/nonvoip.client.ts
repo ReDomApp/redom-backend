@@ -20,7 +20,8 @@ export class NonVoipClient {
  createOrder(input:{serviceId:string;offerId:string;quotedPrice:string;idempotencyKey:string;type?:"long-term"|"dedicated"}){return this.request("/orders",{method:"POST",headers:{"Idempotency-Key":input.idempotencyKey},body:JSON.stringify({type:input.type||"long-term",service_id:input.serviceId,offer_id:input.offerId,quoted_price:input.quotedPrice})});}
  order(id:string){return this.request("/orders/"+encodeURIComponent(id));}
  messages(id:string){return this.request("/orders/"+encodeURIComponent(id)+"/messages?sync=0");}
- renew(id:string,idempotencyKey=randomUUID()){return this.request("/orders/"+encodeURIComponent(id)+"/renew",{method:"POST",headers:{"Idempotency-Key":idempotencyKey},body:JSON.stringify({})});}\n cancel(id:string){return this.request("/orders/"+encodeURIComponent(id)+"/cancel",{method:"PATCH",body:JSON.stringify({})});}
+ renew(id:string,idempotencyKey=randomUUID()){return this.request("/orders/"+encodeURIComponent(id)+"/renew",{method:"POST",headers:{"Idempotency-Key":idempotencyKey},body:JSON.stringify({})});}
+ cancel(id:string){return this.request("/orders/"+encodeURIComponent(id)+"/cancel",{method:"PATCH",body:JSON.stringify({})});}
 }
 export const nonVoipClient=new NonVoipClient();
 export const nonVoipIdempotencyKey=()=>randomUUID();
