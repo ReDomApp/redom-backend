@@ -8,6 +8,7 @@ import { SmsPoolError, smsPoolClient, type SmsPoolPayload } from "../services/au
 import { createAurelinkStripeCheckout } from "../services/payments/stripe-payment.service";
 import { createAurelinkWalletTopupCheckout } from "../services/payments/stripe-payment.service";
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
+import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -410,12 +411,13 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
     }
     // Verify the purchased number itself; country-level catalog labels are not sufficient proof.
     let lookup: SmsPoolPayload;
-    try { lookup = await smsPoolClient.carrierLookup(phoneNumber.replace(/[+ ()-]/g, "")); }
+    try { lookup = await verifyAurelinkNumber(phoneNumber); }
     catch {
       await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
       throw new SmsPoolError("Carrier verification failed. The number was not accepted and cancellation was requested.", { providerType: "CARRIER_LOOKUP_FAILED" });
     }
-    const assessment = carrierAssessment(lookup);
+    const lineAssessment=veriphoneLineAssessment(lookup as Record<string,unknown>);
+    const assessment={result:lineAssessment.accepted?"mobile":String(lineAssessment.lineType).includes("voip")?"voip":"unknown",carrier:lineAssessment.carrier,lineType:lineAssessment.lineType};
     if (assessment.result !== "mobile") {
       await smsPoolClient.cancelSms(providerOrderId).catch(() => undefined);
       const reason = assessment.result === "voip" ? "SMSPool identified this number as VoIP. The number was rejected and cancellation was requested." : "SMSPool did not confirm this number as a mobile line. The number was not accepted and cancellation was requested.";
@@ -565,13 +567,14 @@ router.post("/aurelink/rentals", aurelinkAuthMiddleware, async (req, res) => {
       throw new SmsPoolError("Rental cost exceeded the quoted maximum; a refund was requested.", { providerType: "PRICE_GUARD" });
     }
     let lookup: SmsPoolPayload;
-    try { lookup = await smsPoolClient.carrierLookup(phoneNumber.replace(/[+ ()-]/g, "")); }
+    try { lookup = await verifyAurelinkNumber(phoneNumber); }
     catch {
       await smsPoolClient.cancelRental(providerOrderId).catch(() => undefined);
       purchasedRentalId = null;
       throw new SmsPoolError("Carrier verification failed. The rental was not accepted and cancellation was requested.", { providerType: "CARRIER_LOOKUP_FAILED" });
     }
-    const assessment = carrierAssessment(lookup);
+    const lineAssessment=veriphoneLineAssessment(lookup as Record<string,unknown>);
+    const assessment={result:lineAssessment.accepted?"mobile":String(lineAssessment.lineType).includes("voip")?"voip":"unknown",carrier:lineAssessment.carrier,lineType:lineAssessment.lineType};
     if (assessment.result !== "mobile") {
       await smsPoolClient.cancelRental(providerOrderId).catch(() => undefined);
       purchasedRentalId = null;
