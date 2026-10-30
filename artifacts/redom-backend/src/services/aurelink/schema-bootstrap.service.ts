@@ -116,7 +116,7 @@ export async function ensureAurelinkSchema(pool: Pool): Promise<void> {
       revoked_at TIMESTAMPTZ,
       amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
       currency CHAR(3) NOT NULL,
-      paystack_reference VARCHAR(120) NOT NULL UNIQUE,
+      paystack_reference VARCHAR(120) NOT NULL UNIQUE,\n      checkout_url TEXT NOT NULL,
       paystack_transaction_id VARCHAR(120),
       gateway_status VARCHAR(40),
       receipt_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
