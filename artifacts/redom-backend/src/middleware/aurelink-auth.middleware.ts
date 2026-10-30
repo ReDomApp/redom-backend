@@ -20,7 +20,7 @@ export async function aurelinkAuthMiddleware(req: Request, res: Response, next: 
     const result = await pool.query(
       `SELECT u.id,u.account_status,s.id AS session_id FROM aurelink_users u
        JOIN aurelink_sessions s ON s.user_id=u.id
-       WHERE u.id=$1 AND s.id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW() AND s.last_activity_at>NOW()-INTERVAL '10 minutes'`,
+       WHERE u.id=$1 AND s.id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW() `,
       [payload.userId,payload.sessionId]
     );
     const row = result.rows[0];
