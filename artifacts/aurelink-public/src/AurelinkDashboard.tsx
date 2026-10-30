@@ -7,7 +7,7 @@ type Row=Record<string,unknown>;
 type Service={id:string;name:string};
 type Country={id:string;code:string;name:string;dialCode:string};
 type Plan="activation"|"rental"|"dedicated";
-function token(){return sessionStorage.getItem("aurelink.accessToken")||"";}
+function token(){return localStorage.getItem("aurelink.accessToken")||"";}
 async function get(path:string){const r=await fetch(API_BASE+path,{headers:{Accept:"application/json",Authorization:"Bearer "+token()},cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok||d.success===false)throw new Error(d.message||"Unable to load Aurelink data.");return d;}
 async function post(path:string,body:unknown){const r=await fetch(API_BASE+path,{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json",Authorization:"Bearer "+token()},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok||d.success===false)throw new Error(d.message||"Request could not be completed.");return d;}
 function collect(value:unknown,_kind:"service"|"country",out:Row[]=[]):Row[]{if(Array.isArray(value)){value.forEach(v=>collect(v,_kind,out));return out;}if(!value||typeof value!=="object")return out;const x=value as Row;const id=x.ID??x.id??x.service_id??x.serviceId??x.country_id??x.countryId;const name=x.name??x.service??x.service_name??x.short_name??x.country??x.country_name;if(id!=null&&name!=null){out.push(x);}Object.values(x).forEach(v=>{if(v&&typeof v==="object")collect(v,_kind,out)});return out;}
