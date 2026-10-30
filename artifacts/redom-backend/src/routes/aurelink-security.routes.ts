@@ -8,7 +8,7 @@ import {resend} from "../lib/resend";
 import {hashPassword,verifyPassword} from "../utils/password";
 const r=Router(),H=(s:string)=>createHash("sha256").update(s).digest("hex"),ip=(q:Request)=>String(q.ip||"").replace(/^::ffff:/,""),ua=(q:Request)=>String(q.get("user-agent")||"");
 async function mail(to:string,subject:string,html:string){const result=await resend.emails.send({from:process.env.AURELINK_EMAIL_FROM||"Aurelink <noreply@wnncompany.com>",to,subject,html});if(result.error)throw new Error("Aurelink email delivery failed.");return result;}
-const key=()=>createHash("sha256").update(process.env.AURELINK_TOTP_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET||"").update("|AURELINK_TOTP").digest();
+const key=()=>{const s=process.env.AURELINK_TOTP_ENCRYPTION_KEY;if(!s||s.length<32)throw Error("AURELINK_TOTP_ENCRYPTION_KEY is not configured.");return createHash("sha256").update(s).update("|AURELINK_TOTP_V1").digest();};
 function enc(v:string){const iv=randomBytes(12),c=createCipheriv("aes-256-gcm",key(),iv),b=Buffer.concat([c.update(v),c.final()]);return [iv.toString("base64url"),c.getAuthTag().toString("base64url"),b.toString("base64url")].join(".");}
 function dec(v:string){const a=v.split("."),d=createDecipheriv("aes-256-gcm",key(),Buffer.from(a[0],"base64url"));d.setAuthTag(Buffer.from(a[1],"base64url"));return Buffer.concat([d.update(Buffer.from(a[2],"base64url")),d.final()]).toString();}
 const A="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
