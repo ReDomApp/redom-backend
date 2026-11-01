@@ -201,5 +201,34 @@ export async function ensureAurelinkAccountSchema(pool: Pool): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS aurelink_signup_email_tokens_email_idx
       ON aurelink_signup_email_tokens(LOWER(email), created_at DESC);
+    CREATE TABLE IF NOT EXISTS aurelink_profile_change_locks (
+      user_id UUID PRIMARY KEY REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      email_changed_at TIMESTAMPTZ,
+      name_changed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_profile_change_challenges (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      account_id VARCHAR(32) NOT NULL,
+      purpose VARCHAR(24) NOT NULL CHECK (purpose IN ('email','name')),
+      stage VARCHAR(24) NOT NULL CHECK (stage IN ('current_email','new_email','confirm_name')),
+      current_email VARCHAR(255) NOT NULL,
+      proposed_email VARCHAR(255),
+      proposed_first_name VARCHAR(100),
+      proposed_last_name VARCHAR(100),
+      code_hash VARCHAR(64) NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0 AND attempts <= 5),
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_profile_change_challenges_user_idx
+      ON aurelink_profile_change_challenges(user_id, purpose, created_at DESC);
+    CREATE INDEX IF NOT EXISTS aurelink_profile_change_challenges_expiry_idx
+      ON aurelink_profile_change_challenges(expires_at)
+      WHERE consumed_at IS NULL;
   `);
 }
