@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import { isIP } from "node:net";
 import { z } from "zod";
-import { randomBytes, randomUUID, randomInt, createHash } from "node:crypto";
+import { randomBytes, randomUUID, randomInt, createHash, createHmac, timingSafeEqual, createDecipheriv } from "node:crypto";
 import { checkIP } from "../lib/ipapi";
 import { resend } from "../lib/resend";
 import jwt from "jsonwebtoken";
@@ -15,6 +15,12 @@ const router = Router();
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 const ip = (req: Request) => String(req.ip ?? "").replace(/^::ffff:/, "").slice(0,45);
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
+const totpEncryptionKey=()=>{const v=process.env.AURELINK_TOTP_ENCRYPTION_KEY;if(!v||v.length<32)throw new Error("AURELINK_TOTP_ENCRYPTION_KEY is not configured.");return createHash("sha256").update(v).update("|AURELINK_TOTP_V1").digest();};
+function decryptTotpSecret(value:string){const parts=value.split(".");if(parts.length!==3)throw new Error("Invalid encrypted authenticator secret.");const d=createDecipheriv("aes-256-gcm",totpEncryptionKey(),Buffer.from(parts[0],"base64url"));d.setAuthTag(Buffer.from(parts[1],"base64url"));return Buffer.concat([d.update(Buffer.from(parts[2],"base64url")),d.final()]).toString();}
+const base32Alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function decodeBase32(value:string){let bits=0,buffer=0,out:number[]=[];for(const ch of value.replace(/=+$/,"").toUpperCase()){const n=base32Alphabet.indexOf(ch);if(n<0)throw new Error("Invalid authenticator secret.");buffer=(buffer<<5)|n;bits+=5;if(bits>=8){out.push((buffer>>>(bits-8))&255);bits-=8;}}return Buffer.from(out);}
+function verifyTotp(secret:string,code:string){if(!/^\\d{6}$/.test(code))return null;const key=decodeBase32(secret),stepNow=Math.floor(Date.now()/30000);for(const offset of [-1,0,1]){const step=stepNow+offset,counter=Buffer.alloc(8);counter.writeBigUInt64BE(BigInt(step));const digest=createHmac("sha1",key).update(counter).digest(),offsetBits=digest[digest.length-1]&15,number=((digest[offsetBits]&127)<<24)|(digest[offsetBits+1]<<16)|(digest[offsetBits+2]<<8)|digest[offsetBits+3],expected=String(number%1000000).padStart(6,"0");if(timingSafeEqual(Buffer.from(expected),Buffer.from(code)))return step;}return null;}
+
 
 function describeDevice(ua:string, supplied?:unknown) {
   const explicit=typeof supplied==="string"?supplied.trim():"";
@@ -252,8 +258,8 @@ router.post("/aurelink/account/name-change/request",aurelinkAuthMiddleware,async
 });
 
 router.post("/aurelink/account/name-change/confirm",aurelinkAuthMiddleware,async(req,res)=>{
-  const parsed=z.object({challengeId:z.string().uuid(),code:z.string().regex(/^\d{5}$/)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"Enter the five-digit name confirmation code."});
+  const parsed=z.object({challengeId:z.string().uuid(),code:z.string().regex(/^\\d{5}$/),twoFactorCode:z.string().regex(/^\\d{6}$/).optional()}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Enter the five-digit email confirmation code and, when requested, the six-digit authenticator code."});
   const client=await pool.connect();let email="",accountId="",updatedName="";
   try{
     await client.query("BEGIN");
@@ -261,25 +267,35 @@ router.post("/aurelink/account/name-change/confirm",aurelinkAuthMiddleware,async
     const row=found.rows[0];
     if(!row){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"This name code is invalid, expired or belongs to another account. Request a new code."});}
     if(hash(parsed.data.code)!==String(row.code_hash)){await client.query("UPDATE aurelink_profile_change_challenges SET attempts=attempts+1,consumed_at=CASE WHEN attempts+1>=5 THEN NOW() ELSE consumed_at END,updated_at=NOW() WHERE id=$1",[row.id]);await client.query("COMMIT");return res.status(400).json({success:false,message:"Incorrect name confirmation code."});}
+    const security=(await client.query("SELECT two_factor_enabled,two_factor_method,totp_enabled,totp_secret_encrypted,totp_last_used_step FROM aurelink_account_security WHERE user_id=$1 FOR UPDATE",[row.user_id])).rows[0];
+    const needsAuthenticator=Boolean(security?.two_factor_enabled&&(security.two_factor_method==="authenticator"||security.totp_enabled));
+    if(Boolean(security?.two_factor_enabled)&&!needsAuthenticator){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"This account uses a non-authenticator two-factor method. Complete that method before approving the name change."});}
+    if(needsAuthenticator&&!parsed.data.twoFactorCode){await client.query("COMMIT");return res.status(202).json({success:false,requiresTwoFactor:true,twoFactorMethod:"authenticator",message:"Email verification passed. Complete authenticator verification to approve this change."});}
+    if(needsAuthenticator){
+      if(!security.totp_secret_encrypted){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"Authenticator verification is not configured correctly. Your name has not changed."});}
+      let acceptedStep:number|null=null;
+      try{acceptedStep=verifyTotp(decryptTotpSecret(String(security.totp_secret_encrypted)),parsed.data.twoFactorCode!);}catch{acceptedStep=null;}
+      if(acceptedStep===null||(security.totp_last_used_step!==null&&security.totp_last_used_step!==undefined&&acceptedStep<=Number(security.totp_last_used_step))){await client.query("ROLLBACK");return res.status(401).json({success:false,message:"The authenticator code is invalid, expired or has already been used."});}
+      await client.query("UPDATE aurelink_account_security SET totp_last_used_step=$2,updated_at=NOW() WHERE user_id=$1",[row.user_id,acceptedStep]);
+    }
     await client.query("INSERT INTO aurelink_profile_change_locks(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[row.user_id]);
     const lock=(await client.query("SELECT name_changed_at FROM aurelink_profile_change_locks WHERE user_id=$1 FOR UPDATE",[row.user_id])).rows[0];
-    if(lock?.name_changed_at&&Date.now()-new Date(lock.name_changed_at).getTime()<30*86400000){const message=cooldownMessage("name",lock.name_changed_at);await client.query("ROLLBACK");return res.status(429).json({success:false,message});}
+    if(lock?.name_changed_at&&Date.now()-new Date(lock.name_changed_at).getTime()<30*86400000){const message=cooldownMessage("name",lock.name_changed_at);await client.query("ROLLBACK");return res.status(429).json({success:false,message,nameChangeAvailableAt:new Date(new Date(lock.name_changed_at).getTime()+30*86400000).toISOString()});}
     if(String(row.live_email).toLowerCase()!==String(row.current_email).toLowerCase()){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"The account email changed during verification. Start again."});}
-    const current=[row.live_first_name,row.live_last_name].filter(Boolean).join(" ").trim().replace(/\s+/g," ");
-    const proposed=[row.proposed_first_name,row.proposed_last_name].filter(Boolean).join(" ").trim().replace(/\s+/g," ");
+    const current=[row.live_first_name,row.live_last_name].filter(Boolean).join(" ").trim().replace(/\\s+/g," ");
+    const proposed=[row.proposed_first_name,row.proposed_last_name].filter(Boolean).join(" ").trim().replace(/\\s+/g," ");
     if(current.toLocaleLowerCase()===proposed.toLocaleLowerCase()){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"The proposed name now matches the current account name."});}
     await client.query("UPDATE aurelink_users SET first_name=$2,last_name=$3,updated_at=NOW() WHERE id=$1",[row.user_id,row.proposed_first_name,row.proposed_last_name]);
     await client.query("UPDATE aurelink_profile_change_locks SET name_changed_at=NOW(),updated_at=NOW() WHERE user_id=$1",[row.user_id]);
     await client.query("UPDATE aurelink_profile_change_challenges SET consumed_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);
     email=String(row.live_email);accountId=String(row.account_id);updatedName=proposed;
-    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.name_changed',$2,$3,$4::jsonb)",[row.user_id,ip(req),agent(req),JSON.stringify({accountId,updatedName})]);
+    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.name_changed',$2,$3,$4::jsonb)",[row.user_id,ip(req),agent(req),JSON.stringify({accountId,updatedName,twoFactorVerified:needsAuthenticator})]);
     await client.query("COMMIT");
   }catch{await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Unable to update the account name."});}
   finally{client.release();}
   void profileEmailCode(email,"Your Aurelink account name was updated.","Aurelink account name changed","—",accountId).catch(()=>undefined);
   return res.json({success:true,name:updatedName,nameChangeAvailableAt:new Date(Date.now()+30*86400000).toISOString(),message:"Your Aurelink account name has been updated successfully."});
 });
-
 router.post("/aurelink/auth/logout",aurelinkAuthMiddleware,async(req,res)=>{
   await pool.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE id=$1 AND user_id=$2",[req.user!.sessionId,req.user!.userId]);
   await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.logout',$2,$3)",[req.user!.userId,ip(req),agent(req)]);
