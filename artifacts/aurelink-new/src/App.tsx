@@ -7,6 +7,7 @@ import Mail from "./assets/icon-mail.svg";
 import NetworkIcon from "./assets/icon-network.svg";
 import CheckIcon from "./assets/check.svg";
 import AurelinkDashboard from "./AurelinkDashboard";
+import LoginActivity from "./LoginActivity";
 type Screen = "login" | "register" | "verify" | "complete" | "confirmed" | "reset-request" | "reset-complete" | "reset-success" | "session-security" | "two-factor" | "dashboard";
 type Result = { success?: boolean; message?: string; code?: string; email?: string; requiresTwoFactor?: boolean; challengeId?: string; expiresAt?: string; user?: Record<string, unknown>; session?: { accessToken: string; refreshToken: string; sessionId?: string; deviceName?: string; platform?: string; browser?: string; isNewDevice?: boolean } };
 type Notice = { kind: "info" | "success" | "error"; text: string } | null;
