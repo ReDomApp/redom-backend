@@ -19,7 +19,7 @@ const totpEncryptionKey=()=>{const v=process.env.AURELINK_TOTP_ENCRYPTION_KEY;if
 function decryptTotpSecret(value:string){const parts=value.split(".");if(parts.length!==3)throw new Error("Invalid encrypted authenticator secret.");const d=createDecipheriv("aes-256-gcm",totpEncryptionKey(),Buffer.from(parts[0],"base64url"));d.setAuthTag(Buffer.from(parts[1],"base64url"));return Buffer.concat([d.update(Buffer.from(parts[2],"base64url")),d.final()]).toString();}
 const base32Alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 function decodeBase32(value:string){let bits=0,buffer=0,out:number[]=[];for(const ch of value.replace(/=+$/,"").toUpperCase()){const n=base32Alphabet.indexOf(ch);if(n<0)throw new Error("Invalid authenticator secret.");buffer=(buffer<<5)|n;bits+=5;if(bits>=8){out.push((buffer>>>(bits-8))&255);bits-=8;}}return Buffer.from(out);}
-function verifyTotp(secret:string,code:string){if(!/^\\d{6}$/.test(code))return null;const key=decodeBase32(secret),stepNow=Math.floor(Date.now()/30000);for(const offset of [-1,0,1]){const step=stepNow+offset,counter=Buffer.alloc(8);counter.writeBigUInt64BE(BigInt(step));const digest=createHmac("sha1",key).update(counter).digest(),offsetBits=digest[digest.length-1]&15,number=((digest[offsetBits]&127)<<24)|(digest[offsetBits+1]<<16)|(digest[offsetBits+2]<<8)|digest[offsetBits+3],expected=String(number%1000000).padStart(6,"0");if(timingSafeEqual(Buffer.from(expected),Buffer.from(code)))return step;}return null;}
+function verifyTotp(secret:string,code:string){if(!/^\d{6}$/.test(code))return null;const key=decodeBase32(secret),stepNow=Math.floor(Date.now()/30000);for(const offset of [-1,0,1]){const step=stepNow+offset,counter=Buffer.alloc(8);counter.writeBigUInt64BE(BigInt(step));const digest=createHmac("sha1",key).update(counter).digest(),offsetBits=digest[digest.length-1]&15,number=((digest[offsetBits]&127)<<24)|(digest[offsetBits+1]<<16)|(digest[offsetBits+2]<<8)|digest[offsetBits+3],expected=String(number%1000000).padStart(6,"0");if(timingSafeEqual(Buffer.from(expected),Buffer.from(code)))return step;}return null;}
 
 
 function describeDevice(ua:string, supplied?:unknown) {
@@ -258,7 +258,7 @@ router.post("/aurelink/account/name-change/request",aurelinkAuthMiddleware,async
 });
 
 router.post("/aurelink/account/name-change/confirm",aurelinkAuthMiddleware,async(req,res)=>{
-  const parsed=z.object({challengeId:z.string().uuid(),code:z.string().regex(/^\\d{5}$/),twoFactorCode:z.string().regex(/^\\d{6}$/).optional()}).safeParse(req.body);
+  const parsed=z.object({challengeId:z.string().uuid(),code:z.string().regex(/^\d{5}$/),twoFactorCode:z.string().regex(/^\d{6}$/).optional()}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"Enter the five-digit email confirmation code and, when requested, the six-digit authenticator code."});
   const client=await pool.connect();let email="",accountId="",updatedName="";
   try{
@@ -282,8 +282,8 @@ router.post("/aurelink/account/name-change/confirm",aurelinkAuthMiddleware,async
     const lock=(await client.query("SELECT name_changed_at FROM aurelink_profile_change_locks WHERE user_id=$1 FOR UPDATE",[row.user_id])).rows[0];
     if(lock?.name_changed_at&&Date.now()-new Date(lock.name_changed_at).getTime()<30*86400000){const message=cooldownMessage("name",lock.name_changed_at);await client.query("ROLLBACK");return res.status(429).json({success:false,message,nameChangeAvailableAt:new Date(new Date(lock.name_changed_at).getTime()+30*86400000).toISOString()});}
     if(String(row.live_email).toLowerCase()!==String(row.current_email).toLowerCase()){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"The account email changed during verification. Start again."});}
-    const current=[row.live_first_name,row.live_last_name].filter(Boolean).join(" ").trim().replace(/\\s+/g," ");
-    const proposed=[row.proposed_first_name,row.proposed_last_name].filter(Boolean).join(" ").trim().replace(/\\s+/g," ");
+    const current=[row.live_first_name,row.live_last_name].filter(Boolean).join(" ").trim().replace(/\s+/g," ");
+    const proposed=[row.proposed_first_name,row.proposed_last_name].filter(Boolean).join(" ").trim().replace(/\s+/g," ");
     if(current.toLocaleLowerCase()===proposed.toLocaleLowerCase()){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"The proposed name now matches the current account name."});}
     await client.query("UPDATE aurelink_users SET first_name=$2,last_name=$3,updated_at=NOW() WHERE id=$1",[row.user_id,row.proposed_first_name,row.proposed_last_name]);
     await client.query("UPDATE aurelink_profile_change_locks SET name_changed_at=NOW(),updated_at=NOW() WHERE user_id=$1",[row.user_id]);
