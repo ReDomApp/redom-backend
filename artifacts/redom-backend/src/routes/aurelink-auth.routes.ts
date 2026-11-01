@@ -13,12 +13,25 @@ import { emailService } from "../services/auth/email.service";
 const router = Router();
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 const ip = (req: Request) => String(req.ip ?? "").replace(/^::ffff:/, "").slice(0,45);
-const clientIp = (req: Request) => ip(req);
+
+function isPublicClientIp(value:string):boolean {
+ const v=value.trim().replace(/^::ffff:/i,"").replace(/^\[|\]$/g,"").split("%")[0];
+ const version=isIP(v); if(!version)return false;
+ if(version===4){
+  const n=v.split(".").reduce((a,x)=>(a<<8n)|BigInt(Number(x)),0n);
+  const inRange=(base:string,prefix:number)=>{const b=base.split(".").reduce((a,x)=>(a<<8n)|BigInt(Number(x)),0n),shift=BigInt(32-prefix);return(n>>shift)===(b>>shift);};
+  return ![[ "0.0.0.0",8],["10.0.0.0",8],["100.64.0.0",10],["127.0.0.0",8],["169.254.0.0",16],["172.16.0.0",12],["192.0.0.0",24],["192.0.2.0",24],["192.168.0.0",16],["198.18.0.0",15],["198.51.100.0",24],["203.0.113.0",24],["224.0.0.0",4]].some(([b,p])=>inRange(String(b),Number(p)));
+ }
+ const lower=v.toLowerCase();
+ return lower!=="::"&&lower!=="::1"&&!lower.startsWith("fc")&&!lower.startsWith("fd")&&!/^fe[89ab]/.test(lower)&&!lower.startsWith("ff")&&!lower.startsWith("2001:db8:");
+}
+
+const clientIp = (req: Request) => { const candidates=[...(req.ips||[]),ip(req)]; return candidates.map(x=>String(x||"").trim()).find(isPublicClientIp)||""; };
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
 async function recordAurelinkLoginEvent(input:{userId:string;sessionId?:string|null;eventType:string;success:boolean;request:Request;failureReason?:string|null}) {
  const sourceIp=clientIp(input.request); let location:any=null;
- try { const geo=await checkIP(sourceIp); location=geo.location??null; } catch { location=null; }
- await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,event_type,success,ip_address,country,region,city,user_agent,failure_reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",[input.userId,input.sessionId??null,input.eventType,input.success,sourceIp,location?.country??null,location?.state??null,location?.city??null,agent(input.request),input.failureReason??null]);
+ if(sourceIp) { try { const geo=await checkIP(sourceIp); location=geo.location??null; } catch { location=null; } }
+ await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,event_type,success,ip_address,country,region,city,user_agent,failure_reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",[input.userId,input.sessionId??null,input.eventType,input.success,sourceIp||null,location?.country??null,location?.state??null,location?.city??null,agent(input.request),input.failureReason??null]);
 }
 
 const totpEncryptionKey=()=>{const v=process.env.AURELINK_TOTP_ENCRYPTION_KEY;if(!v||v.length<32)throw new Error("AURELINK_TOTP_ENCRYPTION_KEY is not configured.");return createHash("sha256").update(v).update("|AURELINK_TOTP_V1").digest();};
@@ -53,7 +66,7 @@ async function startSession(req:Request,user:{id:string;email:string}) {
   const sessionId = randomUUID();
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
-  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),clientIp(req)]);
+  await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),clientIp(req)||null]);
   await recordAurelinkLoginEvent({userId:user.id,sessionId,eventType:"login",success:true,request:req});
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
   const device=String(req.body?.deviceName??"Device not identified").slice(0,150).replace(/[&<>"']/g,"");
