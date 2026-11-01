@@ -15,6 +15,12 @@ const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 const ip = (req: Request) => String(req.ip ?? "").replace(/^::ffff:/, "").slice(0,45);
 const clientIp = (req: Request) => ip(req);
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
+async function recordAurelinkLoginEvent(input:{userId:string;sessionId?:string|null;eventType:string;success:boolean;request:Request;failureReason?:string|null}) {
+ const sourceIp=clientIp(input.request); let location:any=null;
+ try { const geo=await checkIP(sourceIp); location=geo.location??null; } catch { location=null; }
+ await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,event_type,success,ip_address,country,region,city,user_agent,failure_reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",[input.userId,input.sessionId??null,input.eventType,input.success,sourceIp,location?.country??null,location?.state??null,location?.city??null,agent(input.request),input.failureReason??null]);
+}
+
 const totpEncryptionKey=()=>{const v=process.env.AURELINK_TOTP_ENCRYPTION_KEY;if(!v||v.length<32)throw new Error("AURELINK_TOTP_ENCRYPTION_KEY is not configured.");return createHash("sha256").update(v).update("|AURELINK_TOTP_V1").digest();};
 function decryptTotpSecret(value:string){const parts=value.split(".");if(parts.length!==3)throw new Error("Invalid encrypted authenticator secret.");const d=createDecipheriv("aes-256-gcm",totpEncryptionKey(),Buffer.from(parts[0],"base64url"));d.setAuthTag(Buffer.from(parts[1],"base64url"));return Buffer.concat([d.update(Buffer.from(parts[2],"base64url")),d.final()]).toString();}
 const base32Alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -48,7 +54,7 @@ async function startSession(req:Request,user:{id:string;email:string}) {
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
   await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,String(req.body?.deviceName??"").slice(0,255)||null,String(req.body?.platform??"").slice(0,100)||null,String(req.body?.browser??"").slice(0,100)||null,agent(req),clientIp(req)]);
-  await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,ip_address,user_agent,event_type) VALUES($1,$2,$3,$4,'login')",[user.id,sessionId,clientIp(req),agent(req)]);
+  await recordAurelinkLoginEvent({userId:user.id,sessionId,eventType:"login",success:true,request:req});
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
   const device=String(req.body?.deviceName??"Device not identified").slice(0,150).replace(/[&<>"']/g,"");
   const platform=String(req.body?.platform??"Unknown").slice(0,80).replace(/[&<>"']/g,"");
@@ -72,16 +78,16 @@ router.post("/aurelink/auth/login",async(req,res)=>{
     const found=await pool.query("SELECT id,email,first_name,last_name,password_hash,email_verified,account_status FROM aurelink_users WHERE LOWER(email)=LOWER($1) LIMIT 1",[email]);
     const user=found.rows[0];
     if(!user || user.email_verified!==true || !await verifyPassword(parsed.data.password,String(user.password_hash))) {
-      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login',FALSE,$2,$3,'invalid_credentials')",[user?.id??null,clientIp(req),agent(req)]).catch(()=>undefined);
+      if(user?.id) await recordAurelinkLoginEvent({userId:user.id,eventType:"login",success:false,request:req,failureReason:"invalid_credentials"}).catch(()=>undefined);
       return res.status(401).json({success:false,message:"Invalid email or password."});
     }
-    if(user.account_status!=="active"){await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login_blocked',FALSE,$2,$3,'account_inactive')",[user.id,clientIp(req),agent(req)]);return res.status(403).json({success:false,message:"This Aurelink account is not active."});}
-    try{await enforceAurelinkIpAllowlist(user.id,clientIp(req));}catch(e){await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,failure_reason) VALUES($1,'login_blocked',FALSE,$2,$3,'ip_allowlist')",[user.id,clientIp(req),agent(req)]).catch(()=>undefined);throw e;}
+    if(user.account_status!=="active"){await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,failureReason:"account_inactive"});return res.status(403).json({success:false,message:"This Aurelink account is not active."});}
+    try{await enforceAurelinkIpAllowlist(user.id,clientIp(req));}catch(e){await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,failureReason:"ip_allowlist"}).catch(()=>undefined);throw e;}
     const sec=await pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[user.id]);
     if(sec.rows[0]?.two_factor_enabled && !sec.rows[0]?.totp_enabled) return res.status(423).json({success:false,code:"AURELINK_2FA_METHOD_UNAVAILABLE",message:"This account has a legacy two-factor method that cannot be verified in this sign-in flow. Contact Aurelink Support; password-only sign-in remains blocked."});
     if(sec.rows[0]?.two_factor_enabled && sec.rows[0]?.totp_enabled) {
       const challenge=await pool.query("INSERT INTO aurelink_totp_login_challenges(user_id,device_id,ip_address,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '5 minutes') RETURNING id,expires_at",[user.id,String(req.body?.deviceId??"").slice(0,255)||null,clientIp(req)]);
-      await pool.query("INSERT INTO aurelink_login_history(user_id,event_type,success,ip_address,user_agent,device_name,platform,browser) VALUES($1,'login_2fa_required',FALSE,$2,$3,$4,$5,$6)",[user.id,clientIp(req),agent(req),req.body?.deviceName??null,req.body?.platform??null,req.body?.browser??null]);
+      await recordAurelinkLoginEvent({userId:user.id,eventType:"login_2fa_required",success:false,request:req,failureReason:"two_factor_required"});
       return res.status(202).json({success:false,requiresTwoFactor:true,challengeId:challenge.rows[0].id,expiresAt:challenge.rows[0].expires_at,message:"Enter the current code from your authenticator app."});
     }
     const session=await startSession(req,{id:user.id,email:user.email});
