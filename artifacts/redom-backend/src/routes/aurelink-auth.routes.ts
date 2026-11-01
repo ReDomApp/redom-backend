@@ -22,7 +22,7 @@ function describeDevice(ua:string, supplied?:unknown) {
   if(/iPhone/i.test(ua)) return "iPhone (model unavailable to browser)";
   if(/iPad/i.test(ua)) return "iPad (model unavailable to browser)";
   if(/Android/i.test(ua)) {
-    const match=ua.match(/Android[^;)]*;\\s*(?:[a-z]{2}-[A-Z]{2};\\s*)?(?:wv;\\s*)?([^;)/]+?)(?:\\s+Build\\/[^;)]*)?[;)]/i);
+    const match=ua.match(/Android[^;)]*;\s*(?:[a-z]{2}-[A-Z]{2};\s*)?(?:wv;\s*)?([^;)\/]+?)(?:\s+Build\/[^;)]*)?[;)]/i);
     const model=match?.[1]?.trim();
     if(model && !/^(Linux|Android|K|wv)$/i.test(model)) return model.slice(0,150);
     return "Android device (model not disclosed by browser)";
@@ -43,15 +43,16 @@ function platformFor(ua:string) {
   return "Unknown";
 }
 function browserFor(ua:string) {
-  if(/Edg\\//i.test(ua)) return "Microsoft Edge";
-  if(/Firefox\\//i.test(ua)) return "Firefox";
-  if(/CriOS\\//i.test(ua)) return "Chrome (iOS)";
-  if(/Chrome\\//i.test(ua)) return "Chrome";
-  if(/Safari\\//i.test(ua) && !/Chrome/i.test(ua)) return "Safari";
-  if(/SamsungBrowser\\//i.test(ua)) return "Samsung Internet";
+  if(/Edg\//i.test(ua)) return "Microsoft Edge";
+  if(/Firefox\//i.test(ua)) return "Firefox";
+  if(/CriOS\//i.test(ua)) return "Chrome (iOS)";
+  if(/Chrome\//i.test(ua)) return "Chrome";
+  if(/Safari\//i.test(ua) && !/Chrome/i.test(ua)) return "Safari";
+  if(/SamsungBrowser\//i.test(ua)) return "Samsung Internet";
   return "Browser not identifiable";
 }
-\nfunction jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
+
+function jwtSecret() { const v=process.env.JWT_ACCESS_SECRET; if(!v) throw new Error("JWT_ACCESS_SECRET is not configured."); return v; }
 function refreshSecret() { const v=process.env.JWT_REFRESH_SECRET; if(!v) throw new Error("JWT_REFRESH_SECRET is not configured."); return v; }
 function validPassword(v:string) { if(v.length<10 || !/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) throw new Error("Password must be at least 10 characters and contain a letter and a number."); }
 async function startSession(req:Request,user:{id:string;email:string;first_name?:string;last_name?:string},network:Awaited<ReturnType<typeof checkIP>>) {
