@@ -1,0 +1,41 @@
+name: Aurelink Account Centre Checks
+
+on:
+  push:
+    branches: [rebuild/aurelink-typescript-react]
+    paths:
+      - "artifacts/aurelink-new/**"
+      - "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts"
+      - "artifacts/redom-backend/src/services/aurelink/account-schema-bootstrap.service.ts"
+      - "artifacts/redom-backend/drizzle/0067_aurelink_profile_change_verification.sql"
+      - "artifacts/redom-backend/drizzle/meta/_journal.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/aurelink-account-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  account-centre:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck Aurelink React
+        run: pnpm --filter @workspace/aurelink-public run typecheck
+      - name: Build Aurelink React
+        run: pnpm --filter @workspace/aurelink-public run build
+      - name: Typecheck Aurelink backend
+        run: pnpm --filter @workspace/redom-backend run typecheck
+      - name: Build Aurelink backend
+        run: pnpm --filter @workspace/redom-backend run build
