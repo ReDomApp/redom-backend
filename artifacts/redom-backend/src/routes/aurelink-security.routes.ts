@@ -7,11 +7,25 @@ import {aurelinkAuthMiddleware} from "../middleware/aurelink-auth.middleware";
 import {resend} from "../lib/resend";
 import {checkIP} from "../lib/ipapi";
 import {hashPassword,verifyPassword} from "../utils/password";
-const r=Router(),H=(s:string)=>createHash("sha256").update(s).digest("hex"),ip=(q:Request)=>String(q.ip||"").replace(/^::ffff:/,""),ua=(q:Request)=>String(q.get("user-agent")||"");
+const r=Router(),H=(s:string)=>createHash("sha256").update(s).digest("hex"),ua=(q:Request)=>String(q.get("user-agent")||"");
+
+function isPublicClientIp(value:string):boolean {
+ const v=value.trim().replace(/^::ffff:/i,"").replace(/^\[|\]$/g,"").split("%")[0];
+ const version=isIP(v); if(!version)return false;
+ if(version===4){
+  const n=v.split(".").reduce((a,x)=>(a<<8n)|BigInt(Number(x)),0n);
+  const inRange=(base:string,prefix:number)=>{const b=base.split(".").reduce((a,x)=>(a<<8n)|BigInt(Number(x)),0n),shift=BigInt(32-prefix);return(n>>shift)===(b>>shift);};
+  return ![[ "0.0.0.0",8],["10.0.0.0",8],["100.64.0.0",10],["127.0.0.0",8],["169.254.0.0",16],["172.16.0.0",12],["192.0.0.0",24],["192.0.2.0",24],["192.168.0.0",16],["198.18.0.0",15],["198.51.100.0",24],["203.0.113.0",24],["224.0.0.0",4]].some(([b,p])=>inRange(String(b),Number(p)));
+ }
+ const lower=v.toLowerCase();
+ return lower!=="::"&&lower!=="::1"&&!lower.startsWith("fc")&&!lower.startsWith("fd")&&!/^fe[89ab]/.test(lower)&&!lower.startsWith("ff")&&!lower.startsWith("2001:db8:");
+}
+
+const ip=(q:Request)=>[...(q.ips||[]),String(q.ip||"").replace(/^::ffff:/,"")].map(x=>String(x||"").trim()).find(isPublicClientIp)||"";
 
 async function recordAuthEvent(q:Request,userId:string,sessionId:string,eventType:string){
- let location:any=null;try{location=(await checkIP(ip(q))).location??null;}catch{}
- await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,event_type,success,ip_address,country,region,city,user_agent) VALUES($1,$2,$3,TRUE,$4,$5,$6,$7,$8)",[userId,sessionId,eventType,ip(q),location?.country??null,location?.state??null,location?.city??null,ua(q)]);
+ let location:any=null;const sourceIp=ip(q);if(sourceIp){try{location=(await checkIP(sourceIp)).location??null;}catch{}}
+ await pool.query("INSERT INTO aurelink_login_history(user_id,session_id,event_type,success,ip_address,country,region,city,user_agent) VALUES($1,$2,$3,TRUE,$4,$5,$6,$7,$8)",[userId,sessionId,eventType,ip(q)||null,location?.country??null,location?.state??null,location?.city??null,ua(q)]);
 }
 async function mail(to:string,subject:string,html:string){const result=await resend.emails.send({from:process.env.AURELINK_EMAIL_FROM||"Aurelink <noreply@wnncompany.com>",to,subject,html});if(result.error)throw new Error("Aurelink email delivery failed.");return result;}
 const key=()=>{const s=process.env.AURELINK_TOTP_ENCRYPTION_KEY;if(!s||s.length<32)throw Error("AURELINK_TOTP_ENCRYPTION_KEY is not configured.");return createHash("sha256").update(s).update("|AURELINK_TOTP_V1").digest();};
