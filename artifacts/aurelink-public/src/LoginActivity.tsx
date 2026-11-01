@@ -1,0 +1,15 @@
+import {useMemo,useState} from "react";
+import "./login-activity.css";
+type EventRow=Record<string,unknown>;
+export default function LoginActivity({events}:{events:EventRow[]}){
+ const [query,setQuery]=useState("");const [page,setPage]=useState(1);const [size,setSize]=useState(10);
+ const rows=useMemo(()=>events.filter(e=>[e.event_type,e.ip_address,e.city,e.region,e.country,e.failure_reason].some(v=>String(v??"").toLowerCase().includes(query.toLowerCase()))),[events,query]);
+ const pages=Math.max(1,Math.ceil(rows.length/size));const current=Math.min(page,pages);const visible=rows.slice((current-1)*size,current*size);
+ const label=(v:unknown)=>String(v||"login").replace(/[_-]+/g," ").replace(/\b\w/g,c=>c.toUpperCase());
+ const place=(e:EventRow)=>[e.city,e.region,e.country].map(v=>String(v??"").trim()).filter(Boolean).join(", ")||"Location unavailable";
+ const status=(e:EventRow)=>e.success===false?(String(e.failure_reason||"").toLowerCase().includes("block")?"Blocked":"Failed"):"Successful";
+ return <section className="aul-activity-card"><header className="aul-activity-head"><div><span>ACCOUNT SECURITY</span><h2>Login activity</h2><p>Authentication events recorded by Aurelink.</p></div><b>{rows.length} events</b></header>
+ <div className="aul-activity-tools"><label>Search<input value={query} onChange={e=>{setQuery(e.target.value);setPage(1)}} placeholder="Search action, IP or location"/></label><label>Show<select value={size} onChange={e=>{setSize(Number(e.target.value));setPage(1)}}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label></div>
+ <div className="aul-activity-scroll"><table><thead><tr><th>Action</th><th>Status</th><th>Date</th><th>IP address</th><th>Location</th><th>Details</th></tr></thead><tbody>{visible.map((e,i)=><tr key={String(e.id||i)}><td data-label="Action">{label(e.event_type)}</td><td data-label="Status"><span className={"aul-status "+status(e).toLowerCase()}>{status(e)}</span></td><td data-label="Date">{e.created_at?new Date(String(e.created_at)).toLocaleString():"Date unavailable"}</td><td data-label="IP address">{String(e.ip_address||"IP unavailable")}</td><td data-label="Location">{place(e)}</td><td data-label="Details">{e.success===false?String(e.failure_reason||"Authentication failed"):"—"}</td></tr>)}</tbody></table>{!visible.length&&<p className="aul-empty">{query?"No matching activity.":"No login activity recorded yet."}</p>}</div>
+ <footer><span>Showing {rows.length?(current-1)*size+1:0}–{Math.min(current*size,rows.length)} of {rows.length}</span><nav><button disabled={current===1} onClick={()=>setPage(v=>Math.max(1,v-1))}>‹</button><span>{current} / {pages}</span><button disabled={current===pages} onClick={()=>setPage(v=>Math.min(pages,v+1))}>›</button></nav></footer></section>;
+}
