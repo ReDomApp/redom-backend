@@ -21,6 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Re-run after the Aurelink auth route parser repair.
   account-centre:
     runs-on: ubuntu-latest
     timeout-minutes: 20
