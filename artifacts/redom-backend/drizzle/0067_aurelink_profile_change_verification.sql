@@ -30,6 +30,3 @@ CREATE INDEX IF NOT EXISTS aurelink_profile_change_challenges_user_idx
 CREATE INDEX IF NOT EXISTS aurelink_profile_change_challenges_expiry_idx
   ON aurelink_profile_change_challenges(expires_at)
   WHERE consumed_at IS NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS aurelink_users_email_lower_unique
-  ON aurelink_users(LOWER(email));
