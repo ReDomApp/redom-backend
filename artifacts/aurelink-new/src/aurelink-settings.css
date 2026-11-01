@@ -151,3 +151,8 @@
  .as-menu-home{max-width:100%}
 }
 @media(max-width:380px){.as-profile-grid{grid-template-columns:1fr}.as-profile-item-wide{grid-column:auto}.as-reference-tabs button{padding:0 8px}.as-reference-tabs button svg{display:none}.as-menu-intro{padding:19px 15px}}
+
+
+.as-step-content>button.as-secondary{border-color:#51535a;background:#34353b;color:#d5d7dc}
+.as-step-content>button.as-secondary:hover:not(:disabled){background:#404148}
+.as-reference-field input:-webkit-autofill,.as-reference-field input:-webkit-autofill:hover,.as-reference-field input:-webkit-autofill:focus{-webkit-text-fill-color:#e9eaed;-webkit-box-shadow:0 0 0 1000px #24252a inset;transition:background-color 9999s ease-in-out 0s}
