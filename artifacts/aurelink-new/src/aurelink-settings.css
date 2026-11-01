@@ -119,3 +119,5 @@
  .as-step-content .as-reference-field,.as-step-content .as-reference-field input{max-width:none}
 }
 @media(max-width:380px){.as-profile-grid{grid-template-columns:1fr}.as-profile-item-wide{grid-column:auto}.as-reference-tabs button{padding:0 8px}.as-reference-tabs button svg{display:none}}
+
+.as-card-orders{background:linear-gradient(140deg,#fff 45%,#f1f7ff)!important}.as-card-orders .as-card-art{background:#e8f2ff;color:#176bc0}.as-card-orders .as-card-action{color:#176bc0}
