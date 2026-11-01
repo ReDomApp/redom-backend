@@ -278,6 +278,7 @@ router.post("/aurelink/account/name-change/confirm",aurelinkAuthMiddleware,async
 router.post("/aurelink/auth/logout",aurelinkAuthMiddleware,async(req,res)=>{
   await pool.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW(),revoked_reason='user_sign_out',revoked_by='user' WHERE id=$1 AND user_id=$2",[req.user!.sessionId,req.user!.userId]);
   await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.logout',$2,$3)",[req.user!.userId,ip(req),agent(req)]);
+  await recordAurelinkLoginEvent({userId:req.user!.userId,sessionId:req.user!.sessionId,eventType:"logout",success:true,request:req});
   return res.json({success:true,message:"Signed out."});
 });
 router.post("/aurelink/auth/refresh",async(req,res)=>{
