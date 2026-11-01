@@ -184,9 +184,10 @@ router.post("/aurelink/account/email-change/verify-current",aurelinkAuthMiddlewa
   const client=await pool.connect();let nextCode="",targetEmail="",accountId="",challengeId="";
   try{
     await client.query("BEGIN");
-    const found=await client.query("SELECT * FROM aurelink_profile_change_challenges WHERE id=$1 AND user_id=$2 AND account_id=(SELECT account_id FROM aurelink_users WHERE id=$2) AND purpose='email' AND stage='current_email' AND consumed_at IS NULL AND expires_at>NOW() AND attempts<5 FOR UPDATE",[parsed.data.challengeId,req.user!.userId]);
+    const found=await client.query("SELECT c.*,u.email AS live_email FROM aurelink_profile_change_challenges c JOIN aurelink_users u ON u.id=c.user_id WHERE c.id=$1 AND c.user_id=$2 AND c.account_id=u.account_id AND c.purpose='email' AND c.stage='current_email' AND c.consumed_at IS NULL AND c.expires_at>NOW() AND c.attempts<5 FOR UPDATE OF c,u",[parsed.data.challengeId,req.user!.userId]);
     const row=found.rows[0];
     if(!row){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"This code is invalid, expired or belongs to another account. Request a new code."});}
+    if(emailService.normalize(String(row.live_email))!==emailService.normalize(String(row.current_email))){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"The account email changed during verification. Start again."});}
     if(hash(parsed.data.code)!==String(row.code_hash)){await client.query("UPDATE aurelink_profile_change_challenges SET attempts=attempts+1,consumed_at=CASE WHEN attempts+1>=5 THEN NOW() ELSE consumed_at END,updated_at=NOW() WHERE id=$1",[row.id]);await client.query("COMMIT");return res.status(400).json({success:false,message:"Incorrect confirmation code. Check the code sent to your current email."});}
     nextCode=String(randomInt(10000,100000));targetEmail=String(row.proposed_email);accountId=String(row.account_id);challengeId=String(row.id);
     await client.query("UPDATE aurelink_profile_change_challenges SET stage='new_email',code_hash=$2,expires_at=NOW()+INTERVAL '5 minutes',attempts=0,updated_at=NOW() WHERE id=$1",[row.id,hash(nextCode)]);
