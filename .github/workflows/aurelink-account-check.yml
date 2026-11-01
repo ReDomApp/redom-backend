@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: aurelink-account-centre-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   account-centre:
     runs-on: ubuntu-latest
