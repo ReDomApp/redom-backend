@@ -121,11 +121,163 @@ router.post("/aurelink/auth/session-security/action",async(req,res)=>{
 });
 router.get("/aurelink/auth/login-history",aurelinkAuthMiddleware,async(req,res)=>{try{const limit=Math.min(100,Math.max(1,Number(req.query.limit)||30));const result=await pool.query("SELECT h.id,h.account_id,h.email,h.event_type,h.success,h.ip_address,h.country,h.region,h.city,h.device_name,h.device_type,h.platform,h.browser,h.user_agent,h.failure_reason,h.created_at FROM aurelink_login_history h WHERE h.user_id=$1 ORDER BY h.created_at DESC LIMIT $2",[req.user!.userId,limit]);return res.json({success:true,events:result.rows});}catch{return res.status(500).json({success:false,message:"Could not load login history."});}});
 router.get("/aurelink/auth/me",aurelinkAuthMiddleware,async(req,res)=>{
-  const r=await pool.query("SELECT id,email,first_name,last_name,email_verified,phone_number,phone_verified,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
+  const r=await pool.query("SELECT id,account_id,email,first_name,last_name,email_verified,phone_number,phone_verified,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
   if(!r.rows[0])return res.status(404).json({success:false,message:"Account not found."});
-  const security=await pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[req.user!.userId]);
-  return res.json({success:true,user:r.rows[0],security:security.rows[0]??{two_factor_enabled:false,two_factor_method:"off",totp_enabled:false}});
+  const [security,profileChanges]=await Promise.all([
+    pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[req.user!.userId]),
+    pool.query("SELECT email_changed_at,name_changed_at FROM aurelink_profile_change_locks WHERE user_id=$1",[req.user!.userId])
+  ]);
+  const lock=profileChanges.rows[0]??{};
+  const cooldown=(value:unknown)=>value?new Date(new Date(String(value)).getTime()+30*24*60*60*1000).toISOString():null;
+  return res.json({success:true,user:r.rows[0],security:security.rows[0]??{two_factor_enabled:false,two_factor_method:"off",totp_enabled:false},profileChanges:{emailChangedAt:lock.email_changed_at??null,nameChangedAt:lock.name_changed_at??null,emailChangeAvailableAt:cooldown(lock.email_changed_at),nameChangeAvailableAt:cooldown(lock.name_changed_at)}});
 });
+
+const profileEmailCode = (to:string,subject:string,heading:string,code:string,accountId:string) => resend.emails.send({
+  from:aurelinkSender(),to,subject,
+  html:`<!doctype html><html><body style="margin:0;background:#f1f4f8;padding:28px;font-family:Arial,sans-serif;color:#1c2b3d"><main style="max-width:560px;margin:auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:30px"><h1 style="margin:0;color:#176bc0;letter-spacing:3px;font-size:22px">AURELINK</h1><h2 style="font-size:20px;margin:26px 0 10px">${heading}</h2><p style="color:#526277;line-height:1.6">${subject}</p><div style="margin:24px 0;padding:18px;text-align:center;background:#f3f7fc;border:1px solid #e3ebf4;border-radius:10px;font-size:30px;font-weight:800;letter-spacing:9px;color:#183b62">${code}</div><p style="color:#526277;line-height:1.6">This one-time code expires in <strong>five minutes</strong> and can be used only for the account shown below.</p><p style="font-size:12px;color:#7b8797">Aurelink Account ID: <strong>${accountId}</strong></p><p style="font-size:12px;color:#7b8797">Never share this code with anyone, including Aurelink Support.</p></main></body></html>`
+});
+const validProfileName=(value:string)=>{
+  const normalized=value.trim().replace(/\s+/g," ");
+  const parts=normalized.split(" ");
+  if(normalized.length<3||normalized.length>100||parts.length<2||!parts.every(part=>/^[\p{L}\p{M}]+(?:['’\u2019-][\p{L}\p{M}]+)*$/u.test(part)))throw new Error("Enter a valid full name using letters, spaces, apostrophes or hyphens only.");
+  return {normalized,firstName:parts[0],lastName:parts.slice(1).join(" ")};
+};
+const cooldownMessage=(kind:"email"|"name",at:unknown)=>{
+  const until=new Date(new Date(String(at)).getTime()+30*24*60*60*1000);
+  const days=Math.max(1,Math.ceil((until.getTime()-Date.now())/86400000));
+  return `${kind==="email"?"Email":"Name"} changes are locked for 30 days after an update. Try again in ${days} day(s).`;
+};
+
+router.post("/aurelink/account/email-change/request",aurelinkAuthMiddleware,async(req,res)=>{
+  const parsed=z.object({accountId:z.string().min(6).max(32),currentEmail:z.string().email().max(255),newEmail:z.string().email().max(255),currentPassword:z.string().min(1).max(200)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Enter your account ID, current email, password and a valid new email address."});
+  const currentEmail=emailService.normalize(parsed.data.currentEmail),newEmail=emailService.normalize(parsed.data.newEmail);
+  if(currentEmail===newEmail)return res.status(400).json({success:false,message:"Enter a different email address from the one currently on your account."});
+  const client=await pool.connect();let challengeId="",code="",accountId="";
+  try{
+    await client.query("BEGIN");
+    const found=await client.query("SELECT id,account_id,email,password_hash,email_verified FROM aurelink_users WHERE id=$1 FOR UPDATE",[req.user!.userId]);
+    const user=found.rows[0];
+    if(!user||String(user.account_id)!==parsed.data.accountId||emailService.normalize(String(user.email))!==currentEmail){await client.query("ROLLBACK");return res.status(403).json({success:false,message:"The account ID or current email does not match this signed-in account."});}
+    if(!user.email_verified){await client.query("ROLLBACK");return res.status(403).json({success:false,message:"Verify your current account email before changing it."});}
+    if(!await verifyPassword(parsed.data.currentPassword,String(user.password_hash))){await client.query("ROLLBACK");return res.status(401).json({success:false,message:"The current account password is incorrect."});}
+    await client.query("INSERT INTO aurelink_profile_change_locks(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.id]);
+    const lock=(await client.query("SELECT email_changed_at FROM aurelink_profile_change_locks WHERE user_id=$1 FOR UPDATE",[user.id])).rows[0];
+    if(lock?.email_changed_at&&Date.now()-new Date(lock.email_changed_at).getTime()<30*86400000){const message=cooldownMessage("email",lock.email_changed_at);await client.query("ROLLBACK");return res.status(429).json({success:false,message,emailChangeAvailableAt:new Date(new Date(lock.email_changed_at).getTime()+30*86400000).toISOString()});}
+    const exists=await client.query("SELECT id FROM aurelink_users WHERE LOWER(email)=LOWER($1) AND id<>$2 LIMIT 1",[newEmail,user.id]);
+    if(exists.rows[0]){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"That email address is already associated with an Aurelink account."});}
+    await client.query("UPDATE aurelink_profile_change_challenges SET consumed_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND purpose='email' AND consumed_at IS NULL",[user.id]);
+    code=String(randomInt(10000,100000));challengeId=randomUUID();accountId=String(user.account_id);
+    await client.query("INSERT INTO aurelink_profile_change_challenges(id,user_id,account_id,purpose,stage,current_email,proposed_email,code_hash,expires_at) VALUES($1,$2,$3,'email','current_email',$4,$5,$6,NOW()+INTERVAL '5 minutes')",[challengeId,user.id,accountId,currentEmail,newEmail,hash(code)]);
+    await client.query("COMMIT");
+  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Unable to start the email change. Please try again."});}
+  finally{client.release();}
+  try{const sent=await profileEmailCode(currentEmail,"Use this code to confirm your current email address.", "Confirm your current email",code,accountId);if(sent.error)throw new Error(sent.error.message);}
+  catch{await pool.query("UPDATE aurelink_profile_change_challenges SET consumed_at=NOW(),updated_at=NOW() WHERE id=$1",[challengeId]).catch(()=>undefined);return res.status(503).json({success:false,message:"Aurelink could not deliver the verification code to your current email. Your account email has not changed."});}
+  return res.json({success:true,challengeId,expiresIn:300,currentEmail,message:"We've sent a five-digit confirmation code to your current account email."});
+});
+
+router.post("/aurelink/account/email-change/verify-current",aurelinkAuthMiddleware,async(req,res)=>{
+  const parsed=z.object({challengeId:z.string().uuid(),code:z.string().regex(/^\d{5}$/)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Enter the five-digit confirmation code."});
+  const client=await pool.connect();let nextCode="",targetEmail="",accountId="",challengeId="";
+  try{
+    await client.query("BEGIN");
+    const found=await client.query("SELECT * FROM aurelink_profile_change_challenges WHERE id=$1 AND user_id=$2 AND account_id=(SELECT account_id FROM aurelink_users WHERE id=$2) AND purpose='email' AND stage='current_email' AND consumed_at IS NULL AND expires_at>NOW() AND attempts<5 FOR UPDATE",[parsed.data.challengeId,req.user!.userId]);
+    const row=found.rows[0];
+    if(!row){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"This code is invalid, expired or belongs to another account. Request a new code."});}
+    if(hash(parsed.data.code)!==String(row.code_hash)){await client.query("UPDATE aurelink_profile_change_challenges SET attempts=attempts+1,consumed_at=CASE WHEN attempts+1>=5 THEN NOW() ELSE consumed_at END,updated_at=NOW() WHERE id=$1",[row.id]);await client.query("COMMIT");return res.status(400).json({success:false,message:"Incorrect confirmation code. Check the code sent to your current email."});}
+    nextCode=String(randomInt(10000,100000));targetEmail=String(row.proposed_email);accountId=String(row.account_id);challengeId=String(row.id);
+    await client.query("UPDATE aurelink_profile_change_challenges SET stage='new_email',code_hash=$2,expires_at=NOW()+INTERVAL '5 minutes',attempts=0,updated_at=NOW() WHERE id=$1",[row.id,hash(nextCode)]);
+    await client.query("COMMIT");
+  }catch{await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Unable to verify the current email code."});}
+  finally{client.release();}
+  try{const sent=await profileEmailCode(targetEmail,"Enter this code to verify the new email address for your Aurelink account.","Verify your new email address",nextCode,accountId);if(sent.error)throw new Error(sent.error.message);}
+  catch{await pool.query("UPDATE aurelink_profile_change_challenges SET consumed_at=NOW(),updated_at=NOW() WHERE id=$1",[challengeId]).catch(()=>undefined);return res.status(503).json({success:false,message:"The current email was verified, but Aurelink could not deliver a code to the new email. Start the email change again."});}
+  return res.json({success:true,expiresIn:300,targetEmail,message:"Current email confirmed. A second five-digit code has been sent to the new email address."});
+});
+
+router.post("/aurelink/account/email-change/verify-new",aurelinkAuthMiddleware,async(req,res)=>{
+  const parsed=z.object({challengeId:z.string().uuid(),code:z.string().regex(/^\d{5}$/)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Enter the five-digit code sent to the new email address."});
+  const client=await pool.connect();let oldEmail="",newEmail="",accountId="";
+  try{
+    await client.query("BEGIN");
+    const found=await client.query("SELECT c.*,u.email AS live_email FROM aurelink_profile_change_challenges c JOIN aurelink_users u ON u.id=c.user_id WHERE c.id=$1 AND c.user_id=$2 AND c.account_id=u.account_id AND c.purpose='email' AND c.stage='new_email' AND c.consumed_at IS NULL AND c.expires_at>NOW() AND c.attempts<5 FOR UPDATE OF c,u",[parsed.data.challengeId,req.user!.userId]);
+    const row=found.rows[0];
+    if(!row){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"This new-email code is invalid, expired or belongs to another account. Start again."});}
+    if(emailService.normalize(String(row.live_email))!==emailService.normalize(String(row.current_email))){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"The account email changed during verification. Start again."});}
+    if(hash(parsed.data.code)!==String(row.code_hash)){await client.query("UPDATE aurelink_profile_change_challenges SET attempts=attempts+1,consumed_at=CASE WHEN attempts+1>=5 THEN NOW() ELSE consumed_at END,updated_at=NOW() WHERE id=$1",[row.id]);await client.query("COMMIT");return res.status(400).json({success:false,message:"Incorrect confirmation code. Check the code sent to your new email."});}
+    const duplicate=await client.query("SELECT id FROM aurelink_users WHERE LOWER(email)=LOWER($1) AND id<>$2 LIMIT 1",[row.proposed_email,row.user_id]);
+    if(duplicate.rows[0]){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"That email address has since been registered to another Aurelink account."});}
+    oldEmail=String(row.live_email);newEmail=String(row.proposed_email);accountId=String(row.account_id);
+    await client.query("UPDATE aurelink_users SET email=$2,email_verified=TRUE,updated_at=NOW() WHERE id=$1",[row.user_id,newEmail]);
+    await client.query("INSERT INTO aurelink_profile_change_locks(user_id,email_changed_at) VALUES($1,NOW()) ON CONFLICT(user_id) DO UPDATE SET email_changed_at=NOW(),updated_at=NOW()",[row.user_id]);
+    await client.query("UPDATE aurelink_profile_change_challenges SET consumed_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);
+    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.email_changed',$2,$3,$4::jsonb)",[row.user_id,ip(req),agent(req),JSON.stringify({accountId,oldEmail,newEmail})]);
+    await client.query("COMMIT");
+  }catch{await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Unable to update the account email. No partial account update was applied."});}
+  finally{client.release();}
+  void profileEmailCode(oldEmail,"The email address on your Aurelink account has been changed.","Aurelink email changed", "—",accountId).catch(()=>undefined);
+  void profileEmailCode(newEmail,"This email address is now the verified email for your Aurelink account.","Your new Aurelink email is active","—",accountId).catch(()=>undefined);
+  return res.json({success:true,email:newEmail,emailVerified:true,emailChangeAvailableAt:new Date(Date.now()+30*86400000).toISOString(),message:"Your Aurelink account email has been updated successfully."});
+});
+
+router.post("/aurelink/account/name-change/request",aurelinkAuthMiddleware,async(req,res)=>{
+  const parsed=z.object({name:z.string().min(3).max(100)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Enter your new full name."});
+  let proposed:{normalized:string;firstName:string;lastName:string};
+  try{proposed=validProfileName(parsed.data.name);}catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Invalid name."});}
+  const client=await pool.connect();let code="",challengeId="",email="",accountId="";
+  try{
+    await client.query("BEGIN");
+    const found=await client.query("SELECT id,account_id,email,first_name,last_name FROM aurelink_users WHERE id=$1 FOR UPDATE",[req.user!.userId]);const user=found.rows[0];
+    if(!user){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Aurelink account not found."});}
+    const currentName=[user.first_name,user.last_name].filter(Boolean).join(" ").trim().replace(/\s+/g," ");
+    if(currentName.toLocaleLowerCase()===proposed.normalized.toLocaleLowerCase()){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Enter a name that is different from your current account name."});}
+    await client.query("INSERT INTO aurelink_profile_change_locks(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.id]);
+    const lock=(await client.query("SELECT name_changed_at FROM aurelink_profile_change_locks WHERE user_id=$1 FOR UPDATE",[user.id])).rows[0];
+    if(lock?.name_changed_at&&Date.now()-new Date(lock.name_changed_at).getTime()<30*86400000){const message=cooldownMessage("name",lock.name_changed_at);await client.query("ROLLBACK");return res.status(429).json({success:false,message,nameChangeAvailableAt:new Date(new Date(lock.name_changed_at).getTime()+30*86400000).toISOString()});}
+    await client.query("UPDATE aurelink_profile_change_challenges SET consumed_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND purpose='name' AND consumed_at IS NULL",[user.id]);
+    code=String(randomInt(10000,100000));challengeId=randomUUID();email=String(user.email);accountId=String(user.account_id);
+    await client.query("INSERT INTO aurelink_profile_change_challenges(id,user_id,account_id,purpose,stage,current_email,proposed_first_name,proposed_last_name,code_hash,expires_at) VALUES($1,$2,$3,'name','confirm_name',$4,$5,$6,$7,NOW()+INTERVAL '5 minutes')",[challengeId,user.id,accountId,email,proposed.firstName,proposed.lastName,hash(code)]);
+    await client.query("COMMIT");
+  }catch{await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Unable to start the name change."});}
+  finally{client.release();}
+  try{const sent=await profileEmailCode(email,"Use this five-digit code to approve your Aurelink account name update.","Confirm your new account name",code,accountId);if(sent.error)throw new Error(sent.error.message);}
+  catch{await pool.query("UPDATE aurelink_profile_change_challenges SET consumed_at=NOW(),updated_at=NOW() WHERE id=$1",[challengeId]).catch(()=>undefined);return res.status(503).json({success:false,message:"Aurelink could not deliver the name verification code. Your account name has not changed."});}
+  return res.json({success:true,challengeId,expiresIn:300,currentEmail:email,message:"A five-digit confirmation code has been sent to your current account email."});
+});
+
+router.post("/aurelink/account/name-change/confirm",aurelinkAuthMiddleware,async(req,res)=>{
+  const parsed=z.object({challengeId:z.string().uuid(),code:z.string().regex(/^\d{5}$/)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Enter the five-digit name confirmation code."});
+  const client=await pool.connect();let email="",accountId="",updatedName="";
+  try{
+    await client.query("BEGIN");
+    const found=await client.query("SELECT c.*,u.email AS live_email,u.first_name AS live_first_name,u.last_name AS live_last_name FROM aurelink_profile_change_challenges c JOIN aurelink_users u ON u.id=c.user_id WHERE c.id=$1 AND c.user_id=$2 AND c.account_id=u.account_id AND c.purpose='name' AND c.stage='confirm_name' AND c.consumed_at IS NULL AND c.expires_at>NOW() AND c.attempts<5 FOR UPDATE OF c,u",[parsed.data.challengeId,req.user!.userId]);
+    const row=found.rows[0];
+    if(!row){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"This name code is invalid, expired or belongs to another account. Request a new code."});}
+    if(hash(parsed.data.code)!==String(row.code_hash)){await client.query("UPDATE aurelink_profile_change_challenges SET attempts=attempts+1,consumed_at=CASE WHEN attempts+1>=5 THEN NOW() ELSE consumed_at END,updated_at=NOW() WHERE id=$1",[row.id]);await client.query("COMMIT");return res.status(400).json({success:false,message:"Incorrect name confirmation code."});}
+    await client.query("INSERT INTO aurelink_profile_change_locks(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[row.user_id]);
+    const lock=(await client.query("SELECT name_changed_at FROM aurelink_profile_change_locks WHERE user_id=$1 FOR UPDATE",[row.user_id])).rows[0];
+    if(lock?.name_changed_at&&Date.now()-new Date(lock.name_changed_at).getTime()<30*86400000){const message=cooldownMessage("name",lock.name_changed_at);await client.query("ROLLBACK");return res.status(429).json({success:false,message});}
+    if(String(row.live_email).toLowerCase()!==String(row.current_email).toLowerCase()){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"The account email changed during verification. Start again."});}
+    const current=[row.live_first_name,row.live_last_name].filter(Boolean).join(" ").trim().replace(/\s+/g," ");
+    const proposed=[row.proposed_first_name,row.proposed_last_name].filter(Boolean).join(" ").trim().replace(/\s+/g," ");
+    if(current.toLocaleLowerCase()===proposed.toLocaleLowerCase()){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"The proposed name now matches the current account name."});}
+    await client.query("UPDATE aurelink_users SET first_name=$2,last_name=$3,updated_at=NOW() WHERE id=$1",[row.user_id,row.proposed_first_name,row.proposed_last_name]);
+    await client.query("UPDATE aurelink_profile_change_locks SET name_changed_at=NOW(),updated_at=NOW() WHERE user_id=$1",[row.user_id]);
+    await client.query("UPDATE aurelink_profile_change_challenges SET consumed_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);
+    email=String(row.live_email);accountId=String(row.account_id);updatedName=proposed;
+    await client.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent,metadata) VALUES($1,'account.name_changed',$2,$3,$4::jsonb)",[row.user_id,ip(req),agent(req),JSON.stringify({accountId,updatedName})]);
+    await client.query("COMMIT");
+  }catch{await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Unable to update the account name."});}
+  finally{client.release();}
+  void profileEmailCode(email,"Your Aurelink account name was updated.","Aurelink account name changed","—",accountId).catch(()=>undefined);
+  return res.json({success:true,name:updatedName,nameChangeAvailableAt:new Date(Date.now()+30*86400000).toISOString(),message:"Your Aurelink account name has been updated successfully."});
+});
+
 router.post("/aurelink/auth/logout",aurelinkAuthMiddleware,async(req,res)=>{
   await pool.query("UPDATE aurelink_sessions SET revoked_at=NOW(),updated_at=NOW() WHERE id=$1 AND user_id=$2",[req.user!.sessionId,req.user!.userId]);
   await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.logout',$2,$3)",[req.user!.userId,ip(req),agent(req)]);
