@@ -13,23 +13,18 @@ function apiKeyAllowed(req: Request): boolean {
   const parts = req.path.split("/").filter(Boolean);
   if (parts[0] !== "aurelink") return false;
   if (req.method === "GET") {
-    if ((parts[1] === "status" || parts[1] === "orders" || parts[1] === "wallet") && parts.length === 2) return true;
-    if (parts[1] === "wallet" && parts[2] === "ledger" && parts.length === 3) return true;
-    if (parts[1] === "nonvoip" && parts[2] === "orders" && parts.length === 5 && parts[4] === "messages") return true;
-    if ((parts[1] === "catalog" || parts[1] === "nonvoip") && parts.length >= 3) return true;
-    if (parts[1] === "dedicated" && parts[2] === "countries" && parts.length === 3) return true;
-    if (parts[1] === "dedicated" && parts[2] === "orders" && parts.length === 5 && parts[4] === "messages") return true;
-    if ((parts[1] === "activations" || parts[1] === "rentals") && parts.length === 3) return true;
-    if ((parts[1] === "activations" || parts[1] === "rentals") && parts.length === 4 && parts[3] === "messages") return true;
-    if (parts[1] === "dedicated" && parts[2] === "orders" && parts.length === 5 && parts[4] === "messages") return true;
+    if (["/aurelink/orders", "/aurelink/wallet", "/aurelink/wallet/ledger", "/aurelink/catalog/services", "/aurelink/catalog/countries", "/aurelink/catalog/suggested-countries", "/aurelink/catalog/rentals", "/aurelink/catalog/success-rate", "/aurelink/nonvoip/countries", "/aurelink/nonvoip/products", "/aurelink/dedicated/countries"].includes(req.path)) return true;
+    if (req.path === "/aurelink/catalog/pricing" && !req.query.pool) return true;
+    if (parts[1] === "catalog" && parts[2] === "rentals" && parts.length === 5 && (parts[4] === "services" || parts[4] === "pricing")) return true;
+    if (parts[1] === "activations" && (parts.length === 3 || (parts.length === 4 && parts[3] === "messages"))) return true;
+    if (parts[1] === "rentals" && parts.length === 4 && parts[3] === "messages") return true;
+    if ((parts[1] === "nonvoip" || parts[1] === "dedicated") && parts[2] === "orders" && parts.length === 5 && parts[4] === "messages") return true;
   }
   if (req.method === "POST") {
-    if (["/aurelink/quotes", "/aurelink/checkout", "/aurelink/activations", "/aurelink/rentals", "/aurelink/dedicated/quote", "/aurelink/dedicated/orders"].includes(req.path)) return true;
+    if (["/aurelink/quotes", "/aurelink/checkout", "/aurelink/activations", "/aurelink/rentals", "/aurelink/dedicated/quote", "/aurelink/dedicated/orders", "/aurelink/nonvoip/orders"].includes(req.path)) return true;
     if (parts[1] === "activations" && parts.length === 4 && parts[3] === "cancel") return true;
     if (parts[1] === "rentals" && parts.length === 4 && parts[3] === "renew") return true;
-    if (parts[1] === "nonvoip" && parts[2] === "orders" && (parts.length === 3 || (parts.length === 5 && parts[4] === "cancel"))) return true;
-    if (parts[1] === "dedicated" && parts[2] === "orders" && parts.length === 5 && parts[4] === "cancel") return true;
-    return false;
+    if ((parts[1] === "nonvoip" || parts[1] === "dedicated") && parts[2] === "orders" && parts.length === 5 && parts[4] === "cancel") return true;
   }
   return false;
 }
