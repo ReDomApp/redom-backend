@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { Aurelink, AurelinkError, verifyAurelinkWebhook } from "./index.js";
+import { Aurelink, AurelinkError, verifyAurelinkWebhook } from "../index.js";
 
 test("client authenticates requests and sends idempotency headers",async()=>{
  let seen;
