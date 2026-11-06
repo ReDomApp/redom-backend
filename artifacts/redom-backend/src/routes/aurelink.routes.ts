@@ -571,6 +571,19 @@ router.post("/aurelink/activations", aurelinkAuthMiddleware, async (req, res) =>
   }
 });
 
+router.get("/aurelink/activations/:orderId/status", aurelinkAuthMiddleware, async (req, res) => {
+  const orderId=z.string().min(1).max(160).safeParse(req.params.orderId);
+  if(!orderId.success||!req.user?.userId)return res.status(400).json({success:false,message:"Invalid order ID."});
+  try{
+    const order=await ownedOrder(req.user.userId,orderId.data,"activation");
+    if(!order)return res.status(404).json({success:false,message:"Order not found."});
+    const provider=object(await smsPoolClient.checkSms(orderId.data));
+    const arrived=provider.status===3||Boolean(provider.sms??provider.full_sms);
+    const status=provider.status===3?"completed":provider.status===6?"refunded":String(order.status||"pending");
+    await pool.query("UPDATE aurelink_provider_orders SET status=$2,sms_received_at=CASE WHEN $3 THEN COALESCE(sms_received_at,NOW()) ELSE sms_received_at END,last_provider_check_at=NOW(),updated_at=NOW() WHERE id=$1",[order.id,status,arrived]);
+    return res.json({success:true,activation:{id:order.aurelink_order_id||order.id,status,phoneNumber:order.phone_number,country:order.country,service:order.service,smsReceived:arrived,expiresAt:order.expires_at}});
+  }catch(error){return providerFailure(res,error);}
+});
 router.get("/aurelink/activations/:orderId/messages", aurelinkAuthMiddleware, async (req, res) => {
   const orderId = z.string().min(1).max(160).safeParse(req.params.orderId);
   if (!orderId.success || !req.user?.userId) return res.status(400).json({ success: false, message: "Invalid order ID." });
