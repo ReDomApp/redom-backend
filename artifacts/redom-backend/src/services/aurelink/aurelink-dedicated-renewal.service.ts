@@ -87,7 +87,7 @@ async function processAttempt(attempt: Row): Promise<void> {
   const order = orderResult.rows[0] as Row | undefined;
   if (!order) throw new Error("Dedicated order ownership check failed.");
   try {
-    const providerResult = await nonVoipClient.renew(String(order.provider_order_id), String(attempt.idempotency_key));
+    const providerResult = await nonVoipClient.renew(String(order.provider_order_id), String(attempt.idempotency_key) as \`${string}-${string}-${string}-${string}-${string}\`);
     const data = nvRecord(providerResult);
     const expiryValue = data.expires_at ?? data.expiration ?? data.expiry;
     const newExpiry = expiryValue ? new Date(String(expiryValue)) : null;
