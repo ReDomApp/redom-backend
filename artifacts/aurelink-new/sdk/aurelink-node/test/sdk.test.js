@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Aurelink, AurelinkError } from "../index.js";
+import { Aurelink, AurelinkError, verifyWebhookSignature } from "../index.js";
+import { createHmac } from "node:crypto";
 
 function response(status, body, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
@@ -60,4 +61,14 @@ test("encodes resource identifiers", async () => {
   }});
   await client.activations.messages("a/b");
   assert.match(url, /activations\/a%2Fb\/messages$/);
+});
+
+test("verifies signed webhook payload and rejects stale timestamps", () => {
+  const secret = "whsec_test_secret";
+  const timestamp = "1793994000";
+  const payload = JSON.stringify({ id: "evt_1", type: "sms.received" });
+  const signature = "v1=" + createHmac("sha256", secret).update(timestamp + ".").update(payload).digest("hex");
+  assert.equal(verifyWebhookSignature({ payload, signature, timestamp, secret, now: 1793994000 * 1000 }), true);
+  assert.equal(verifyWebhookSignature({ payload, signature, timestamp, secret, now: (1793994000 + 600) * 1000 }), false);
+  assert.equal(verifyWebhookSignature({ payload, signature: "v1=bad", timestamp, secret, now: 1793994000 * 1000 }), false);
 });
