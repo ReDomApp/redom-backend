@@ -57,6 +57,7 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="GET"&&(path==="/aurelink/catalog/services"||path==="/aurelink/catalog/countries"||path==="/aurelink/catalog/suggested-countries"))return ok({services:[{id:"telegram",name:"Telegram"},{id:"google",name:"Google"},{id:"facebook",name:"Facebook"}],countries:[{code:"US",name:"United States",dialCode:"+1"},{code:"GB",name:"United Kingdom",dialCode:"+44"}]});
  if(req.method==="GET"&&path==="/aurelink/catalog/rentals")return ok({rentals:[],countries:[{code:"US",name:"United States"}],testMode:true});
  if(req.method==="GET"&&path==="/aurelink/nonvoip/countries")return ok({countries:[{code:"US",name:"United States",dialCode:"+1"}]});
+ if(req.method==="GET"&&path==="/aurelink/nonvoip/products")return ok({products:[{serviceId:"test-service",offerId:"test-offer",service:"Test verification",countryCode:"US",countryName:"United States",providerPrice:0,retailPriceUsd:"0.00",available:true,testMode:true}]});
  if(req.method==="GET"&&path==="/aurelink/dedicated/countries")return ok({countries:[{code:"US",name:"United States",dialCode:"+1"}]});
  if(req.method==="GET"&&path==="/aurelink/catalog/success-rate")return ok({successRate:99.9});
  if(req.method==="GET"&&path==="/aurelink/catalog/pricing")return ok({currency:"USD",testMode:true});
@@ -66,6 +67,7 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="GET"&&p[1]==="activations"&&p[3]==="messages")return ok({messages:[{id:"test_sms_1",message:"Your Aurelink test verification code is 123456.",code:"123456",receivedAt:now}]});
  if(req.method==="GET"&&p[1]==="activations")return ok({activation:{id:p[2],status:"completed",phoneNumber:"+15555550100",service:"test",country:"US",testMode:true}});
  if(req.method==="GET"&&p[1]==="rentals"&&p[3]==="messages")return ok({messages:[]});
+ if(req.method==="GET"&&p[1]==="rentals"&&p[3]==="status")return ok({rental:{id:p[2],status:"active",phoneNumber:"+15555550100",testMode:true}});
  if(req.method==="GET"&&p[1]==="rentals")return ok({rental:{id:p[2],status:"active",phoneNumber:"+15555550100",expiresAt:new Date(Date.now()+86400000).toISOString(),testMode:true}});
  if(req.method==="GET"&&(p[1]==="dedicated"||p[1]==="nonvoip")&&p[2]==="orders"&&p[4]==="messages")return ok({messages:[{id:"test_sms_1",message:"Your Aurelink test verification code is 123456.",code:"123456",receivedAt:now}]});
  if(req.method==="POST"&&(path==="/aurelink/quotes"||path==="/aurelink/rental-quotes"))return ok({quote:{id:"test_quote_"+randomUUID().slice(0,8),amount:"0.00",currency:"USD",expiresAt:new Date(Date.now()+600000).toISOString(),testMode:true}});
@@ -114,7 +116,7 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
  (req as any).aurelinkApiKey=key;
  req.user={userId:row.user_id,profileId:row.user_id,sessionId:"api-key:"+row.id};
  const originalJson=res.json.bind(res);
- res.json=(body:any)=>{const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data);if(idempotency){const saved=idempotency;void pool.query("UPDATE aurelink_api_idempotency SET state='completed',response_status=$3,response_body=$4::jsonb WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,saved.key,res.statusCode,JSON.stringify(body)]).then(()=>originalJson(body)).catch(()=>originalJson(body));return res;}return originalJson(body);};
+ res.json=(body:any)=>{if(key.environment==="test"){const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data);}if(idempotency){const saved=idempotency;void pool.query("UPDATE aurelink_api_idempotency SET state='completed',response_status=$3,response_body=$4::jsonb WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,saved.key,res.statusCode,JSON.stringify(body)]).then(()=>originalJson(body)).catch(()=>originalJson(body));return res;}return originalJson(body);};
  if(key.environment==="test"){testResponse(req,res);return;}
  next();
 }
