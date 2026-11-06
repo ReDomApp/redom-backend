@@ -69,6 +69,7 @@ test("verifies signed webhook payload and rejects stale timestamps", () => {
   const payload = JSON.stringify({ id: "evt_1", type: "sms.received" });
   const signature = "v1=" + createHmac("sha256", secret).update(timestamp + ".").update(payload).digest("hex");
   assert.equal(verifyWebhookSignature({ payload, signature, timestamp, secret, now: 1793994000 * 1000 }), true);
+  assert.equal(verifyWebhookSignature({ payload: Buffer.from(payload), signature, timestamp, secret, now: 1793994000 * 1000 }), true);
   assert.equal(verifyWebhookSignature({ payload, signature, timestamp, secret, now: (1793994000 + 600) * 1000 }), false);
   assert.equal(verifyWebhookSignature({ payload, signature: "v1=bad", timestamp, secret, now: 1793994000 * 1000 }), false);
 });
