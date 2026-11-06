@@ -275,3 +275,9 @@
 .as-key-editor>button{justify-self:start;min-height:34px;border:1px solid #176bc0;border-radius:6px;background:#176bc0;color:#fff;padding:0 12px;font-size:11px;font-weight:650}
 .as-key-editor>button.as-secondary{background:#fff;border-color:#d6e0eb;color:#536477}
 @media(max-width:760px){.as-key-editor{grid-template-columns:1fr}.as-key-editor .as-scope-picker{grid-column:auto}}
+
+
+.as-key-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.as-key-actions button{font-size:10px;padding:7px 9px}
+.as-key-item{border-bottom:1px solid #edf1f5}
+.as-key-item .as-key-row{border-bottom:0}
