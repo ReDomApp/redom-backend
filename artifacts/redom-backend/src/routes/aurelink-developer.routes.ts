@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createHmac, randomBytes } from "node:crypto";
+import { randomBytes, randomUUID, createHash, createCipheriv } from "node:crypto";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { createWebhook } from "../services/aurelink/developer-platform.service";
@@ -64,8 +64,8 @@ router.post("/aurelink/developer/webhooks/:id/rotate-secret",aurelinkAuthMiddlew
  const secret="whsec_"+randomBytes(32).toString("base64url");
  const key=process.env.AURELINK_WEBHOOK_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET;
  if(!key||key.length<32)return res.status(503).json({success:false,message:"Webhook encryption is not configured."});
- const cryptoKey=(await import("node:crypto")).createHash("sha256").update(key).update("|aurelink-webhook-v1").digest();
- const iv=randomBytes(12),cipher=(await import("node:crypto")).createCipheriv("aes-256-gcm",cryptoKey,iv),body=Buffer.concat([cipher.update(secret,"utf8"),cipher.final()]);
+ const cryptoKey=createHash("sha256").update(key).update("|aurelink-webhook-v1").digest();
+ const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",cryptoKey,iv),body=Buffer.concat([cipher.update(secret,"utf8"),cipher.final()]);
  const encrypted=[iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),body.toString("base64url")].join(".");
  const result=await pool.query("UPDATE aurelink_webhook_endpoints SET secret_encrypted=$3,secret_prefix=$4,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING id,secret_prefix",[req.params.id,req.user!.userId,encrypted,secret.slice(0,13)]);
  if(!result.rowCount)return res.status(404).json({success:false,message:"Webhook endpoint not found."});
@@ -84,7 +84,7 @@ router.post("/aurelink/developer/webhooks/:id/deliveries/:deliveryId/retry",aure
 router.post("/aurelink/developer/webhooks/:id/test",aurelinkAuthMiddleware,async(req,res)=>{
  const endpoint=(await pool.query("SELECT id FROM aurelink_webhook_endpoints WHERE id=$1 AND user_id=$2 AND enabled=TRUE",[req.params.id,req.user!.userId])).rows[0];
  if(!endpoint)return res.status(404).json({success:false,message:"Enabled webhook endpoint not found."});
- const eventId=crypto.randomUUID();
+ const eventId=randomUUID();
  await pool.query("INSERT INTO aurelink_webhook_deliveries(endpoint_id,user_id,event_id,event_type,payload) VALUES($1,$2,$3,'endpoint.test',$4::jsonb)",[endpoint.id,req.user!.userId,eventId,JSON.stringify({id:eventId,type:"endpoint.test",created_at:new Date().toISOString(),data:{message:"Aurelink webhook endpoint test."}})]);
  res.status(202).json({success:true,message:"Test delivery queued.",eventId});
 });
