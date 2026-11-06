@@ -1,0 +1,67 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+export class AurelinkError extends Error {
+  constructor(message,{status=0,code="AURELINK_ERROR",requestId=null,details=null}={}){super(message);this.name="AurelinkError";this.status=status;this.code=code;this.requestId=requestId;this.details=details;}
+}
+export class Aurelink {
+  constructor({apiKey,baseUrl="https://redom-backend.onrender.com/redom-backend/v1",fetch:fetchImpl=globalThis.fetch,timeoutMs=20000}={}){
+    if(!apiKey||typeof apiKey!=="string")throw new TypeError("Aurelink apiKey is required.");
+    if(typeof fetchImpl!=="function")throw new TypeError("Aurelink requires a Fetch-compatible implementation.");
+    this.apiKey=apiKey;this.baseUrl=String(baseUrl).replace(/\/+$/,"");this.fetch=fetchImpl;this.timeoutMs=timeoutMs;
+    this.services={list:(query)=>this.request("GET","/aurelink/catalog/services",{query})};
+    this.countries={list:(query)=>this.request("GET","/aurelink/catalog/countries",{query})};
+    this.orders={list:(query)=>this.request("GET","/aurelink/orders",{query})};
+    this.wallet={retrieve:()=>this.request("GET","/aurelink/wallet"),ledger:(query)=>this.request("GET","/aurelink/wallet/ledger",{query})};
+    this.activations={
+      quote:(body)=>this.request("POST","/aurelink/quotes",{body}),
+      create:(body,options)=>this.request("POST","/aurelink/activations",{body,...options}),
+      retrieve:(id)=>this.request("GET","/aurelink/activations/"+encodeURIComponent(id)),
+      messages:(id)=>this.request("GET","/aurelink/activations/"+encodeURIComponent(id)+"/messages"),
+      resend:(id,body={})=>this.request("POST","/aurelink/activations/"+encodeURIComponent(id)+"/resend",{body}),
+      cancel:(id,body={})=>this.request("POST","/aurelink/activations/"+encodeURIComponent(id)+"/cancel",{body})
+    };
+    this.rentals={
+      list:(query)=>this.request("GET","/aurelink/catalog/rentals",{query}),
+      quote:(body)=>this.request("POST","/aurelink/rental-quotes",{body}),
+      create:(body,options)=>this.request("POST","/aurelink/rentals",{body,...options}),
+      retrieve:(id)=>this.request("GET","/aurelink/rentals/"+encodeURIComponent(id)+"/status"),
+      messages:(id)=>this.request("GET","/aurelink/rentals/"+encodeURIComponent(id)+"/messages"),
+      renew:(id,body={})=>this.request("POST","/aurelink/rentals/"+encodeURIComponent(id)+"/renew",{body}),
+      cancel:(id,body={})=>this.request("POST","/aurelink/rentals/"+encodeURIComponent(id)+"/cancel",{body})
+    };
+    this.nonVoip={
+      countries:()=>this.request("GET","/aurelink/nonvoip/countries"),
+      products:(query)=>this.request("GET","/aurelink/nonvoip/products",{query}),
+      create:(body,options)=>this.request("POST","/aurelink/nonvoip/orders",{body,...options}),
+      messages:(id)=>this.request("GET","/aurelink/nonvoip/orders/"+encodeURIComponent(id)+"/messages"),
+      cancel:(id,body={})=>this.request("POST","/aurelink/nonvoip/orders/"+encodeURIComponent(id)+"/cancel",{body})
+    };
+    this.dedicated={
+      countries:()=>this.request("GET","/aurelink/dedicated/countries"),
+      quote:(body)=>this.request("POST","/aurelink/dedicated/quote",{body}),
+      create:(body,options)=>this.request("POST","/aurelink/dedicated/orders",{body,...options}),
+      messages:(id)=>this.request("GET","/aurelink/dedicated/orders/"+encodeURIComponent(id)+"/messages"),
+      setAutoRenew:(id,enabled)=>this.request("PATCH","/aurelink/dedicated/orders/"+encodeURIComponent(id)+"/auto-renew",{body:{enabled}}),
+      cancel:(id,body={})=>this.request("POST","/aurelink/dedicated/orders/"+encodeURIComponent(id)+"/cancel",{body})
+    };
+  }
+  async request(method,path,{query,body,headers={},idempotencyKey,timeoutMs}={}){
+    const url=new URL(this.baseUrl+path);
+    if(query&&typeof query==="object")for(const [key,value] of Object.entries(query)){if(value!==undefined&&value!==null)url.searchParams.set(key,String(value));}
+    const requestHeaders={Accept:"application/json",Authorization:"Bearer "+this.apiKey,...headers};
+    if(body!==undefined)requestHeaders["Content-Type"]="application/json";
+    if(idempotencyKey)requestHeaders["Idempotency-Key"]=String(idempotencyKey);
+    let response;
+    try{response=await this.fetch(url,{method,headers:requestHeaders,...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(timeoutMs||this.timeoutMs),redirect:"error"});}
+    catch(error){throw new AurelinkError(error instanceof Error?error.message:"Aurelink network request failed.",{code:"NETWORK_ERROR"});}
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.success===false)throw new AurelinkError(data?.message||"Aurelink API request failed.",{status:response.status,code:data?.code||"AURELINK_API_ERROR",requestId:response.headers.get("x-aurelink-request-id"),details:data});
+    return data;
+  }
+}
+export function verifyAurelinkWebhook({payload,signature,timestamp,secret,toleranceSeconds=300}){
+  if(payload==null||!signature||!timestamp||!secret)return false;
+  const ts=Number(timestamp);if(!Number.isFinite(ts)||Math.abs(Date.now()/1000-ts)>toleranceSeconds)return false;
+  const expected=createHmac("sha256",secret).update(String(timestamp)+".").update(payload).digest("hex"),supplied=String(signature).replace(/^v1=/,"");
+  if(!/^[a-f0-9]{64}$/i.test(supplied))return false;
+  const a=Buffer.from(expected,"hex"),b=Buffer.from(supplied,"hex");return a.length===b.length&&timingSafeEqual(a,b);
+}
