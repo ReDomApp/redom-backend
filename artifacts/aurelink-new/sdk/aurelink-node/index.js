@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 const DEFAULT_BASE_URL = "https://redom-backend.onrender.com/redom-backend/v1";
 const clean = (value) => String(value ?? "").replace(/^\/+|\/+$/g, "");
 const pathId = (value) => encodeURIComponent(String(value));
@@ -106,6 +108,18 @@ export class Aurelink {
       });
     } finally { clearTimeout(timer); }
   }
+}
+
+
+export function verifyWebhookSignature({ payload, signature, timestamp, secret, toleranceSeconds = 300, now = Date.now() } = {}) {
+  if (typeof payload !== "string" || !secret || !timestamp || !signature) return false;
+  const seconds = Number(timestamp);
+  if (!Number.isInteger(seconds) || Math.abs(Math.floor(now / 1000) - seconds) > toleranceSeconds) return false;
+  const supplied = String(signature).replace(/^v1=/, "");
+  if (!/^[a-f0-9]{64}$/i.test(supplied)) return false;
+  const expected = createHmac("sha256", secret).update(String(timestamp) + ".").update(payload).digest();
+  const received = Buffer.from(supplied, "hex");
+  return received.length === expected.length && timingSafeEqual(received, expected);
 }
 
 export default Aurelink;
