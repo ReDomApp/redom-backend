@@ -22,6 +22,7 @@ import { ensureAurelinkSchema } from "./services/aurelink/schema-bootstrap.servi
 import { ensureAurelinkAccountSchema } from "./services/aurelink/account-schema-bootstrap.service";
 import { startAurelinkLifecycleWorker, stopAurelinkLifecycleWorker } from "./services/aurelink/aurelink-lifecycle-worker.service";
 import { startAurelinkDedicatedRenewalWorker, stopAurelinkDedicatedRenewalWorker } from "./services/aurelink/aurelink-dedicated-renewal.service";
+import { ensureAurelinkDeveloperSchema, startAurelinkWebhookWorker, stopAurelinkWebhookWorker } from "./services/aurelink/developer-platform.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -33,6 +34,7 @@ async function start(): Promise<void> {
   await ensureRecognizedDeviceSchema();
   await ensurePaymentSchema();
   await ensureAurelinkAccountSchema(pool);
+  await ensureAurelinkDeveloperSchema();
   await ensureAurelinkSchema(pool);
   await ensureBugReportSchema();
   await ensureStarsSchema();
@@ -50,6 +52,7 @@ async function start(): Promise<void> {
     startFbiSecurityWorker();
     startAurelinkLifecycleWorker();
     startAurelinkDedicatedRenewalWorker();
+    startAurelinkWebhookWorker();
     logger.info({ host, port }, "Server listening");
   });
 
@@ -70,6 +73,7 @@ async function start(): Promise<void> {
     stopFbiSecurityWorker();
     stopAurelinkLifecycleWorker();
     stopAurelinkDedicatedRenewalWorker();
+    stopAurelinkWebhookWorker();
     server.close(async (error) => {
       if (error) { logger.error({ error: serializeError(error) }, "Error closing HTTP server"); process.exitCode = 1; }
       try { await pool.end(); } catch (poolError) { logger.error({ error: serializeError(poolError) }, "Error closing database pool"); process.exitCode = 1; }
