@@ -76,6 +76,15 @@ async function deliverOne(row:any){
  const delays=[30,120,600,1800,7200,21600],delay=delays[Math.min(attempts-1,delays.length-1)];
  await pool.query("UPDATE aurelink_webhook_deliveries SET status=$2,attempts=$3,last_status_code=$4,last_error=$5,next_attempt_at=NOW()+($6 * INTERVAL '1 second') WHERE id=$1",[row.id,attempts>=8?"failed":"pending",attempts,status,errorText?.slice(0,500)||"Delivery failed.",delay]);
 }
-async function processWebhookQueue(){if(running)return;running=true;try{const batch=await pool.query("WITH due AS (SELECT id FROM aurelink_webhook_deliveries WHERE ((status='pending' AND next_attempt_at<=NOW()) OR (status='processing' AND created_at<NOW()-INTERVAL '2 minutes')) ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT 20) UPDATE aurelink_webhook_deliveries d SET status='processing' FROM due WHERE d.id=due.id RETURNING d.*");for(const row of batch.rows){try{await deliverOne(row);}catch(error){await pool.query("UPDATE aurelink_webhook_deliveries SET status='pending',attempts=attempts+1,next_attempt_at=NOW()+INTERVAL '2 minutes',last_error=$2 WHERE id=$1",[row.id,error instanceof Error?error.message:"Delivery worker error"]);}}}catch(error){console.error("[Aurelink webhook worker]",error instanceof Error?error.message:"unknown error");}finally{running=false;}}
+async function processWebhookQueue(){
+ if(running)return;running=true;
+ try{
+  const expiring=await pool.query("UPDATE aurelink_provider_orders SET webhook_expiring_sent_at=NOW() WHERE product_kind='rental' AND status='active' AND expires_at>NOW() AND expires_at<=NOW()+INTERVAL '24 hours' AND webhook_expiring_sent_at IS NULL RETURNING aurelink_user_id,aurelink_order_id,phone_number,country,service,expires_at");
+  for(const order of expiring.rows){if(order.aurelink_user_id)await emitAurelinkWebhookEvent(order.aurelink_user_id,"rental.expiring",{orderId:order.aurelink_order_id,phoneNumber:order.phone_number,country:order.country,service:order.service,expiresAt:order.expires_at});}
+  const batch=await pool.query("WITH due AS (SELECT id FROM aurelink_webhook_deliveries WHERE ((status='pending' AND next_attempt_at<=NOW()) OR (status='processing' AND created_at<NOW()-INTERVAL '2 minutes')) ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT 20) UPDATE aurelink_webhook_deliveries d SET status='processing' FROM due WHERE d.id=due.id RETURNING d.*");
+  for(const row of batch.rows){try{await deliverOne(row);}catch(error){await pool.query("UPDATE aurelink_webhook_deliveries SET status=CASE WHEN attempts+1>=8 THEN 'failed' ELSE 'pending' END,attempts=attempts+1,next_attempt_at=NOW()+INTERVAL '2 minutes',last_error=$2 WHERE id=$1",[row.id,error instanceof Error?error.message:"Delivery worker error"]);}}
+ }catch(error){console.error("[Aurelink webhook worker]",error instanceof Error?error.message:"unknown error");}
+ finally{running=false;}
+}
 export function startAurelinkWebhookWorker(){if(timer)return;timer=setInterval(()=>void processWebhookQueue(),5000);void processWebhookQueue();}
 export function stopAurelinkWebhookWorker(){if(timer)clearInterval(timer);timer=undefined;}
