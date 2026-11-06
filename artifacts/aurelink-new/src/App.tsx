@@ -59,7 +59,7 @@ export default function App() {
   const restore=async()=>{
    const savedAccess=localStorage.getItem("aurelink.accessToken");
    const savedRefresh=localStorage.getItem("aurelink.refreshToken");
-   if(!savedRefresh){ if(active){setScreen("login");const requested=window.location.pathname;if(requested!=="/"&&requested!=="/login"&&!requested.startsWith("/auth/")&&!requested.startsWith("/register"))window.history.replaceState({},"","/login?next="+encodeURIComponent(requested));} return; }
+   if(!savedRefresh){ if(active){const requested=window.location.pathname;if(screenFromPath(requested)==="dashboard"){window.history.replaceState({},"","/login?next="+encodeURIComponent(requested));setScreen("login");}else setScreen(screenFromPath(requested));} return; }
    if(active){setBusy(true);setNotice({kind:"info",text:"Restoring your secure session…"});}
    try{
     let access: string = savedAccess ?? "";
@@ -67,8 +67,8 @@ export default function App() {
     if(access){const check=await fetch(API_BASE+"/aurelink/auth/me",{headers:{Authorization:"Bearer "+access,Accept:"application/json"},cache:"no-store"});valid=check.ok;}
     if(!valid){const response=await fetch(API_BASE+"/aurelink/auth/refresh",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({refreshToken:savedRefresh}),cache:"no-store"});const data=await response.json();if(!response.ok||!data.success||!data.session?.accessToken||!data.session?.refreshToken)throw new Error(data.message||"Your session has expired.");access=data.session.accessToken;localStorage.setItem("aurelink.accessToken",access);localStorage.setItem("aurelink.refreshToken",data.session.refreshToken);}
     const me=await fetch(API_BASE+"/aurelink/auth/me",{headers:{Authorization:"Bearer "+access,Accept:"application/json"},cache:"no-store"});if(!me.ok)throw new Error("Your session is no longer active.");const profile=await me.json();if(profile.user)localStorage.setItem("aurelink.user",JSON.stringify(profile.user));
-    if(active){setSignedIn(true);setNotice(null);if(window.location.pathname==="/"||window.location.pathname==="/login")window.history.replaceState({},"","/dashboard");setScreen("dashboard");}
-   }catch{localStorage.removeItem("aurelink.accessToken");localStorage.removeItem("aurelink.refreshToken");localStorage.removeItem("aurelink.user");if(active){setSignedIn(false);const requested=window.location.pathname;if(requested!=="/"&&requested!=="/login"&&!requested.startsWith("/auth/")&&!requested.startsWith("/register"))window.history.replaceState({},"","/login?next="+encodeURIComponent(requested));setScreen("login");setNotice(null);}}
+    if(active){setSignedIn(true);setNotice(null);const requested=window.location.pathname;const requestedScreen=screenFromPath(requested);if(requestedScreen==="dashboard"||requested==="/"||requested==="/login"||requested==="/register"){window.history.replaceState({},"","/dashboard");setScreen("dashboard");}else setScreen(requestedScreen);}
+   }catch{localStorage.removeItem("aurelink.accessToken");localStorage.removeItem("aurelink.refreshToken");localStorage.removeItem("aurelink.user");if(active){setSignedIn(false);const requested=window.location.pathname;if(screenFromPath(requested)==="dashboard"){window.history.replaceState({},"","/login?next="+encodeURIComponent(requested));setScreen("login");}else setScreen(screenFromPath(requested));setNotice(null);}}
    finally{if(active)setBusy(false);}
   };
   void restore();return()=>{active=false;};
