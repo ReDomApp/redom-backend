@@ -34,8 +34,8 @@ async function start(): Promise<void> {
   await ensureRecognizedDeviceSchema();
   await ensurePaymentSchema();
   await ensureAurelinkAccountSchema(pool);
-  await ensureAurelinkDeveloperSchema();
   await ensureAurelinkSchema(pool);
+  await ensureAurelinkDeveloperSchema();
   await ensureBugReportSchema();
   await ensureStarsSchema();
   await ensureRefundSchema();
