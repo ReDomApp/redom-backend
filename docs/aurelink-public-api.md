@@ -114,7 +114,7 @@ Create HTTPS endpoints in Developer → Webhooks. Choose **Test** or **Live** fo
 - \`dedicated.created\`, \`dedicated.updated\`
 - \`wallet.credited\`, \`wallet.debited\`
 
-Each delivery includes an event ID, type, creation timestamp and data object. The signing secret is displayed once. Aurelink signs the exact raw request body:
+Each delivery includes an event ID, type, creation timestamp and data object. The signing secret is displayed once and stored encrypted at rest. Configure a stable, random `AURELINK_WEBHOOK_ENCRYPTION_KEY` (at least 32 characters) in every backend environment; keep it stable across deploys and backups. Aurelink signs the exact raw request body:
 
 \`\`\`
 HMAC_SHA256(secret, timestamp + "." + rawBody)
