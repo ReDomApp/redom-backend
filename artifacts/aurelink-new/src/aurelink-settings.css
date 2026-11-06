@@ -281,3 +281,12 @@
 .as-key-actions button{font-size:10px;padding:7px 9px}
 .as-key-item{border-bottom:1px solid #edf1f5}
 .as-key-item .as-key-row{border-bottom:0}
+
+
+.as-log-filters,.as-usage-range{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:12px 0}
+.as-log-filters label,.as-usage-range label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:#65768a}
+.as-log-filters select,.as-usage-range select{min-height:38px;min-width:150px;border:1px solid #dce4ed;border-radius:7px;background:#fff;color:#34475b;padding:0 10px;font:inherit}
+.as-log-filters button,.as-usage-range button{min-height:38px}
+.as-load-more{margin-top:12px}
+.as-usage-range{margin:0}
+@media(max-width:760px){.as-log-filters,.as-usage-range{align-items:stretch}.as-log-filters label{flex:1 1 130px}.as-usage-range{width:100%}.as-usage-range select{flex:1}}
