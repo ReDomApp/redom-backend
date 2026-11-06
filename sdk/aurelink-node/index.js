@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 export class AurelinkError extends Error {
-  constructor(message,{status=0,code="AURELINK_ERROR",requestId=null,details=null}={}){super(message);this.name="AurelinkError";this.status=status;this.code=code;this.requestId=requestId;this.details=details;}
+  constructor(message,{status=0,code="AURELINK_ERROR",requestId=null,retryAfter=null,rateLimitLimit=null,rateLimitRemaining=null,details=null}={}){super(message);this.name="AurelinkError";this.status=status;this.code=code;this.requestId=requestId;this.retryAfter=retryAfter;this.rateLimitLimit=rateLimitLimit;this.rateLimitRemaining=rateLimitRemaining;this.details=details;}
 }
 export class Aurelink {
   constructor({apiKey,baseUrl="https://redom-backend.onrender.com/redom-backend/v1",fetch:fetchImpl=globalThis.fetch,timeoutMs=20000}={}){
@@ -56,7 +56,7 @@ export class Aurelink {
     try{response=await this.fetch(url,{method,headers:requestHeaders,...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(timeoutMs||this.timeoutMs),redirect:"error"});}
     catch(error){throw new AurelinkError(error instanceof Error?error.message:"Aurelink network request failed.",{code:"NETWORK_ERROR"});}
     const data=await response.json().catch(()=>null);
-    if(!response.ok||data?.success===false)throw new AurelinkError(data?.message||"Aurelink API request failed.",{status:response.status,code:data?.code||"AURELINK_API_ERROR",requestId:response.headers.get("x-aurelink-request-id"),details:data});
+    if(!response.ok||data?.success===false)throw new AurelinkError(data?.message||"Aurelink API request failed.",{status:response.status,code:data?.code||"AURELINK_API_ERROR",requestId:response.headers.get("x-aurelink-request-id"),retryAfter:response.headers.get("retry-after"),rateLimitLimit:response.headers.get("x-aurelink-ratelimit-limit"),rateLimitRemaining:response.headers.get("x-aurelink-ratelimit-remaining"),details:data});
     return data;
   }
 }
