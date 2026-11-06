@@ -1,6 +1,6 @@
 export interface AurelinkOptions { apiKey:string; baseUrl?:string; fetch?:typeof fetch; timeoutMs?:number; }
 export interface RequestOptions { query?:Record<string,string|number|boolean|null|undefined>; body?:unknown; headers?:Record<string,string>; idempotencyKey?:string; timeoutMs?:number; }
-export class AurelinkError extends Error { status:number; code:string; requestId:string|null; details:unknown; }
+export class AurelinkError extends Error { status:number; code:string; requestId:string|null; retryAfter:string|null; rateLimitLimit:string|null; rateLimitRemaining:string|null; details:unknown; }
 export class Aurelink {
  constructor(options:AurelinkOptions);
  request<T=unknown>(method:string,path:string,options?:RequestOptions):Promise<T>;
