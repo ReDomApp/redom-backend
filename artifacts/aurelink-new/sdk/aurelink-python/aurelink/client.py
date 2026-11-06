@@ -1,4 +1,6 @@
 """Dependency-free Aurelink API client using urllib."""
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -20,6 +22,23 @@ class AurelinkError(Exception):
         self.retry_after = retry_after
         self.idempotency_key = idempotency_key
         self.body = body
+
+
+def verify_webhook_signature(payload, signature, timestamp, secret, *, tolerance_seconds=300, now=None):
+    """Verify Aurelink's v1 HMAC-SHA256 signature against the exact raw request body."""
+    try:
+        stamp = int(timestamp)
+        current = int(time.time() if now is None else now)
+        if abs(current - stamp) > int(tolerance_seconds):
+            return False
+        supplied = str(signature).removeprefix("v1=")
+        if len(supplied) != 64:
+            return False
+        raw = payload if isinstance(payload, bytes) else str(payload).encode("utf-8")
+        expected = hmac.new(str(secret).encode("utf-8"), str(timestamp).encode("ascii") + b"." + raw, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, supplied.lower())
+    except (TypeError, ValueError, UnicodeError):
+        return False
 
 
 class Aurelink:
@@ -139,6 +158,9 @@ class Aurelink:
     def nonvoip_messages(self, order_id):
         return self.request("/aurelink/nonvoip/orders/{}/messages".format(self._id(order_id)))
 
+    def cancel_nonvoip_order(self, order_id):
+        return self.request("/aurelink/nonvoip/orders/{}/cancel".format(self._id(order_id)), method="POST", body={})
+
     def list_dedicated_countries(self):
         return self.request("/aurelink/dedicated/countries")
 
@@ -151,3 +173,10 @@ class Aurelink:
 
     def dedicated_messages(self, order_id):
         return self.request("/aurelink/dedicated/orders/{}/messages".format(self._id(order_id)))
+
+    def set_dedicated_auto_renew(self, order_id, enabled):
+        return self.request("/aurelink/dedicated/orders/{}/auto-renew".format(self._id(order_id)),
+                            method="PATCH", body={"enabled": bool(enabled)})
+
+    def cancel_dedicated_order(self, order_id):
+        return self.request("/aurelink/dedicated/orders/{}/cancel".format(self._id(order_id)), method="POST", body={})
