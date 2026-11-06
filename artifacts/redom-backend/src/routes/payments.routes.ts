@@ -15,7 +15,7 @@ router.post("/subscription/renew", authMiddleware, async (req, res) => {
   if (!parsed.success || !req.user?.userId) return res.status(400).json({ success: false, message: "A valid subscription is required." });
   try {
     const result = await initializeSubscriptionRenewal(req.user.userId, parsed.data.subscriptionId);
-    return res.json({ success: true, checkoutUrl: result.authorizationUrl, reference: result.reference });
+    return res.json({ success: true, checkoutUrl: result.checkoutUrl, reference: result.reference });
   } catch (error) {
     return res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Unable to start payment." });
   }
