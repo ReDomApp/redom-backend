@@ -95,11 +95,26 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
  const used=Number(window.rows[0]?.request_count||1);
  res.setHeader("X-Aurelink-RateLimit-Limit",String(limit));res.setHeader("X-Aurelink-RateLimit-Remaining",String(Math.max(0,limit-used)));
  if(used>limit){res.setHeader("Retry-After","60");res.status(429).json({success:false,code:"RATE_LIMIT_EXCEEDED",message:"Aurelink API rate limit exceeded. Retry after 60 seconds."});return;}
+ let idempotency:{key:string;hash:string}|null=null;
+ if(key.environment==="live"&&req.method==="POST"&&["/aurelink/activations","/aurelink/rentals","/aurelink/nonvoip/orders","/aurelink/dedicated/orders","/aurelink/checkout"].includes(req.path)){
+  const supplied=String(req.headers["idempotency-key"]||"").trim();
+  if(!supplied||supplied.length>128){res.status(400).json({success:false,code:"IDEMPOTENCY_KEY_REQUIRED",message:"Send a unique Idempotency-Key header for every purchase request."});return;}
+  const requestHash=createHash("sha256").update(JSON.stringify(req.body??{})).digest("hex");
+  const inserted=await pool.query("INSERT INTO aurelink_api_idempotency(api_key_id,idempotency_key,request_hash) VALUES($1,$2,$3) ON CONFLICT(api_key_id,idempotency_key) DO NOTHING RETURNING idempotency_key",[row.id,supplied,requestHash]);
+  if(!inserted.rowCount){
+   const previous=(await pool.query("SELECT request_hash,state,response_status,response_body,expires_at FROM aurelink_api_idempotency WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,supplied])).rows[0];
+   if(!previous||new Date(previous.expires_at).getTime()<=Date.now()){await pool.query("DELETE FROM aurelink_api_idempotency WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,supplied]);}
+   else if(previous.request_hash!==requestHash){res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request body."});return;}
+   else if(previous.state==="completed"&&previous.response_body){res.setHeader("Idempotent-Replay","true");res.status(Number(previous.response_status)||200).json(previous.response_body);return;}
+   else{res.status(409).json({success:false,code:"REQUEST_IN_PROGRESS",message:"A request with this Idempotency-Key is still processing. Retry shortly using the same key."});return;}
+  }
+  idempotency={key:supplied,hash:requestHash};
+ }
  await pool.query("UPDATE aurelink_api_keys SET last_used_at=NOW() WHERE id=$1",[row.id]);
  (req as any).aurelinkApiKey=key;
  req.user={userId:row.user_id,profileId:row.user_id,sessionId:"api-key:"+row.id};
  const originalJson=res.json.bind(res);
- res.json=(body:any)=>{const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data);return originalJson(body);};
+ res.json=(body:any)=>{const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data);if(idempotency){const saved=idempotency;void pool.query("UPDATE aurelink_api_idempotency SET state='completed',response_status=$3,response_body=$4::jsonb WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,saved.key,res.statusCode,JSON.stringify(body)]).then(()=>originalJson(body)).catch(()=>originalJson(body));return res;}return originalJson(body);};
  if(key.environment==="test"){testResponse(req,res);return;}
  next();
 }
