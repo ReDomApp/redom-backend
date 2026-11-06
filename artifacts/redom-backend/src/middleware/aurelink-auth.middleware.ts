@@ -15,7 +15,7 @@ function apiKeyAllowed(req: Request): boolean {
   if (req.method === "GET") {
     if ((parts[1] === "status" || parts[1] === "orders" || parts[1] === "wallet") && parts.length === 2) return true;
     if (parts[1] === "wallet" && parts[2] === "ledger" && parts.length === 3) return true;
-    if (parts[1] === "nonvoip" && parts[2] === "orders" && parts.length === 4 && parts[3] === "messages") return true;
+    if (parts[1] === "nonvoip" && parts[2] === "orders" && parts.length === 5 && parts[4] === "messages") return true;
     if ((parts[1] === "catalog" || parts[1] === "nonvoip") && parts.length >= 3) return true;
     if (parts[1] === "dedicated" && parts[2] === "countries" && parts.length === 3) return true;
     if ((parts[1] === "activations" || parts[1] === "rentals") && parts.length === 3) return true;
