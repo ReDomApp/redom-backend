@@ -21,6 +21,8 @@ export class Aurelink {
     };
     this.rentals={
       list:(query)=>this.request("GET","/aurelink/catalog/rentals",{query}),
+      services:(rentalId,query)=>this.request("GET","/aurelink/catalog/rentals/"+encodeURIComponent(rentalId)+"/services",{query}),
+      pricing:(rentalId,query)=>this.request("GET","/aurelink/catalog/rentals/"+encodeURIComponent(rentalId)+"/pricing",{query}),
       quote:(body)=>this.request("POST","/aurelink/rental-quotes",{body}),
       create:(body,options)=>this.request("POST","/aurelink/rentals",{body,...options}),
       retrieve:(id)=>this.request("GET","/aurelink/rentals/"+encodeURIComponent(id)+"/status"),
