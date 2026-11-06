@@ -62,5 +62,5 @@ export declare class Aurelink {
     cancel(id: string, options?: RequestOptions): Promise<any>;
   };
 }
-export declare function verifyWebhookSignature(options: { payload: string; signature: string; timestamp: string | number; secret: string; toleranceSeconds?: number; now?: number }): boolean;
+export declare function verifyWebhookSignature(options: { payload: string | Uint8Array; signature: string; timestamp: string | number; secret: string; toleranceSeconds?: number; now?: number }): boolean;
 export default Aurelink;
