@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 from io import BytesIO
-from aurelink import Aurelink, AurelinkError
+from aurelink import Aurelink, AurelinkError, verify_webhook_signature
 
 
 class FakeResponse:
@@ -16,6 +16,16 @@ class FakeResponse:
 
 
 class AurelinkClientTests(unittest.TestCase):
+    def test_webhook_signature_verification(self):
+        import hashlib
+        import hmac
+        secret = "whsec_test_secret"
+        timestamp = "1793994000"
+        payload = b'{"id":"evt_1","type":"sms.received"}'
+        signature = "v1=" + hmac.new(secret.encode(), timestamp.encode() + b"." + payload, hashlib.sha256).hexdigest()
+        self.assertTrue(verify_webhook_signature(payload, signature, timestamp, secret, now=1793994000))
+        self.assertFalse(verify_webhook_signature(payload, signature, timestamp, secret, now=1793994600))
+
     def test_requires_valid_key(self):
         with self.assertRaises(ValueError):
             Aurelink("invalid")
