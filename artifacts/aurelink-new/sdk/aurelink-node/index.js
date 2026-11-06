@@ -112,7 +112,7 @@ export class Aurelink {
 
 
 export function verifyWebhookSignature({ payload, signature, timestamp, secret, toleranceSeconds = 300, now = Date.now() } = {}) {
-  if (typeof payload !== "string" || !secret || !timestamp || !signature) return false;
+  if (!(typeof payload === "string" || payload instanceof Uint8Array) || !secret || !timestamp || !signature) return false;
   const seconds = Number(timestamp);
   if (!Number.isInteger(seconds) || Math.abs(Math.floor(now / 1000) - seconds) > toleranceSeconds) return false;
   const supplied = String(signature).replace(/^v1=/, "");
