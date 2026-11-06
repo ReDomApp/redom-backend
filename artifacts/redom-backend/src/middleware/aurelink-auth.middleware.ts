@@ -1,68 +1,99 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { pool } from "../database/db";
+import { emitAurelinkWebhookEvent } from "../services/aurelink/developer-platform.service";
 
-function secrets() {
-  const access = process.env.JWT_ACCESS_SECRET;
-  if (!access) throw new Error("JWT_ACCESS_SECRET is not configured.");
-  return access;
+function secrets(){const access=process.env.JWT_ACCESS_SECRET;if(!access)throw new Error("JWT_ACCESS_SECRET is not configured.");return access;}
+function apiKeyAllowed(req:Request):boolean{
+ const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
+ if(req.method==="GET"){
+  if(["/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
+  if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
+  if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
+  if(p[1]==="activations"&&(p.length===3||(p.length===4&&p[3]==="messages")))return true;
+  if(p[1]==="rentals"&&p.length===4&&p[3]==="messages")return true;
+  if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="messages")return true;
+ }
+ if(req.method==="POST"){
+  if(["/aurelink/quotes","/aurelink/checkout","/aurelink/activations","/aurelink/rentals","/aurelink/dedicated/quote","/aurelink/dedicated/orders","/aurelink/nonvoip/orders"].includes(req.path))return true;
+  if(p[1]==="activations"&&p.length===4&&p[3]==="cancel")return true;
+  if(p[1]==="rentals"&&p.length===4&&p[3]==="renew")return true;
+  if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="cancel")return true;
+ }
+ return false;
 }
-
-function apiKeyAllowed(req: Request): boolean {
-  const parts = req.path.split("/").filter(Boolean);
-  if (parts[0] !== "aurelink") return false;
-  if (req.method === "GET") {
-    if (["/aurelink/orders", "/aurelink/wallet", "/aurelink/wallet/ledger", "/aurelink/catalog/services", "/aurelink/catalog/countries", "/aurelink/catalog/suggested-countries", "/aurelink/catalog/rentals", "/aurelink/catalog/success-rate", "/aurelink/nonvoip/countries", "/aurelink/nonvoip/products", "/aurelink/dedicated/countries"].includes(req.path)) return true;
-    if (req.path === "/aurelink/catalog/pricing" && !req.query.pool) return true;
-    if (parts[1] === "catalog" && parts[2] === "rentals" && parts.length === 5 && (parts[4] === "services" || parts[4] === "pricing")) return true;
-    if (parts[1] === "activations" && (parts.length === 3 || (parts.length === 4 && parts[3] === "messages"))) return true;
-    if (parts[1] === "rentals" && parts.length === 4 && parts[3] === "messages") return true;
-    if ((parts[1] === "nonvoip" || parts[1] === "dedicated") && parts[2] === "orders" && parts.length === 5 && parts[4] === "messages") return true;
-  }
-  if (req.method === "POST") {
-    if (["/aurelink/quotes", "/aurelink/checkout", "/aurelink/activations", "/aurelink/rentals", "/aurelink/dedicated/quote", "/aurelink/dedicated/orders", "/aurelink/nonvoip/orders"].includes(req.path)) return true;
-    if (parts[1] === "activations" && parts.length === 4 && parts[3] === "cancel") return true;
-    if (parts[1] === "rentals" && parts.length === 4 && parts[3] === "renew") return true;
-    if ((parts[1] === "nonvoip" || parts[1] === "dedicated") && parts[2] === "orders" && parts.length === 5 && parts[4] === "cancel") return true;
-  }
-  return false;
+function scopeFor(req:Request):string{
+ if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
+ if(req.method==="GET"&&req.path.endsWith("/messages"))return "messages:read";
+ if(req.method==="GET"&&req.path.endsWith("/orders"))return "orders:read";
+ if(req.method==="GET")return "catalog:read";
+ return "numbers:write";
 }
-
-async function authenticateApiKey(secret: string, req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!apiKeyAllowed(req)) { res.status(403).json({ success: false, message: "This API key cannot access account or security endpoints." }); return; }
-  const digest = createHash("sha256").update(secret).digest();
-  const found = await pool.query("SELECT k.id, k.user_id, k.key_hash, u.account_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL LIMIT 1", [secret.slice(0, 12)]);
-  const row = found.rows[0] as { id: string; user_id: string; key_hash: string; account_status: string } | undefined;
-  if (!row || row.key_hash.length !== 64 || !timingSafeEqual(Buffer.from(row.key_hash, "hex"), Buffer.from(digest.toString("hex"), "hex"))) { res.status(401).json({ success: false, message: "Invalid or revoked Aurelink API key." }); return; }
-  if (row.account_status !== "active") { res.status(403).json({ success: false, message: "Aurelink account is not active." }); return; }
-  await pool.query("UPDATE aurelink_api_keys SET last_used_at=NOW() WHERE id=$1", [row.id]);
-  req.user = { userId: row.user_id, profileId: row.user_id, sessionId: "api-key:" + row.id };
-  next();
+function requestLogger(req:Request,res:Response,key:{id:string;userId:string;environment:string},started:number){
+ const requestId=String(req.headers["x-request-id"]||randomUUID()).slice(0,100);res.setHeader("X-Aurelink-Request-Id",requestId);res.setHeader("X-Aurelink-Environment",key.environment);
+ res.on("finish",()=>{const address=String(req.ip||"").replace(/^::ffff:/,"").slice(0,45)||null;void pool.query("INSERT INTO aurelink_api_request_logs(user_id,api_key_id,environment,method,path,status_code,latency_ms,request_id,ip_address) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",[key.userId,key.id,key.environment,req.method,req.path.slice(0,255),res.statusCode,Math.max(0,Date.now()-started),requestId,address]).catch(error=>console.error("[Aurelink API log]",error instanceof Error?error.message:"unknown error"));});
 }
-export async function aurelinkAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const raw = req.headers.authorization;
-    if (!raw?.startsWith("Bearer ")) { res.status(401).json({success:false,message:"Aurelink authentication required."}); return; }
-    const credential = raw.slice(7).trim();
-    if (credential.startsWith("aul_")) { await authenticateApiKey(credential, req, res, next); return; }
-    const payload = jwt.verify(credential, secrets()) as { userId?: string; sessionId?: string; audience?: string };
-    if (payload.audience !== "aurelink" || !payload.userId || !payload.sessionId) {
-      res.status(401).json({success:false,message:"Invalid Aurelink session."}); return;
-    }
-    const result = await pool.query(
-      `SELECT u.id,u.account_status,s.id AS session_id FROM aurelink_users u
-       JOIN aurelink_sessions s ON s.user_id=u.id
-       WHERE u.id=$1 AND s.id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW() `,
-      [payload.userId,payload.sessionId]
-    );
-    const row = result.rows[0];
-    if (!row) { res.status(401).json({success:false,message:"Aurelink session expired, was revoked, or was inactive for more than 10 minutes."}); return; }
-    if (row.account_status !== "active") { res.status(403).json({success:false,message:"Aurelink account is not active."}); return; }
-    await pool.query("UPDATE aurelink_sessions SET last_activity_at=NOW(),updated_at=NOW() WHERE id=$1",[row.session_id]);
-    req.user = { userId: row.id, profileId: row.id, sessionId: row.session_id };
-    next();
-  } catch {
-    res.status(401).json({success:false,message:"Invalid Aurelink access token."});
-  }
+function eventFor(req:Request,body:any):{type:string;data:Record<string,unknown>}|null{
+ if(!body||body.success===false)return null;const p=req.path.split("/").filter(Boolean),id=String(body.order?.id||body.activation?.id||body.orderId||body.id||"");
+ if(req.method==="POST"&&p[1]==="activations"&&p.length===2)return {type:"activation.created",data:{id,order:body.order||body.activation||body.data||null}};
+ if(req.method==="POST"&&p[1]==="rentals"&&p.length===2)return {type:"rental.created",data:{id,order:body.order||body.data||null}};
+ if(req.method==="POST"&&p[1]==="nonvoip"&&p[2]==="orders")return {type:"rental.created",data:{id,order:body.order||body.data||null}};
+ if(req.method==="POST"&&p[1]==="dedicated"&&p[2]==="orders")return {type:"dedicated.created",data:{id,order:body.order||body.data||null}};
+ if(req.method==="POST"&&p[p.length-1]==="cancel")return {type:"activation.cancelled",data:{id,status:body.status||"cancelled"}};
+ if(req.method==="GET"&&p[p.length-1]==="messages"){const messages=Array.isArray(body.messages)?body.messages:Array.isArray(body.data)?body.data:[];if(messages.length)return {type:"sms.received",data:{id,orderId:p[p.length-2],messages}};}
+ return null;
+}
+function testResponse(req:Request,res:Response):boolean{
+ const p=req.path.split("/").filter(Boolean),path=req.path,now=new Date().toISOString(),id="test_"+randomUUID().replace(/-/g,"").slice(0,18);
+ res.setHeader("X-Aurelink-Test-Mode","true");res.setHeader("Cache-Control","no-store");
+ const ok=(data:unknown,status=200)=>{res.status(status).json({success:true,environment:"test",data,...(data&&typeof data==="object"&&!Array.isArray(data)?data as object:{})});return true;};
+ if(req.method==="GET"&&(path==="/aurelink/catalog/services"||path==="/aurelink/catalog/countries"||path==="/aurelink/catalog/suggested-countries"))return ok({services:[{id:"telegram",name:"Telegram"},{id:"google",name:"Google"},{id:"facebook",name:"Facebook"}],countries:[{code:"US",name:"United States",dialCode:"+1"},{code:"GB",name:"United Kingdom",dialCode:"+44"}]});
+ if(req.method==="GET"&&path==="/aurelink/catalog/rentals")return ok({rentals:[],countries:[{code:"US",name:"United States"}],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/nonvoip/countries")return ok({countries:[{code:"US",name:"United States",dialCode:"+1"}]});
+ if(req.method==="GET"&&path==="/aurelink/dedicated/countries")return ok({countries:[{code:"US",name:"United States",dialCode:"+1"}]});
+ if(req.method==="GET"&&path==="/aurelink/catalog/success-rate")return ok({successRate:99.9});
+ if(req.method==="GET"&&path==="/aurelink/catalog/pricing")return ok({currency:"USD",testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/orders")return ok({orders:[]});
+ if(req.method==="GET"&&path==="/aurelink/wallet")return ok({wallet:{balanceUsd:"100.00",currency:"USD",testBalance:true}});
+ if(req.method==="GET"&&path==="/aurelink/wallet/ledger")return ok({entries:[]});
+ if(req.method==="GET"&&p[1]==="activations"&&p[3]==="messages")return ok({messages:[{id:"test_sms_1",message:"Your Aurelink test verification code is 123456.",code:"123456",receivedAt:now}]});
+ if(req.method==="GET"&&p[1]==="activations")return ok({activation:{id:p[2],status:"completed",phoneNumber:"+15555550100",service:"test",country:"US",testMode:true}});
+ if(req.method==="GET"&&p[1]==="rentals"&&p[3]==="messages")return ok({messages:[]});
+ if(req.method==="GET"&&p[1]==="rentals")return ok({rental:{id:p[2],status:"active",phoneNumber:"+15555550100",expiresAt:new Date(Date.now()+86400000).toISOString(),testMode:true}});
+ if(req.method==="GET"&&(p[1]==="dedicated"||p[1]==="nonvoip")&&p[2]==="orders"&&p[4]==="messages")return ok({messages:[{id:"test_sms_1",message:"Your Aurelink test verification code is 123456.",code:"123456",receivedAt:now}]});
+ if(req.method==="POST"&&path==="/aurelink/quotes")return ok({quote:{id:"test_quote_"+randomUUID().slice(0,8),amount:"0.00",currency:"USD",expiresAt:new Date(Date.now()+600000).toISOString(),testMode:true}});
+ if(req.method==="POST"&&path==="/aurelink/dedicated/quote")return ok({quote:{id:"test_quote_"+randomUUID().slice(0,8),amount:"0.00",currency:"USD",testMode:true}});
+ if(req.method==="POST"&&["/aurelink/activations","/aurelink/rentals","/aurelink/nonvoip/orders","/aurelink/dedicated/orders"].includes(path)){const resource={id,orderId:id,status:"pending",phoneNumber:"+15555550100",country:"US",service:"test",createdAt:now,testMode:true};const event=path.includes("dedicated")?"dedicated.created":path.includes("rentals")||path.includes("nonvoip")?"rental.created":"activation.created";void emitAurelinkWebhookEvent((req as any).user.userId,event,resource);return ok({order:resource,activation:resource,rental:resource},201);}
+ if(req.method==="POST"&&p[p.length-1]==="cancel")return ok({id:p[p.length-2],status:"cancelled",testMode:true});
+ if(req.method==="POST"&&p[p.length-1]==="renew")return ok({id:p[p.length-2],status:"active",renewed:true,testMode:true});
+ if(req.method==="POST")return ok({id,testMode:true,accepted:true},202);
+ return ok({testMode:true,received:true});
+}
+async function authenticateApiKey(secret:string,req:Request,res:Response,next:NextFunction):Promise<void>{
+ if(!apiKeyAllowed(req)){res.status(403).json({success:false,message:"This API key cannot access this route."});return;}
+ const digest=createHash("sha256").update(secret).digest();
+ const found=await pool.query("SELECT k.id,k.user_id,k.key_hash,k.environment,k.scopes,k.rate_limit_per_minute,k.expires_at,u.account_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.key_prefix IN ($1,$2) AND k.revoked_at IS NULL LIMIT 1",[secret.slice(0,16),secret.slice(0,12)]);
+ const row=found.rows[0] as {id:string;user_id:string;key_hash:string;environment:string;scopes:unknown;rate_limit_per_minute:number;expires_at:Date|null;account_status:string}|undefined;
+ const stored=row?.key_hash||"";if(!row||stored.length!==64||! /^[a-f0-9]{64}$/i.test(stored)||!timingSafeEqual(Buffer.from(stored,"hex"),digest)){res.status(401).json({success:false,message:"Invalid or revoked Aurelink API key."});return;}
+ if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}
+ if(row.expires_at&&new Date(row.expires_at).getTime()<=Date.now()){res.status(401).json({success:false,message:"This Aurelink API key has expired."});return;}
+ const scope=scopeFor(req),scopes=Array.isArray(row.scopes)?row.scopes.map(String):[];
+ if(!scopes.includes(scope)){res.status(403).json({success:false,code:"INSUFFICIENT_SCOPE",message:"This API key does not have the required "+scope+" permission."});return;}
+ const key={id:row.id,userId:row.user_id,environment:row.environment==="test"?"test":"live"};
+ requestLogger(req,res,key,Date.now());
+ const count=await pool.query("SELECT COUNT(*)::int AS n FROM aurelink_api_request_logs WHERE api_key_id=$1 AND created_at>NOW()-INTERVAL '1 minute'",[row.id]);
+ const limit=Math.max(1,Math.min(6000,Number(row.rate_limit_per_minute)||60));
+ res.setHeader("X-Aurelink-RateLimit-Limit",String(limit));res.setHeader("X-Aurelink-RateLimit-Remaining",String(Math.max(0,limit-Number(count.rows[0]?.n||0))));
+ if(Number(count.rows[0]?.n||0)>=limit){res.setHeader("Retry-After","60");res.status(429).json({success:false,code:"RATE_LIMIT_EXCEEDED",message:"Aurelink API rate limit exceeded. Retry after 60 seconds."});return;}
+ await pool.query("UPDATE aurelink_api_keys SET last_used_at=NOW() WHERE id=$1",[row.id]);
+ (req as any).aurelinkApiKey=key;
+ req.user={userId:row.user_id,profileId:row.user_id,sessionId:"api-key:"+row.id};
+ const originalJson=res.json.bind(res);
+ res.json=(body:any)=>{const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data);return originalJson(body);};
+ if(key.environment==="test"){testResponse(req,res);return;}
+ next();
+}
+export async function aurelinkAuthMiddleware(req:Request,res:Response,next:NextFunction):Promise<void>{
+ try{const raw=req.headers.authorization;if(!raw?.startsWith("Bearer ")){res.status(401).json({success:false,message:"Aurelink authentication required."});return;}const credential=raw.slice(7).trim();if(credential.startsWith("aul_")){await authenticateApiKey(credential,req,res,next);return;}const payload=jwt.verify(credential,secrets()) as {userId?:string;sessionId?:string;audience?:string};if(payload.audience!=="aurelink"||!payload.userId||!payload.sessionId){res.status(401).json({success:false,message:"Invalid Aurelink session."});return;}const result=await pool.query("SELECT u.id,u.account_status,s.id AS session_id FROM aurelink_users u JOIN aurelink_sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW()",[payload.userId,payload.sessionId]);const row=result.rows[0];if(!row){res.status(401).json({success:false,message:"Aurelink session expired, was revoked, or was inactive for more than 10 minutes."});return;}if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}await pool.query("UPDATE aurelink_sessions SET last_activity_at=NOW(),updated_at=NOW() WHERE id=$1",[row.session_id]);req.user={userId:row.id,profileId:row.id,sessionId:row.session_id};next();}catch{res.status(401).json({success:false,message:"Invalid Aurelink access token."});}
 }
