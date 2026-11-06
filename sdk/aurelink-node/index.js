@@ -14,7 +14,7 @@ export class Aurelink {
     this.activations={
       quote:(body)=>this.request("POST","/aurelink/quotes",{body}),
       create:(body,options)=>this.request("POST","/aurelink/activations",{body,...options}),
-      retrieve:(id)=>this.request("GET","/aurelink/activations/"+encodeURIComponent(id)),
+      retrieve:(id)=>this.request("GET","/aurelink/activations/"+encodeURIComponent(id)+"/status"),
       messages:(id)=>this.request("GET","/aurelink/activations/"+encodeURIComponent(id)+"/messages"),
       resend:(id,body={})=>this.request("POST","/aurelink/activations/"+encodeURIComponent(id)+"/resend",{body}),
       cancel:(id,body={})=>this.request("POST","/aurelink/activations/"+encodeURIComponent(id)+"/cancel",{body})
