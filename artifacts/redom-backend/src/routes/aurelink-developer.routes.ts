@@ -43,11 +43,11 @@ router.get("/aurelink/developer/logs",aurelinkAuthMiddleware,async(req,res)=>{
 
 router.get("/aurelink/developer/webhooks/events",aurelinkAuthMiddleware,(_req,res)=>res.json({success:true,events:EVENTS}));
 router.get("/aurelink/developer/webhooks",aurelinkAuthMiddleware,async(req,res)=>{
- const result=await pool.query("SELECT id,url,description,secret_prefix,events,enabled,created_at,updated_at FROM aurelink_webhook_endpoints WHERE user_id=$1 ORDER BY created_at DESC",[req.user!.userId]);
+ const result=await pool.query("SELECT id,url,description,secret_prefix,events,environment,enabled,created_at,updated_at FROM aurelink_webhook_endpoints WHERE user_id=$1 ORDER BY created_at DESC",[req.user!.userId]);
  res.json({success:true,endpoints:result.rows});
 });
 router.post("/aurelink/developer/webhooks",aurelinkAuthMiddleware,async(req,res)=>{
- try{const result=await createWebhook(req.user!.userId,{url:String(req.body.url||""),description:String(req.body.description||""),events:Array.isArray(req.body.events)?req.body.events.map(String):undefined});res.status(201).json({success:true,...result});}
+ try{const result=await createWebhook(req.user!.userId,{url:String(req.body.url||""),description:String(req.body.description||""),events:Array.isArray(req.body.events)?req.body.events.map(String):undefined,environment:req.body.environment==="test"?"test":"live"});res.status(201).json({success:true,...result});}
  catch(error){res.status(400).json({success:false,message:error instanceof Error?error.message:"Could not create webhook endpoint."});}
 });
 router.patch("/aurelink/developer/webhooks/:id",aurelinkAuthMiddleware,async(req,res)=>{
