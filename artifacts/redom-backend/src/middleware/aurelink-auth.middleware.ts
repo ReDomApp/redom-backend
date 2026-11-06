@@ -8,16 +8,19 @@ function secrets(){const access=process.env.JWT_ACCESS_SECRET;if(!access)throw n
 function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
-  if(["/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
+  if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
   if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
   if(p[1]==="activations"&&(p.length===3||(p.length===4&&p[3]==="messages")))return true;
+  if(p[1]==="rentals"&&p.length===4&&p[3]==="status")return true;
   if(p[1]==="rentals"&&p.length===4&&p[3]==="messages")return true;
   if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="messages")return true;
  }
  if(req.method==="POST"){
-  if(["/aurelink/quotes","/aurelink/checkout","/aurelink/activations","/aurelink/rentals","/aurelink/dedicated/quote","/aurelink/dedicated/orders","/aurelink/nonvoip/orders"].includes(req.path))return true;
-  if(p[1]==="activations"&&p.length===4&&p[3]==="cancel")return true;
+  if(["/aurelink/quotes","/aurelink/rental-quotes","/aurelink/checkout","/aurelink/activations","/aurelink/rentals","/aurelink/dedicated/quote","/aurelink/dedicated/orders","/aurelink/nonvoip/orders"].includes(req.path))return true;
+  if(p[1]==="activations"&&p.length===4&&(p[3]==="cancel"||p[3]==="resend"))return true;
+  if(p[1]==="rentals"&&p.length===4&&p[3]==="cancel")return true;
+  if(p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
   if(p[1]==="rentals"&&p.length===4&&p[3]==="renew")return true;
   if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="cancel")return true;
  }
@@ -26,7 +29,7 @@ function apiKeyAllowed(req:Request):boolean{
 function scopeFor(req:Request):string{
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
  if(req.method==="GET"&&req.path.endsWith("/messages"))return "messages:read";
- if(req.method==="GET"&&req.path.endsWith("/orders"))return "orders:read";
+ if(req.method==="GET"&&(req.path.endsWith("/orders")||p[1]==="activations"&&p.length===3||p[1]==="rentals"&&p.length===4&&p[3]==="status"))return "orders:read";
  if(req.method==="GET")return "catalog:read";
  return "numbers:write";
 }
@@ -48,6 +51,7 @@ function testResponse(req:Request,res:Response):boolean{
  const p=req.path.split("/").filter(Boolean),path=req.path,now=new Date().toISOString(),id="test_"+randomUUID().replace(/-/g,"").slice(0,18);
  res.setHeader("X-Aurelink-Test-Mode","true");res.setHeader("Cache-Control","no-store");
  const ok=(data:unknown,status=200)=>{res.status(status).json({success:true,environment:"test",data,...(data&&typeof data==="object"&&!Array.isArray(data)?data as object:{})});return true;};
+ if(req.method==="GET"&&path==="/aurelink/status")return ok({status:"operational",testMode:true});
  if(req.method==="GET"&&(path==="/aurelink/catalog/services"||path==="/aurelink/catalog/countries"||path==="/aurelink/catalog/suggested-countries"))return ok({services:[{id:"telegram",name:"Telegram"},{id:"google",name:"Google"},{id:"facebook",name:"Facebook"}],countries:[{code:"US",name:"United States",dialCode:"+1"},{code:"GB",name:"United Kingdom",dialCode:"+44"}]});
  if(req.method==="GET"&&path==="/aurelink/catalog/rentals")return ok({rentals:[],countries:[{code:"US",name:"United States"}],testMode:true});
  if(req.method==="GET"&&path==="/aurelink/nonvoip/countries")return ok({countries:[{code:"US",name:"United States",dialCode:"+1"}]});
@@ -62,10 +66,12 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="GET"&&p[1]==="rentals"&&p[3]==="messages")return ok({messages:[]});
  if(req.method==="GET"&&p[1]==="rentals")return ok({rental:{id:p[2],status:"active",phoneNumber:"+15555550100",expiresAt:new Date(Date.now()+86400000).toISOString(),testMode:true}});
  if(req.method==="GET"&&(p[1]==="dedicated"||p[1]==="nonvoip")&&p[2]==="orders"&&p[4]==="messages")return ok({messages:[{id:"test_sms_1",message:"Your Aurelink test verification code is 123456.",code:"123456",receivedAt:now}]});
- if(req.method==="POST"&&path==="/aurelink/quotes")return ok({quote:{id:"test_quote_"+randomUUID().slice(0,8),amount:"0.00",currency:"USD",expiresAt:new Date(Date.now()+600000).toISOString(),testMode:true}});
+ if(req.method==="POST"&&(path==="/aurelink/quotes"||path==="/aurelink/rental-quotes"))return ok({quote:{id:"test_quote_"+randomUUID().slice(0,8),amount:"0.00",currency:"USD",expiresAt:new Date(Date.now()+600000).toISOString(),testMode:true}});
  if(req.method==="POST"&&path==="/aurelink/dedicated/quote")return ok({quote:{id:"test_quote_"+randomUUID().slice(0,8),amount:"0.00",currency:"USD",testMode:true}});
  if(req.method==="POST"&&["/aurelink/activations","/aurelink/rentals","/aurelink/nonvoip/orders","/aurelink/dedicated/orders"].includes(path)){const resource={id,orderId:id,status:"pending",phoneNumber:"+15555550100",country:"US",service:"test",createdAt:now,testMode:true};const event=path.includes("dedicated")?"dedicated.created":path.includes("rentals")||path.includes("nonvoip")?"rental.created":"activation.created";void emitAurelinkWebhookEvent((req as any).user.userId,event,resource);return ok({order:resource,activation:resource,rental:resource},201);}
  if(req.method==="POST"&&p[p.length-1]==="cancel")return ok({id:p[p.length-2],status:"cancelled",testMode:true});
+ if(req.method==="POST"&&p[p.length-1]==="resend")return ok({id:p[p.length-2],status:"pending",resendAccepted:true,testMode:true});
+ if(req.method==="POST"&&p[p.length-1]==="auto-renew")return ok({id:p[p.length-2],autoRenew:Boolean(req.body?.enabled),testMode:true});
  if(req.method==="POST"&&p[p.length-1]==="renew")return ok({id:p[p.length-2],status:"active",renewed:true,testMode:true});
  if(req.method==="POST")return ok({id,testMode:true,accepted:true},202);
  return ok({testMode:true,received:true});
