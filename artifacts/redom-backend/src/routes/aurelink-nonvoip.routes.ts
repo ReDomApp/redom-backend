@@ -26,7 +26,7 @@ function productFields(row:Record<string,unknown>,fallbackCountry=""){
  const countryName=text(row.country_name??row.countryName??row.country_label??countryObject.name??(typeof countryValue==="string"&&!/^[A-Z]{2}$/i.test(countryValue)?countryValue:""));
  const countryCode=text(rawCountry||fallbackCountry).trim().toUpperCase();
  const serviceId=text(row.service_id??row.serviceId??row.id??row.product_id);
- const offerId=text(row.offer_id??row.offerId??row.id??row.offer?.id);
+ const offerId=text(row.offer_id??row.offerId??row.id??(row.offer as Record<string,unknown>|undefined)?.id);
  const price=providerPrice(row);
  return {serviceId,offerId,providerPrice:price,retailMinor:retailMinor(price),service:text(row.service_name??row.service??row.name??row.title),logo:text(row.logo_url??row.logo??row.icon_url??row.icon),countryCode,countryName:countryName||(countryCode==="US"?"United States":countryCode),dialCode:text(row.dial_code??row.dialCode??row.phone_code??countryObject.dial_code),offerLabel:text(row.offer_name??row.name??row.label),available:row.available!==false&&row.in_stock!==false&&Number(row.stock??row.available_count??1)>0};
 }
@@ -186,7 +186,7 @@ router.patch("/aurelink/dedicated/orders/:id/auto-renew",async(req,res)=>{
  return res.json({success:true,autoRenew:enabled});
 });
 router.post("/aurelink/dedicated/orders/:id/cancel",async(req,res)=>{
- const userId=req.user?.userId;const found=await pool.query("SELECT * FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND aurelink_order_id=$2 AND product_kind='dedicated'",[userId,req.params.id]);const order=found.rows[0] as Record<string,unknown>|undefined;
+ const userId=req.user?.userId;if(!userId){return res.status(401).json({success:false,message:"Authentication required."});}const found=await pool.query("SELECT * FROM aurelink_provider_orders WHERE aurelink_user_id=$1 AND aurelink_order_id=$2 AND product_kind='dedicated'",[userId,req.params.id]);const order=found.rows[0] as Record<string,unknown>|undefined;
  if(!order)return res.status(404).json({success:false,message:"Dedicated order not found."});
  if(order.sms_received_at)return res.status(409).json({success:false,message:"This number has received an SMS and cannot be cancelled."});
  if(Date.now()-new Date(String(order.created_at)).getTime()>3600000)return res.status(409).json({success:false,message:"The one-hour cancellation window has expired."});
