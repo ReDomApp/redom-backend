@@ -106,7 +106,7 @@ Pool selection and provider credentials are internal Aurelink implementation det
 
 ## Webhooks
 
-Create HTTPS endpoints in Developer → Webhooks. Subscribe to:
+Create HTTPS endpoints in Developer → Webhooks. Choose **Test** or **Live** for each endpoint. Sandbox events are delivered only to test endpoints; production order and wallet events are delivered only to live endpoints. Subscribe to:
 
 - \`activation.created\`, \`activation.updated\`, \`activation.cancelled\`
 - \`sms.received\`
