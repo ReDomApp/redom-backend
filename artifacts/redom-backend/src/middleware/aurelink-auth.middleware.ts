@@ -16,6 +16,7 @@ function apiKeyAllowed(req:Request):boolean{
   if(p[1]==="rentals"&&p.length===4&&p[3]==="messages")return true;
   if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="messages")return true;
  }
+ if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
   if(["/aurelink/quotes","/aurelink/rental-quotes","/aurelink/checkout","/aurelink/activations","/aurelink/rentals","/aurelink/dedicated/quote","/aurelink/dedicated/orders","/aurelink/nonvoip/orders"].includes(req.path))return true;
   if(p[1]==="activations"&&p.length===4&&(p[3]==="cancel"||p[3]==="resend"))return true;
@@ -27,6 +28,7 @@ function apiKeyAllowed(req:Request):boolean{
  return false;
 }
 function scopeFor(req:Request):string{
+ const p=req.path.split("/").filter(Boolean);
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
  if(req.method==="GET"&&req.path.endsWith("/messages"))return "messages:read";
  if(req.method==="GET"&&(req.path.endsWith("/orders")||p[1]==="activations"&&p.length===3||p[1]==="rentals"&&p.length===4&&p[3]==="status"))return "orders:read";
@@ -68,10 +70,10 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="GET"&&(p[1]==="dedicated"||p[1]==="nonvoip")&&p[2]==="orders"&&p[4]==="messages")return ok({messages:[{id:"test_sms_1",message:"Your Aurelink test verification code is 123456.",code:"123456",receivedAt:now}]});
  if(req.method==="POST"&&(path==="/aurelink/quotes"||path==="/aurelink/rental-quotes"))return ok({quote:{id:"test_quote_"+randomUUID().slice(0,8),amount:"0.00",currency:"USD",expiresAt:new Date(Date.now()+600000).toISOString(),testMode:true}});
  if(req.method==="POST"&&path==="/aurelink/dedicated/quote")return ok({quote:{id:"test_quote_"+randomUUID().slice(0,8),amount:"0.00",currency:"USD",testMode:true}});
- if(req.method==="POST"&&["/aurelink/activations","/aurelink/rentals","/aurelink/nonvoip/orders","/aurelink/dedicated/orders"].includes(path)){const resource={id,orderId:id,status:"pending",phoneNumber:"+15555550100",country:"US",service:"test",createdAt:now,testMode:true};const event=path.includes("dedicated")?"dedicated.created":path.includes("rentals")||path.includes("nonvoip")?"rental.created":"activation.created";void emitAurelinkWebhookEvent((req as any).user.userId,event,resource);return ok({order:resource,activation:resource,rental:resource},201);}
+ if(req.method==="POST"&&["/aurelink/activations","/aurelink/rentals","/aurelink/nonvoip/orders","/aurelink/dedicated/orders"].includes(path)){const resource={id,orderId:id,status:"pending",phoneNumber:"+15555550100",country:"US",service:"test",createdAt:now,testMode:true};return ok({order:resource,activation:resource,rental:resource},201);}
  if(req.method==="POST"&&p[p.length-1]==="cancel")return ok({id:p[p.length-2],status:"cancelled",testMode:true});
  if(req.method==="POST"&&p[p.length-1]==="resend")return ok({id:p[p.length-2],status:"pending",resendAccepted:true,testMode:true});
- if(req.method==="POST"&&p[p.length-1]==="auto-renew")return ok({id:p[p.length-2],autoRenew:Boolean(req.body?.enabled),testMode:true});
+ if((req.method==="POST"||req.method==="PATCH")&&p[p.length-1]==="auto-renew")return ok({id:p[p.length-2],autoRenew:Boolean(req.body?.enabled),testMode:true});
  if(req.method==="POST"&&p[p.length-1]==="renew")return ok({id:p[p.length-2],status:"active",renewed:true,testMode:true});
  if(req.method==="POST")return ok({id,testMode:true,accepted:true},202);
  return ok({testMode:true,received:true});
