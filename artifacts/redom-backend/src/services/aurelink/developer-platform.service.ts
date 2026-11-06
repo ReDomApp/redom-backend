@@ -4,9 +4,9 @@ import { lookup } from "node:dns/promises";
 import { pool } from "../../database/db";
 
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
-function encryptionKey(){const source=process.env.AURELINK_WEBHOOK_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET;if(!source||source.length<32)throw new Error("A secure webhook encryption key is not configured.");return createHash("sha256").update(source).update("|aurelink-webhook-v1").digest();}
+function encryptionKey(source=process.env.AURELINK_WEBHOOK_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET){if(!source||source.length<32)throw new Error("A secure webhook encryption key is not configured.");return createHash("sha256").update(source).update("|aurelink-webhook-v1").digest();}
 function encrypt(value:string){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",encryptionKey(),iv),body=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);return [iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),body.toString("base64url")].join(".");}
-function decrypt(value:string){const [iv,tag,body]=value.split(".");if(!iv||!tag||!body)throw new Error("Webhook signing secret is unavailable.");const decipher=createDecipheriv("aes-256-gcm",encryptionKey(),Buffer.from(iv,"base64url"));decipher.setAuthTag(Buffer.from(tag,"base64url"));return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");}
+function decrypt(value:string){const [iv,tag,body]=value.split(".");if(!iv||!tag||!body)throw new Error("Webhook signing secret is unavailable.");const candidates=[...new Set([process.env.AURELINK_WEBHOOK_ENCRYPTION_KEY,process.env.JWT_ACCESS_SECRET].filter((x):x is string=>Boolean(x&&x.length>=32)))];for(const source of candidates){try{const decipher=createDecipheriv("aes-256-gcm",encryptionKey(source),Buffer.from(iv,"base64url"));decipher.setAuthTag(Buffer.from(tag,"base64url"));return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");}catch{}}throw new Error("Webhook signing secret could not be decrypted with the configured keys.");}
 function isPrivateAddress(address:string){
  const value=address.toLowerCase().replace(/^::ffff:/,"");
  const version=isIP(value);
