@@ -86,6 +86,7 @@ function testResponse(req:Request,res:Response):boolean{
  return ok({testMode:true,received:true});
 }
 async function authenticateApiKey(secret:string,req:Request,res:Response,next:NextFunction):Promise<void>{
+ const p=req.path.split("/").filter(Boolean);
  if(!apiKeyAllowed(req)){res.status(403).json({success:false,message:"This API key cannot access this route."});return;}
  const digest=createHash("sha256").update(secret).digest();
  const found=await pool.query("SELECT k.id,k.user_id,k.key_hash,k.environment,k.scopes,k.rate_limit_per_minute,k.expires_at,u.account_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.key_prefix IN ($1,$2,$3) AND k.revoked_at IS NULL LIMIT 1",[secret.slice(0,20),secret.slice(0,16),secret.slice(0,12)]);
