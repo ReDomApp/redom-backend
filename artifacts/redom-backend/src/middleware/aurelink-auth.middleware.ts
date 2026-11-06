@@ -11,7 +11,7 @@ function apiKeyAllowed(req:Request):boolean{
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
   if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
-  if(p[1]==="activations"&&(p.length===3||(p.length===4&&p[3]==="messages")))return true;
+  if(p[1]==="activations"&&(p.length===3||(p.length===4&&(p[3]==="messages"||p[3]==="status"))))return true;
   if(p[1]==="rentals"&&p.length===4&&p[3]==="status")return true;
   if(p[1]==="rentals"&&p.length===4&&p[3]==="messages")return true;
   if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="messages")return true;
@@ -31,7 +31,7 @@ function scopeFor(req:Request):string{
  const p=req.path.split("/").filter(Boolean);
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
  if(req.method==="GET"&&req.path.endsWith("/messages"))return "messages:read";
- if(req.method==="GET"&&(req.path.endsWith("/orders")||p[1]==="activations"&&p.length===3||p[1]==="rentals"&&p.length===4&&p[3]==="status"))return "orders:read";
+ if(req.method==="GET"&&(req.path.endsWith("/orders")||p[1]==="activations"&&(p.length===3||p[3]==="status")||p[1]==="rentals"&&p.length===4&&p[3]==="status"))return "orders:read";
  if(req.method==="GET")return "catalog:read";
  return "numbers:write";
 }
@@ -65,6 +65,7 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="GET"&&path==="/aurelink/wallet")return ok({wallet:{balanceUsd:"100.00",currency:"USD",testBalance:true}});
  if(req.method==="GET"&&path==="/aurelink/wallet/ledger")return ok({entries:[]});
  if(req.method==="GET"&&p[1]==="activations"&&p[3]==="messages")return ok({messages:[{id:"test_sms_1",message:"Your Aurelink test verification code is 123456.",code:"123456",receivedAt:now}]});
+ if(req.method==="GET"&&p[1]==="activations"&&p[3]==="status")return ok({activation:{id:p[2],status:"completed",phoneNumber:"+15555550100",smsReceived:true,testMode:true}});
  if(req.method==="GET"&&p[1]==="activations")return ok({activation:{id:p[2],status:"completed",phoneNumber:"+15555550100",service:"test",country:"US",testMode:true}});
  if(req.method==="GET"&&p[1]==="rentals"&&p[3]==="messages")return ok({messages:[]});
  if(req.method==="GET"&&p[1]==="rentals"&&p[3]==="status")return ok({rental:{id:p[2],status:"active",phoneNumber:"+15555550100",testMode:true}});
