@@ -82,10 +82,11 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
  if(!scopes.includes(scope)){res.status(403).json({success:false,code:"INSUFFICIENT_SCOPE",message:"This API key does not have the required "+scope+" permission."});return;}
  const key={id:row.id,userId:row.user_id,environment:row.environment==="test"?"test":"live"};
  requestLogger(req,res,key,Date.now());
- const count=await pool.query("SELECT COUNT(*)::int AS n FROM aurelink_api_request_logs WHERE api_key_id=$1 AND created_at>NOW()-INTERVAL '1 minute'",[row.id]);
  const limit=Math.max(1,Math.min(6000,Number(row.rate_limit_per_minute)||60));
- res.setHeader("X-Aurelink-RateLimit-Limit",String(limit));res.setHeader("X-Aurelink-RateLimit-Remaining",String(Math.max(0,limit-Number(count.rows[0]?.n||0))));
- if(Number(count.rows[0]?.n||0)>=limit){res.setHeader("Retry-After","60");res.status(429).json({success:false,code:"RATE_LIMIT_EXCEEDED",message:"Aurelink API rate limit exceeded. Retry after 60 seconds."});return;}
+ const window=await pool.query("INSERT INTO aurelink_api_rate_windows(api_key_id,window_start,request_count) VALUES($1,date_trunc('minute',NOW()),1) ON CONFLICT(api_key_id,window_start) DO UPDATE SET request_count=aurelink_api_rate_windows.request_count+1 RETURNING request_count",[row.id]);
+ const used=Number(window.rows[0]?.request_count||1);
+ res.setHeader("X-Aurelink-RateLimit-Limit",String(limit));res.setHeader("X-Aurelink-RateLimit-Remaining",String(Math.max(0,limit-used)));
+ if(used>limit){res.setHeader("Retry-After","60");res.status(429).json({success:false,code:"RATE_LIMIT_EXCEEDED",message:"Aurelink API rate limit exceeded. Retry after 60 seconds."});return;}
  await pool.query("UPDATE aurelink_api_keys SET last_used_at=NOW() WHERE id=$1",[row.id]);
  (req as any).aurelinkApiKey=key;
  req.user={userId:row.user_id,profileId:row.user_id,sessionId:"api-key:"+row.id};
