@@ -1,0 +1,39 @@
+name: Aurelink frontend checks
+
+on:
+  push:
+    branches:
+      - rebuild/aurelink-typescript-react
+    paths:
+      - "artifacts/aurelink-new/src/**"
+      - "artifacts/aurelink-new/public/**"
+      - "artifacts/aurelink-new/index.html"
+      - "artifacts/aurelink-new/package.json"
+      - "artifacts/aurelink-new/package-lock.json"
+      - ".github/workflows/aurelink-frontend.yml"
+  pull_request:
+    paths:
+      - "artifacts/aurelink-new/src/**"
+      - "artifacts/aurelink-new/public/**"
+      - "artifacts/aurelink-new/index.html"
+      - "artifacts/aurelink-new/package.json"
+      - ".github/workflows/aurelink-frontend.yml"
+  workflow_dispatch:
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install frontend dependencies
+        working-directory: artifacts/aurelink-new
+        run: npm install
+      - name: Type-check and build
+        working-directory: artifacts/aurelink-new
+        run: npm run build
+      - name: Verify SPA fallback
+        working-directory: artifacts/aurelink-new
+        run: test -f public/_redirects && grep -Fx "/* /index.html 200" public/_redirects
