@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
+import { request as httpsRequest } from "node:https";
 import { pool } from "../../database/db";
 
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
@@ -8,20 +9,23 @@ function encryptionKey(source=process.env.AURELINK_WEBHOOK_ENCRYPTION_KEY||proce
 function encrypt(value:string){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",encryptionKey(),iv),body=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);return [iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),body.toString("base64url")].join(".");}
 function decrypt(value:string){const [iv,tag,body]=value.split(".");if(!iv||!tag||!body)throw new Error("Webhook signing secret is unavailable.");const candidates=[...new Set([process.env.AURELINK_WEBHOOK_ENCRYPTION_KEY,process.env.JWT_ACCESS_SECRET].filter((x):x is string=>Boolean(x&&x.length>=32)))];for(const source of candidates){try{const decipher=createDecipheriv("aes-256-gcm",encryptionKey(source),Buffer.from(iv,"base64url"));decipher.setAuthTag(Buffer.from(tag,"base64url"));return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");}catch{}}throw new Error("Webhook signing secret could not be decrypted with the configured keys.");}
 function isPrivateAddress(address:string){
- const value=address.toLowerCase().replace(/^::ffff:/,"");
+ let value=address.toLowerCase().replace(/^::ffff:/,"");
+ if(value.includes(":")&&value.startsWith("::ffff:"))value=value.slice(7);
  const version=isIP(value);
  if(version===4){const n=value.split(".").reduce((a,x)=>(a<<8n)|BigInt(Number(x)),0n);const inRange=(base:string,prefix:number)=>{const b=base.split(".").reduce((a,x)=>(a<<8n)|BigInt(Number(x)),0n);return(n>>BigInt(32-prefix))===(b>>BigInt(32-prefix));};return [["0.0.0.0",8],["10.0.0.0",8],["100.64.0.0",10],["127.0.0.0",8],["169.254.0.0",16],["172.16.0.0",12],["192.0.0.0",24],["192.0.2.0",24],["192.168.0.0",16],["198.18.0.0",15],["198.51.100.0",24],["203.0.113.0",24],["224.0.0.0",4],["240.0.0.0",4]].some(([b,p])=>inRange(String(b),Number(p)));}
  if(version===6)return value==="::"||value==="::1"||value.startsWith("fc")||value.startsWith("fd")||/^fe[89ab]/.test(value)||value.startsWith("ff")||value.startsWith("2001:db8:");
  return true;
 }
-async function publicWebhookUrl(value:string){
+async function resolvePublicWebhookUrl(value:string){
  let u:URL;try{u=new URL(value);}catch{throw new Error("Enter a valid HTTPS webhook URL.");}
  if(u.protocol!=="https:"||u.username||u.password||u.hash)throw new Error("Webhook endpoints must use HTTPS and cannot contain credentials or fragments.");
+ if(u.port&&u.port!=="443")throw new Error("Webhook endpoints must use the standard HTTPS port 443.");
  const host=u.hostname.toLowerCase();if(host==="localhost"||host.endsWith(".localhost")||host.endsWith(".local")||host==="metadata.google.internal")throw new Error("Local and metadata webhook destinations are not allowed.");
- const addresses=isIP(host)?[{address:host}]:await lookup(host,{all:true,verbatim:true});
+ const family=isIP(host),addresses=family?[{address:host,family}]:await lookup(host,{all:true,verbatim:true});
  if(!addresses.length||addresses.some(x=>isPrivateAddress(x.address)))throw new Error("Webhook hosts must resolve only to public IP addresses.");
- return u.toString();
+ return {url:u.toString(),hostname:host,address:addresses[0].address,family:addresses[0].family};
 }
+async function publicWebhookUrl(value:string){return (await resolvePublicWebhookUrl(value)).url;}
 
 export async function ensureAurelinkDeveloperSchema():Promise<void>{
  await pool.query("ALTER TABLE aurelink_api_keys ADD COLUMN IF NOT EXISTS environment VARCHAR(8) NOT NULL DEFAULT 'live' CHECK(environment IN ('test','live'))");
@@ -74,9 +78,9 @@ let timer:ReturnType<typeof setInterval>|undefined;let running=false;let lastMai
 async function deliverOne(row:any){
  const endpoint=(await pool.query("SELECT url,secret_encrypted,enabled FROM aurelink_webhook_endpoints WHERE id=$1",[row.endpoint_id])).rows[0];
  if(!endpoint?.enabled){await pool.query("UPDATE aurelink_webhook_deliveries SET status='failed',last_error='Webhook endpoint disabled or deleted.' WHERE id=$1",[row.id]);return;}
- const safeUrl=await publicWebhookUrl(endpoint.url);const body=JSON.stringify(row.payload),timestamp=String(Math.floor(Date.now()/1000)),secret=decrypt(endpoint.secret_encrypted),signature=createHmac("sha256",secret).update(timestamp+".").update(body).digest("hex");
+ const destination=await resolvePublicWebhookUrl(endpoint.url);const body=JSON.stringify(row.payload),timestamp=String(Math.floor(Date.now()/1000)),secret=decrypt(endpoint.secret_encrypted),signature=createHmac("sha256",secret).update(timestamp+".").update(body).digest("hex");
  let status:number|null=null,errorText:string|null=null;
- try{const response=await fetch(safeUrl,{method:"POST",headers:{"content-type":"application/json","user-agent":"Aurelink-Webhooks/1.0","aurelink-event":row.event_type,"aurelink-delivery":row.id,"aurelink-timestamp":timestamp,"aurelink-signature":"v1="+signature},body,signal:AbortSignal.timeout(10000),redirect:"error"});status=response.status;if(!response.ok)errorText="Webhook endpoint returned HTTP "+response.status;}catch(error){errorText=error instanceof Error?error.message:"Webhook request failed.";}
+ try{status=await new Promise<number>((resolve,reject)=>{const request=httpsRequest(destination.url,{method:"POST",agent:false,servername:isIP(destination.hostname)?undefined:destination.hostname,timeout:10000,headers:{"content-type":"application/json","content-length":Buffer.byteLength(body),"user-agent":"Aurelink-Webhooks/1.0","aurelink-event":row.event_type,"aurelink-delivery":row.id,"aurelink-timestamp":timestamp,"aurelink-signature":"v1="+signature},lookup:((_hostname:string,_options:unknown,callback:(error:NodeJS.ErrnoException|null,address:string,family:number)=>void)=>callback(null,destination.address,destination.family)) as any},response=>{response.resume();response.on("end",()=>resolve(response.statusCode||0));response.on("error",reject);});request.on("timeout",()=>request.destroy(new Error("Webhook request timed out.")));request.on("error",reject);request.end(body);});if(status<200||status>=300)errorText="Webhook endpoint returned HTTP "+status;}catch(error){errorText=error instanceof Error?error.message:"Webhook request failed.";}
  const attempts=Number(row.attempts)+1;
  if(status!==null&&status>=200&&status<300){await pool.query("UPDATE aurelink_webhook_deliveries SET status='delivered',attempts=$2,last_status_code=$3,last_error=NULL,delivered_at=NOW() WHERE id=$1",[row.id,attempts,status]);return;}
  const delays=[30,120,600,1800,7200,21600],delay=delays[Math.min(attempts-1,delays.length-1)];
