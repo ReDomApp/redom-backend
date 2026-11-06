@@ -45,7 +45,9 @@ function eventFor(req:Request,body:any):{type:string;data:Record<string,unknown>
  if(req.method==="POST"&&p[1]==="rentals"&&p.length===2)return {type:"rental.created",data:{id,order:body.order||body.data||null}};
  if(req.method==="POST"&&p[1]==="nonvoip"&&p[2]==="orders")return {type:"rental.created",data:{id,order:body.order||body.data||null}};
  if(req.method==="POST"&&p[1]==="dedicated"&&p[2]==="orders")return {type:"dedicated.created",data:{id,order:body.order||body.data||null}};
- if(req.method==="POST"&&p[p.length-1]==="cancel")return {type:"activation.cancelled",data:{id,status:body.status||"cancelled"}};
+ if(req.method==="POST"&&p[p.length-1]==="cancel"){const type=p[1]==="activations"?"activation.cancelled":p[1]==="dedicated"?"dedicated.updated":"rental.updated";return {type,data:{id,status:body.status||"cancelled"}};}
+ if(req.method==="POST"&&p[1]==="rentals"&&p[p.length-1]==="renew")return {type:"rental.updated",data:{id,status:body.status||"active",renewed:true}};
+ if(req.method==="PATCH"&&p[1]==="dedicated"&&p[p.length-1]==="auto-renew")return {type:"dedicated.updated",data:{id,autoRenew:body.autoRenew??body.enabled}};
  if(req.method==="GET"&&p[p.length-1]==="messages"){const messages=Array.isArray(body.messages)?body.messages:Array.isArray(body.data)?body.data:[];if(messages.length)return {type:"sms.received",data:{id,orderId:p[p.length-2],messages}};}
  return null;
 }
