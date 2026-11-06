@@ -68,7 +68,7 @@ router.post("/aurelink/developer/webhooks/:id/rotate-secret",aurelinkAuthMiddlew
  const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",cryptoKey,iv),body=Buffer.concat([cipher.update(secret,"utf8"),cipher.final()]);
  const encrypted=[iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),body.toString("base64url")].join(".");
  const result=await pool.query("UPDATE aurelink_webhook_endpoints SET secret_encrypted=$3,secret_prefix=$4,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING id,secret_prefix",[req.params.id,req.user!.userId,encrypted,secret.slice(0,13)]);
- if(!result.rowCount)return res.status(404).json({success:false,message:"Webhook endpoint not found."});
+ if(!result.rowCount){res.status(404).json({success:false,message:"Webhook endpoint not found."});return;}
  res.json({success:true,endpoint:result.rows[0],secret});
 });
 router.get("/aurelink/developer/webhooks/:id/deliveries",aurelinkAuthMiddleware,async(req,res)=>{
