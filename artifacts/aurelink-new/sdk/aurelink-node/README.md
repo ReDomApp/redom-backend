@@ -72,3 +72,21 @@ Requests throw `AurelinkError` with `status`, `code`, `requestId`, `retryAfter`,
 ## Plain HTTP is always supported
 
 The SDK is optional. Any HTTP client can call the same versioned endpoints using `Authorization: Bearer YOUR_AURELINK_API_KEY`.
+
+## Verify webhook deliveries
+
+Use the exact raw HTTP body, not a parsed and re-serialized JSON object. The verifier checks the HMAC-SHA256 signature and a five-minute timestamp tolerance.
+
+```js
+import { verifyWebhookSignature } from "@aurelink/node";
+
+const valid = verifyWebhookSignature({
+  payload: rawBody, // Buffer or string containing the exact bytes
+  signature: req.headers["aurelink-signature"],
+  timestamp: req.headers["aurelink-timestamp"],
+  secret: process.env.AURELINK_WEBHOOK_SECRET
+});
+if (!valid) return res.sendStatus(400);
+```
+
+The signed message is `timestamp + "." + rawBody`; the signature header uses the `v1=` prefix. Reject stale timestamps and process event IDs idempotently.
