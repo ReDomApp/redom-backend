@@ -25,7 +25,7 @@ export class Aurelink {
       create:(body,options)=>this.request("POST","/aurelink/rentals",{body,...options}),
       retrieve:(id)=>this.request("GET","/aurelink/rentals/"+encodeURIComponent(id)+"/status"),
       messages:(id)=>this.request("GET","/aurelink/rentals/"+encodeURIComponent(id)+"/messages"),
-      renew:(id,body={})=>this.request("POST","/aurelink/rentals/"+encodeURIComponent(id)+"/renew",{body}),
+      renew:(id,body={},options)=>this.request("POST","/aurelink/rentals/"+encodeURIComponent(id)+"/renew",{body,...options}),
       cancel:(id,body={})=>this.request("POST","/aurelink/rentals/"+encodeURIComponent(id)+"/cancel",{body})
     };
     this.nonVoip={
