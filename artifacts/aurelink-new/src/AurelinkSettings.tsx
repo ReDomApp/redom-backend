@@ -16,10 +16,10 @@ function settingsScreenFromPath(path:string):Screen {
  const key=path.split("/")[2];return (["account","security","support","legal"].includes(key)?key:"menu") as Screen;
 }
 function developerTabFromPath(path:string):"overview"|"keys"|"webhooks"|"logs"|"usage"|"docs" {
- const value=path.split("/")[2];if(value==="webhooks"&&path.split("/")[3])return "webhooks";return value==="quickstart"?"docs":(["keys","webhooks","logs","usage","docs"].includes(value)?value:"overview") as "overview"|"keys"|"webhooks"|"logs"|"usage"|"docs";
+ const value=path.split("/")[2];if(value==="webhooks"&&path.split("/")[3])return "webhooks";if(value==="api-keys")return "keys";return value==="quickstart"?"docs":(["keys","webhooks","logs","usage","docs"].includes(value)?value:"overview") as "overview"|"keys"|"webhooks"|"logs"|"usage"|"docs";
 }
 function settingsPath(screen:Screen,tab:"overview"|"keys"|"webhooks"|"logs"|"usage"|"docs") {
- if(screen==="menu")return "/settings";if(screen==="orders"||screen==="wallet")return "/"+screen;if(screen==="developer")return "/developers/"+(tab==="docs"?"quickstart":tab);return "/settings/"+screen;
+ if(screen==="menu")return "/settings";if(screen==="orders"||screen==="wallet")return "/"+screen;if(screen==="developer")return "/developers/"+(tab==="docs"?"quickstart":tab==="keys"?"api-keys":tab);return "/settings/"+screen;
 }
 export default function AurelinkSettings({onClose,onLogout,pathname="/settings",onNavigate}:{onClose:()=>void;onLogout:()=>void;pathname?:string;onNavigate?:(path:string)=>void}){
  const [screen,setScreen]=useState<Screen>(()=>settingsScreenFromPath(pathname)),[user,setUser]=useState<Obj>({}),[security,setSecurity]=useState<Obj>({}),[orders,setOrders]=useState<Obj[]>([]),[balance,setBalance]=useState("0.00"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
