@@ -5,7 +5,7 @@ Official Node.js SDK for the Aurelink public API. The SDK is optional; the same 
 ## Install
 
 \`\`\`bash
-npm install @aurelink/node
+npm install ./sdk/aurelink-node
 \`\`\`
 
 ## Create a client
@@ -32,7 +32,7 @@ const activation = await aurelink.activations.create({ quoteId: quote.quote?.id 
 const messages = await aurelink.activations.messages(activation.order?.id);
 \`\`\`
 
-The request helper forwards an optional Idempotency-Key header. Use a unique key for each intended purchase and reuse it only when retrying that same request.
+The request helper forwards an Idempotency-Key header. Live purchase endpoints require it. Use a unique key for each intended purchase and reuse it only when retrying that same request.
 
 ## Other resources
 
@@ -63,6 +63,10 @@ Aurelink signs timestamp + "." + rawBody with HMAC-SHA256 and sends Aurelink-Sig
 ## Errors
 
 AurelinkError includes status, code, requestId and details. Rate limit responses use HTTP 429 and include Retry-After. Do not automatically retry a purchase unless you reuse the same idempotency key.
+
+## Package publication
+
+The SDK source is maintained in this repository under `sdk/aurelink-node`. It is not yet published to the public npm registry; install it from a local repository checkout until the npm publisher account is configured.
 
 ## API base URL
 
