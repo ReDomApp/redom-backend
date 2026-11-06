@@ -59,12 +59,21 @@ r.post("/aurelink/security/2fa/verify-login",async(q,s)=>{
   if(x.device_id&&x.device_id!==q.body.deviceId){await client.query("ROLLBACK");return s.status(409).json({success:false,code:"AURELINK_2FA_DEVICE_MISMATCH",message:"This sign-in challenge belongs to a different browser or device. Restart sign-in on the original device."});}
   const sec=(await client.query("SELECT totp_secret_encrypted,totp_last_used_step FROM aurelink_account_security WHERE user_id=$1 FOR UPDATE",[x.user_id])).rows[0];
   if(!sec?.totp_secret_encrypted){await client.query("ROLLBACK");return s.status(409).json({success:false,code:"AURELINK_2FA_NOT_CONFIGURED",message:"Authenticator protection is not configured correctly. Password-only sign-in remains disabled. Contact Aurelink Support."});}
-  let step:number|null=null;
-  try{step=check(dec(sec.totp_secret_encrypted),String(q.body.code||""));}catch{step=null;}
+  let secret:string;
+  try{secret=dec(String(sec.totp_secret_encrypted));}
+  catch(error){
+   const reason=error instanceof Error?error.name:"SecretDecryptionError";
+   console.error("[Aurelink 2FA login] authenticator secret decryption failed",{challengeId:String(x.id),reason});
+   await client.query("ROLLBACK");
+   return s.status(500).json({success:false,code:"AURELINK_2FA_SECRET_UNAVAILABLE",message:"Aurelink could not read the authenticator setup for this account. Your password is valid, but sign-in is paused for account security. Contact Aurelink Support."});
+  }
+  const submittedCode=String(q.body.code||"").trim();
+  const step=check(secret,submittedCode);
   if(step===null){
    await client.query("UPDATE aurelink_totp_login_challenges SET attempts=attempts+1 WHERE id=$1",[x.id]);
    await client.query("COMMIT");
-   return s.status(400).json({success:false,code:"AURELINK_2FA_CODE_INVALID",message:"That authenticator code is invalid or expired. Wait for the next six-digit code and try again."});
+   console.warn("[Aurelink 2FA login] authenticator code rejected",{challengeId:String(x.id),reason:"totp_mismatch_or_invalid_format",codeLength:submittedCode.length});
+   return s.status(400).json({success:false,code:"AURELINK_2FA_CODE_INVALID",message:"That authenticator code did not match the active six-digit code. Check that your phone's date and time are set automatically, wait for a fresh code, and try again."});
   }
   if(sec.totp_last_used_step!==null&&sec.totp_last_used_step!==undefined&&step<=Number(sec.totp_last_used_step)){
    await client.query("COMMIT");
