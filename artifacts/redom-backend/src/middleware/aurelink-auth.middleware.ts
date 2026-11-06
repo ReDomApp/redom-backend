@@ -81,7 +81,7 @@ function testResponse(req:Request,res:Response):boolean{
 async function authenticateApiKey(secret:string,req:Request,res:Response,next:NextFunction):Promise<void>{
  if(!apiKeyAllowed(req)){res.status(403).json({success:false,message:"This API key cannot access this route."});return;}
  const digest=createHash("sha256").update(secret).digest();
- const found=await pool.query("SELECT k.id,k.user_id,k.key_hash,k.environment,k.scopes,k.rate_limit_per_minute,k.expires_at,u.account_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.key_prefix IN ($1,$2) AND k.revoked_at IS NULL LIMIT 1",[secret.slice(0,16),secret.slice(0,12)]);
+ const found=await pool.query("SELECT k.id,k.user_id,k.key_hash,k.environment,k.scopes,k.rate_limit_per_minute,k.expires_at,u.account_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.key_prefix IN ($1,$2) AND k.revoked_at IS NULL LIMIT 1",[secret.slice(0,20),secret.slice(0,12)]);
  const row=found.rows[0] as {id:string;user_id:string;key_hash:string;environment:string;scopes:unknown;rate_limit_per_minute:number;expires_at:Date|null;account_status:string}|undefined;
  const stored=row?.key_hash||"";if(!row||stored.length!==64||! /^[a-f0-9]{64}$/i.test(stored)||!timingSafeEqual(Buffer.from(stored,"hex"),digest)){res.status(401).json({success:false,message:"Invalid or revoked Aurelink API key."});return;}
  if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}
@@ -103,7 +103,7 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
   const inserted=await pool.query("INSERT INTO aurelink_api_idempotency(api_key_id,idempotency_key,request_hash) VALUES($1,$2,$3) ON CONFLICT(api_key_id,idempotency_key) DO NOTHING RETURNING idempotency_key",[row.id,supplied,requestHash]);
   if(!inserted.rowCount){
    const previous=(await pool.query("SELECT request_hash,state,response_status,response_body,expires_at FROM aurelink_api_idempotency WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,supplied])).rows[0];
-   if(!previous||new Date(previous.expires_at).getTime()<=Date.now()){await pool.query("DELETE FROM aurelink_api_idempotency WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,supplied]);}
+   if(!previous||new Date(previous.expires_at).getTime()<=Date.now()){await pool.query("DELETE FROM aurelink_api_idempotency WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,supplied]);const fresh=await pool.query("INSERT INTO aurelink_api_idempotency(api_key_id,idempotency_key,request_hash) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING idempotency_key",[row.id,supplied,requestHash]);if(!fresh.rowCount){res.status(409).json({success:false,code:"REQUEST_IN_PROGRESS",message:"This Idempotency-Key is being used by another request."});return;}}
    else if(previous.request_hash!==requestHash){res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request body."});return;}
    else if(previous.state==="completed"&&previous.response_body){res.setHeader("Idempotent-Replay","true");res.status(Number(previous.response_status)||200).json(previous.response_body);return;}
    else{res.status(409).json({success:false,code:"REQUEST_IN_PROGRESS",message:"A request with this Idempotency-Key is still processing. Retry shortly using the same key."});return;}
