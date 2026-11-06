@@ -16,7 +16,7 @@ function settingsScreenFromPath(path:string):Screen {
  const key=path.split("/")[2];return (["account","security","support","legal"].includes(key)?key:"menu") as Screen;
 }
 function developerTabFromPath(path:string):"overview"|"keys"|"webhooks"|"logs"|"usage"|"docs" {
- const value=path.split("/")[2];return value==="quickstart"?"docs":(["keys","webhooks","logs","usage","docs"].includes(value)?value:"overview") as "overview"|"keys"|"webhooks"|"logs"|"usage"|"docs";
+ const value=path.split("/")[2];if(value==="webhooks"&&path.split("/")[3])return "webhooks";return value==="quickstart"?"docs":(["keys","webhooks","logs","usage","docs"].includes(value)?value:"overview") as "overview"|"keys"|"webhooks"|"logs"|"usage"|"docs";
 }
 function settingsPath(screen:Screen,tab:"overview"|"keys"|"webhooks"|"logs"|"usage"|"docs") {
  if(screen==="menu")return "/settings";if(screen==="orders"||screen==="wallet")return "/"+screen;if(screen==="developer")return "/developers/"+(tab==="docs"?"quickstart":tab);return "/settings/"+screen;
