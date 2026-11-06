@@ -10,9 +10,19 @@ function secrets() {
 }
 
 function apiKeyAllowed(req: Request): boolean {
-  const path = req.path;
-  if (req.method === "GET") return /^\\/aurelink\\/(status|catalog\\/|nonvoip\\/|dedicated\\/countries|orders$|activations\\/[^/]+(?:\\/messages)?$|rentals\\/[^/]+\\/messages$|dedicated\\/orders\\/[^/]+\\/messages$)/.test(path);
-  if (req.method === "POST") return /^\\/aurelink\\/(quotes|checkout|activations|rentals|dedicated\\/quote|dedicated\\/orders)$/.test(path);
+  const parts = req.path.split("/").filter(Boolean);
+  if (parts[0] !== "aurelink") return false;
+  if (req.method === "GET") {
+    if ((parts[1] === "status" || parts[1] === "orders") && parts.length === 2) return true;
+    if ((parts[1] === "catalog" || parts[1] === "nonvoip") && parts.length >= 3) return true;
+    if (parts[1] === "dedicated" && parts[2] === "countries" && parts.length === 3) return true;
+    if ((parts[1] === "activations" || parts[1] === "rentals") && parts.length === 3) return true;
+    if ((parts[1] === "activations" || parts[1] === "rentals") && parts.length === 4 && parts[3] === "messages") return true;
+    if (parts[1] === "dedicated" && parts[2] === "orders" && parts.length === 5 && parts[4] === "messages") return true;
+  }
+  if (req.method === "POST") {
+    return ["/aurelink/quotes", "/aurelink/checkout", "/aurelink/activations", "/aurelink/rentals", "/aurelink/dedicated/quote", "/aurelink/dedicated/orders"].includes(req.path);
+  }
   return false;
 }
 
