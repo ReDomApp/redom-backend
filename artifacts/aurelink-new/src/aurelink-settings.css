@@ -193,3 +193,15 @@
 .as-processing-banner{max-width:1080px;margin:12px auto 0;padding:9px 13px;border:1px solid #d8e6f5;border-radius:7px;background:#f4f8fd;color:#41617f;font-size:12px}
 .as-shell[data-busy="true"] .as-panel button:disabled::after{content:"";display:inline-block;width:12px;height:12px;margin-left:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:as-spin .7s linear infinite;vertical-align:-2px}
 @media(max-width:760px){.as-mobile-menu{display:inline-grid;place-items:center;flex:0 0 36px}.as-sidebar{position:fixed;inset:0 auto 0 0;width:min(290px,84vw);height:100dvh;z-index:1002;transform:translateX(-105%);transition:transform .22s ease;overflow-y:auto;box-shadow:8px 0 30px rgba(16,35,56,.12)}.as-sidebar.as-open{transform:translateX(0)}.as-nav-backdrop{display:block;position:fixed;inset:0;z-index:1001;border:0;background:rgba(16,29,44,.38)}.as-main{width:100%;margin-left:0}.as-header{gap:9px;padding:12px 14px}.as-header>div:nth-child(2){flex:1;min-width:0}.as-header-mark{display:none}.as-processing-banner{margin:10px 12px 0}}
+.as-wallet-balance{display:flex;flex-direction:column;gap:5px;padding:18px 20px;background:#f5f9fe;border:1px solid #dfebf8;border-radius:9px;margin:16px 0 22px}
+.as-wallet-balance small{font-size:10px;letter-spacing:.08em;color:#71849a}
+.as-wallet-balance b{font-size:28px;letter-spacing:-.03em;color:#1b2d40}
+.as-wallet-balance span{font-size:11px;color:#7b8b9d}
+.as-ledger-wrap{overflow:auto;border:1px solid #e5ebf2;border-radius:8px;margin-top:12px}
+.as-ledger{width:100%;border-collapse:collapse;min-width:640px;font-size:12px}
+.as-ledger th{text-align:left;padding:11px 13px;background:#f6f8fb;color:#718197;font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.as-ledger td{padding:12px 13px;border-top:1px solid #edf1f5;color:#43566b;white-space:nowrap}
+.as-ledger td:first-child{white-space:normal;min-width:180px}
+.as-ledger td:first-child b,.as-ledger td:first-child small{display:block}
+.as-ledger td:first-child small{margin-top:4px;color:#8291a1;font-size:10px}
+.as-ledger .as-credit{color:#187449;font-weight:650}.as-ledger .as-debit{color:#a34c37;font-weight:650}
