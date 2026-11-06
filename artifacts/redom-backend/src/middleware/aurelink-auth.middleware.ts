@@ -99,7 +99,7 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
  res.setHeader("X-Aurelink-RateLimit-Limit",String(limit));res.setHeader("X-Aurelink-RateLimit-Remaining",String(Math.max(0,limit-used)));
  if(used>limit){res.setHeader("Retry-After","60");res.status(429).json({success:false,code:"RATE_LIMIT_EXCEEDED",message:"Aurelink API rate limit exceeded. Retry after 60 seconds."});return;}
  let idempotency:{key:string;hash:string}|null=null;
- if(key.environment==="live"&&req.method==="POST"&&["/aurelink/activations","/aurelink/rentals","/aurelink/nonvoip/orders","/aurelink/dedicated/orders","/aurelink/checkout"].includes(req.path)){
+ if(key.environment==="live"&&req.method==="POST"&&(["/aurelink/activations","/aurelink/rentals","/aurelink/nonvoip/orders","/aurelink/dedicated/orders","/aurelink/checkout"].includes(req.path)||p[1]==="rentals"&&p.length===4&&p[3]==="renew")){
   const supplied=String(req.headers["idempotency-key"]||"").trim();
   if(!supplied||supplied.length>128){res.status(400).json({success:false,code:"IDEMPOTENCY_KEY_REQUIRED",message:"Send a unique Idempotency-Key header for every purchase request."});return;}
   const requestHash=createHash("sha256").update(JSON.stringify(req.body??{})).digest("hex");
