@@ -58,6 +58,8 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="GET"&&path==="/aurelink/status")return ok({status:"operational",testMode:true});
  if(req.method==="GET"&&(path==="/aurelink/catalog/services"||path==="/aurelink/catalog/countries"||path==="/aurelink/catalog/suggested-countries"))return ok({services:[{id:"telegram",name:"Telegram"},{id:"google",name:"Google"},{id:"facebook",name:"Facebook"}],countries:[{code:"US",name:"United States",dialCode:"+1"},{code:"GB",name:"United Kingdom",dialCode:"+44"}]});
  if(req.method==="GET"&&path==="/aurelink/catalog/rentals")return ok({rentals:[],countries:[{code:"US",name:"United States"}],testMode:true});
+ if(req.method==="GET"&&p[1]==="catalog"&&p[2]==="rentals"&&p[4]==="services")return ok({services:[{id:"test-service",name:"Test verification",available:true}],testMode:true});
+ if(req.method==="GET"&&p[1]==="catalog"&&p[2]==="rentals"&&p[4]==="pricing")return ok({pricing:{amount:"0.00",currency:"USD"},testMode:true});
  if(req.method==="GET"&&path==="/aurelink/nonvoip/countries")return ok({countries:[{code:"US",name:"United States",dialCode:"+1"}]});
  if(req.method==="GET"&&path==="/aurelink/nonvoip/products")return ok({products:[{serviceId:"test-service",offerId:"test-offer",service:"Test verification",countryCode:"US",countryName:"United States",providerPrice:0,retailPriceUsd:"0.00",available:true,testMode:true}]});
  if(req.method==="GET"&&path==="/aurelink/dedicated/countries")return ok({countries:[{code:"US",name:"United States",dialCode:"+1"}]});
