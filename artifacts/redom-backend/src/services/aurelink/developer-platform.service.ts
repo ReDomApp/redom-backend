@@ -32,6 +32,8 @@ export async function ensureAurelinkDeveloperSchema():Promise<void>{
  await pool.query("ALTER TABLE aurelink_api_keys ALTER COLUMN key_prefix TYPE VARCHAR(32)");
  await pool.query("CREATE INDEX IF NOT EXISTS aurelink_api_keys_user_env_idx ON aurelink_api_keys(user_id,environment,created_at DESC)");
  await pool.query("ALTER TABLE aurelink_provider_orders ADD COLUMN IF NOT EXISTS webhook_expiring_sent_at TIMESTAMPTZ");
+ await pool.query("ALTER TABLE aurelink_provider_orders DROP CONSTRAINT IF EXISTS aurelink_provider_orders_product_kind_check");
+ await pool.query("ALTER TABLE aurelink_provider_orders ADD CONSTRAINT aurelink_provider_orders_product_kind_check CHECK (product_kind IN ('activation','rental','esim','carrier_lookup','dedicated'))");
  await pool.query("CREATE TABLE IF NOT EXISTS aurelink_api_request_logs(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,api_key_id UUID REFERENCES aurelink_api_keys(id) ON DELETE SET NULL,environment VARCHAR(8) NOT NULL DEFAULT 'live',method VARCHAR(10) NOT NULL,path VARCHAR(255) NOT NULL,status_code INTEGER NOT NULL,latency_ms INTEGER NOT NULL DEFAULT 0,request_id VARCHAR(100),ip_address VARCHAR(45),created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
  await pool.query("CREATE INDEX IF NOT EXISTS aurelink_api_request_logs_user_time_idx ON aurelink_api_request_logs(user_id,created_at DESC)");
  await pool.query("CREATE INDEX IF NOT EXISTS aurelink_api_request_logs_key_time_idx ON aurelink_api_request_logs(api_key_id,created_at DESC)");
