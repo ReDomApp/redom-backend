@@ -117,7 +117,7 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
  (req as any).aurelinkApiKey=key;
  req.user={userId:row.user_id,profileId:row.user_id,sessionId:"api-key:"+row.id};
  const originalJson=res.json.bind(res);
- res.json=(body:any)=>{if(key.environment==="test"){const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data);}if(idempotency){const saved=idempotency;void pool.query("UPDATE aurelink_api_idempotency SET state='completed',response_status=$3,response_body=$4::jsonb WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,saved.key,res.statusCode,JSON.stringify(body)]).then(()=>originalJson(body)).catch(()=>originalJson(body));return res;}return originalJson(body);};
+ res.json=(body:any)=>{if(key.environment==="test"){const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data,key.environment);}if(idempotency){const saved=idempotency;void pool.query("UPDATE aurelink_api_idempotency SET state='completed',response_status=$3,response_body=$4::jsonb WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,saved.key,res.statusCode,JSON.stringify(body)]).then(()=>originalJson(body)).catch(()=>originalJson(body));return res;}return originalJson(body);};
  if(key.environment==="test"){testResponse(req,res);return;}
  next();
 }
