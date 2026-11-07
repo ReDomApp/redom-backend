@@ -20,7 +20,7 @@
   "navbar": {
     "links": [
       {
-        "href": "mailto:support@mintlify.com",
+        "href": "mailto:support@wnncompany.com",
         "label": "Support"
       }
     ],
@@ -67,50 +67,10 @@
     },
     "pages": [
       {
-        "group": "Start here",
+        "group": "Getting Started",
         "pages": [
           "index",
           "quickstart"
-        ]
-      },
-      {
-        "group": "Company & portfolio",
-        "pages": [
-          "company/overview"
-        ]
-      },
-      {
-        "group": "ReDom platform",
-        "pages": [
-          "redom/overview"
-        ]
-      },
-      {
-        "group": "Aurelink",
-        "pages": [
-          "aurelink/overview"
-        ]
-      },
-      {
-        "group": "Communications infrastructure",
-        "pages": [
-          "redmail/overview",
-          "redom-sms/overview"
-        ]
-      },
-      {
-        "group": "AI & advanced systems",
-        "pages": [
-          "ai-systems/overview",
-          "fbi-security/overview"
-        ]
-      },
-      {
-        "group": "Engineering",
-        "pages": [
-          "engineering/system-architecture",
-          "engineering/data-and-security",
-          "engineering/repository-inventory"
         ]
       }
     ]
