@@ -1,0 +1,31 @@
+---
+title: "ReDom web screen reference"
+description: "Explore the ReDom web application's route shell, parity router, reusable components, visual assets, and implementation entry points."
+---
+
+The ReDom web client is a React and Vite application, separate from the Expo mobile app. Its main source includes a large application shell and a dedicated parity router.
+
+## Main implementation files
+
+| File | Purpose |
+| --- | --- |
+| `artifacts/redomweb/src/App.tsx` | Main application component and route-level composition |
+| `artifacts/redomweb/src/WebParityRouter.tsx` | Web parity route and screen mapping |
+| `artifacts/redomweb/src/webParity.tsx` | Web parity components and behavior |
+| `artifacts/redomweb/src/index.css` | Global web interface styling |
+| `artifacts/redomweb/src/creative-studio.css` | Creative Studio styling |
+| `artifacts/redomweb/src/login-reference.css` | Login reference styling |
+| `artifacts/redomweb/src/assets/` | Web application visual assets |
+
+## Source navigation
+
+<Columns cols={2}>
+  <Card title="Application shell" href="https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redomweb/src/App.tsx" icon="layout">Open the primary web application component.</Card>
+  <Card title="Parity router" href="https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redomweb/src/WebParityRouter.tsx" icon="route">Inspect the web parity router.</Card>
+  <Card title="Component directory" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redomweb/src/components" icon="component">Browse reusable UI components.</Card>
+  <Card title="Static assets" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redomweb/public" icon="images">Inspect public logos and UI assets.</Card>
+</Columns>
+
+## Screen verification standard
+
+For each web screen, capture the rendered state at a known viewport and commit, then document the route, loading state, empty state, error state, and primary interaction. A component name or route registration alone does not prove the screen renders correctly.
