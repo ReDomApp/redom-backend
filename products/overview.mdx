@@ -1,0 +1,40 @@
+---
+title: "ReDom products and services"
+description: "A repository-grounded map of ReDom client applications, backend services, AI workers, communications infrastructure, and shared workspaces."
+---
+
+The ReDom monorepo contains multiple independently structured applications and services. The workspace map below groups the tracked artifact directories by their apparent role; verify runtime relationships in each service's entry point and deployment configuration.
+
+## Client applications
+
+<Columns cols={2}>
+  <Card title="ReDom mobile" icon="smartphone" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-frontend">Expo and React Native client. Screen implementations are under `src/screens/`.</Card>
+  <Card title="ReDom web" icon="monitor" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redomweb">React and Vite web client. The primary UI entry points include `src/App.tsx` and `src/WebParityRouter.tsx`.</Card>
+  <Card title="Aurelink public" icon="globe" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/aurelink-public">Public customer-facing application assets and entry point.</Card>
+  <Card title="Aurelink admin" icon="shield" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/aurelink-admin">Administration frontend with a Vite application entry point.</Card>
+</Columns>
+
+## Backend and product services
+
+| Workspace | Source location | What to inspect |
+| --- | --- | --- |
+| API server | `artifacts/api-server/` | Express app, health route, route registration |
+| ReDom backend | `artifacts/redom-backend/` | Main routes, services, middleware, database access, migrations |
+| Aurelink | `artifacts/aurelink/` | Contract tests and product-specific behavior references |
+| FBI Security | `artifacts/fbi-security/` | Architecture, implementation notes, ingestion and report schemas |
+
+## Communications and AI services
+
+| Workspace | Source location | Source evidence |
+| --- | --- | --- |
+| ReDom Mail | `artifacts/redom-mail/` | SMTP, DKIM, inbound and delivery modules |
+| ReDom SMS | `artifacts/redom-sms/` | API documentation, encoding, SMSC adapter modules |
+| ReDom Intelligence | `artifacts/redom-intelligence/` | Inference, model registry, security and server modules |
+| Image worker | `artifacts/redom-image-worker/` | Worker README, Dockerfile and Python application |
+| Video worker | `artifacts/redom-video-worker/` | Worker README, model architecture and Python application |
+
+## Other workspaces
+
+`redom-about`, `redom-help`, and `redom-docs` contain public information, help-center, and documentation application assets. Shared packages are under `lib/`; automation and repository utilities are under `scripts/`.
+
+<Warning>Workspace membership describes tracked source organization. It does not certify production deployment, uptime, external provider connectivity, or feature completeness.</Warning>
