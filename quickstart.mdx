@@ -1,0 +1,42 @@
+---
+title: "Navigate the ReDom codebase"
+description: "Find the right ReDom application, locate its source implementation, trace API handlers, and inspect schema and migration files."
+---
+
+Use this guide to move from a product feature to the source files that implement it. The repository is a pnpm monorepo, so product applications, backend services, workers, shared libraries, and scripts live in separate workspaces.
+
+## Locate a product
+
+<Steps>
+  <Step title="Identify the product area">
+    Start with [Products and services](/products/overview) to find the relevant workspace under `artifacts/`.
+  </Step>
+  <Step title="Find the implementation">
+    Use the [source map](/developer/source-map) to locate route modules, screen components, service logic, and package entry points.
+  </Step>
+  <Step title="Trace an API handler">
+    Search the [API route inventory](/developer/api-reference), then open the linked TypeScript source at the exact line.
+  </Step>
+  <Step title="Trace persisted data">
+    Use the [database reference](/developer/data-models) to find schema declarations and the backend's Drizzle migration directory.
+  </Step>
+</Steps>
+
+## Workspace commands
+
+The root package declares these scripts:
+
+```bash
+pnpm install
+pnpm run typecheck
+pnpm run build
+```
+
+Run a product-specific script from its workspace after checking that workspace's `package.json`. Do not assume a command exists because another product uses it.
+
+## Source and deployment safety
+
+- Treat source code as the implementation authority, not a product description or old planning note.
+- Never copy secret values, private keys, credentials, or customer data into documentation.
+- A source file existing in Git does not prove its service is deployed or enabled in production.
+- Do not apply database migrations or change production infrastructure as part of documentation work.
