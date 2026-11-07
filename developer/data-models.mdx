@@ -1,0 +1,25 @@
+---
+title: "ReDom database and schema reference"
+description: "Locate the ReDom Drizzle table declarations, inspect schema ownership, and trace database changes through the migration directory."
+---
+
+The repository catalog currently detects 94 Drizzle table declarations in the main ReDom backend database modules and one additional declaration in the wider workspace. The schema modules are under `artifacts/redom-backend/src/database/`; SQL migration files are under `artifacts/redom-backend/drizzle/`.
+
+## Schema domains
+
+| Domain | Example declarations |
+| --- | --- |
+| Account and security | `account_actions`, `account_security`, `active_sessions`, `login_history` |
+| Social graph | `followers`, `following`, `friends`, `friend_requests`, `blocked_users` |
+| Messaging and calls | `conversations`, `conversation_participants`, `message_attachments`, `calls` |
+| Marketplace | `marketplace_categories`, `marketplace_listings`, `marketplace_transactions`, `marketplace_reviews` |
+| Events and feed | `events`, `event_settings`, `event_responses`, `feed_preferences` |
+
+## Source directories
+
+<Columns cols={2}>
+  <Card title="Database modules" icon="database" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-backend/src/database">Browse Drizzle table declarations and relations.</Card>
+  <Card title="SQL migrations" icon="file-code" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-backend/drizzle">Browse the migration sequence.</Card>
+</Columns>
+
+<Note>This reference is derived from repository source, not a live query of the production database. A migration file in Git does not prove that it has been applied. Column details, indexes, foreign keys, defaults, and migration status should be confirmed from the corresponding schema and SQL.</Note>
