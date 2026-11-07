@@ -1,0 +1,42 @@
+---
+title: "ReDom engineering documentation"
+description: "Explore ReDom product behavior, screen references, source-linked APIs, database models, architecture, and engineering operations across the monorepo."
+---
+
+ReDom engineering documentation brings the product, interface, backend, data model, and operational references together in one place. Use the navigation to move from product-level understanding into the implementation details and source files.
+
+<Note>Source of truth: `ReDomApp/redom-backend`, branch `main`. Documentation distinguishes source-detected facts from behavior that still requires deeper implementation verification.</Note>
+
+## Explore the platform
+
+<Columns cols={2}>
+  <Card title="Product map" icon="layers" href="/products/overview">Explore the applications, backend services, workers, and shared packages in the monorepo.</Card>
+  <Card title="Visual design reference" icon="palette" href="/visual/design-system">Review ReDom brand tokens, layout conventions, and UI reference patterns.</Card>
+  <Card title="Mobile screen library" icon="smartphone" href="/screens/mobile">Browse the mobile screen inventory and open each implementation directly.</Card>
+  <Card title="Web screen library" icon="monitor" href="/screens/web">Review the web application structure and implementation entry points.</Card>
+  <Card title="API reference" icon="braces" href="/developer/api-reference">Search the route inventory and follow each handler to its source.</Card>
+  <Card title="Database reference" icon="database" href="/developer/data-models">Explore detected Drizzle table declarations and migration locations.</Card>
+</Columns>
+
+## Repository coverage snapshot
+
+The generated repository catalog currently reports:
+
+| Indexed area | Current count |
+| --- | ---: |
+| Repository files | 1,105 |
+| Source files | 781 |
+| Route declarations | 446 |
+| Screen and page source files | 130 |
+| Drizzle table declarations | 95 |
+| Product and service directories | 15 |
+
+<Info>Counts are generated from the repository catalog and can change with source updates. A detected route declaration is not, by itself, a complete public API contract. A screen filename is not a screenshot or proof of production availability.</Info>
+
+## Engineering reference
+
+<Cards>
+  <Card title="System architecture" icon="workflow" href="/engineering/architecture">Understand the application and service boundaries.</Card>
+  <Card title="Source explorer" icon="folder-tree" href="/developer/source-map">Navigate the monorepo by implementation area.</Card>
+  <Card title="Documentation automation" icon="refresh-cw" href="/engineering/automation">See how the source catalog is regenerated on changes to main.</Card>
+</Cards>
