@@ -1,0 +1,60 @@
+---
+title: "ReDom monorepo source map"
+description: "Navigate the ReDom pnpm monorepo by product workspace, backend routes, screen components, shared libraries, scripts, and migrations."
+---
+
+Use this map to find the implementation layer responsible for a feature. The root workspace contains product applications under `artifacts/`, shared packages under `lib/`, and repository utilities under `scripts/`.
+
+<Tree>
+  <Tree.Folder name="artifacts" defaultOpen>
+    <Tree.Folder name="redom-backend">
+      <Tree.Folder name="src">
+        <Tree.Folder name="routes" />
+        <Tree.Folder name="services" />
+        <Tree.Folder name="middleware" />
+        <Tree.Folder name="database" />
+      </Tree.Folder>
+      <Tree.Folder name="drizzle" />
+    </Tree.Folder>
+    <Tree.Folder name="redom-frontend">
+      <Tree.Folder name="src">
+        <Tree.Folder name="screens" />
+        <Tree.Folder name="components" />
+        <Tree.Folder name="assets" />
+      </Tree.Folder>
+    </Tree.Folder>
+    <Tree.Folder name="redomweb">
+      <Tree.Folder name="src">
+        <Tree.Folder name="components" />
+        <Tree.Folder name="assets" />
+      </Tree.Folder>
+    </Tree.Folder>
+    <Tree.Folder name="aurelink" />
+    <Tree.Folder name="redom-mail" />
+    <Tree.Folder name="redom-sms" />
+    <Tree.Folder name="redom-intelligence" />
+    <Tree.Folder name="redom-image-worker" />
+    <Tree.Folder name="redom-video-worker" />
+    <Tree.Folder name="fbi-security" />
+    <Tree.Folder name="redom-docs" />
+  </Tree.Folder>
+  <Tree.Folder name="lib">
+    <Tree.Folder name="db">
+      <Tree.Folder name="src">
+        <Tree.Folder name="schema" />
+      </Tree.Folder>
+    </Tree.Folder>
+    <Tree.Folder name="api-client-react" />
+    <Tree.Folder name="api-spec" />
+    <Tree.Folder name="api-zod" />
+  </Tree.Folder>
+  <Tree.Folder name="scripts" />
+</Tree>
+
+## Useful entry points
+
+- [Backend routes](https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-backend/src/routes)
+- [Backend services](https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-backend/src/services)
+- [Mobile screens](https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-frontend/src/screens)
+- [Web parity router](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redomweb/src/WebParityRouter.tsx)
+- [Shared database package](https://github.com/ReDomApp/redom-backend/tree/main/lib/db)
