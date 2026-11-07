@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="900" height="260" viewBox="0 0 900 260">
+  <defs>
+    <linearGradient id="aurevonBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#58B9FF"/>
+      <stop offset="48%" stop-color="#1877F2"/>
+      <stop offset="100%" stop-color="#103EAD"/>
+    </linearGradient>
+    <linearGradient id="aurevonSilver" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#91A5BF"/>
+      <stop offset="100%" stop-color="#DCE7F5"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(30 20)">
+    <path d="M100 12 L188 174 H151 L100 79 L49 174 H12 Z"
+          fill="url(#aurevonBlue)"/>
+    <path d="M75 126 H125 L143 160 H57 Z"
+          fill="#FFFFFF" opacity="0.96"/>
+    <path d="M100 12 L124 57 L100 45 L76 57 Z"
+          fill="#65C3FF"/>
+    <path d="M124 57 L153 111 H132 L100 79 Z"
+          fill="#103EAD" opacity="0.9"/>
+    <circle cx="188" cy="174" r="8" fill="#58B9FF"/>
+  </g>
+  <g>
+    <text x="260" y="132" font-family="Arial, Helvetica, sans-serif"
+          font-size="76" font-weight="700" letter-spacing="5"
+          fill="#14243B">AUREVON</text>
+    <path d="M264 153 H710" stroke="url(#aurevonSilver)" stroke-width="2"/>
+    <text x="265" y="187" font-family="Arial, Helvetica, sans-serif"
+          font-size="21" font-weight="500" letter-spacing="9"
+          fill="#526A85">GROUP, INC.</text>
+  </g>
+</svg>
