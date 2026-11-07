@@ -1,0 +1,28 @@
+---
+title: "ReDom mobile screen reference"
+description: "Browse the detected React Native screen inventory, inspect source locations, and trace mobile flows back to their implementation."
+---
+
+The mobile client is an Expo and React Native application. Its screen components are located under `artifacts/redom-frontend/src/screens/`; the repository catalog currently detects 129 screen and page files in that workspace.
+
+## Screen groups
+
+| Area | Example source files |
+| --- | --- |
+| Authentication and account | `FindAccountScreen.tsx`, `DeviceVerificationScreen.tsx` |
+| Messaging and calls | `ChatScreen.tsx`, `CallScreen.tsx`, `CallLinkJoinScreen.tsx` |
+| Groups and social | `CreateGroupScreen.tsx`, `GroupInfoScreen.tsx`, `FriendsScreen.tsx` |
+| Payments and Stars | `AddPaymentMethodScreen.tsx`, `AddCardScreen.tsx`, `BuyStarsScreen.tsx` |
+| Marketplace | `CartScreen.tsx` |
+| Profile and settings | `EditProfileScreen.tsx`, `EditBioScreen.tsx`, `DarkModeScreen.tsx` |
+
+## Inspect implementations
+
+<Columns cols={2}>
+  <Card title="Mobile screens directory" icon="folder" href="https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-frontend/src/screens">Browse all screen components.</Card>
+  <Card title="Mobile app entry" icon="code" href="https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-frontend/src/App.tsx">Trace app navigation and initialization.</Card>
+  <Card title="App configuration" icon="settings" href="https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-frontend/app.json">Inspect Expo application configuration.</Card>
+  <Card title="API client" icon="plug" href="https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-frontend/src/api/client.ts">Trace mobile API calls.</Card>
+</Columns>
+
+<Note>The screen list is generated from source filenames. It is not a verified screenshot gallery. A screen should be marked visually verified only after capturing it from the running app and recording its build or commit.</Note>
