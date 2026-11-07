@@ -1,0 +1,71 @@
+---
+title: "ReDom Mail delivery infrastructure"
+sidebarTitle: "Mail overview"
+description: "Review ReDom Mail's outbound and inbound email architecture, API, SMTP worker, signing, delivery queue, webhooks, and production prerequisites."
+---
+
+ReDom Mail is documented in the master repository as a first-party transactional email system. Its design separates an HTTPS API from an SMTP worker that delivers mail directly to recipient mail exchangers.
+
+## Source location and boundary
+
+The implementation is in `artifacts/redom-mail`. It is an independent service artifact, not merely an email provider wrapper inside the ReDom API.
+
+The README describes two runtime roles:
+
+1. **API:** authenticated HTTPS submission and message management.
+2. **SMTP worker:** outbound SMTP delivery to recipient MX hosts, with STARTTLS when offered.
+
+The README states that the mail service does not call Resend, SendGrid, Mailgun, SES, or another email API for direct delivery. Resend may still be used elsewhere in the wider ReDom backend for other transactional workflows; do not conflate those integrations.
+
+## Delivery lifecycle
+
+The documented outbound flow is:
+
+1. Accept an authenticated email request.
+2. Persist the message in PostgreSQL.
+3. Return a queued message identifier only after persistence.
+4. Let the worker claim and deliver queued messages.
+5. Sign outbound mail with DKIM RSA-SHA256.
+6. Record delivery lifecycle state.
+7. Retry transient failures with backoff.
+
+The README also documents idempotency, scheduled delivery, batches, attachments, and lifecycle events.
+
+## API capabilities documented in the service README
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/v1/emails` | Submit an email |
+| POST | `/v1/emails/batch` | Submit a batch, documented up to 100 messages |
+| GET | `/v1/emails` | List sent messages |
+| GET | `/v1/emails/:id` | Retrieve a message |
+| GET | `/v1/received` | List received mail |
+| GET | `/v1/received/:id` | Retrieve received mail |
+| GET | `/v1/emails/:id/attachments` | Retrieve message attachments |
+| GET | `/v1/attachments/:id` | Retrieve an attachment |
+| Webhook endpoints | Create, list, disable | Manage event delivery endpoints |
+
+The README documents bearer authentication for the send API and HMAC-signed webhook payloads. Consult the service's current route and schema implementation for exact request and response types.
+
+## Inbound mail
+
+Inbound SMTP is not enabled merely by deploying the API. The README lists external prerequisites including a reachable SMTP host, stable public IP, reverse DNS/PTR, MX configuration, firewall access, and an enabled inbound SMTP worker.
+
+Do not describe inbound receiving as production-ready until those network and DNS requirements have been verified from outside the deployment environment.
+
+## Domain and sender identity
+
+The repository README contains historical configuration examples using `wnncompany.com`. Treat that as a source snapshot, not proof of the currently approved company domain or live DNS configuration. Confirm the current domain, sender verification, SPF, DKIM, DMARC, and MX records before writing operational instructions for a live environment.
+
+## Security requirements
+
+- Never commit API keys or DKIM private keys.
+- Do not accept arbitrary From domains.
+- Do not expose the SMTP worker as an unauthenticated submission server.
+- Keep secrets in deployment secret storage.
+- Implement bounce, complaint, and suppression handling before promotional traffic.
+- Do not use the service for unsolicited bulk email.
+
+## Readiness distinction
+
+A successful build or typecheck proves code-level checks only. It does not prove external delivery or inbound mail reception. Those require live network, DNS, reverse-DNS, firewall, key, and recipient-MX validation.

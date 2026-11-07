@@ -1,0 +1,40 @@
+---
+title: "FBI Security public-notice reporting feature"
+sidebarTitle: "Public reporting"
+description: "Document the ReDom-integrated public-notice research feature, official-source corroboration, analyst review, evidence handling, and operational safeguards."
+---
+
+FBI Security reporting is documented as a feature of the existing ReDom backend, not a separate application or standalone Render service. Its purpose is to organize public notices, source corroboration, evidence-linked draft reports, and analyst review.
+
+## Runtime and data boundary
+
+The feature README identifies:
+
+- Runtime: `artifacts/redom-backend`.
+- Route modules: `src/routes/fbi-security*.routes.ts`.
+- Service logic: `src/services/fbi-security/`.
+- Persistence: the existing backend PostgreSQL connection.
+- Canonical API prefix: `/redom-backend/fbi-security`.
+
+The repository contains a feature specification, source allowlist, report guidance, schemas, tests, and acceptance criteria under `artifacts/fbi-security`.
+
+## Documented capabilities
+
+The README lists public notice and case search, record details, source registry, source corroboration, analyst assessments, evidence-linked report drafts, candidate correlations, authorized manual imports, review status, analyst notes, and audit history.
+
+Administrative operations require the feature's configured server-side authorization. Tip intake is described as encrypted staging with audited access. Do not expose administrative routes or secrets in customer-facing documentation.
+
+## Evidence and review safeguards
+
+- Research is limited to public records and explicitly allowlisted HTTPS sources.
+- Retrieved metadata is evidence for review, not proof of an allegation.
+- Corroboration must be linked to the exact case and identifiers.
+- Same-name-only matches remain unresolved.
+- Allegations must remain distinct from findings or convictions.
+- Reward amounts and conditions must be checked separately from penalties, restitution, or damages.
+- Human review is required before official submission.
+- The system is not an official government system and must not imply government affiliation.
+
+## Status caveat
+
+The feature README and architecture correction distinguish implemented API capabilities from unfinished automatic official-feed polling and external provider/runtime requirements. Check the current route implementation, feature tests, and deployment before claiming that ingestion or research automation is operational.

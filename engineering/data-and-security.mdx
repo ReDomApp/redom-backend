@@ -1,0 +1,47 @@
+---
+title: "Data architecture and security principles"
+sidebarTitle: "Data and security"
+description: "Summarize the backend's PostgreSQL and Drizzle data layer, migration discipline, authentication boundaries, payment verification, and secret-handling standards."
+---
+
+The ReDom backend uses PostgreSQL with Drizzle ORM and versioned SQL migrations. This page records the high-level data and security principles visible in the master repository and engineering handbook.
+
+## Data layer
+
+The primary schema and database modules are under `artifacts/redom-backend/src/database`. The migration history is under `artifacts/redom-backend/drizzle`, with SQL migration files and Drizzle metadata.
+
+The source tree includes domain-specific data modules for accounts, sessions, login history, recognized devices, profiles, privacy, feed, posts, messaging, calls, events, marketplace, payments, refunds, Stars, AI media, and support.
+
+Schema files and migrations are the authoritative references for exact table names, column types, constraints, indexes, and relationships. This overview intentionally does not reproduce every schema detail.
+
+## Migration discipline
+
+- Preserve the committed pnpm lockfile.
+- Use the repository's Drizzle migration workflow for schema changes.
+- Review the migration journal and current schema before preparing a migration.
+- Do not assume an empty or reachable database is healthy.
+- Do not run migrations against production as part of documentation work.
+- Keep schema documentation aligned with the current migration and source definitions.
+
+## Security boundaries
+
+The engineering handbook identifies these as core requirements:
+
+- Authentication and authorization must be enforced server-side.
+- Verify resource ownership before returning or mutating account data.
+- Validate sessions and recognized-device state where required.
+- Keep two-factor recovery material protected.
+- Apply request validation and rate limits.
+- Verify payment provider events and payment state server-side.
+- Use idempotency and atomic transactions for payment-sensitive fulfillment.
+- Protect encrypted messaging media and conversation cryptography.
+- Minimize stored and logged sensitive data.
+- Never commit or publish API keys, private keys, tokens, passwords, payment card numbers, or CVV.
+
+## Payments and authoritative state
+
+Payment-sensitive operations must use authoritative backend/provider verification. A redirect, client callback, or UI animation is not proof of payment success. The backend must validate the relevant provider transaction, account, amount, currency, purpose, and fulfillment conditions before marking a purchase complete.
+
+## Documentation handling
+
+Technical documentation should describe interfaces and safeguards without exposing operational secrets. Environment variable names may be documented only when needed for internal configuration guidance; their values must never be copied from example files, deployment logs, or source configuration into public pages.

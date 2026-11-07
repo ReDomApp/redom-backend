@@ -1,0 +1,47 @@
+---
+title: "How this engineering documentation is maintained"
+description: "Learn how to navigate the AUREVON knowledge base and how source changes are translated into reviewed, accurate documentation."
+---
+
+This guide explains how engineers and reviewers should use the AUREVON knowledge base, verify implementation claims, and keep product documentation aligned with the master repository.
+
+## Start with the product
+
+Choose the product or system you are investigating from the navigation. Use the portfolio overview to understand which systems share the ReDom backend and which have independent service boundaries.
+
+## Verify before relying on a detail
+
+Use current `ReDomApp/redom-backend/main` source as the implementation reference. For specific claims:
+
+- Read route registration and route modules for HTTP interfaces.
+- Read services for business behavior and provider interactions.
+- Read schema definitions and migrations for persistence.
+- Read tests for verified behavior and edge cases.
+- Read deployment manifests for intended deployment configuration.
+- Check live provider or deployment state before claiming operational readiness.
+
+## Feature status vocabulary
+
+| Status | Meaning |
+| --- | --- |
+| Implemented in source | Behavior or interface is present in the current source branch |
+| Configured | Required runtime configuration is documented or present, but live operation may still need verification |
+| Planned | Source explicitly describes a future capability |
+| Incomplete | The source identifies missing implementation or an unfinished integration |
+| Unverified | Available evidence does not establish current runtime behavior |
+
+## Documentation change process
+
+1. Identify the changed product area in the master repository.
+2. Inspect the relevant code, tests, schema, and existing documentation.
+3. Update only the affected documentation pages in this repository.
+4. Preserve source links and clearly identify assumptions or gaps.
+5. Review the generated diff before it is published.
+
+## Security rules
+
+Never copy secrets, API credentials, private keys, customer personal information, payment card data, live OTPs, or sensitive environment values into public documentation. Do not execute migrations, deploy services, or change production configuration while documenting the repository.
+
+## Current automation boundary
+
+The initial documentation set is being authored from repository source. Automatic change-triggered documentation workflows have not been enabled in the current Mintlify Hobby deployment. Until that capability is configured, source changes need a separate documentation review and update.

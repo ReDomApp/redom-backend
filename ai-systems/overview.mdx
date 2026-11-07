@@ -1,0 +1,52 @@
+---
+title: "ReDom AI and media generation systems"
+sidebarTitle: "AI and media"
+description: "Map ReDom's image, video, Movie Studio, and Intelligence systems, including worker boundaries, runtime foundations, current limits, and planned capabilities."
+---
+
+The master repository contains several distinct AI and media systems. They have different runtime boundaries and should not be described as one model or one deployed service.
+
+## ReDom-1.6RD Image
+
+The image-generation and editing subsystem is exposed through the ReDom backend. Its documented runtime path is:
+
+`ReDom client → authenticated ReDom API → image-engine service → private GPU worker → object storage → generation metadata`
+
+The worker artifact is `artifacts/redom-image-worker`; backend orchestration, quota, and security logic live under `artifacts/redom-backend/src/services`.
+
+The source documentation describes text-to-image, image-to-image editing, masked inpainting, reference-image conditioning, multiple outputs, seeded generation, negative prompts, aspect-ratio controls, and PNG/JPEG/WebP outputs.
+
+The documented worker foundation uses Hugging Face Diffusers with a configurable SDXL checkpoint. The README explicitly identifies limitations relative to newer commercial image systems, including high-fidelity text rendering, native 4K quality, outpainting, ControlNet, and a ReDom-trained foundation checkpoint. These are not to be presented as completed capabilities.
+
+## ReDom-v2.8 Video
+
+The video worker is located at `artifacts/redom-video-worker`. Its README describes a private generation runtime using a locally mounted checkpoint and a ReDom-controlled job/worker pipeline.
+
+The documented runtime foundation is Wan2.2 TI2V-5B. The README describes text-to-video and image-conditioned generation, scene segmentation for continuity, post-processing, and a maximum output duration of 59 seconds. A provisioned checkpoint, GPU capacity, queue, object storage, and worker authentication are runtime prerequisites.
+
+## Movie Studio and Cartoon
+
+The backend contains Movie Studio services, data models, and migrations. Its documented role is to plan and direct a production workflow, including project structure, script/story development, shot planning, continuity, and rendering orchestration.
+
+Cartoon is described in the worker documentation as a format mode within the ReDom video runtime, while Movie Studio is the showrunner/director layer. These are related but distinct responsibilities.
+
+## ReDom Intelligence Core
+
+The independent service artifact is `artifacts/redom-intelligence`. Its README defines three public model identities:
+
+- AUREX 1.8 for general-purpose knowledge, writing, analysis, and research.
+- REX 6.8 for coding and software engineering.
+- AUREX Apex for advanced reasoning and multi-step analysis.
+
+These are product routing identities, not proof that ReDom trained foundation models from scratch. Each identity requires a real configured inference endpoint and model weights. The README says unconfigured routes are not advertised.
+
+The service documents OpenAI-compatible model and chat-completion endpoints, optional bounded web research, health checks, service authentication, and request/concurrency limits. It is independent of the existing ReDom backend and does not modify its providers, routes, database, or frontend.
+
+## Security and status discipline
+
+- Keep GPU workers private behind authenticated backend-to-worker requests.
+- Apply backend authorization, quotas, input validation, and output security checks.
+- Store generation metadata separately from large image/video objects.
+- Do not claim a model capability is active solely because it appears in a design specification.
+- Distinguish a configured inference endpoint from a product name or planned model.
+- Validate checkpoint availability, GPU provisioning, queue connectivity, storage, and worker health before describing a generation service as production-ready.

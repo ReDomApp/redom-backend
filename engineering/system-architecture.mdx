@@ -1,0 +1,87 @@
+---
+title: "Master repository and system architecture"
+sidebarTitle: "System architecture"
+description: "Map the pnpm monorepo, backend application, product artifacts, shared libraries, persistence layer, and independently deployed services."
+---
+
+The AUREVON engineering workspace is maintained in the `ReDomApp/redom-backend` repository. Despite its repository name, it is a multi-product monorepo: ReDom is the central backend application, while other product artifacts and workers can have separate runtime boundaries.
+
+## Workspace structure
+
+The root pnpm workspace includes:
+
+- `artifacts/*`: product applications, backend services, workers, and standalone systems.
+- `lib/*`: shared packages, including API clients, API specifications, validation schemas, and database libraries.
+- `scripts`: workspace tooling.
+
+The root build runs type checking and then invokes package build scripts where present. The repository uses pnpm and a committed `pnpm-lock.yaml`.
+
+## Core ReDom backend
+
+The primary application is located at `artifacts/redom-backend`. Its package is a private TypeScript ESM application built on Express 5.
+
+The source is organized around:
+
+- `src/routes`: HTTP route modules and route registration.
+- `src/controllers`: request/controller logic.
+- `src/services`: domain behavior and integrations.
+- `src/database`: PostgreSQL access and Drizzle schema modules.
+- `src/middleware`: authentication, authorization, rate limiting, and request controls.
+- `src/lib`: shared provider and infrastructure clients.
+- `drizzle`: versioned SQL migrations and migration metadata.
+
+The root README describes PostgreSQL with Drizzle ORM and a domain-oriented API rather than a single large controller.
+
+## Shared data and service boundaries
+
+The ReDom backend contains the shared application database layer. Some product systems are integrated into this application, while others are deliberately independent.
+
+| System | Runtime boundary documented in source |
+|---|---|
+| Aurelink | Routes and services mounted inside the ReDom backend |
+| FBI Security reporting | Feature routes and workers inside the ReDom backend |
+| ReDom image worker | Separate private GPU worker called through ReDom backend |
+| ReDom video worker | Separate private GPU worker called through ReDom backend |
+| ReDom Intelligence | Independent backend-only inference service |
+| ReDom Mail | Independent mail API and SMTP worker |
+| ReDom SMS | Independent SMS API, queue worker, and SMPP transport |
+
+Do not describe all these systems as one deployed process. The source explicitly separates several of them.
+
+## Client applications
+
+The repository contains separate ReDom client applications:
+
+- `artifacts/redom-frontend`: mobile application workspace.
+- `artifacts/redomweb`: web application workspace.
+
+The engineering handbook describes the mobile app as Expo/React Native and the web app as a separate TypeScript, React, and Vite implementation. The web app is not intended to be an Expo or React Native wrapper.
+
+## Persistence and infrastructure
+
+The repository source documents PostgreSQL and Drizzle for the ReDom backend. The engineering handbook identifies Neon as the production PostgreSQL platform and Render as the production application platform. Replit is identified as a development workspace.
+
+These are repository-documented architecture choices. This page does not claim that a specific deployment or database is currently healthy or reachable.
+
+## Build and verification commands
+
+Run commands from the repository root:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run typecheck
+pnpm run build
+```
+
+The ReDom backend package also defines:
+
+```bash
+pnpm --filter @workspace/redom-backend typecheck
+pnpm --filter @workspace/redom-backend build
+```
+
+The package defines focused tests for Aurelink pricing/renewal and FBI Security profile parsing. Consult the package scripts on the current branch before relying on test names or availability.
+
+## Change discipline
+
+Read the current route registration, service, schema, and tests before describing a behavior as implemented. Preserve the separation between source inspection, documentation edits, and production operations.
