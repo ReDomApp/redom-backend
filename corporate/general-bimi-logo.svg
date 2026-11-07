@@ -1,91 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 512 512" preserveAspectRatio="xMidYMid meet" xml:space="preserve"><title>Aurevon Group subsidiarys email</title>
 
-<svg xmlns="http://www.w3.org/2000/svg"
-     version="1.2"
-     baseProfile="tiny-ps"
-     viewBox="0 0 512 512">
+  
 
-  <title>AUREVON GROUP - Corporate Master Brand</title>
+  
+  <rect x="8" y="8" width="496" height="496" rx="92" fill="#10243D"/>
 
-  <!-- Corporate background -->
-  <rect x="8" y="8" width="496" height="496"
-        rx="92" fill="#10243D"/>
+  
+  <path d="M256 48 L390 285 H334 L256 148            L178 285 H122 Z" fill="#1877F2"/>
 
-  <!-- AUREVON master monogram -->
-  <path d="M256 48 L390 285 H334 L256 148
-           L178 285 H122 Z"
-        fill="#1877F2"/>
+  
+  <path d="M256 48 L292 111 L256 91 L220 111 Z" fill="#58B9FF"/>
 
-  <!-- AUREVON blue highlight -->
-  <path d="M256 48 L292 111 L256 91 L220 111 Z"
-        fill="#58B9FF"/>
+  
+  <path d="M218 231 H294 L323 281 H189 Z" fill="#FFFFFF"/>
 
-  <!-- Monogram structural cut -->
-  <path d="M218 231 H294 L323 281 H189 Z"
-        fill="#FFFFFF"/>
+  
+  <path d="M120 217 C160 142 239 112 312 125            C369 135 405 169 410 207            C382 167 346 151 306 150            C235 145 169 174 120 217 Z" fill="#58B9FF"/>
 
-  <!-- Corporate orbital element -->
-  <path d="M120 217 C160 142 239 112 312 125
-           C369 135 405 169 410 207
-           C382 167 346 151 306 150
-           C235 145 169 174 120 217 Z"
-        fill="#58B9FF"/>
+  
+  <path d="M76 319 H436" stroke="#91A5BF" stroke-width="3"/>
 
-  <!-- Divider -->
-  <path d="M76 319 H436"
-        stroke="#91A5BF" stroke-width="3"/>
+  
+  <rect x="48" y="348" width="94" height="104" rx="20" fill="#1877F2"/>
 
-  <!-- ReDom identity tile -->
-  <rect x="48" y="348" width="94" height="104"
-        rx="20" fill="#1877F2"/>
+  <path d="M76 426 L91 372 H112            C132 372 132 398 111 402            L130 426 H108 L88 402 L82 426 Z" fill="#FFFFFF"/>
 
-  <path d="M76 426 L91 372 H112
-           C132 372 132 398 111 402
-           L130 426 H108 L88 402 L82 426 Z"
-        fill="#FFFFFF"/>
+  
+  <rect x="156" y="348" width="94" height="104" rx="20" fill="#E5485D"/>
 
-  <!-- REDMAIL identity tile -->
-  <rect x="156" y="348" width="94" height="104"
-        rx="20" fill="#E5485D"/>
+  <rect x="174" y="377" width="58" height="44" rx="7" fill="none" stroke="#FFFFFF" stroke-width="6"/>
 
-  <rect x="174" y="377" width="58" height="44"
-        rx="7" fill="none"
-        stroke="#FFFFFF" stroke-width="6"/>
+  <path d="M175 380 L203 402 L231 380" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round"/>
 
-  <path d="M175 380 L203 402 L231 380"
-        fill="none" stroke="#FFFFFF"
-        stroke-width="6" stroke-linejoin="round"/>
+  
+  <rect x="264" y="348" width="94" height="104" rx="20" fill="#1B7669"/>
 
-  <!-- AUREVON GIFT CARD identity tile -->
-  <rect x="264" y="348" width="94" height="104"
-        rx="20" fill="#1B7669"/>
+  <path d="M311 378 C291 362 277 382 283 404            C287 422 299 436 311 424            C323 436 335 422 339 404            C345 382 331 362 311 378 Z" fill="none" stroke="#FFFFFF" stroke-width="5"/>
 
-  <path d="M311 378 C291 362 277 382 283 404
-           C287 422 299 436 311 424
-           C323 436 335 422 339 404
-           C345 382 331 362 311 378 Z"
-        fill="none" stroke="#FFFFFF" stroke-width="5"/>
+  <path d="M311 378 C304 366 318 360 327 363            C326 373 319 379 311 378 Z" fill="#B9E4C8"/>
 
-  <path d="M311 378 C304 366 318 360 327 363
-           C326 373 319 379 311 378 Z"
-        fill="#B9E4C8"/>
+  <path d="M299 404 H323 M311 394 V418" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
 
-  <path d="M299 404 H323 M311 394 V418"
-        stroke="#FFFFFF" stroke-width="4"
-        stroke-linecap="round"/>
+  
+  <rect x="372" y="348" width="94" height="104" rx="20" fill="#174EA6"/>
 
-  <!-- AUREVON MOTORS identity tile -->
-  <rect x="372" y="348" width="94" height="104"
-        rx="20" fill="#174EA6"/>
+  <path d="M389 408 L398 384            Q400 379 406 379 H432            Q438 379 441 384 L450 408            V422 H389 Z" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round"/>
 
-  <path d="M389 408 L398 384
-           Q400 379 406 379 H432
-           Q438 379 441 384 L450 408
-           V422 H389 Z"
-        fill="none" stroke="#FFFFFF"
-        stroke-width="5" stroke-linejoin="round"/>
-
-  <path d="M399 395 H440"
-        stroke="#FFFFFF" stroke-width="4"/>
+  <path d="M399 395 H440" stroke="#FFFFFF" stroke-width="4"/>
 
   <circle cx="404" cy="420" r="6" fill="#FFFFFF"/>
   <circle cx="435" cy="420" r="6" fill="#FFFFFF"/>
