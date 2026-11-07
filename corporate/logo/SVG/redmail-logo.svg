@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120">
+  <g transform="translate(8 10)">
+    <rect width="100" height="100" rx="24" fill="#E5485D"/>
+    <path d="M22 37L50 58L78 37V70Q78 76 72 76H28Q22 76 22 70Z"
+      fill="none" stroke="#fff" stroke-width="5"
+      stroke-linejoin="round"/>
+    <path d="M22 37L50 58L78 37"
+      fill="none" stroke="#fff" stroke-width="5"/>
+  </g>
+  <text x="128" y="69" font-family="Arial,sans-serif"
+    font-size="48" font-weight="800" fill="#101827">REDMAIL</text>
+  <text x="130" y="94" font-family="Arial,sans-serif"
+    font-size="14" letter-spacing="3" fill="#E5485D">PLATFORMS, INC.</text>
+</svg>
