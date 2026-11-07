@@ -1,0 +1,31 @@
+---
+title: "ReDom API route reference"
+description: "Search the source-detected ReDom API handlers, inspect HTTP methods and declared paths, and open the implementation for full request contracts."
+---
+
+The ReDom backend route inventory is generated from handler declarations in source. The current scan detects 445 route declarations in `artifacts/redom-backend/src/routes/`, plus one health route in the API server. This index is a discovery layer; mount prefixes, middleware, authentication, validation schemas, and response contracts must be read from the implementation.
+
+## Example detected handlers
+
+| Method | Declared path | Source |
+| --- | --- | --- |
+| GET | `/video/models` | [ai.routes.ts](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/routes/ai.routes.ts#L28) |
+| POST | `/localize` | [ai.routes.ts](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/routes/ai.routes.ts#L82) |
+| POST | `/chat` | [ai.routes.ts](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/routes/ai.routes.ts#L90) |
+| POST | `/video/projects` | [ai.routes.ts](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/routes/ai.routes.ts#L137) |
+| GET | `/video/projects/:projectId` | [ai.routes.ts](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/routes/ai.routes.ts#L162) |
+| POST | `/image` | [ai.routes.ts](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/routes/ai.routes.ts#L292) |
+
+## Full route module inventory
+
+The route modules are maintained in the backend source tree. Start with the route directory and application registration:
+
+- [Route modules](https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-backend/src/routes)
+- [Application setup](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/app.ts)
+- [Server entry point](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/index.ts)
+
+<Warning>Do not use the declared path alone to construct production requests. Resolve the router mount prefix, API base path, auth middleware, request validation, and response shape from the current source before integrating.</Warning>
+
+## API contract completion
+
+For each endpoint, the full reference must record: method and mounted path, auth and role requirements, path/query/header/body schemas, success response, error responses, side effects, idempotency behavior, and the owning service. Undocumented fields remain undocumented rather than guessed.
