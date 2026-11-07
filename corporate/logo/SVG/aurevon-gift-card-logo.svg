@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 140">
+  <g transform="translate(10 15)">
+    <rect width="110" height="110" rx="27" fill="#1B7669"/>
+    <path d="M55 28C43 17 58 12 68 16
+      C67 25 62 30 55 28Z" fill="#B9E4C8"/>
+    <path d="M54 38C35 25 20 42 25 65
+      C30 91 45 95 54 83
+      C61 75 68 91 80 78
+      C98 55 78 29 54 38Z"
+      fill="none" stroke="#fff" stroke-width="5"/>
+    <path d="M40 59H69M55 45V74"
+      stroke="#D8F5E4" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <text x="145" y="66" font-family="Arial,sans-serif"
+    font-size="42" font-weight="700" fill="#102B29">AUREVON</text>
+  <text x="145" y="105" font-family="Arial,sans-serif"
+    font-size="35" font-weight="800" letter-spacing="3"
+    fill="#1B7669">GIFT CARD, INC.</text>
+</svg>
