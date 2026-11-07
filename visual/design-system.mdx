@@ -1,0 +1,76 @@
+---
+title: "ReDom visual design reference"
+description: "A visual reference for ReDom brand colors, typography, interface hierarchy, cards, forms, navigation, and reusable layout patterns."
+---
+
+Use this page as a shared visual baseline when reviewing or implementing ReDom interfaces. Product-specific source assets and the actual screen component remain authoritative when a page has a more specific design.
+
+## Brand colors
+
+<Columns cols={3}>
+  <Card title="ReDom blue" color="#1877F2">
+    <div style={{height:"64px",background:"#1877F2",borderRadius:"8px"}} />
+    `#1877F2`<br/>Primary action and active state.
+  </Card>
+  <Card title="Light blue">
+    <div style={{height:"64px",background:"#4595FF",borderRadius:"8px"}} />
+    `#4595FF`<br/>Light accent.
+  </Card>
+  <Card title="Deep blue">
+    <div style={{height:"64px",background:"#0F5CC5",borderRadius:"8px"}} />
+    `#0F5CC5`<br/>Dark accent.
+  </Card>
+</Columns>
+
+## Interface patterns
+
+<Tabs>
+  <Tab title="Navigation">
+    - Keep primary navigation predictable.
+    - Show the active destination clearly.
+    - Preserve a compact hierarchy on mobile.
+  </Tab>
+  <Tab title="Cards">
+    - Use cards to group related tasks or information.
+    - Keep titles descriptive and metadata secondary.
+    - Avoid unnecessary decoration and excessive nesting.
+  </Tab>
+  <Tab title="Forms">
+    - Keep labels visible and validation close to the field.
+    - Distinguish idle, loading, error, success, and disabled states.
+    - Do not represent a pending payment as a completed payment.
+  </Tab>
+</Tabs>
+
+## Responsive shell reference
+
+<Frame caption="Responsive product shell concept. This is a layout reference, not a screenshot of a running ReDom build.">
+  <div style={{border:"1px solid #dfe5ed",borderRadius:"12px",overflow:"hidden"}}>
+    <div style={{height:"42px",background:"#f7f9fc",borderBottom:"1px solid #dfe5ed",display:"flex",alignItems:"center",padding:"0 14px",gap:"10px"}}>
+      <div style={{width:"22px",height:"22px",background:"#1877F2",borderRadius:"6px"}} />
+      <strong style={{fontSize:"13px"}}>ReDom</strong>
+      <div style={{marginLeft:"auto",width:"28%",height:"8px",background:"#e3e9f1",borderRadius:"9px"}} />
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"minmax(80px, 22%) 1fr",minHeight:"170px"}}>
+      <div style={{background:"#fafbfd",borderRight:"1px solid #e6eaf0",padding:"12px"}}>
+        <div style={{height:"8px",background:"#dce5f1",borderRadius:"8px",marginBottom:"13px"}} />
+        <div style={{height:"8px",background:"#e8edf4",borderRadius:"8px",marginBottom:"10px"}} />
+        <div style={{height:"8px",background:"#e8edf4",borderRadius:"8px",marginBottom:"10px"}} />
+      </div>
+      <div style={{padding:"16px"}}>
+        <div style={{height:"12px",width:"38%",background:"#dce5f1",borderRadius:"8px",marginBottom:"14px"}} />
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"10px"}}>
+          <div style={{height:"66px",border:"1px solid #e6eaf0",borderRadius:"8px"}} />
+          <div style={{height:"66px",border:"1px solid #e6eaf0",borderRadius:"8px"}} />
+        </div>
+      </div>
+    </div>
+  </div>
+</Frame>
+
+## Asset rules
+
+- Prefer the actual SVG and image assets in the product's own asset directories.
+- Do not redraw or replace a supplied brand mark when the original asset is available.
+- Keep product-specific palettes distinct where a product has its own documented theme.
+- Treat this page's shell illustration as conceptual until checked against the running app.
