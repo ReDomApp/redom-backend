@@ -1,0 +1,25 @@
+---
+title: "ReDom authentication and security reference"
+description: "Trace authentication and security behavior through the ReDom backend middleware, route handlers, session modules, and account security schemas."
+---
+
+This page is an internal engineering map for reviewing authentication and security behavior in the ReDom backend. It points to source locations and avoids publishing secrets, credentials, token values, or customer data.
+
+## Source areas
+
+| Concern | Source location |
+| --- | --- |
+| HTTP application and middleware registration | [Backend app](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/app.ts) |
+| Server initialization | [Backend entry point](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-backend/src/index.ts) |
+| Route-level access controls | [Route modules](https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-backend/src/routes) |
+| Session and account security data | [Database modules](https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-backend/src/database) |
+
+## Review checklist
+
+- Identify the exact authentication middleware on each route.
+- Distinguish public, authenticated, privileged, and service-to-service endpoints.
+- Confirm token/session expiry, revocation, rotation, and device binding behavior from implementation.
+- Record rate limiting, validation, audit logging, and abuse controls.
+- Verify that secrets are read from runtime configuration and never emitted in logs or docs.
+
+<Warning>Do not infer that a route is protected because its filename or product area sounds sensitive. Protection must be verified from the middleware chain and handler.</Warning>
