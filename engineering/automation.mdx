@@ -1,0 +1,24 @@
+---
+title: "Automatic documentation updates"
+description: "How the ReDom source catalog is generated on pushes to main and how documentation changes are checked against repository implementation."
+---
+
+The repository includes a GitHub Actions workflow that regenerates the documentation catalog when commits reach `main`. The generator scans tracked product and shared source trees and writes the machine-readable inventory used by the documentation application.
+
+## Automation components
+
+<Steps>
+  <Step title="A change reaches main">The workflow is triggered by a push to the `main` branch or by a manual workflow dispatch.</Step>
+  <Step title="The repository is scanned">The generator inventories product directories, source files, route declarations, screen/page source files, Drizzle table declarations, READMEs, and package manifests.</Step>
+  <Step title="The catalog is refreshed">The generated JSON is written to `artifacts/redom-docs/catalog.json`.</Step>
+  <Step title="Only changed output is committed">The workflow commits the catalog only when the generated file differs from the existing version.</Step>
+</Steps>
+
+## Source files
+
+- [Catalog generator](https://github.com/ReDomApp/redom-backend/blob/main/scripts/docs/generate-catalog.mjs)
+- [GitHub Actions workflow](https://github.com/ReDomApp/redom-backend/blob/main/.github/workflows/refresh-redom-docs.yml)
+- [Generated catalog](https://github.com/ReDomApp/redom-backend/blob/main/artifacts/redom-docs/catalog.json)
+- [Interactive documentation application](https://github.com/ReDomApp/redom-backend/tree/main/artifacts/redom-docs)
+
+<Warning>The catalog automation is not a semantic code reviewer. It detects source structure, not every business rule or runtime behavior. Full endpoint contracts, accurate screen captures, and behavioral changes still require source-aware generation and verification before being described as complete.</Warning>
