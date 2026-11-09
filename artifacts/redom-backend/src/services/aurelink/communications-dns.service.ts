@@ -39,13 +39,22 @@ export async function validateCloudflareZoneToken(token:string,zoneId:string,dom
   if(!zoneName||!(domain===zoneName||domain.endsWith("."+zoneName)))throw new Error("The selected Cloudflare zone does not contain this domain.");
   return {zoneId,zoneName};
 }
+function providerDnsHostname(recordName:string,domain:string):string {
+  const name=String(recordName||"").trim().replace(/\.$/,"").toLowerCase();
+  const normalized=domain.toLowerCase();
+  if(!name||name==="@")return normalized;
+  if(name===normalized||name.endsWith("."+normalized))return name;
+  const labels=normalized.split(".");
+  const parent=labels.length>2?labels.slice(1).join("."):"";
+  if(parent&&(name===labels[0]||name.endsWith("."+labels[0])))return name+"."+parent;
+  return name+"."+normalized;
+}
 export async function applyCloudflareDnsRecords(token:string,zoneId:string,domain:string,records:any[]) {
   const results:any[]=[];
   for(const record of records) {
     const type=String(record.type||"").toUpperCase();
     if(!["TXT","CNAME","MX"].includes(type)){results.push({type,name:record.name,status:"unsupported",message:"Aurelink only auto-applies TXT, CNAME and MX records."});continue;}
-    const shortName=String(record.name||"").replace(/\.$/,"");
-    const name=!shortName||shortName==="@"?domain:(shortName===domain||shortName.endsWith("."+domain)?shortName:`${shortName}.${domain}`);
+    const name=providerDnsHostname(String(record.name||""),domain);
     const content=String(record.value||"").trim();
     if(!content){results.push({type,name,status:"invalid",message:"Provider supplied an empty DNS value."});continue;}
     const query=new URLSearchParams({type,name,per_page:"100"});
