@@ -11,6 +11,7 @@ export class Aurelink {
  communications:{
    overview():Promise<any>;
    messages:{list(query?:RequestOptions["query"]):Promise<any>;retrieve(id:string):Promise<any>};
+   contacts:{list(query?:RequestOptions["query"]):Promise<any>;upsert(body:{channel:"sms"|"email";address:string;displayName?:string;consentStatus?:"unknown"|"opted_in"|"opted_out";consentSource?:string}):Promise<any>};
    sms:{send(body:{recipient:string;sender:string;content:string;category?:"transactional"|"marketing"|"otp"|"notification";provider?:"brevo"|"twilio";},options?:RequestOptions):Promise<any>};
    email:{send(body:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;provider?:"resend"|"brevo";},options?:RequestOptions):Promise<any>};
    campaigns:{list():Promise<any>;create(body:{channel:"sms"|"email";name:string;subject?:string;text?:string;html?:string;content?:string}):Promise<any>;send(id:string,body:{sender:string;senderName?:string;provider?:"brevo"|"twilio"|"resend";webUrl?:string}):Promise<any>};
