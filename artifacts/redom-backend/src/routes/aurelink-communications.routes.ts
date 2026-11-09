@@ -198,7 +198,7 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     const campaign=found.rows[0];
     if(!campaign){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Campaign not found."});}
     if(campaign.status!=="draft"&&campaign.status!=="scheduled"&&campaign.status!=="sending"&&campaign.status!=="paused"){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"Only draft or scheduled campaigns can be started."});}
-    const provider=String(req.body.provider||(campaign.channel==="sms"?"brevo":"resend"));
+    const provider=String(req.body.provider||(campaign.channel==="sms"?(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo"):(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend")));
     if(campaign.channel==="sms"&&!SMS_PROVIDERS.has(provider)||campaign.channel==="email"&&!EMAIL_PROVIDERS.has(provider)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Unsupported campaign provider."});}
     const sender=String(req.body.sender||"");
     if(campaign.channel==="sms"&&typeof req.body.webUrl!=="string") {await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
