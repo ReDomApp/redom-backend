@@ -1,0 +1,206 @@
+import { pool } from "../../database/db";
+
+/**
+ * Additive schema bootstrap for Aurelink's multi-channel communications product.
+ * All billing and provider state belongs to aurelink_users, not ReDom users.
+ */
+export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aurelink_communications_workspaces (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      name VARCHAR(120) NOT NULL DEFAULT 'My workspace',
+      status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_communications_members (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      email VARCHAR(320) NOT NULL,
+      role VARCHAR(24) NOT NULL CHECK (role IN ('owner','admin','developer','analyst','billing')),
+      status VARCHAR(16) NOT NULL DEFAULT 'invited' CHECK (status IN ('invited','active','revoked')),
+      invited_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,email)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_sender_ids (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      channel VARCHAR(12) NOT NULL CHECK (channel IN ('sms','email')),
+      sender VARCHAR(320) NOT NULL,
+      country_code CHAR(2),
+      provider VARCHAR(32) NOT NULL,
+      status VARCHAR(24) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','submitted','approved','rejected','suspended')),
+      provider_reference VARCHAR(180),
+      rejection_reason TEXT,
+      submitted_at TIMESTAMPTZ,
+      approved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_ids_workspace_idx ON aurelink_sender_ids(workspace_id,channel,status);
+
+    CREATE TABLE IF NOT EXISTS aurelink_email_domains (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      domain VARCHAR(253) NOT NULL,
+      provider VARCHAR(24) NOT NULL,
+      provider_domain_id VARCHAR(180),
+      status VARCHAR(24) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','verification_pending','verified','failed','disabled')),
+      dns_records JSONB NOT NULL DEFAULT '[]'::jsonb,
+      last_checked_at TIMESTAMPTZ,
+      verified_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,domain,provider)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_email_suppressions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      email VARCHAR(320) NOT NULL,
+      reason VARCHAR(32) NOT NULL CHECK (reason IN ('hard_bounce','spam_complaint','unsubscribe','manual')),
+      source_provider VARCHAR(24),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,email)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_message_templates (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      channel VARCHAR(12) NOT NULL CHECK (channel IN ('sms','email')),
+      name VARCHAR(120) NOT NULL,
+      subject TEXT,
+      body_text TEXT,
+      body_html TEXT,
+      variables JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status VARCHAR(16) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','archived')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,channel,name)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_messages (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      channel VARCHAR(12) NOT NULL CHECK (channel IN ('sms','email')),
+      direction VARCHAR(8) NOT NULL DEFAULT 'outbound' CHECK (direction IN ('outbound','inbound')),
+      category VARCHAR(24) NOT NULL CHECK (category IN ('transactional','marketing','otp','notification','campaign')),
+      provider VARCHAR(24) NOT NULL,
+      provider_message_id VARCHAR(220),
+      idempotency_key VARCHAR(128),
+      recipient TEXT NOT NULL,
+      sender TEXT,
+      subject TEXT,
+      content_hash CHAR(64) NOT NULL,
+      status VARCHAR(24) NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed')),
+      provider_status TEXT,
+      provider_error TEXT,
+      segments INTEGER NOT NULL DEFAULT 1 CHECK (segments > 0),
+      cost_minor BIGINT,
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      accepted_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_messages_workspace_created_idx ON aurelink_messages(workspace_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS aurelink_messages_provider_id_idx ON aurelink_messages(provider,provider_message_id) WHERE provider_message_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS aurelink_messages_status_idx ON aurelink_messages(workspace_id,channel,status,created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS aurelink_verification_sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      channel VARCHAR(12) NOT NULL DEFAULT 'sms' CHECK (channel IN ('sms','email')),
+      purpose VARCHAR(40) NOT NULL,
+      destination TEXT NOT NULL,
+      destination_hash CHAR(64) NOT NULL,
+      code_hash CHAR(64) NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','expired','locked','cancelled')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      provider VARCHAR(24) NOT NULL,
+      provider_message_id VARCHAR(220),
+      expires_at TIMESTAMPTZ NOT NULL,
+      verified_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_verification_due_idx ON aurelink_verification_sessions(workspace_id,status,expires_at);
+
+    CREATE TABLE IF NOT EXISTS aurelink_sms_contacts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      phone_number VARCHAR(32) NOT NULL,
+      display_name VARCHAR(120),
+      consent_status VARCHAR(16) NOT NULL DEFAULT 'unknown' CHECK (consent_status IN ('unknown','opted_in','opted_out')),
+      consent_source TEXT,
+      consented_at TIMESTAMPTZ,
+      opted_out_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,phone_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_email_contacts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      email VARCHAR(320) NOT NULL,
+      display_name VARCHAR(120),
+      consent_status VARCHAR(16) NOT NULL DEFAULT 'unknown' CHECK (consent_status IN ('unknown','opted_in','opted_out')),
+      consent_source TEXT,
+      consented_at TIMESTAMPTZ,
+      opted_out_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,email)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_campaigns (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      channel VARCHAR(12) NOT NULL CHECK (channel IN ('sms','email')),
+      name VARCHAR(140) NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','scheduled','sending','paused','completed','cancelled')),
+      subject TEXT,
+      content_text TEXT,
+      content_html TEXT,
+      audience JSONB NOT NULL DEFAULT '{}'::jsonb,
+      scheduled_at TIMESTAMPTZ,
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_provider_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider VARCHAR(24) NOT NULL,
+      provider_event_id VARCHAR(220),
+      provider_message_id VARCHAR(220),
+      event_type VARCHAR(64) NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      processed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(provider,provider_event_id)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_provider_events_message_idx ON aurelink_provider_events(provider,provider_message_id);
+
+    CREATE TABLE IF NOT EXISTS aurelink_provider_credentials (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      provider VARCHAR(24) NOT NULL,
+      credential_type VARCHAR(32) NOT NULL,
+      secret_encrypted TEXT NOT NULL,
+      secret_prefix VARCHAR(24) NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      rotated_at TIMESTAMPTZ
+    );
+  `);
+}
