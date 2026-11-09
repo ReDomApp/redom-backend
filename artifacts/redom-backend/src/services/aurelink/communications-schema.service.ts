@@ -54,6 +54,22 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(workspace_id,domain,provider)
     );
+    CREATE TABLE IF NOT EXISTS aurelink_email_senders (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      provider VARCHAR(24) NOT NULL CHECK (provider IN ('resend','brevo')),
+      email VARCHAR(320) NOT NULL,
+      domain VARCHAR(253) NOT NULL,
+      sender_name VARCHAR(120) NOT NULL,
+      provider_sender_id VARCHAR(180),
+      status VARCHAR(24) NOT NULL DEFAULT 'pending_verification' CHECK (status IN ('pending_verification','verified','disabled')),
+      provider_details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      verified_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,provider,email)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_email_senders_workspace_provider_idx ON aurelink_email_senders(workspace_id,provider,status);
     CREATE TABLE IF NOT EXISTS aurelink_email_suppressions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
