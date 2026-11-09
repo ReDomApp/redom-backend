@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus } from "../../redom-backend/src/services/aurelink/communications-callbacks.service.ts";
+import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus } from "../../redom-backend/src/services/aurelink/communications-webhooks.utils.ts";
 
 test("Resend Svix signatures verify against the exact raw payload",()=>{
   const raw=Buffer.from(JSON.stringify({type:"email.delivered",data:{email_id:"email_123"}}));
