@@ -8,6 +8,7 @@ function secrets(){const access=process.env.JWT_ACCESS_SECRET;if(!access)throw n
 function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
+  if(p[1]==="communications"&&(["domains","senders","email-senders","smtp"].includes(p[2]||""))&&(p.length===3||p[2]==="smtp"&&p[3]==="credentials"&&p.length===4))return true;
   if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||req.path==="/aurelink/communications/contacts"||p[1]==="communications"&&(p[2]==="messages"||p[2]==="contacts")&&p.length===4)return true;
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
@@ -19,6 +20,9 @@ function apiKeyAllowed(req:Request):boolean{
  }
  if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
+  if(req.path==="/aurelink/communications/domains"||req.path==="/aurelink/communications/senders"||req.path==="/aurelink/communications/email-senders"||req.path==="/aurelink/communications/dns/cloudflare/connect"||req.path==="/aurelink/communications/smtp/credentials")return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["check","verify","apply-dns"].includes(p[3]))return true;
+  if(p[1]==="communications"&&p[2]==="senders"&&p.length===5&&p[4]==="review")return true;
   if(["/aurelink/communications/sms/send","/aurelink/communications/email/send","/aurelink/communications/campaigns","/aurelink/communications/contacts","/aurelink/verify/start"].includes(req.path))return true;
   if(p[1]==="communications"&&p[2]==="campaigns"&&p.length===5&&p[4]==="send")return true;
   if(p[1]==="communications"&&p[2]==="messages"&&p.length===5&&p[4]==="retry")return true;
@@ -30,12 +34,15 @@ function apiKeyAllowed(req:Request):boolean{
   if(p[1]==="rentals"&&p.length===4&&p[3]==="renew")return true;
   if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="cancel")return true;
  }
+ if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials"&&p.length===5)return true;
  return false;
 }
 function scopeFor(req:Request):string{
  const p=req.path.split("/").filter(Boolean);
  if(req.path==="/aurelink/communications/overview"||req.method==="GET"&&p[1]==="communications")return "communications:read";
  if(p[1]==="verify")return "verify:write";
+ if(p[1]==="communications"&&(["domains","senders","email-senders","dns","smtp"].includes(p[2]||""))&&!(req.method==="GET"))return "communications:manage";
+ if(p[1]==="communications"&&(["domains","senders","email-senders","smtp"].includes(p[2]||""))&&req.method==="GET")return "communications:read";
  if(p[1]==="communications")return "communications:send";
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
  if(req.method==="GET"&&req.path.endsWith("/messages"))return "messages:read";
@@ -64,9 +71,19 @@ function testResponse(req:Request,res:Response):boolean{
  res.setHeader("X-Aurelink-Test-Mode","true");res.setHeader("Cache-Control","no-store");
  const ok=(data:unknown,status=200)=>{res.status(status).json({success:true,environment:"test",data,...(data&&typeof data==="object"&&!Array.isArray(data)?data as object:{})});return true;};
  if(req.method==="GET"&&path==="/aurelink/status")return ok({status:"operational",testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/domains")return ok({domains:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/senders")return ok({senders:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/email-senders")return ok({senders:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/smtp/credentials")return ok({credentials:[],smtp:{testMode:true,liveHostNotProvisioned:true},testMode:true});
  if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({providers:{sms:{brevo:false,twilio:false},email:{resend:false,brevo:false}},messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
  if(req.method==="POST"&&path==="/aurelink/verify/start")return ok({verificationId:id,expiresAt:new Date(Date.now()+300000).toISOString(),testCode:"123456",testMode:true},202);
  if(req.method==="POST"&&p[1]==="verify"&&p[3]==="check")return ok({verified:String(req.body.code||"")==="123456",verificationId:p[2],testMode:true},String(req.body.code||"")==="123456"?200:400);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="domains")return ok({domain:{id,testMode:true,status:"verification_pending",dnsRecords:[]},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="senders")return ok({sender:{id,testMode:true,status:"pending_customer_submission"},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="email-senders")return ok({sender:{id,testMode:true,status:"pending_verification"},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials")return ok({credential:{id,testMode:true},smtp:{testMode:true,liveCredentialNotCreated:true},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="dns")return ok({connection:{id,testMode:true},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="domains"&&p[3])return ok({domain:{id:p[3],testMode:true},dns:{complete:false,testMode:true},testMode:true});
  if(req.method==="POST"&&p[1]==="communications"&&p[2]==="sms"&&p[3]==="send")return ok({message:{id,channel:"sms",provider:"sandbox",status:"accepted",testMode:true}},202);
  if(req.method==="POST"&&p[1]==="communications"&&p[2]==="email"&&p[3]==="send")return ok({message:{id,channel:"email",provider:"sandbox",status:"accepted",testMode:true}},202);
  if(req.method==="GET"&&(path==="/aurelink/catalog/services"||path==="/aurelink/catalog/countries"||path==="/aurelink/catalog/suggested-countries"))return ok({services:[{id:"telegram",name:"Telegram"},{id:"google",name:"Google"},{id:"facebook",name:"Facebook"}],countries:[{code:"US",name:"United States",dialCode:"+1"},{code:"GB",name:"United Kingdom",dialCode:"+44"}]});
