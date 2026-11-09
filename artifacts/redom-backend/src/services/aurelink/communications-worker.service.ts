@@ -45,7 +45,7 @@ async function processOne(row:any){
   await pool.query("UPDATE aurelink_communications_jobs SET status='completed',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
   await pool.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.providerMessageId]);
  }catch(error){
-  const attempts=Number(row.attempts)+1,failed=attempts>=8,delay=Math.min(3600,30*Math.pow(2,attempts-1)),message=error instanceof Error?error.message:"Provider delivery failed.";
+  const attempts=Number(row.attempts),failed=attempts>=8,delay=Math.min(3600,30*Math.pow(2,attempts-1)),message=error instanceof Error?error.message:"Provider delivery failed.";
   await pool.query("UPDATE aurelink_communications_jobs SET status=$2,attempts=$3,next_attempt_at=NOW()+($4 * INTERVAL '1 second'),last_error=$5,updated_at=NOW() WHERE id=$1",[row.id,failed?"failed":"pending",attempts,delay,message.slice(0,500)]);
   await pool.query("UPDATE aurelink_messages SET status=$2,provider_error=$3,updated_at=NOW() WHERE id=$1",[row.message_id,failed?"failed":"queued",message.slice(0,500)]);
   await pool.query("UPDATE aurelink_communications_usage SET status=$2,updated_at=NOW() WHERE message_id=$1",[row.message_id,failed?"failed":"queued"]);
