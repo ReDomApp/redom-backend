@@ -12,15 +12,15 @@ function encrypt(value:string){const iv=randomBytes(12),cipher=createCipheriv("a
 function decrypt(value:string){const [iv,tag,body]=value.split(".");if(!iv||!tag||!body)throw new Error("Communications job payload is corrupt.");const decipher=createDecipheriv("aes-256-gcm",key(),Buffer.from(iv,"base64url"));decipher.setAuthTag(Buffer.from(tag,"base64url"));return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");}
 
 export async function enqueueAurelinkMessage(input:{
- userId:string;workspaceId:string;channel:"sms"|"email";category:string;provider:string;recipient:string;sender:string;subject?:string;content:string;idempotencyKey:string;payload:JobPayload;campaignId?:string;
+ userId:string;workspaceId:string;channel:"sms"|"email";category:string;provider:string;recipient:string;sender:string;subject?:string;content:string;idempotencyKey:string;payload:JobPayload;campaignId?:string;verificationId?:string;
 }){
  const payloadHash=createHash("sha256").update(JSON.stringify(input.payload)).digest("hex");
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
   const inserted=await client.query(
-   "INSERT INTO aurelink_messages(workspace_id,channel,category,provider,recipient,sender,subject,content_hash,idempotency_key,status,campaign_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued',$10) ON CONFLICT(workspace_id,idempotency_key) DO NOTHING RETURNING id,channel,category,provider,recipient,status,created_at",
-   [input.workspaceId,input.channel,input.category,input.provider,input.recipient,input.sender,input.subject||null,createHash("sha256").update(input.content).digest("hex"),input.idempotencyKey,input.campaignId||null]
+   "INSERT INTO aurelink_messages(workspace_id,channel,category,provider,recipient,sender,subject,content_hash,idempotency_key,status,campaign_id,verification_session_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued',$10,$11) ON CONFLICT(workspace_id,idempotency_key) DO NOTHING RETURNING id,channel,category,provider,recipient,status,created_at",
+   [input.workspaceId,input.channel,input.category,input.provider,input.recipient,input.sender,input.subject||null,createHash("sha256").update(input.content).digest("hex"),input.idempotencyKey,input.campaignId||null,input.verificationId||null]
   );
   if(!inserted.rows.length){
    const existing=await client.query("SELECT m.id,m.channel,m.category,m.provider,m.recipient,m.status,m.created_at,m.content_hash,j.payload_hash FROM aurelink_messages m LEFT JOIN aurelink_communications_jobs j ON j.message_id=m.id WHERE m.workspace_id=$1 AND m.idempotency_key=$2 FOR UPDATE OF m",[input.workspaceId,input.idempotencyKey]);
@@ -72,13 +72,14 @@ async function processOne(row:any){
   await pool.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId]);
   await pool.query("UPDATE aurelink_communications_jobs SET status='completed',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
   await pool.query("UPDATE aurelink_communications_usage SET provider=$2,status='accepted',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
+  await pool.query("UPDATE aurelink_verification_sessions SET provider_message_id=$2,updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1)",[row.message_id,result.providerMessageId]);
   await finalizeCampaign(row.message_id);
  }catch(error){
   const attempts=Number(row.attempts),failed=attempts>=8,delay=Math.min(3600,30*Math.pow(2,attempts-1)),message=error instanceof Error?error.message:"Provider delivery failed.";
   await pool.query("UPDATE aurelink_communications_jobs SET status=$2,attempts=$3,next_attempt_at=NOW()+($4 * INTERVAL '1 second'),last_error=$5,updated_at=NOW() WHERE id=$1",[row.id,failed?"failed":"pending",attempts,delay,message.slice(0,500)]);
   await pool.query("UPDATE aurelink_messages SET status=$2,provider_error=$3,updated_at=NOW() WHERE id=$1",[row.message_id,failed?"failed":"queued",message.slice(0,500)]);
   await pool.query("UPDATE aurelink_communications_usage SET status=$2,updated_at=NOW() WHERE message_id=$1",[row.message_id,failed?"failed":"queued"]);
-  if(failed){await refundCommunicationCharge(String(row.message_id));await finalizeCampaign(row.message_id);}
+  if(failed){await refundCommunicationCharge(String(row.message_id));await pool.query("UPDATE aurelink_verification_sessions SET status='cancelled',updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1 AND verification_session_id IS NOT NULL)",[row.message_id]);await finalizeCampaign(row.message_id);}
  }
 }
 async function tick(){
