@@ -240,6 +240,10 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
     ALTER TABLE aurelink_smtp_messages ADD COLUMN IF NOT EXISTS client_message_id VARCHAR(255);
     CREATE INDEX IF NOT EXISTS aurelink_smtp_messages_credential_idx ON aurelink_smtp_messages(credential_id,created_at DESC);
   `);
+  await pool.query("ALTER TABLE aurelink_communications_workspaces DROP CONSTRAINT IF EXISTS aurelink_communications_workspaces_user_id_key");
+  await pool.query("ALTER TABLE aurelink_communications_workspaces ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES aurelink_developer_projects(id) ON DELETE CASCADE");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS aurelink_communications_workspaces_default_user_idx ON aurelink_communications_workspaces(user_id) WHERE project_id IS NULL");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS aurelink_communications_workspaces_project_idx ON aurelink_communications_workspaces(user_id,project_id) WHERE project_id IS NOT NULL");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS campaign_id UUID REFERENCES aurelink_campaigns(id) ON DELETE SET NULL");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS verification_session_id UUID REFERENCES aurelink_verification_sessions(id) ON DELETE SET NULL");
   await pool.query("CREATE INDEX IF NOT EXISTS aurelink_messages_verification_idx ON aurelink_messages(verification_session_id) WHERE verification_session_id IS NOT NULL");
