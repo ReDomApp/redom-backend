@@ -4,6 +4,7 @@ import {isIP} from "node:net";
 import jwt from "jsonwebtoken";
 import {pool} from "../database/db";
 import {aurelinkAuthMiddleware} from "../middleware/aurelink-auth.middleware";
+import {createWebhook} from "../services/aurelink/developer-platform.service";
 import {resend} from "../lib/resend";
 import {checkIP} from "../lib/ipapi";
 import {hashPassword,verifyPassword} from "../utils/password";
@@ -43,6 +44,42 @@ r.post("/aurelink/account/name/request",aurelinkAuthMiddleware,async(q,s)=>{try{
 r.post("/aurelink/account/name/confirm",aurelinkAuthMiddleware,async(q,s)=>{try{const n=String(q.body.name||"").trim().replace(/\s+/g," ");if(n.length<2||n.length>100||!/^[\p{L}\p{M}]+(?:[ '\u2019-][\p{L}\p{M}]+)*$/u.test(n))throw Error("Invalid name.");const [f,...l]=n.split(" "),c=await pool.connect();try{await c.query("BEGIN");const p=(await c.query("SELECT last_changed_at FROM aurelink_profile_security WHERE user_id=$1 FOR UPDATE",[q.user!.userId])).rows[0];if(p?.last_changed_at&&Date.now()-new Date(p.last_changed_at).getTime()<604800000)throw Error("Name changes are limited to once every seven days.");const v=(await c.query("SELECT id FROM aurelink_name_change_codes WHERE user_id=$1 AND code_hash=$2 AND consumed_at IS NULL AND expires_at>NOW() AND attempts<5 ORDER BY created_at DESC LIMIT 1 FOR UPDATE",[q.user!.userId,H(String(q.body.code||""))])).rows[0];if(!v){await c.query("UPDATE aurelink_name_change_codes SET attempts=attempts+1 WHERE user_id=$1 AND consumed_at IS NULL",[q.user!.userId]);throw Error("Incorrect or expired code.");}await c.query("UPDATE aurelink_users SET first_name=$2,last_name=$3,updated_at=NOW() WHERE id=$1",[q.user!.userId,f,l.join(" ")]);await c.query("UPDATE aurelink_name_change_codes SET consumed_at=NOW() WHERE id=$1",[v.id]);await c.query("INSERT INTO aurelink_profile_security(user_id,last_changed_at) VALUES($1,NOW()) ON CONFLICT(user_id) DO UPDATE SET last_changed_at=NOW()",[q.user!.userId]);await c.query("COMMIT");}catch(e){await c.query("ROLLBACK").catch(()=>{});throw e;}finally{c.release();}s.json({success:true});}catch(e){s.status(400).json({success:false,message:String(e)});}});
 const API_KEY_SCOPES=["catalog:read","orders:read","numbers:write","messages:read","wallet:read","communications:read","communications:send","communications:manage","verify:write"] as const;
 function issueApiKey(environment:"test"|"live"){const prefix=environment==="test"?"aul_test_":"aul_live_";const secret=prefix+randomBytes(32).toString("base64url");return {secret,keyPrefix:secret.slice(0,20)};}
+
+r.get("/aurelink/account/api-logs",aurelinkAuthMiddleware,async(q,s)=>{
+ const limit=Math.max(1,Math.min(200,Number.parseInt(String(q.query.limit||"50"),10)||50)),offset=Math.max(0,Number.parseInt(String(q.query.offset||"0"),10)||0),environment=q.query.environment==="test"||q.query.environment==="live"?String(q.query.environment):null,status=q.query.status?Number(q.query.status):null;
+ const x=await pool.query("SELECT l.id,l.api_key_id,k.label AS api_key_label,l.environment,l.method,l.path,l.status_code,l.latency_ms,l.request_id,l.ip_address,l.created_at FROM aurelink_api_request_logs l LEFT JOIN aurelink_api_keys k ON k.id=l.api_key_id WHERE l.user_id=$1 AND ($2::text IS NULL OR l.environment=$2) AND ($3::integer IS NULL OR l.status_code=$3) ORDER BY l.created_at DESC LIMIT $4 OFFSET $5",[q.user!.userId,environment,Number.isInteger(status)?status:null,limit,offset]);
+ s.json({success:true,logs:x.rows,pagination:{limit,offset,count:x.rows.length}});
+});
+r.get("/aurelink/account/api-usage",aurelinkAuthMiddleware,async(q,s)=>{
+ const x=await pool.query("SELECT environment,COUNT(*)::int AS requests,COUNT(*) FILTER(WHERE status_code>=400)::int AS errors,COALESCE(AVG(latency_ms),0)::numeric(12,2) AS average_latency_ms,MAX(created_at) AS last_request_at FROM aurelink_api_request_logs WHERE user_id=$1 AND created_at>=NOW()-INTERVAL '30 days' GROUP BY environment ORDER BY environment",[q.user!.userId]);
+ const keys=await pool.query("SELECT environment,COUNT(*) FILTER(WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at>NOW()))::int AS active_keys FROM aurelink_api_keys WHERE user_id=$1 GROUP BY environment",[q.user!.userId]);
+ s.json({success:true,period:"30_days",usage:x.rows,keys:keys.rows});
+});
+r.get("/aurelink/account/webhooks",aurelinkAuthMiddleware,async(q,s)=>{
+ const x=await pool.query("SELECT id,url,description,events,environment,enabled,secret_prefix,created_at,updated_at FROM aurelink_webhook_endpoints WHERE user_id=$1 ORDER BY created_at DESC",[q.user!.userId]);
+ s.json({success:true,endpoints:x.rows});
+});
+r.post("/aurelink/account/webhooks",aurelinkAuthMiddleware,async(q,s)=>{
+ try{const result=await createWebhook(q.user!.userId,{url:String(q.body.url||""),description:typeof q.body.description==="string"?q.body.description:undefined,events:Array.isArray(q.body.events)?q.body.events:undefined,environment:q.body.environment==="test"?"test":"live"});s.status(201).json({success:true,...result,note:"The webhook signing secret is shown once. Store it securely; Aurelink stores only its encrypted copy."});}
+ catch(e){s.status(400).json({success:false,message:e instanceof Error?e.message:"Could not create webhook endpoint."});}
+});
+r.patch("/aurelink/account/webhooks/:id",aurelinkAuthMiddleware,async(q,s)=>{
+ const enabled=typeof q.body.enabled==="boolean"?q.body.enabled:null,description=typeof q.body.description==="string"?q.body.description.trim().slice(0,120):null;
+ const x=await pool.query("UPDATE aurelink_webhook_endpoints SET enabled=COALESCE($3,enabled),description=COALESCE($4,description),updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING id,url,description,events,environment,enabled,secret_prefix,created_at,updated_at",[q.params.id,q.user!.userId,enabled,description]);
+ if(!x.rows[0]){s.status(404).json({success:false,message:"Webhook endpoint not found."});return;}
+ s.json({success:true,endpoint:x.rows[0]});
+});
+r.get("/aurelink/account/webhooks/:id/deliveries",aurelinkAuthMiddleware,async(q,s)=>{
+ const limit=Math.max(1,Math.min(100,Number.parseInt(String(q.query.limit||"50"),10)||50));
+ const x=await pool.query("SELECT d.id,d.event_id,d.event_type,d.status,d.attempts,d.last_status_code,d.last_error,d.created_at,d.delivered_at,d.next_attempt_at FROM aurelink_webhook_deliveries d JOIN aurelink_webhook_endpoints e ON e.id=d.endpoint_id WHERE e.id=$1 AND e.user_id=$2 ORDER BY d.created_at DESC LIMIT $3",[q.params.id,q.user!.userId,limit]);
+ s.json({success:true,deliveries:x.rows});
+});
+r.post("/aurelink/account/webhooks/:id/rotate-secret",aurelinkAuthMiddleware,async(q,s)=>{
+ const secret="whsec_"+randomBytes(32).toString("base64url");
+ const x=await pool.query("UPDATE aurelink_webhook_endpoints SET secret_encrypted=$3,secret_prefix=$4,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING id,url,description,events,environment,enabled,secret_prefix,updated_at",[q.params.id,q.user!.userId,enc(secret),secret.slice(0,13)]);
+ if(!x.rows[0]){s.status(404).json({success:false,message:"Webhook endpoint not found."});return;}
+ s.json({success:true,endpoint:x.rows[0],secret,note:"The new signing secret is shown once. Replace the old secret in your receiver immediately."});
+});
 r.get("/aurelink/account/projects",aurelinkAuthMiddleware,async(q,s)=>{
  const x=await pool.query("SELECT p.id,p.name,p.description,p.status,p.created_at,p.updated_at,COUNT(k.id)::int AS api_key_count FROM aurelink_developer_projects p LEFT JOIN aurelink_api_keys k ON k.project_id=p.id AND k.revoked_at IS NULL WHERE p.user_id=$1 GROUP BY p.id ORDER BY p.created_at DESC",[q.user!.userId]);
  s.json({success:true,projects:x.rows});
