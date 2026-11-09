@@ -67,6 +67,8 @@ async function handleMessage(session, raw, callback) {
     [auth.workspaceId, domain]
   );
   if (Number(allowed.rows[0]?.count || 0) < 2) return callback(new Error("550 Sender domain must be verified with both Resend and Brevo before SMTP relay use."));
+  const brevoSender = await pool.query("SELECT id FROM aurelink_email_senders WHERE workspace_id=$1 AND provider='brevo' AND LOWER(email)=LOWER($2) AND status='verified' LIMIT 1",[auth.workspaceId,from]);
+  if (!brevoSender.rows[0]) return callback(new Error("550 Sender address must also be verified in Brevo before SMTP relay use."));
   const usage = await pool.query(
     "SELECT COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '1 minute')::int AS minute_count,COUNT(*) FILTER (WHERE created_at>=date_trunc('day',NOW()))::int AS day_count FROM aurelink_smtp_messages WHERE credential_id=$1",
     [auth.credentialId]
