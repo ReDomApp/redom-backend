@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { pool } from "../../database/db";
+import { emitAurelinkWebhookEvent } from "./developer-platform.service";
 
 /** Verify a Resend/Svix webhook using the raw request body and signed headers. */
 export function verifyAurelinkResendWebhook(raw:Buffer, id:string, timestamp:string, signature:string, secret:string):boolean {
@@ -37,8 +38,18 @@ export async function updateAurelinkMessageStatus(input:{
 }):Promise<void>{
   const allowed=new Set(["accepted","sent","delivered","deferred","bounced","failed","rejected","complained","unsubscribed"]);
   if(!allowed.has(input.status))return;
-  await pool.query(
-    "UPDATE aurelink_messages SET status=$3,provider_status=$4,provider_error=$5,delivered_at=COALESCE($6,delivered_at),updated_at=NOW() WHERE provider=$1 AND provider_message_id=$2",
+  const updated=await pool.query(
+    "UPDATE aurelink_messages SET status=$3,provider_status=$4,provider_error=$5,delivered_at=COALESCE($6,delivered_at),updated_at=NOW() WHERE provider=$1 AND provider_message_id=$2 RETURNING id,workspace_id,channel,category,recipient",
     [input.provider,input.providerMessageId,input.status,input.providerStatus??null,input.providerError?.slice(0,500)??null,input.deliveredAt??null],
   );
+  for(const row of updated.rows){
+    await pool.query("UPDATE aurelink_communications_usage SET status=$2,updated_at=NOW() WHERE message_id=$1",[row.id,input.status==="delivered"?"delivered":input.status==="failed"||input.status==="bounced"||input.status==="rejected"?"failed":"accepted"]).catch(()=>undefined);
+    const channel=String(row.channel)==="sms"?"sms":"email";
+    const suffix=input.status==="delivered"?"delivered":input.status==="failed"||input.status==="bounced"||input.status==="rejected"?"failed":input.status;
+    await emitAurelinkWebhookEventFromWorkspace(String(row.workspace_id),channel+"."+suffix,{messageId:row.id,providerMessageId:input.providerMessageId,recipient:row.recipient,status:input.status,provider:input.provider});
+  }
+}
+async function emitAurelinkWebhookEventFromWorkspace(workspaceId:string,eventType:string,data:Record<string,unknown>){
+  const owner=await pool.query("SELECT user_id FROM aurelink_communications_workspaces WHERE id=$1",[workspaceId]);
+  if(owner.rows[0]?.user_id)await emitAurelinkWebhookEvent(String(owner.rows[0].user_id),eventType,data);
 }
