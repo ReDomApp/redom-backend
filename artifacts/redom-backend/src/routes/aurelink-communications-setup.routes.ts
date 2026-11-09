@@ -5,7 +5,7 @@ import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import {
   createAurelinkProviderDomain, getAurelinkProviderDomain, inspectAurelinkDomainDns,
-  verifyAurelinkProviderDomain, updateAurelinkResendDomainTracking, createAurelinkProviderEmailSender, getAurelinkProviderEmailSender, type AurelinkEmailProvider,
+  verifyAurelinkProviderDomain, updateAurelinkResendDomainTracking, configureAurelinkBrevoTransactionalWebhook, createAurelinkProviderEmailSender, getAurelinkProviderEmailSender, type AurelinkEmailProvider,
 } from "../services/aurelink/communications-domains.service";
 
 const router = Router();
@@ -31,6 +31,17 @@ function normalizeDomain(value: string): string {
   }
   return domain;
 }
+
+
+router.post("/aurelink/communications/providers/brevo/webhook/configure",aurelinkAuthMiddleware,async(req,res)=>{
+ const admins=new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(value=>value.trim()).filter(Boolean));
+ if(!admins.has(req.user!.userId))return res.status(403).json({success:false,message:"Only configured Aurelink communications administrators can configure the shared Brevo provider webhook."});
+ const url=String(req.body.url||process.env.AURELINK_BREVO_WEBHOOK_URL||"");
+ try{
+  const result=await configureAurelinkBrevoTransactionalWebhook(url,String(process.env.AURELINK_BREVO_WEBHOOK_SECRET||""));
+  return res.json({success:true,...result,secretConfigured:true,note:"The Brevo REST API has created or updated the transactional webhook and will send authenticated delivery/open/click events to Aurelink."});
+ }catch(error){return res.status(502).json({success:false,message:error instanceof Error?error.message:"Unable to configure Brevo transactional webhook."});}
+});
 
 router.get("/aurelink/communications/domains", aurelinkAuthMiddleware, async (req,res) => {
   const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
