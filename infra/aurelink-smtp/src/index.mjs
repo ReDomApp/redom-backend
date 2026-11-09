@@ -7,6 +7,8 @@ import fs from "node:fs";
 const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 8 });
 const port = Number(process.env.SMTP_PORT || 587);
+const implicitTlsPort = Number(process.env.SMTP_TLS_PORT || 465);
+const mtaSubmissionPort = process.env.SMTP_MTA_PORT ? Number(process.env.SMTP_MTA_PORT) : null;
 const maxBytes = Number(process.env.AURELINK_SMTP_MAX_MESSAGE_BYTES || 10485760);
 const maxRecipients = Number(process.env.AURELINK_SMTP_MAX_RECIPIENTS || 20);
 const perMinuteLimit = Number(process.env.AURELINK_SMTP_PER_MINUTE_LIMIT || 30);
@@ -127,39 +129,54 @@ const cert = process.env.SMTP_TLS_CERT;
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
 if (!key || !cert) throw new Error("SMTP_TLS_KEY and SMTP_TLS_CERT are required. The relay refuses plaintext SMTP.");
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("SMTP_PORT is invalid.");
-const server = new SMTPServer({
-  secure: false,
-  key: key.includes("BEGIN") ? key : fs.readFileSync(key,"utf8"),
-  cert: cert.includes("BEGIN") ? cert : fs.readFileSync(cert,"utf8"),
-  authMethods: ["PLAIN","LOGIN"],
-  authOptional: false,
-  allowInsecureAuth: false,
-  size: maxBytes,
-  rejectOversized: true,
-  maxRecipients,
-  maxClients: Number(process.env.AURELINK_SMTP_MAX_CONNECTIONS || 100),
-  onAuth: authenticate,
-  onData(stream, session, callback) {
-    const chunks = [];
-    let size = 0;
-    let settled = false;
-    const done = (error, message) => { if (settled) return; settled = true; callback(error, message); };
-    stream.on("data", chunk => {
-      size += chunk.length;
-      chunks.push(chunk);
-    });
-    stream.on("error", () => done(new Error("451 Unable to read SMTP message.")));
-    stream.on("end", () => {
-      if (settled) return;
-      if (stream.sizeExceeded || size > maxBytes) return done(new Error("552 Message exceeds Aurelink SMTP size limit."));
-      void handleMessage(session,Buffer.concat(chunks),done).catch(error => {
-        console.error("[Aurelink SMTP delivery]",error instanceof Error?error.message:"unknown error");
-        done(new Error("451 Aurelink could not queue or deliver this message."));
+function createSmtpServer(implicitTls) {
+  const server = new SMTPServer({
+    secure: implicitTls,
+    key: key.includes("BEGIN") ? key : fs.readFileSync(key,"utf8"),
+    cert: cert.includes("BEGIN") ? cert : fs.readFileSync(cert,"utf8"),
+    authMethods: ["PLAIN","LOGIN"],
+    authOptional: false,
+    allowInsecureAuth: false,
+    requireTLS: !implicitTls,
+    size: maxBytes,
+    rejectOversized: true,
+    maxRecipients,
+    maxClients: Number(process.env.AURELINK_SMTP_MAX_CONNECTIONS || 100),
+    onAuth: authenticate,
+    onData(stream, session, callback) {
+      const chunks = [];
+      let size = 0;
+      let settled = false;
+      const done = (error, message) => { if (settled) return; settled = true; callback(error, message); };
+      stream.on("data", chunk => {
+        size += chunk.length;
+        chunks.push(chunk);
       });
-    });
-  }
-});
-server.on("error", error => console.error("[Aurelink SMTP server]",error));
-server.listen(port,"0.0.0.0",() => console.log(`Aurelink SMTP submission listening on 0.0.0.0:${port} (STARTTLS required)`));
-process.on("SIGTERM",()=>{server.close(()=>{void pool.end();});});
-process.on("SIGINT",()=>{server.close(()=>{void pool.end();});});
+      stream.on("error", () => done(new Error("451 Unable to read SMTP message.")));
+      stream.on("end", () => {
+        if (settled) return;
+        if (stream.sizeExceeded || size > maxBytes) return done(new Error("552 Message exceeds Aurelink SMTP size limit."));
+        void handleMessage(session,Buffer.concat(chunks),done).catch(error => {
+          console.error("[Aurelink SMTP delivery]",error instanceof Error?error.message:"unknown error");
+          done(new Error("451 Aurelink could not queue or deliver this message."));
+        });
+      });
+    }
+  });
+  server.on("error", error => console.error("[Aurelink SMTP server]",error));
+  return server;
+}
+if (!Number.isInteger(port) || port < 1 || port > 65535 || !Number.isInteger(implicitTlsPort) || implicitTlsPort < 1 || implicitTlsPort > 65535 || port === implicitTlsPort) throw new Error("SMTP_PORT and SMTP_TLS_PORT must be valid, distinct TCP ports.");
+const listeners = [
+  { server:createSmtpServer(false), port, label:"STARTTLS" },
+  { server:createSmtpServer(true), port:implicitTlsPort, label:"implicit TLS" }
+];
+if (mtaSubmissionPort !== null) {
+  if (!Number.isInteger(mtaSubmissionPort) || mtaSubmissionPort < 1 || mtaSubmissionPort > 65535 || listeners.some(item=>item.port===mtaSubmissionPort)) throw new Error("SMTP_MTA_PORT must be a valid unused TCP port.");
+  listeners.push({server:createSmtpServer(false),port:mtaSubmissionPort,label:"STARTTLS (optional port 25 submission)"});
+}
+for (const item of listeners) {
+  item.server.listen(item.port,"0.0.0.0",()=>console.log(`Aurelink SMTP submission listening on 0.0.0.0:${item.port} (${item.label}; authentication required)`));
+}
+process.on("SIGTERM",()=>{for(const item of listeners)item.server.close(()=>{void pool.end();});});
+process.on("SIGINT",()=>{for(const item of listeners)item.server.close(()=>{void pool.end();});});
