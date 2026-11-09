@@ -1,0 +1,35 @@
+name: Aurelink communications checks
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/redom-backend/**"
+      - "artifacts/aurelink/tests/communications-webhook.test.ts"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/aurelink-communications.yml"
+  push:
+    branches:
+      - feat/aurelink-communications-platform
+    paths:
+      - "artifacts/redom-backend/**"
+      - "artifacts/aurelink/tests/communications-webhook.test.ts"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/aurelink-communications.yml"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/redom-backend run typecheck
+      - run: pnpm --filter @workspace/redom-backend run test:aurelink-communications
