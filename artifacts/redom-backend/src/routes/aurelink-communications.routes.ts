@@ -80,14 +80,15 @@ async function saveMessage(input: {
 /** Provider sends are available only to live Aurelink account sessions at this stage. */
 router.get("/aurelink/communications/overview", aurelinkAuthMiddleware, async (req,res) => {
   const wid = await workspaceId(req.user!.userId);
-  const [messages,domains,senderIds,contacts,campaigns] = await Promise.all([
+  const [messages,domains,senderIds,contacts,campaigns,usage] = await Promise.all([
     pool.query("SELECT channel,status,COUNT(*)::int AS total FROM aurelink_messages WHERE workspace_id=$1 AND created_at>NOW()-INTERVAL '30 days' GROUP BY channel,status",[wid]),
     pool.query("SELECT status,COUNT(*)::int AS total FROM aurelink_email_domains WHERE workspace_id=$1 GROUP BY status",[wid]),
     pool.query("SELECT channel,status,COUNT(*)::int AS total FROM aurelink_sender_ids WHERE workspace_id=$1 GROUP BY channel,status",[wid]),
     pool.query("SELECT (SELECT COUNT(*) FROM aurelink_sms_contacts WHERE workspace_id=$1)::int AS sms,(SELECT COUNT(*) FROM aurelink_email_contacts WHERE workspace_id=$1)::int AS email",[wid]),
     pool.query("SELECT channel,status,COUNT(*)::int AS total FROM aurelink_campaigns WHERE workspace_id=$1 GROUP BY channel,status",[wid]),
+    pool.query("SELECT channel,status,COUNT(*)::int AS messages,SUM(units)::int AS units,COALESCE(SUM(unit_price_minor),0)::bigint AS metered_amount_minor,currency FROM aurelink_communications_usage WHERE workspace_id=$1 GROUP BY channel,status,currency",[wid]),
   ]);
-  res.json({success:true,workspaceId:wid,providers:PROVIDER_READY,messages:messages.rows,domains:domains.rows,senderIds:senderIds.rows,contacts:contacts.rows[0],campaigns:campaigns.rows});
+  res.json({success:true,workspaceId:wid,providers:PROVIDER_READY,messages:messages.rows,domains:domains.rows,senderIds:senderIds.rows,contacts:contacts.rows[0],campaigns:campaigns.rows,usage:usage.rows});
 });
 
 router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (req,res) => {
@@ -139,6 +140,7 @@ router.post("/aurelink/communications/campaigns",aurelinkAuthMiddleware,async(re
   const contentHtml=typeof req.body.html==="string"?req.body.html:undefined;
   if(!channel||!name||name.length>140||(!contentText?.trim()&&!contentHtml?.trim()))return res.status(400).json({success:false,message:"Campaign channel, name and message content are required."});
   if(channel==="email"&&!subject)return res.status(400).json({success:false,message:"Email campaigns require a subject."});
+  if(channel==="sms"&&!contentText?.trim())return res.status(400).json({success:false,message:"SMS campaigns require text content."});
   const wid=await workspaceId(req.user!.userId);
   const created=await pool.query("INSERT INTO aurelink_campaigns(workspace_id,channel,name,status,subject,content_text,content_html,audience) VALUES($1,$2,$3,'draft',$4,$5,$6,$7::jsonb) RETURNING id,channel,name,status,created_at",[wid,channel,name,subject,contentText||null,contentHtml||null,JSON.stringify({consentStatus:"opted_in"})]);
   return res.status(201).json({success:true,campaign:created.rows[0]});
