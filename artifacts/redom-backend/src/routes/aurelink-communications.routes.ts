@@ -10,6 +10,16 @@ const router = Router();
 const EMAIL_PROVIDERS = new Set(["resend", "brevo"]);
 const SMS_PROVIDERS = new Set(["brevo", "twilio"]);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+const PROVIDER_READY = {
+  sms: {
+    brevo: Boolean(process.env.AURELINK_BREVO_API_KEY || process.env.BREVO_API_KEY),
+    twilio: Boolean((process.env.AURELINK_TWILIO_ACCOUNT_SID || process.env.TWILIO_ACCOUNT_SID) && (process.env.AURELINK_TWILIO_AUTH_TOKEN || process.env.TWILIO_AUTH_TOKEN) && (process.env.AURELINK_TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_PHONE_NUMBER)),
+  },
+  email: {
+    resend: Boolean(process.env.AURELINK_RESEND_API_KEY || process.env.RESEND_API_KEY),
+    brevo: Boolean(process.env.AURELINK_BREVO_API_KEY || process.env.BREVO_API_KEY),
+  },
+};
 
 async function workspaceId(userId: string): Promise<string> {
   await pool.query("INSERT INTO aurelink_communications_workspaces(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING", [userId]);
@@ -39,7 +49,7 @@ router.get("/aurelink/communications/overview", aurelinkAuthMiddleware, async (r
     pool.query("SELECT (SELECT COUNT(*) FROM aurelink_sms_contacts WHERE workspace_id=$1)::int AS sms,(SELECT COUNT(*) FROM aurelink_email_contacts WHERE workspace_id=$1)::int AS email",[wid]),
     pool.query("SELECT channel,status,COUNT(*)::int AS total FROM aurelink_campaigns WHERE workspace_id=$1 GROUP BY channel,status",[wid]),
   ]);
-  res.json({success:true,workspaceId:wid,messages:messages.rows,domains:domains.rows,senderIds:senderIds.rows,contacts:contacts.rows[0],campaigns:campaigns.rows});
+  res.json({success:true,workspaceId:wid,providers:PROVIDER_READY,messages:messages.rows,domains:domains.rows,senderIds:senderIds.rows,contacts:contacts.rows[0],campaigns:campaigns.rows});
 });
 
 router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (req,res) => {
