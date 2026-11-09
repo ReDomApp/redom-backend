@@ -13,6 +13,26 @@ export class Aurelink {
     this.wallet={retrieve:()=>this.request("GET","/aurelink/wallet"),ledger:(query)=>this.request("GET","/aurelink/wallet/ledger",{query})};
     this.communications={
       overview:()=>this.request("GET","/aurelink/communications/overview"),
+      domains:{
+        list:()=>this.request("GET","/aurelink/communications/domains"),
+        create:(body)=>this.request("POST","/aurelink/communications/domains",{body}),
+        check:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/check"),
+        verify:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/verify"),
+        applyDns:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/apply-dns"),
+        connectCloudflare:(body)=>this.request("POST","/aurelink/communications/dns/cloudflare/connect",{body}),
+        cloudflareConnections:()=>this.request("GET","/aurelink/communications/dns/cloudflare/connections")
+      },
+      senders:{
+        list:()=>this.request("GET","/aurelink/communications/senders"),
+        request:(body)=>this.request("POST","/aurelink/communications/senders",{body})
+      },
+      smtp:{
+        credentials:{
+          list:()=>this.request("GET","/aurelink/communications/smtp/credentials"),
+          create:(body={})=>this.request("POST","/aurelink/communications/smtp/credentials",{body}),
+          revoke:(id)=>this.request("DELETE","/aurelink/communications/smtp/credentials/"+encodeURIComponent(id))
+        }
+      },
       messages:{list:(query)=>this.request("GET","/aurelink/communications/messages",{query}),retrieve:(id)=>this.request("GET","/aurelink/communications/messages/"+encodeURIComponent(id)),retry:(id,options)=>this.request("POST","/aurelink/communications/messages/"+encodeURIComponent(id)+"/retry",{...options})},
       contacts:{list:(query)=>this.request("GET","/aurelink/communications/contacts",{query}),upsert:(body)=>this.request("POST","/aurelink/communications/contacts",{body})},
       sms:{send:(body,options)=>this.request("POST","/aurelink/communications/sms/send",{body,...options})},
