@@ -127,6 +127,20 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
 });
 
+router.get("/aurelink/communications/messages",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId),limit=Math.min(100,Math.max(1,Number.parseInt(String(req.query.limit||"50"),10)||50)),offset=Math.max(0,Number.parseInt(String(req.query.offset||"0"),10)||0);
+  const channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null,status=typeof req.query.status==="string"?req.query.status:null;
+  const result=await pool.query("SELECT id,channel,category,provider,provider_message_id,recipient,sender,subject,status,provider_status,provider_error,created_at,accepted_at,delivered_at FROM aurelink_messages WHERE workspace_id=$1 AND ($2::text IS NULL OR channel=$2) AND ($3::text IS NULL OR status=$3) ORDER BY created_at DESC LIMIT $4 OFFSET $5",[wid,channel,status,limit,offset]);
+  return res.json({success:true,messages:result.rows,pagination:{limit,offset,count:result.rows.length}});
+});
+
+router.get("/aurelink/communications/messages/:id",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId);
+  const result=await pool.query("SELECT id,channel,category,provider,provider_message_id,recipient,sender,subject,status,provider_status,provider_error,segments,cost_minor,currency,created_at,accepted_at,delivered_at,updated_at FROM aurelink_messages WHERE workspace_id=$1 AND id=$2",[wid,req.params.id]);
+  if(!result.rows[0])return res.status(404).json({success:false,message:"Message not found."});
+  return res.json({success:true,message:result.rows[0]});
+});
+
 router.get("/aurelink/communications/campaigns",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId);
   const rows=await pool.query("SELECT id,channel,name,status,subject,scheduled_at,started_at,completed_at,created_at FROM aurelink_campaigns WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 100",[wid]);
