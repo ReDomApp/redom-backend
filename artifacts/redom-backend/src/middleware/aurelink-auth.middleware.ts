@@ -8,7 +8,7 @@ function secrets(){const access=process.env.JWT_ACCESS_SECRET;if(!access)throw n
 function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
-  if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/campaigns")return true;
+  if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||p[1]==="communications"&&p[2]==="messages"&&p.length===4)return true;
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
   if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
@@ -33,7 +33,7 @@ function apiKeyAllowed(req:Request):boolean{
 }
 function scopeFor(req:Request):string{
  const p=req.path.split("/").filter(Boolean);
- if(req.path==="/aurelink/communications/overview"||req.method==="GET"&&req.path==="/aurelink/communications/campaigns")return "communications:read";
+ if(req.path==="/aurelink/communications/overview"||req.method==="GET"&&p[1]==="communications")return "communications:read";
  if(p[1]==="verify")return "verify:write";
  if(p[1]==="communications")return "communications:send";
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
