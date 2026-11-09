@@ -180,7 +180,7 @@ The worker falls back to `JWT_ACCESS_SECRET` if dedicated encryption/verificatio
 | POST | `/aurelink/communications/dns/cloudflare/connect` | Connect a zone-scoped Cloudflare API token |
 | GET | `/aurelink/communications/dns/cloudflare/connections` | List connected Cloudflare zones |
 | POST | `/aurelink/communications/domains/:id/apply-dns` | Add provider records to the connected Cloudflare zone without overwriting conflicts |
-| GET | `/aurelink/communications/senders` | List SMS sender registration requests |
+| GET | `/aurelink/communications/email-senders` | List email sender identities |\n| POST | `/aurelink/communications/email-senders` | Create an email sender identity in Resend/Brevo |\n| POST | `/aurelink/communications/email-senders/:id/check` | Refresh sender verification state |\n| GET | `/aurelink/communications/senders` | List SMS sender registration requests |
 | POST | `/aurelink/communications/senders` | Create a sender registration request for a country/provider |
 | POST | `/aurelink/communications/senders/:id/review` | Admin-only evidence-backed provider status update |
 
@@ -195,7 +195,7 @@ Create a domain with:
 
 Aurelink creates the domain with the selected provider and stores the provider's real DNS instructions. Resend and Brevo do not necessarily require identical record sets. Depending on provider and enabled capabilities, the returned records may include TXT ownership verification, SPF, DKIM (TXT or CNAME), DMARC, and MX records. Aurelink does not invent a generic MX record: it displays and checks only records returned by the selected provider. MX is required only when the selected service/capability needs it; it is not a universal requirement for outbound email authentication. SPF must remain a single TXT policy at a hostname; if one already exists, merge authorized includes into it rather than publishing a second SPF record.
 
-Check records with `POST /aurelink/communications/domains/:id/check`. The response includes each expected record, observed DNS values, missing/conflicting status, and provider verification state. A domain becomes send-enabled only when the provider reports it verified/authenticated. DNS propagation alone does not mean the provider has approved it.
+Check records with `POST /aurelink/communications/domains/:id/check`. The response includes each expected record, observed DNS values, missing/conflicting status, and provider verification state. A domain becomes send-enabled only when the provider reports it verified/authenticated. DNS propagation alone does not mean the provider has approved it. Brevo additionally requires a sender email identity: create it after domain authentication, click the verification email Brevo sends, and call the sender check endpoint. Email delivery through Brevo is blocked until that sender is active.
 
 For automatic DNS changes, first connect a Cloudflare API token scoped to the customer's zone with **Zone:Read** and **DNS:Edit** permissions:
 
