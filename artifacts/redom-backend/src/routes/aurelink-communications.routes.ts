@@ -27,6 +27,54 @@ router.post("/aurelink/webhooks/resend", async (req,res) => {
   }catch{return res.status(500).json({success:false,message:"Unable to persist Resend delivery event."});}
 });
 
+
+router.post("/aurelink/webhooks/brevo",async(req,res)=>{
+  const secret=process.env.AURELINK_BREVO_WEBHOOK_SECRET;
+  if(!secret)return res.status(503).json({success:false,message:"Aurelink Brevo webhook secret is not configured."});
+  const authorization=String(req.headers.authorization||"");
+  const supplied=authorization.startsWith("Bearer ")?authorization.slice(7):"";
+  const expected=Buffer.from(secret),actual=Buffer.from(supplied);
+  if(!supplied||actual.length!==expected.length||!timingSafeEqual(actual,expected))return res.status(403).json({success:false,message:"Invalid Brevo webhook authentication."});
+  const events=Array.isArray(req.body)?req.body:[req.body];
+  let processed=0;
+  try{
+    for(const event of events){
+      if(!event||typeof event!=="object")continue;
+      const eventType=String(event.event||"").toLowerCase();
+      const providerMessageId=String(event["message-id"]||event.messageId||"").replace(/^<|>$/g,"");
+      const occurred=String(event.ts_event||event.ts||event.date||"");
+      const custom=String(event["X-Mailin-custom"]||event.x_mailin_custom||"");
+      const eventId=providerMessageId+":"+eventType+":"+occurred||hash(JSON.stringify(event));
+      const stored=await pool.query("INSERT INTO aurelink_provider_events(provider,provider_event_id,provider_message_id,event_type,payload,processed_at) VALUES('brevo',$1,$2,$3,$4::jsonb,NOW()) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[eventId,providerMessageId||null,eventType||"unknown",JSON.stringify(event)]);
+      if(!stored.rows.length)continue;
+      processed++;
+      const status: any=eventType==="delivered"?"delivered":eventType==="hard_bounce"?"bounced":eventType==="soft_bounce"||eventType==="deferred"?"deferred":eventType==="spam"?"complained":eventType==="unsubscribed"?"unsubscribed":["blocked","invalid","error"].includes(eventType)?"failed":eventType==="request"||eventType==="sent"?"accepted":null;
+      if(status&&providerMessageId)await updateAurelinkMessageStatus({provider:"brevo",providerMessageId,status,providerStatus:eventType,providerError:event.reason||undefined,deliveredAt:status==="delivered"?new Date(Number(event.ts_event||event.ts||Date.now())*1000):undefined});
+      const messageKey=custom.startsWith("aurelink:")?custom.slice("aurelink:".length):"";
+      if(messageKey&&status){
+        await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed','unsubscribed') THEN 'failed' ELSE status END,updated_at=NOW() WHERE provider='brevo' AND message_key=$1",[messageKey,status]);
+      }else if(providerMessageId&&status){
+        await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed','unsubscribed') THEN 'failed' ELSE status END,updated_at=NOW() WHERE provider='brevo' AND provider_message_id=$1",[providerMessageId,status]);
+      }
+      const suppressionReason=eventType==="hard_bounce"?"hard_bounce":eventType==="spam"?"spam_complaint":eventType==="unsubscribed"?"unsubscribe":null;
+      const email=String(event.email||"").trim().toLowerCase();
+      if(suppressionReason&&email){
+        const workspaces=new Set<string>();
+        if(messageKey){
+          const smtp=await pool.query("SELECT workspace_id FROM aurelink_smtp_messages WHERE message_key=$1 AND provider='brevo'",[messageKey]);
+          for(const row of smtp.rows)workspaces.add(String(row.workspace_id));
+        }
+        if(providerMessageId){
+          const api=await pool.query("SELECT workspace_id FROM aurelink_messages WHERE provider='brevo' AND provider_message_id=$1",[providerMessageId]);
+          for(const row of api.rows)workspaces.add(String(row.workspace_id));
+        }
+        for(const workspace of workspaces)await pool.query("INSERT INTO aurelink_email_suppressions(workspace_id,email,reason,source_provider) VALUES($1,$2,$3,'brevo') ON CONFLICT(workspace_id,email) DO NOTHING",[workspace,email,suppressionReason]);
+      }
+    }
+    return res.status(200).json({received:true,processed});
+  }catch{return res.status(500).json({success:false,message:"Unable to persist Brevo delivery event."});}
+});
+
 router.post("/aurelink/webhooks/twilio/status", async (req,res) => {
   const authToken=process.env.AURELINK_TWILIO_AUTH_TOKEN||process.env.TWILIO_AUTH_TOKEN;
   if(!authToken) return res.status(503).send("Aurelink Twilio callback is not configured.");
