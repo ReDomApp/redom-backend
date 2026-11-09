@@ -84,6 +84,10 @@ async function verifiedEmailSender(wid:string,sender:string,provider:string):Pro
     if(!EMAIL_PROVIDERS.has(selected))return false;
     const row=await pool.query("SELECT id FROM aurelink_email_domains WHERE workspace_id=$1 AND domain=$2 AND provider=$3 AND status='verified' LIMIT 1",[wid,domain,selected]);
     if(!row.rows[0])return false;
+    if(selected==="brevo"){
+      const identity=await pool.query("SELECT id FROM aurelink_email_senders WHERE workspace_id=$1 AND provider='brevo' AND LOWER(email)=LOWER($2) AND status='verified' LIMIT 1",[wid,sender]);
+      if(!identity.rows[0])return false;
+    }
   }
   return true;
 }
