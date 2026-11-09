@@ -211,7 +211,7 @@ Supported adapters: Resend Email API and Brevo transactional Email API. The send
 
 ### Verification
 
-Aurelink generates and validates the OTP itself. A session expires after five minutes and permits at most five verification attempts. Only a hash and separate per-session salt are stored; the OTP is never returned by the API. Provider services deliver the message but do not decide whether the verification succeeds.
+Aurelink generates and validates the OTP itself. A session expires after five minutes and permits at most five verification attempts. Only a per-session HMAC hash and separate random salt are stored; the OTP is never returned by the live API. Configure a stable `AURELINK_VERIFICATION_PEPPER` (32+ characters); if unset, the backend uses `JWT_ACCESS_SECRET`. Provider services deliver the message but do not decide whether the verification succeeds.
 
 ### Provider setup and SMTP distinction
 
