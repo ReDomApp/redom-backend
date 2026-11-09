@@ -240,6 +240,16 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
     ALTER TABLE aurelink_smtp_messages ADD COLUMN IF NOT EXISTS client_message_id VARCHAR(255);
     CREATE INDEX IF NOT EXISTS aurelink_smtp_messages_credential_idx ON aurelink_smtp_messages(credential_id,created_at DESC);
   `);
+  await pool.query(`CREATE TABLE IF NOT EXISTS aurelink_developer_projects(
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+    name VARCHAR(120) NOT NULL,
+    description VARCHAR(500),
+    status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended','archived')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id,name)
+  )`);
   await pool.query("ALTER TABLE aurelink_communications_workspaces DROP CONSTRAINT IF EXISTS aurelink_communications_workspaces_user_id_key");
   await pool.query("ALTER TABLE aurelink_communications_workspaces ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES aurelink_developer_projects(id) ON DELETE CASCADE");
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS aurelink_communications_workspaces_default_user_idx ON aurelink_communications_workspaces(user_id) WHERE project_id IS NULL");
