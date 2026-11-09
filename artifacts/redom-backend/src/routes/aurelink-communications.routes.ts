@@ -110,9 +110,15 @@ const PROVIDER_READY = {
   },
 };
 
-async function workspaceId(userId: string): Promise<string> {
-  await pool.query("INSERT INTO aurelink_communications_workspaces(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING", [userId]);
-  const row = (await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND status='active'", [userId])).rows[0];
+async function workspaceId(userId: string, projectId?: string): Promise<string> {
+  if (projectId) {
+    await pool.query("INSERT INTO aurelink_communications_workspaces(user_id,project_id) VALUES($1,$2) ON CONFLICT DO NOTHING", [userId,projectId]);
+    const row = (await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND project_id=$2 AND status='active'", [userId,projectId])).rows[0];
+    if (!row) throw new Error("Aurelink project communications workspace is unavailable.");
+    return String(row.id);
+  }
+  await pool.query("INSERT INTO aurelink_communications_workspaces(user_id) VALUES($1) ON CONFLICT DO NOTHING", [userId]);
+  const row = (await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND project_id IS NULL AND status='active'", [userId])).rows[0];
   if (!row) throw new Error("Aurelink communications workspace is unavailable.");
   return String(row.id);
 }
@@ -143,7 +149,7 @@ async function verifiedEmailSender(wid:string,sender:string,provider:string):Pro
 
 /** Provider sends are available only to live Aurelink account sessions at this stage. */
 router.get("/aurelink/communications/overview", aurelinkAuthMiddleware, async (req,res) => {
-  const wid = await workspaceId(req.user!.userId);
+  const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
   const [messages,domains,senderIds,contacts,campaigns,usage] = await Promise.all([
     pool.query("SELECT channel,status,COUNT(*)::int AS total FROM aurelink_messages WHERE workspace_id=$1 AND created_at>NOW()-INTERVAL '30 days' GROUP BY channel,status",[wid]),
     pool.query("SELECT status,COUNT(*)::int AS total FROM aurelink_email_domains WHERE workspace_id=$1 GROUP BY status",[wid]),
@@ -162,7 +168,7 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),countryCode=String(req.body.countryCode||"").toUpperCase(),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
   if(!/^\+?[1-9]\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender)||!/^[A-Z]{2}$/.test(countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide an E.164 recipient, ISO countryCode, approved 3–11 character alphanumeric sender and message content up to 5000 characters."});
   try{
-    const wid=await workspaceId(req.user!.userId);
+    const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
     if(!await approvedSmsSender(wid,sender,provider,countryCode))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"This sender ID is not approved for the selected provider and destination country."});
     if(category==="marketing"){
       const contact=(await pool.query("SELECT consent_status FROM aurelink_sms_contacts WHERE workspace_id=$1 AND phone_number=$2",[wid,recipient])).rows[0];
@@ -183,7 +189,7 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),senderName=String(req.body.senderName||""),subject=String(req.body.subject||""),html=typeof req.body.html==="string"?req.body.html:undefined,text=typeof req.body.text==="string"?req.body.text:undefined;
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)||!subject.trim()||(!html?.trim()&&!text?.trim()))return res.status(400).json({success:false,message:"Provide valid sender/recipient email addresses, a subject and HTML or text content."});
   try{
-    const wid=await workspaceId(req.user!.userId);
+    const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
     if(!await verifiedEmailSender(wid,sender,provider))return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify and authenticate this sender domain with the selected provider before sending."});
     const suppression=(await pool.query("SELECT id FROM aurelink_email_suppressions WHERE workspace_id=$1 AND LOWER(email)=LOWER($2)",[wid,recipient])).rows[0];
     if(suppression)return res.status(403).json({success:false,code:"EMAIL_SUPPRESSED",message:"This recipient is suppressed for this workspace."});
@@ -196,7 +202,7 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
 });
 
 router.get("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId),channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null;
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null;
   if(!channel)return res.status(400).json({success:false,message:"Specify channel=sms or channel=email."});
   const table=channel==="sms"?"aurelink_sms_contacts":"aurelink_email_contacts";
   const result=await pool.query(`SELECT id,${channel==="sms"?"phone_number":"email"} AS address,display_name,consent_status,consent_source,consented_at,opted_out_at,created_at,updated_at FROM ${table} WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 500`,[wid]);
@@ -211,7 +217,7 @@ router.post("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req
   if(channel==="sms"&&!/^\+[1-9]\d{7,14}$/.test(address))return res.status(400).json({success:false,message:"Phone number must use E.164 format."});
   if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))return res.status(400).json({success:false,message:"Enter a valid email address."});
   if(consentStatus==="opted_in"&&!consentSource)return res.status(400).json({success:false,message:"Record the opt-in source when setting consent_status=opted_in."});
-  const wid=await workspaceId(req.user!.userId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
   const result=channel==="sms"
     ?await pool.query("INSERT INTO aurelink_sms_contacts(workspace_id,phone_number,display_name,consent_status,consent_source,consented_at,opted_out_at) VALUES($1,$2,$3,$4,$5,CASE WHEN $4='opted_in' THEN NOW() ELSE NULL END,CASE WHEN $4='opted_out' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,phone_number) DO UPDATE SET display_name=EXCLUDED.display_name,consent_status=EXCLUDED.consent_status,consent_source=EXCLUDED.consent_source,consented_at=CASE WHEN EXCLUDED.consent_status='opted_in' THEN NOW() ELSE aurelink_sms_contacts.consented_at END,opted_out_at=CASE WHEN EXCLUDED.consent_status='opted_out' THEN NOW() WHEN EXCLUDED.consent_status='opted_in' THEN NULL ELSE aurelink_sms_contacts.opted_out_at END,updated_at=NOW() RETURNING id,phone_number AS address,display_name,consent_status,consent_source,consented_at,opted_out_at",[wid,address,displayName,consentStatus,consentSource])
     :await pool.query("INSERT INTO aurelink_email_contacts(workspace_id,email,display_name,consent_status,consent_source,consented_at,opted_out_at) VALUES($1,LOWER($2),$3,$4,$5,CASE WHEN $4='opted_in' THEN NOW() ELSE NULL END,CASE WHEN $4='opted_out' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,email) DO UPDATE SET display_name=EXCLUDED.display_name,consent_status=EXCLUDED.consent_status,consent_source=EXCLUDED.consent_source,consented_at=CASE WHEN EXCLUDED.consent_status='opted_in' THEN NOW() ELSE aurelink_email_contacts.consented_at END,opted_out_at=CASE WHEN EXCLUDED.consent_status='opted_out' THEN NOW() WHEN EXCLUDED.consent_status='opted_in' THEN NULL ELSE aurelink_email_contacts.opted_out_at END,updated_at=NOW() RETURNING id,email AS address,display_name,consent_status,consent_source,consented_at,opted_out_at",[wid,address,displayName,consentStatus,consentSource]);
@@ -219,14 +225,14 @@ router.post("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req
 });
 
 router.get("/aurelink/communications/messages",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId),limit=Math.min(100,Math.max(1,Number.parseInt(String(req.query.limit||"50"),10)||50)),offset=Math.max(0,Number.parseInt(String(req.query.offset||"0"),10)||0);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),limit=Math.min(100,Math.max(1,Number.parseInt(String(req.query.limit||"50"),10)||50)),offset=Math.max(0,Number.parseInt(String(req.query.offset||"0"),10)||0);
   const channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null,status=typeof req.query.status==="string"?req.query.status:null;
   const result=await pool.query("SELECT id,channel,category,provider,provider_message_id,recipient,sender,subject,status,provider_status,provider_error,created_at,accepted_at,delivered_at FROM aurelink_messages WHERE workspace_id=$1 AND ($2::text IS NULL OR channel=$2) AND ($3::text IS NULL OR status=$3) ORDER BY created_at DESC LIMIT $4 OFFSET $5",[wid,channel,status,limit,offset]);
   return res.json({success:true,messages:result.rows,pagination:{limit,offset,count:result.rows.length}});
 });
 
 router.get("/aurelink/communications/messages/:id",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
   const result=await pool.query("SELECT id,channel,category,provider,provider_message_id,recipient,sender,subject,status,provider_status,provider_error,segments,cost_minor,currency,created_at,accepted_at,delivered_at,updated_at FROM aurelink_messages WHERE workspace_id=$1 AND id=$2",[wid,req.params.id]);
   if(!result.rows[0])return res.status(404).json({success:false,message:"Message not found."});
   return res.json({success:true,message:result.rows[0]});
@@ -236,7 +242,7 @@ router.post("/aurelink/communications/messages/:id/retry",aurelinkAuthMiddleware
   const key=String(req.headers["idempotency-key"]||"").trim();
   if(!key||key.length>128)return res.status(400).json({success:false,code:"IDEMPOTENCY_KEY_REQUIRED",message:"Send a unique Idempotency-Key header (maximum 128 characters)."});
   try{
-    const wid=await workspaceId(req.user!.userId),result=await retryAurelinkMessage({userId:req.user!.userId,workspaceId:wid,messageId:String(req.params.id),idempotencyKey:key});
+    const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),result=await retryAurelinkMessage({userId:req.user!.userId,workspaceId:wid,messageId:String(req.params.id),idempotencyKey:key});
     if("conflict" in result)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
     return res.status(202).json({success:true,message:result.message,replayed:Boolean(result.replayed)});
   }catch(error){
@@ -248,7 +254,7 @@ router.post("/aurelink/communications/messages/:id/retry",aurelinkAuthMiddleware
 });
 
 router.get("/aurelink/communications/campaigns",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
   const rows=await pool.query("SELECT id,channel,name,status,subject,scheduled_at,started_at,completed_at,created_at FROM aurelink_campaigns WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 100",[wid]);
   return res.json({success:true,campaigns:rows.rows});
 });
@@ -261,13 +267,13 @@ router.post("/aurelink/communications/campaigns",aurelinkAuthMiddleware,async(re
   if(!channel||!name||name.length>140||(!contentText?.trim()&&!contentHtml?.trim()))return res.status(400).json({success:false,message:"Campaign channel, name and message content are required."});
   if(channel==="email"&&!subject)return res.status(400).json({success:false,message:"Email campaigns require a subject."});
   if(channel==="sms"&&!contentText?.trim())return res.status(400).json({success:false,message:"SMS campaigns require text content."});
-  const wid=await workspaceId(req.user!.userId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
   const created=await pool.query("INSERT INTO aurelink_campaigns(workspace_id,channel,name,status,subject,content_text,content_html,audience) VALUES($1,$2,$3,'draft',$4,$5,$6,$7::jsonb) RETURNING id,channel,name,status,created_at",[wid,channel,name,subject,contentText||null,contentHtml||null,JSON.stringify({consentStatus:"opted_in"})]);
   return res.status(201).json({success:true,campaign:created.rows[0]});
 });
 
 router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId),client=await pool.connect();
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),client=await pool.connect();
   try{
     await client.query("BEGIN");
     const found=await client.query("SELECT * FROM aurelink_campaigns WHERE id=$1 AND workspace_id=$2 FOR UPDATE",[req.params.id,wid]);
@@ -325,7 +331,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
   if(!destination||destination.length>320||!/^[A-Za-z0-9_.-]{1,40}$/.test(purpose))return res.status(400).json({success:false,message:"A valid destination and purpose are required."});
   if(channel==="sms"&&!/^\+[1-9]\d{7,14}$/.test(destination))return res.status(400).json({success:false,message:"Phone number must use E.164 format."});
   if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination))return res.status(400).json({success:false,message:"Enter a valid email address."});
-  const wid=await workspaceId(req.user!.userId),code=createOtpCode(),salt=randomUUID(),expiresAt=new Date(Date.now()+5*60*1000),provider=String(channel==="email"?(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend"):(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo"));
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),code=createOtpCode(),salt=randomUUID(),expiresAt=new Date(Date.now()+5*60*1000),provider=String(channel==="email"?(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend"):(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo"));
   if(channel==="email"&&!EMAIL_PROVIDERS.has(provider)||channel==="sms"&&!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported verification provider."});
   const sender=String(req.body.sender||"");
   if(channel==="sms"&&!/^[A-Za-z0-9]{1,11}$/.test(sender))return res.status(400).json({success:false,message:"SMS sender must be 1–11 alphanumeric characters."});
@@ -348,7 +354,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
 });
 
 router.post("/aurelink/verify/:id/check",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId),client=await pool.connect();
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),client=await pool.connect();
   try{
     await client.query("BEGIN");
     const found=await client.query("SELECT * FROM aurelink_verification_sessions WHERE id=$1 AND workspace_id=$2 FOR UPDATE",[req.params.id,wid]);
