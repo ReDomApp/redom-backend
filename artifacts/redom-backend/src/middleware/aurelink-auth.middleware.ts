@@ -21,6 +21,7 @@ function apiKeyAllowed(req:Request):boolean{
  if(req.method==="POST"){
   if(["/aurelink/communications/sms/send","/aurelink/communications/email/send","/aurelink/communications/campaigns","/aurelink/communications/contacts","/aurelink/verify/start"].includes(req.path))return true;
   if(p[1]==="communications"&&p[2]==="campaigns"&&p.length===5&&p[4]==="send")return true;
+  if(p[1]==="communications"&&p[2]==="messages"&&p.length===5&&p[4]==="retry")return true;
   if(p[1]==="verify"&&p.length===4&&p[3]==="check")return true;
   if(["/aurelink/quotes","/aurelink/rental-quotes","/aurelink/checkout","/aurelink/activations","/aurelink/rentals","/aurelink/dedicated/quote","/aurelink/dedicated/orders","/aurelink/nonvoip/orders"].includes(req.path))return true;
   if(p[1]==="activations"&&p.length===4&&(p[3]==="cancel"||p[3]==="resend"))return true;
