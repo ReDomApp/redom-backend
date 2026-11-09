@@ -14,7 +14,12 @@ export class Aurelink {
     this.communications={
       overview:()=>this.request("GET","/aurelink/communications/overview"),
       sms:{send:(body,options)=>this.request("POST","/aurelink/communications/sms/send",{body,...options})},
-      email:{send:(body,options)=>this.request("POST","/aurelink/communications/email/send",{body,...options})}
+      email:{send:(body,options)=>this.request("POST","/aurelink/communications/email/send",{body,...options})},
+      campaigns:{
+        list:()=>this.request("GET","/aurelink/communications/campaigns"),
+        create:(body)=>this.request("POST","/aurelink/communications/campaigns",{body}),
+        send:(id,body)=>this.request("POST","/aurelink/communications/campaigns/"+encodeURIComponent(id)+"/send",{body})
+      }
     };
     this.verify={
       start:(body,options)=>this.request("POST","/aurelink/verify/start",{body,...options}),
