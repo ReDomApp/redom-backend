@@ -198,7 +198,10 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     await client.query("COMMIT");
     let queued=0,skipped=0;
     for(const contact of recipients.rows){
-      const recipient=String(contact.destination),idempotencyKey=("campaign:"+campaign.id+":"+contact.id).slice(0,128);
+      const recipient=String(contact.destination);
+      const previous=await pool.query("SELECT status,(SELECT COUNT(*)::int FROM aurelink_messages WHERE campaign_id=$1 AND recipient=$2) AS attempts FROM aurelink_messages WHERE campaign_id=$1 AND recipient=$2 ORDER BY created_at DESC LIMIT 1",[campaign.id,recipient]);
+      if(previous.rows[0]&&previous.rows[0].status!=="failed"){skipped++;continue;}
+      const attemptNo=Number(previous.rows[0]?.attempts||0)+1,idempotencyKey=("campaign:"+campaign.id+":"+contact.id+":"+attemptNo).slice(0,128);
       if(campaign.channel==="sms"){
         const payload={channel:"sms" as const,provider:provider as "brevo"|"twilio",category:"marketing" as const,input:{recipient,sender,content:String(campaign.content_text||""),category:"marketing" as const,webUrl:typeof req.body.webUrl==="string"?req.body.webUrl:undefined}};
         if(!payload.input.webUrl){skipped++;continue;}
