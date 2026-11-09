@@ -254,6 +254,7 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
   await pool.query("ALTER TABLE aurelink_communications_workspaces ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES aurelink_developer_projects(id) ON DELETE CASCADE");
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS aurelink_communications_workspaces_default_user_idx ON aurelink_communications_workspaces(user_id) WHERE project_id IS NULL");
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS aurelink_communications_workspaces_project_idx ON aurelink_communications_workspaces(user_id,project_id) WHERE project_id IS NOT NULL");
+  await pool.query("ALTER TABLE aurelink_email_domains ADD COLUMN IF NOT EXISTS tracking_settings JSONB NOT NULL DEFAULT '{}'::jsonb");
   await pool.query("ALTER TABLE aurelink_messages DROP CONSTRAINT IF EXISTS aurelink_messages_status_check");
   await pool.query("ALTER TABLE aurelink_messages ADD CONSTRAINT aurelink_messages_status_check CHECK(status IN ('queued','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed','opened','clicked'))");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ");
