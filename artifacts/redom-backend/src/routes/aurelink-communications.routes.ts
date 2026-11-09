@@ -108,7 +108,7 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
     const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"sms",category,provider,recipient,sender,content,idempotencyKey:key,payload:{channel:"sms",provider:provider as "brevo"|"twilio",category:category as "transactional"|"marketing"|"otp"|"notification",input:{recipient,sender,content,category:category as "transactional"|"marketing"|"otp"|"notification",webUrl}}});
     if("conflict" in queued)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
     return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed)});
-  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue SMS."});}
+  }catch(error){if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue SMS."});}
 });
 
 router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(req,res)=>{
@@ -124,7 +124,7 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
     const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"transactional",provider,recipient,sender,subject,content:html||text||"",idempotencyKey:key,payload:{channel:"email",provider:provider as "resend"|"brevo",category:"transactional",input:{recipient,sender,senderName,subject,html,text,replyTo:typeof req.body.replyTo==="string"?req.body.replyTo:undefined}}});
     if("conflict" in queued)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
     return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed)});
-  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
+  }catch(error){if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
 });
 
 router.get("/aurelink/communications/messages",aurelinkAuthMiddleware,async(req,res)=>{
@@ -199,6 +199,7 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     return res.status(202).json({success:true,campaignId:campaign.id,queued,skipped,status:queued?"sending":"completed"});
   }catch(error){
     await client.query("ROLLBACK").catch(()=>undefined);
+    if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient to queue the full campaign."});
     return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to start campaign."});
   }finally{client.release();}
 });
