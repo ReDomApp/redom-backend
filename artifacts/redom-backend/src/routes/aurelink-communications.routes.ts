@@ -66,6 +66,16 @@ async function workspaceId(userId: string): Promise<string> {
   if (!row) throw new Error("Aurelink communications workspace is unavailable.");
   return String(row.id);
 }
+async function approvedSmsSender(wid:string,sender:string,provider:string,countryCode:string):Promise<boolean>{
+  const row=await pool.query("SELECT id FROM aurelink_sender_ids WHERE workspace_id=$1 AND channel='sms' AND LOWER(sender)=LOWER($2) AND provider=$3 AND country_code=$4 AND status='approved' LIMIT 1",[wid,sender,provider,countryCode]);
+  return Boolean(row.rows[0]);
+}
+async function verifiedEmailSender(wid:string,sender:string,provider:string):Promise<boolean>{
+  const domain=sender.split("@").pop()?.toLowerCase()||"";
+  if(!domain)return false;
+  const row=await pool.query("SELECT id FROM aurelink_email_domains WHERE workspace_id=$1 AND domain=$2 AND provider=$3 AND status='verified' LIMIT 1",[wid,domain,provider]);
+  return Boolean(row.rows[0]);
+}
 
 /** Provider sends are available only to live Aurelink account sessions at this stage. */
 router.get("/aurelink/communications/overview", aurelinkAuthMiddleware, async (req,res) => {
@@ -85,10 +95,11 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
   const provider=String(req.body.provider||process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo");
   if(!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported SMS provider."});
   const category=req.body.category==="marketing"?"marketing":req.body.category==="otp"?"otp":req.body.category==="notification"?"notification":"transactional";
-  const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
-  if(!/^\\+?[1-9]\\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{1,11}$/.test(sender)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide a valid E.164 recipient, 1–11 character sender and message content up to 5000 characters."});
+  const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),countryCode=String(req.body.countryCode||"").toUpperCase(),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
+  if(!/^\\+?[1-9]\\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9 ]{1,11}$/.test(sender)||!/[A-Za-z]/.test(sender)||!/^[A-Z]{2}$/.test(countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide an E.164 recipient, ISO countryCode, approved 1–11 character alphanumeric sender and message content up to 5000 characters."});
   try{
     const wid=await workspaceId(req.user!.userId);
+    if(!await approvedSmsSender(wid,sender,provider,countryCode))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"This sender ID is not approved for the selected provider and destination country."});
     if(category==="marketing"){
       const contact=(await pool.query("SELECT consent_status FROM aurelink_sms_contacts WHERE workspace_id=$1 AND phone_number=$2",[wid,recipient])).rows[0];
       if(contact?.consent_status!=="opted_in")return res.status(403).json({success:false,code:"MARKETING_CONSENT_REQUIRED",message:"Marketing SMS requires a contact with recorded opt-in consent."});
@@ -109,6 +120,7 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient)||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sender)||!subject.trim()||(!html?.trim()&&!text?.trim()))return res.status(400).json({success:false,message:"Provide valid sender/recipient email addresses, a subject and HTML or text content."});
   try{
     const wid=await workspaceId(req.user!.userId);
+    if(!await verifiedEmailSender(wid,sender,provider))return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify and authenticate this sender domain with the selected provider before sending."});
     const suppression=(await pool.query("SELECT id FROM aurelink_email_suppressions WHERE workspace_id=$1 AND LOWER(email)=LOWER($2)",[wid,recipient])).rows[0];
     if(suppression)return res.status(403).json({success:false,code:"EMAIL_SUPPRESSED",message:"This recipient is suppressed for this workspace."});
     const key=String(req.headers["idempotency-key"]||"").trim();
@@ -201,10 +213,15 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     const provider=String(req.body.provider||(campaign.channel==="sms"?(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo"):(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend")));
     if(campaign.channel==="sms"&&!SMS_PROVIDERS.has(provider)||campaign.channel==="email"&&!EMAIL_PROVIDERS.has(provider)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Unsupported campaign provider."});}
     const sender=String(req.body.sender||"");
+    const countryCode=String(req.body.countryCode||"").toUpperCase();
+    if(campaign.channel==="sms"&&!/^[A-Z]{2}$/.test(countryCode)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an ISO destination countryCode."});}
     if(campaign.channel==="sms"&&typeof req.body.webUrl!=="string") {await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
     if(!sender){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"An approved sender is required to start a campaign."});}
     if(campaign.channel==="sms"&&!/^[A-Za-z0-9]{1,11}$/.test(sender)||campaign.channel==="email"&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sender)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"The campaign sender is invalid for the selected channel."});}
-    if(campaign.channel==="sms"){try{if(new URL(String(req.body.webUrl)).protocol!=="https:")throw new Error("invalid");}catch{await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}}
+    if(campaign.channel==="sms"){
+      if(!await approvedSmsSender(wid,sender,provider,countryCode)){await client.query("ROLLBACK");return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"This sender ID is not approved for the selected provider and destination country."});}
+      try{if(new URL(String(req.body.webUrl)).protocol!=="https:")throw new Error("invalid");}catch{await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
+    }else if(!await verifiedEmailSender(wid,sender,provider)){await client.query("ROLLBACK");return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify and authenticate this sender domain with the selected provider before sending."});}
     const recipients=campaign.channel==="sms"
       ?await client.query("SELECT id,phone_number AS destination FROM aurelink_sms_contacts WHERE workspace_id=$1 AND consent_status='opted_in' AND phone_number IS NOT NULL ORDER BY id",[wid])
       :await client.query("SELECT id,email AS destination FROM aurelink_email_contacts WHERE workspace_id=$1 AND consent_status='opted_in' AND email IS NOT NULL ORDER BY id",[wid]);
@@ -249,6 +266,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
   const sender=String(req.body.sender||"");
   if(channel==="sms"&&!/^[A-Za-z0-9]{1,11}$/.test(sender))return res.status(400).json({success:false,message:"SMS sender must be 1–11 alphanumeric characters."});
   if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender))return res.status(400).json({success:false,message:"A valid sender email address is required."});
+  if(channel==="sms"){const countryCode=String(req.body.countryCode||"").toUpperCase();if(!/^[A-Z]{2}$/.test(countryCode)||!await approvedSmsSender(wid,sender,provider,countryCode))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"An approved sender ID for the destination country is required."});}else if(!await verifiedEmailSender(wid,sender,provider))return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify the sender domain with the selected provider before sending verification email."});
   const saved=await pool.query("INSERT INTO aurelink_verification_sessions(workspace_id,channel,purpose,destination,destination_hash,code_hash,verification_salt,provider,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,expires_at",[wid,channel,purpose,destination,hash(destination.toLowerCase()),makeVerificationHash(code,salt),salt,provider,expiresAt]);
   try{
     const content=channel==="sms"?`Your Aurelink verification code is ${code}. It expires in 5 minutes.`:`Your Aurelink verification code is ${code}. It expires in 5 minutes. Never share this code.`;
