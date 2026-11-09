@@ -226,6 +226,7 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
       credential_id UUID NOT NULL REFERENCES aurelink_smtp_credentials(id) ON DELETE CASCADE,
       message_key VARCHAR(255) NOT NULL,
+      client_message_id VARCHAR(255),
       envelope_from VARCHAR(320) NOT NULL,
       recipients JSONB NOT NULL DEFAULT '[]'::jsonb,
       provider VARCHAR(24) NOT NULL,
@@ -236,6 +237,7 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(workspace_id,message_key)
     );
+    ALTER TABLE aurelink_smtp_messages ADD COLUMN IF NOT EXISTS client_message_id VARCHAR(255);
     CREATE INDEX IF NOT EXISTS aurelink_smtp_messages_credential_idx ON aurelink_smtp_messages(credential_id,created_at DESC);
   `);
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS campaign_id UUID REFERENCES aurelink_campaigns(id) ON DELETE SET NULL");
