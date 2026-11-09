@@ -102,8 +102,7 @@ router.post("/aurelink/verify/:id/check",aurelinkAuthMiddleware,async(req,res)=>
     if(!session){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Verification session not found."});}
     if(session.status!=="pending"||new Date(session.expires_at).getTime()<=Date.now()){await client.query("UPDATE aurelink_verification_sessions SET status='expired',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(410).json({success:false,message:"Verification session expired or is no longer pending."});}
     if(Number(session.attempts)>=Number(session.max_attempts)){await client.query("UPDATE aurelink_verification_sessions SET status='locked',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(429).json({success:false,message:"Verification attempts exceeded."});}
-    const code=String(req.body.code||""), candidate=makeVerificationHash(code,session.id), hashInput=String(session.code_hash||"");
-    // Salt is kept separately from the returned ID; it is regenerated in the issuance path below.
+    const code=String(req.body.code||""), candidate=makeVerificationHash(code,String(session.verification_salt||"")), hashInput=String(session.code_hash||"");
     const candidateMatches=/^\d{6}$/.test(code)&&hashInput.length===64&&hashInput===candidate;
     if(!candidateMatches){await client.query("UPDATE aurelink_verification_sessions SET attempts=attempts+1,updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(400).json({success:false,message:"Incorrect verification code."});}
     await client.query("UPDATE aurelink_verification_sessions SET status='approved',verified_at=NOW(),updated_at=NOW() WHERE id=$1",[session.id]);
