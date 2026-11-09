@@ -86,11 +86,18 @@ function normalizeRecords(provider: AurelinkEmailProvider, value: any): Aurelink
 }
 function snapshot(provider: AurelinkEmailProvider, value: any, id?: string): AurelinkDomainSnapshot {
   const providerDomainId = String(id || value?.id || value?.domain_name || value?.domain || "");
+  const records = normalizeRecords(provider, value);
+  if (!records.some(record => record.type === "TXT" && record.name.toLowerCase().startsWith("_dmarc"))) {
+    records.push({
+      type:"TXT", name:"_dmarc", value:"v=DMARC1; p=none;",
+      status:"recommended", purpose:"recommended_dmarc", required:false,
+    } as AurelinkDnsRecord);
+  }
   return {
     provider, providerDomainId,
     verified: value?.verified === true || value?.status === "verified",
     authenticated: value?.authenticated === true || value?.status === "verified",
-    records: normalizeRecords(provider, value),
+    records,
     raw: value,
   };
 }
