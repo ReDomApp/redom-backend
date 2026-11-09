@@ -28,6 +28,18 @@ async function resolvePublicWebhookUrl(value:string){
 async function publicWebhookUrl(value:string){return (await resolvePublicWebhookUrl(value)).url;}
 
 export async function ensureAurelinkDeveloperSchema():Promise<void>{
+ await pool.query(`CREATE TABLE IF NOT EXISTS aurelink_developer_projects(
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+  name VARCHAR(120) NOT NULL,
+  description VARCHAR(500),
+  status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended','archived')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id,name)
+ )`);
+ await pool.query("ALTER TABLE aurelink_api_keys ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES aurelink_developer_projects(id) ON DELETE SET NULL");
+ await pool.query("CREATE INDEX IF NOT EXISTS aurelink_api_keys_project_idx ON aurelink_api_keys(project_id,created_at DESC)");
  await pool.query("ALTER TABLE aurelink_api_keys ADD COLUMN IF NOT EXISTS environment VARCHAR(8) NOT NULL DEFAULT 'live' CHECK(environment IN ('test','live'))");
  await pool.query("ALTER TABLE aurelink_api_keys ADD COLUMN IF NOT EXISTS scopes JSONB NOT NULL DEFAULT '[\"catalog:read\",\"orders:read\",\"numbers:write\",\"messages:read\",\"wallet:read\"]'::jsonb");
  await pool.query("ALTER TABLE aurelink_api_keys ADD COLUMN IF NOT EXISTS rate_limit_per_minute INTEGER NOT NULL DEFAULT 60 CHECK(rate_limit_per_minute BETWEEN 1 AND 6000)");
