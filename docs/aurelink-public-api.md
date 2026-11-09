@@ -104,6 +104,34 @@ A repeated key with the same request returns the stored response. Reusing a key 
 
 Pool selection and provider credentials are internal Aurelink implementation details and are not exposed as public API controls.
 
+## Developer projects and credentials
+
+Create developer projects in the authenticated Aurelink account:
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/aurelink/account/projects` | List projects and their active API-key counts |
+| POST | `/aurelink/account/projects` | Create an isolated communications project |
+| PATCH | `/aurelink/account/projects/:id` | Rename, suspend, reactivate or archive a project |
+| GET | `/aurelink/account/api-keys` | List key metadata and associated project |
+| POST | `/aurelink/account/api-keys` | Issue a test/live API key, optionally with `projectId` |
+| PATCH | `/aurelink/account/api-keys/:id` | Change label, scopes, rate limit or project assignment |
+| POST | `/aurelink/account/api-keys/:id/rotate` | Rotate the key secret |
+| DELETE | `/aurelink/account/api-keys/:id` | Revoke the key |
+
+Project API keys are restricted to the project's isolated communications workspace (contacts, sender identities, domains, messages, campaigns and SMTP credentials). They cannot access number purchasing, the account wallet, profile/security routes or another project's workspace. A suspended or archived project immediately blocks its keys. Create one project per application/environment boundary and issue separate keys with only the required scopes.
+
+Example project creation:
+
+```json
+{
+  "name": "Production checkout",
+  "description": "Order confirmations and OTP delivery"
+}
+```
+
+Then issue a project key by including the returned `projectId` in the API-key creation request. The secret is returned once; store it in a server-side secret manager. SMTP credentials remain separate and are managed independently.
+
 ## Aurelink Communications
 
 Communications endpoints are authenticated with a user session or a developer API key carrying the listed scope. Provider credentials are never returned to clients.
