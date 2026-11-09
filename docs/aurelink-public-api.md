@@ -180,6 +180,7 @@ Start it with `POST /aurelink/communications/campaigns/:id/send` and a JSON body
 ```http
 POST /redom-backend/v1/aurelink/communications/sms/send
 Authorization: Bearer aul_live_...
+Idempotency-Key: 6f0e2e18-8c8b-4f66-8a5f-2b8e1c9b81ad
 Content-Type: application/json
 
 {
