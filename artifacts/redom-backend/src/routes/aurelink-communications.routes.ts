@@ -168,13 +168,13 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
       if(campaign.channel==="sms"){
         const payload={channel:"sms" as const,provider:provider as "brevo"|"twilio",category:"marketing" as const,input:{recipient,sender,content:String(campaign.content_text||""),category:"marketing" as const,webUrl:typeof req.body.webUrl==="string"?req.body.webUrl:undefined}};
         if(!payload.input.webUrl){skipped++;continue;}
-        const result=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"sms",category:"campaign",provider,recipient,sender,content:payload.input.content,idempotencyKey,payload});
+        const result=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"sms",category:"campaign",provider,recipient,sender,content:payload.input.content,idempotencyKey,payload,campaignId:String(campaign.id)});
         if("conflict" in result)skipped++;else queued++;
       }else{
         const suppressed=(await pool.query("SELECT id FROM aurelink_email_suppressions WHERE workspace_id=$1 AND LOWER(email)=LOWER($2)",[wid,recipient])).rows[0];
         if(suppressed){skipped++;continue;}
         const payload={channel:"email" as const,provider:provider as "resend"|"brevo",category:"notification" as const,input:{recipient,sender,senderName:String(req.body.senderName||"Aurelink"),subject:String(campaign.subject),html:campaign.content_html||undefined,text:campaign.content_text||undefined}};
-        const result=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"campaign",provider,recipient,sender,subject:String(campaign.subject),content:String(campaign.content_html||campaign.content_text||""),idempotencyKey,payload});
+        const result=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"campaign",provider,recipient,sender,subject:String(campaign.subject),content:String(campaign.content_html||campaign.content_text||""),idempotencyKey,payload,campaignId:String(campaign.id)});
         if("conflict" in result)skipped++;else queued++;
       }
     }
