@@ -294,6 +294,13 @@ router.post("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req
   return res.status(200).json({success:true,contact:result.rows[0]});
 });
 
+router.get("/aurelink/communications/analytics",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),days=Math.max(1,Math.min(90,Number.parseInt(String(req.query.days||"30"),10)||30)),channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null;
+ const summary=await pool.query("SELECT channel,COUNT(*)::int AS total,COUNT(*) FILTER(WHERE status='delivered')::int AS delivered,COUNT(*) FILTER(WHERE status IN ('bounced','failed','rejected'))::int AS failed,COUNT(*) FILTER(WHERE status='deferred')::int AS deferred,COUNT(*) FILTER(WHERE status='complained')::int AS complaints,COUNT(*) FILTER(WHERE status='unsubscribed')::int AS unsubscribed,COUNT(*) FILTER(WHERE opened_at IS NOT NULL)::int AS opened,COUNT(*) FILTER(WHERE clicked_at IS NOT NULL)::int AS clicked,COALESCE(AVG(delivery_latency_ms) FILTER(WHERE delivery_latency_ms IS NOT NULL),0)::numeric(12,2) AS average_delivery_latency_ms FROM aurelink_messages WHERE workspace_id=$1 AND created_at>=NOW()-($2 * INTERVAL '1 day') AND ($3::text IS NULL OR channel=$3) GROUP BY channel ORDER BY channel",[wid,days,channel]);
+ const suppression=await pool.query("SELECT reason,COUNT(*)::int AS count FROM aurelink_email_suppressions WHERE workspace_id=$1 AND created_at>=NOW()-($2 * INTERVAL '1 day') GROUP BY reason ORDER BY reason",[wid,days]);
+ return res.json({success:true,periodDays:days,channel,summary:summary.rows,suppressions:suppression.rows});
+});
+
 router.get("/aurelink/communications/messages",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),limit=Math.min(100,Math.max(1,Number.parseInt(String(req.query.limit||"50"),10)||50)),offset=Math.max(0,Number.parseInt(String(req.query.offset||"0"),10)||0);
   const channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null,status=typeof req.query.status==="string"?req.query.status:null;
