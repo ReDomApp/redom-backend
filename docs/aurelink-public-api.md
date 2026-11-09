@@ -161,7 +161,9 @@ Set these values only on the backend service (never in browser/mobile builds):
 | `AURELINK_TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_PHONE_NUMBER` | Twilio sender configuration |
 | `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` | Stable 32+ character key for encrypting queued message payloads; falls back to `JWT_ACCESS_SECRET` |
 | `AURELINK_VERIFICATION_PEPPER` | Optional dedicated 32+ character OTP HMAC secret; falls back to `JWT_ACCESS_SECRET` |
-| `AURELINK_RESEND_WEBHOOK_SECRET` | Resend/Svix signing secret for delivery callbacks |\n| `AURELINK_BREVO_SMTP_LOGIN`, `AURELINK_BREVO_SMTP_KEY` | Separate Brevo SMTP credentials for the standalone SMTP relay; not the REST API key |\n| `AURELINK_SMTP_HOSTNAME` | Public hostname of the deployed SMTP TCP relay; leave unset until deployed |
+| `AURELINK_RESEND_WEBHOOK_SECRET` | Resend/Svix signing secret for delivery callbacks |
+| `AURELINK_BREVO_SMTP_LOGIN`, `AURELINK_BREVO_SMTP_KEY` | Separate Brevo SMTP credentials for the standalone SMTP relay; not the REST API key |
+| `AURELINK_SMTP_HOSTNAME` | Public hostname of the deployed SMTP TCP relay; leave unset until deployed |
 | `AURELINK_TWILIO_STATUS_CALLBACK_URL` | Public HTTPS URL ending in `/aurelink/webhooks/twilio/status` |
 | `AURELINK_DEFAULT_SMS_PROVIDER`, `AURELINK_DEFAULT_EMAIL_PROVIDER` | Primary provider selection |
 | `AURELINK_SMS_FALLBACK_PROVIDER`, `AURELINK_EMAIL_FALLBACK_PROVIDER` | Optional failover provider |
@@ -180,7 +182,10 @@ The worker falls back to `JWT_ACCESS_SECRET` if dedicated encryption/verificatio
 | POST | `/aurelink/communications/dns/cloudflare/connect` | Connect a zone-scoped Cloudflare API token |
 | GET | `/aurelink/communications/dns/cloudflare/connections` | List connected Cloudflare zones |
 | POST | `/aurelink/communications/domains/:id/apply-dns` | Add provider records to the connected Cloudflare zone without overwriting conflicts |
-| GET | `/aurelink/communications/email-senders` | List email sender identities |\n| POST | `/aurelink/communications/email-senders` | Create an email sender identity in Resend/Brevo |\n| POST | `/aurelink/communications/email-senders/:id/check` | Refresh sender verification state |\n| GET | `/aurelink/communications/senders` | List SMS sender registration requests |
+| GET | `/aurelink/communications/email-senders` | List email sender identities |
+| POST | `/aurelink/communications/email-senders` | Create an email sender identity in Resend/Brevo |
+| POST | `/aurelink/communications/email-senders/:id/check` | Refresh sender verification state |
+| GET | `/aurelink/communications/senders` | List SMS sender registration requests |
 | POST | `/aurelink/communications/senders` | Create a sender registration request for a country/provider |
 | POST | `/aurelink/communications/senders/:id/review` | Admin-only evidence-backed provider status update |
 
