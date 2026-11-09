@@ -67,14 +67,24 @@ async function workspaceId(userId: string): Promise<string> {
   return String(row.id);
 }
 async function approvedSmsSender(wid:string,sender:string,provider:string,countryCode:string):Promise<boolean>{
-  const row=await pool.query("SELECT id FROM aurelink_sender_ids WHERE workspace_id=$1 AND channel='sms' AND LOWER(sender)=LOWER($2) AND provider=$3 AND country_code=$4 AND status='approved' LIMIT 1",[wid,sender,provider,countryCode]);
-  return Boolean(row.rows[0]);
+  const providers=[provider,process.env.AURELINK_SMS_FALLBACK_PROVIDER].filter((value,index,array):value is string=>Boolean(value)&&array.indexOf(value)===index);
+  for(const selected of providers){
+    if(!SMS_PROVIDERS.has(selected))return false;
+    const row=await pool.query("SELECT id FROM aurelink_sender_ids WHERE workspace_id=$1 AND channel='sms' AND LOWER(sender)=LOWER($2) AND provider=$3 AND country_code=$4 AND status='approved' LIMIT 1",[wid,sender,selected,countryCode]);
+    if(!row.rows[0])return false;
+  }
+  return true;
 }
 async function verifiedEmailSender(wid:string,sender:string,provider:string):Promise<boolean>{
   const domain=sender.split("@").pop()?.toLowerCase()||"";
   if(!domain)return false;
-  const row=await pool.query("SELECT id FROM aurelink_email_domains WHERE workspace_id=$1 AND domain=$2 AND provider=$3 AND status='verified' LIMIT 1",[wid,domain,provider]);
-  return Boolean(row.rows[0]);
+  const providers=[provider,process.env.AURELINK_EMAIL_FALLBACK_PROVIDER].filter((value,index,array):value is string=>Boolean(value)&&array.indexOf(value)===index);
+  for(const selected of providers){
+    if(!EMAIL_PROVIDERS.has(selected))return false;
+    const row=await pool.query("SELECT id FROM aurelink_email_domains WHERE workspace_id=$1 AND domain=$2 AND provider=$3 AND status='verified' LIMIT 1",[wid,domain,selected]);
+    if(!row.rows[0])return false;
+  }
+  return true;
 }
 
 /** Provider sends are available only to live Aurelink account sessions at this stage. */
