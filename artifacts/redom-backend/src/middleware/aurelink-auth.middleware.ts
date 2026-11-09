@@ -8,6 +8,7 @@ function secrets(){const access=process.env.JWT_ACCESS_SECRET;if(!access)throw n
 function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
+  if(req.path==="/aurelink/communications/overview")return true;
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
   if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
@@ -18,6 +19,8 @@ function apiKeyAllowed(req:Request):boolean{
  }
  if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
+  if(["/aurelink/communications/sms/send","/aurelink/communications/email/send","/aurelink/verify/start"].includes(req.path))return true;
+  if(p[1]==="verify"&&p.length===4&&p[3]==="check")return true;
   if(["/aurelink/quotes","/aurelink/rental-quotes","/aurelink/checkout","/aurelink/activations","/aurelink/rentals","/aurelink/dedicated/quote","/aurelink/dedicated/orders","/aurelink/nonvoip/orders"].includes(req.path))return true;
   if(p[1]==="activations"&&p.length===4&&(p[3]==="cancel"||p[3]==="resend"))return true;
   if(p[1]==="rentals"&&p.length===4&&p[3]==="cancel")return true;
@@ -29,6 +32,9 @@ function apiKeyAllowed(req:Request):boolean{
 }
 function scopeFor(req:Request):string{
  const p=req.path.split("/").filter(Boolean);
+ if(req.path==="/aurelink/communications/overview")return "communications:read";
+ if(p[1]==="verify")return "verify:write";
+ if(p[1]==="communications")return "communications:send";
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
  if(req.method==="GET"&&req.path.endsWith("/messages"))return "messages:read";
  if(req.method==="GET"&&(req.path.endsWith("/orders")||p[1]==="activations"&&p.length===4&&p[3]==="status"||p[1]==="rentals"&&p.length===4&&p[3]==="status"))return "orders:read";
@@ -56,6 +62,10 @@ function testResponse(req:Request,res:Response):boolean{
  res.setHeader("X-Aurelink-Test-Mode","true");res.setHeader("Cache-Control","no-store");
  const ok=(data:unknown,status=200)=>{res.status(status).json({success:true,environment:"test",data,...(data&&typeof data==="object"&&!Array.isArray(data)?data as object:{})});return true;};
  if(req.method==="GET"&&path==="/aurelink/status")return ok({status:"operational",testMode:true});
+ if(req.method==="POST"&&path==="/aurelink/verify/start")return ok({verificationId:id,expiresAt:new Date(Date.now()+300000).toISOString(),testMode:true},202);
+ if(req.method==="POST"&&p[1]==="verify"&&p[3]==="check")return ok({verified:true,verificationId:p[2],testMode:true});
+ if(req.method==="POST"&&p[1]==="communications")return ok({message:{id,provider:"sandbox",status:"accepted",testMode:true}},202);
+ if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
  if(req.method==="GET"&&(path==="/aurelink/catalog/services"||path==="/aurelink/catalog/countries"||path==="/aurelink/catalog/suggested-countries"))return ok({services:[{id:"telegram",name:"Telegram"},{id:"google",name:"Google"},{id:"facebook",name:"Facebook"}],countries:[{code:"US",name:"United States",dialCode:"+1"},{code:"GB",name:"United Kingdom",dialCode:"+44"}]});
  if(req.method==="GET"&&path==="/aurelink/catalog/rentals")return ok({rentals:[],countries:[{code:"US",name:"United States"}],testMode:true});
  if(req.method==="GET"&&p[1]==="catalog"&&p[2]==="rentals"&&p[4]==="services")return ok({services:[{id:"test-service",name:"Test verification",available:true}],testMode:true});
