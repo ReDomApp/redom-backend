@@ -101,7 +101,7 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
     registrationDocuments:Array.isArray(req.body.registrationDocuments)?req.body.registrationDocuments.filter((x:any)=>typeof x==="string").slice(0,10):[],
   };
   if(!channel||channel!=="sms")return res.status(400).json({success:false,message:"This registration workflow currently accepts SMS sender IDs only."});
-  if(!sender||!/^[A-Za-z0-9]{1,11}$/.test(sender)||!/[A-Za-z]/.test(sender))return res.status(400).json({success:false,message:"Alphanumeric sender IDs must be 1–11 ASCII letters or digits and include at least one letter."});
+  if(!sender||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender))return res.status(400).json({success:false,message:"Alphanumeric sender IDs must be 3–11 ASCII letters or digits and include at least one letter."});
   if(!senderProviders.has(provider))return res.status(400).json({success:false,message:"SMS sender registration provider must be twilio or brevo."});
   if(!/^[A-Z]{2}$/.test(countryCode))return res.status(400).json({success:false,message:"A two-letter ISO destination country code is required."});
   if(countryCode==="US"||countryCode==="CA")return res.status(422).json({success:false,code:"ALPHANUMERIC_SENDER_UNSUPPORTED",message:"Alphanumeric sender IDs are not supported in the United States or Canada. Use an eligible registered phone-number sender instead."});
@@ -121,7 +121,14 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
     success:true,sender:saved.rows[0],
     registrationState:"pending_customer_submission",
     providerSubmission:"not_submitted",
-    nextStep:"Aurelink has stored the registration request. Carrier/provider submission and approval must be completed through the provider's supported registration process; this API does not claim approval or submit unsupported provider requests.",
+    nextStep:provider==="brevo"
+      ?"Open Brevo > Settings > Campaigns > SMS Sender ID, submit the same sender and country with the business details/documents above, then return to Aurelink when Brevo confirms approval."
+      :"Open Twilio Console > Communications > Trust Hub > Registrations > Alphanumeric Sender IDs, submit the same sender and country with the business details/documents above, then return to Aurelink when Twilio confirms approval.",
+    providerRegistrationGuide:provider==="brevo"
+      ?"https://help.brevo.com/hc/en-us/articles/28255350696466-Register-a-Sender-ID-to-send-SMS-messages"
+      :"https://www.twilio.com/docs/trust-hub/registrations/alphanumeric-sender-id",
+    approvalEvidenceRequired:true,
+    note:"Aurelink stores and enforces registration state; provider/carrier approval is not fabricated or automatically inferred.",
   });
 });
 
