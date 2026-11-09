@@ -1,4 +1,4 @@
-import { createHash, randomInt } from "node:crypto";
+import { createHash, createHmac, randomInt } from "node:crypto";
 import { Resend } from "resend";
 
 type SmsProvider = "brevo" | "twilio";
@@ -70,4 +70,4 @@ export async function sendAurelinkEmail(provider:EmailProvider,input:SendEmailIn
 }
 export function createOtpCode():string{return String(randomInt(0,1_000_000)).padStart(6,"0");}
 export function hashCommunicationContent(content:string):string{return sha256(content);}
-export function makeVerificationHash(code:string,salt:string):string{return createHash("sha256").update(salt).update(":").update(code).digest("hex");}
+export function makeVerificationHash(code:string,salt:string):string{const pepper=process.env.AURELINK_VERIFICATION_PEPPER||process.env.JWT_ACCESS_SECRET;if(!pepper||pepper.length<32)throw new Error("AURELINK_VERIFICATION_PEPPER or a 32+ character JWT_ACCESS_SECRET is required.");return createHmac("sha256",pepper).update(salt).update(":").update(code).digest("hex");}
