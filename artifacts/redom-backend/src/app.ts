@@ -20,6 +20,9 @@ app.use("/redom-backend/payments/stripe/webhook", express.raw({ type: "applicati
 app.use("/support/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/ops/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/redom-backend/ops/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/redom-backend/v1/aurelink/webhooks/resend", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/v1/aurelink/webhooks/resend", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/aurelink/webhooks/resend", express.raw({ type: "application/json", limit: "2mb" }));
 // Encrypted media is base64 encoded before transport. Keep a bounded JSON envelope above the 10 MB binary media limit.
 app.use(express.json({ limit: "16mb" }));
 app.use(express.urlencoded({ extended: true, limit: "16mb" }));
