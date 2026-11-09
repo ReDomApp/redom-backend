@@ -111,6 +111,8 @@ Communications endpoints are authenticated with a user session or a developer AP
 | Method | Route | Required API scope |
 | --- | --- | --- |
 | GET | `/aurelink/communications/overview` | `communications:read` |
+| GET | `/aurelink/communications/messages` | `communications:read` |
+| GET | `/aurelink/communications/messages/:id` | `communications:read` |
 | POST | `/aurelink/communications/sms/send` | `communications:send` |
 | POST | `/aurelink/communications/email/send` | `communications:send` |
 | POST | `/aurelink/verify/start` | `verify:write` |
@@ -123,6 +125,10 @@ SMS and email send requests are accepted into an encrypted PostgreSQL outbox and
 Every send request must include a unique `Idempotency-Key` header (maximum 128 characters). Reuse the same key only for retries of the same payload. Reusing a key with a different recipient, sender, provider, or content returns HTTP 409. Omitting the key returns HTTP 400. Message content is stored as an encrypted queue payload; configure a stable `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` of at least 32 characters. The backend can fall back to `JWT_ACCESS_SECRET`, but a dedicated key is recommended and must remain stable across deployments.
 
 The communications overview includes usage counts and units by channel/status. This is operational usage metering only: it does not yet calculate provider-specific prices, debit the Aurelink wallet, or create wallet ledger entries. Do not treat `metered_amount_minor` as an invoice total.
+
+### Message history
+
+Use `GET /aurelink/communications/messages` to list the authenticated workspace's recent outbound messages. Optional query parameters: `limit` (1–100, default 50), `offset` (default 0), `channel` (`sms` or `email`), and `status`. Retrieve one message with `GET /aurelink/communications/messages/:id`. Message records include provider acceptance/delivery status and timestamps, not the original message body.
 
 ### Campaigns
 
