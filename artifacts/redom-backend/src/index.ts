@@ -24,6 +24,7 @@ import { startAurelinkLifecycleWorker, stopAurelinkLifecycleWorker } from "./ser
 import { startAurelinkDedicatedRenewalWorker, stopAurelinkDedicatedRenewalWorker } from "./services/aurelink/aurelink-dedicated-renewal.service";
 import { ensureAurelinkDeveloperSchema, startAurelinkWebhookWorker, stopAurelinkWebhookWorker } from "./services/aurelink/developer-platform.service";
 import { ensureAurelinkCommunicationsSchema } from "./services/aurelink/communications-schema.service";
+import { startAurelinkCommunicationsWorker, stopAurelinkCommunicationsWorker } from "./services/aurelink/communications-worker.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -55,6 +56,7 @@ async function start(): Promise<void> {
     startAurelinkLifecycleWorker();
     startAurelinkDedicatedRenewalWorker();
     startAurelinkWebhookWorker();
+    startAurelinkCommunicationsWorker();
     logger.info({ host, port }, "Server listening");
   });
 
@@ -76,6 +78,7 @@ async function start(): Promise<void> {
     stopAurelinkLifecycleWorker();
     stopAurelinkDedicatedRenewalWorker();
     stopAurelinkWebhookWorker();
+    stopAurelinkCommunicationsWorker();
     server.close(async (error) => {
       if (error) { logger.error({ error: serializeError(error) }, "Error closing HTTP server"); process.exitCode = 1; }
       try { await pool.end(); } catch (poolError) { logger.error({ error: serializeError(poolError) }, "Error closing database pool"); process.exitCode = 1; }
