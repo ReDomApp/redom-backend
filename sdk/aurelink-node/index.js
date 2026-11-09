@@ -13,6 +13,7 @@ export class Aurelink {
     this.wallet={retrieve:()=>this.request("GET","/aurelink/wallet"),ledger:(query)=>this.request("GET","/aurelink/wallet/ledger",{query})};
     this.communications={
       overview:()=>this.request("GET","/aurelink/communications/overview"),
+      analytics:(query)=>this.request("GET","/aurelink/communications/analytics",{query}),
       domains:{
         list:()=>this.request("GET","/aurelink/communications/domains"),
         create:(body)=>this.request("POST","/aurelink/communications/domains",{body}),
