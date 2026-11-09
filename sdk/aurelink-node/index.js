@@ -22,6 +22,11 @@ export class Aurelink {
         connectCloudflare:(body)=>this.request("POST","/aurelink/communications/dns/cloudflare/connect",{body}),
         cloudflareConnections:()=>this.request("GET","/aurelink/communications/dns/cloudflare/connections")
       },
+      emailSenders:{
+        list:()=>this.request("GET","/aurelink/communications/email-senders"),
+        create:(body)=>this.request("POST","/aurelink/communications/email-senders",{body}),
+        check:(id)=>this.request("POST","/aurelink/communications/email-senders/"+encodeURIComponent(id)+"/check")
+      },
       senders:{
         list:()=>this.request("GET","/aurelink/communications/senders"),
         request:(body)=>this.request("POST","/aurelink/communications/senders",{body})
