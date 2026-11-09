@@ -53,7 +53,7 @@ export async function applyCloudflareDnsRecords(token:string,zoneId:string,domai
     const rows=Array.isArray(existing)?existing:[];
     const exact=rows.find((row:any)=>String(row.content||"").replace(/\.$/,"").toLowerCase()===content.replace(/\.$/,"").toLowerCase()&&(type!=="MX"||Number(row.priority)===Number(record.priority||0)));
     if(exact){results.push({type,name,status:"already_present",recordId:exact.id});continue;}
-    if(rows.length) {
+    if(rows.length && !(type==="TXT" && !content.toLowerCase().startsWith("v=spf1"))) {
       const isSpf=type==="TXT"&&content.toLowerCase().startsWith("v=spf1");
       results.push({type,name,status:"conflict",message:isSpf?"An SPF TXT record already exists at this hostname. Merge the provider include into the existing SPF record; never publish multiple SPF records.":"A different record of this type already exists at this hostname. Aurelink will not overwrite it.",existing:rows.map((row:any)=>({content:row.content,priority:row.priority}))});
       continue;
