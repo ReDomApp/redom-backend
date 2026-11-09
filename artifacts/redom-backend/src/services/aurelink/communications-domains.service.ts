@@ -144,6 +144,18 @@ async function resolveRecord(record: AurelinkDnsRecord, domain: string): Promise
     return { found: false, observed: [], error: error instanceof Error ? error.message : "DNS lookup failed." };
   }
 }
+
+export async function createAurelinkProviderEmailSender(email:string,name:string):Promise<{providerSenderId:string;active:boolean;raw:unknown}>{
+  const result=await request("brevo","/senders","POST",{email,name});
+  return {providerSenderId:String(result?.id||""),active:false,raw:result};
+}
+export async function getAurelinkProviderEmailSender(email:string,domain:string):Promise<{providerSenderId:string;active:boolean;raw:unknown}>{
+  const result=await request("brevo",`/senders?domain=${encodeURIComponent(domain)}`);
+  const senders=Array.isArray(result?.senders)?result.senders:[];
+  const match=senders.find((sender:any)=>String(sender.email||"").toLowerCase()===email.toLowerCase());
+  return {providerSenderId:String(match?.id||""),active:match?.active===true,raw:match||null};
+}
+
 export async function inspectAurelinkDomainDns(domainValue: string, records: AurelinkDnsRecord[]) {
   const domain = normalizeDomain(domainValue);
   const checks = await Promise.all(records.map(async record => {
