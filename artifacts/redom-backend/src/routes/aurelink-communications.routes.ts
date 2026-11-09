@@ -7,6 +7,7 @@ import {
   createOtpCode, makeVerificationHash,
 } from "../services/aurelink/communications-providers.service";
 import { enqueueAurelinkMessage } from "../services/aurelink/communications-worker.service";
+import { emitAurelinkWebhookEvent } from "../services/aurelink/developer-platform.service";
 
 const router = Router();
 
@@ -233,6 +234,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
       ?await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"sms",category:"otp",provider,recipient:destination,sender,content,idempotencyKey:"verification:"+String(saved.rows[0].id),verificationId:String(saved.rows[0].id),payload:{channel:"sms",provider:provider as "brevo"|"twilio",category:"otp",input:{recipient:destination,sender,content,category:"otp"}}})
       :await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"otp",provider,recipient:destination,sender,subject:"Your Aurelink verification code",content,idempotencyKey:"verification:"+String(saved.rows[0].id),verificationId:String(saved.rows[0].id),payload:{channel:"email",provider:provider as "resend"|"brevo",category:"notification",input:{recipient:destination,sender,senderName:"Aurelink",subject:"Your Aurelink verification code",text:content}}});
     if("conflict" in queued)throw new Error("Unable to create the verification delivery job.");
+    await emitAurelinkWebhookEvent(req.user!.userId,"verification.created",{verificationId:saved.rows[0].id,channel,purpose,expiresAt});
     return res.status(202).json({success:true,verificationId:saved.rows[0].id,expiresAt,messageStatus:"queued"});
   }catch(error){
     await pool.query("UPDATE aurelink_verification_sessions SET status='cancelled',updated_at=NOW() WHERE id=$1",[saved.rows[0].id]);
@@ -248,13 +250,14 @@ router.post("/aurelink/verify/:id/check",aurelinkAuthMiddleware,async(req,res)=>
     const found=await client.query("SELECT * FROM aurelink_verification_sessions WHERE id=$1 AND workspace_id=$2 FOR UPDATE",[req.params.id,wid]);
     const session=found.rows[0];
     if(!session){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Verification session not found."});}
-    if(session.status!=="pending"||new Date(session.expires_at).getTime()<=Date.now()){await client.query("UPDATE aurelink_verification_sessions SET status='expired',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(410).json({success:false,message:"Verification session expired or is no longer pending."});}
+    if(session.status!=="pending"||new Date(session.expires_at).getTime()<=Date.now()){await client.query("UPDATE aurelink_verification_sessions SET status='expired',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");await emitAurelinkWebhookEvent(req.user!.userId,"verification.expired",{verificationId:session.id,purpose:session.purpose});return res.status(410).json({success:false,message:"Verification session expired or is no longer pending."});}
     if(Number(session.attempts)>=Number(session.max_attempts)){await client.query("UPDATE aurelink_verification_sessions SET status='locked',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(429).json({success:false,message:"Verification attempts exceeded."});}
     const code=String(req.body.code||""), candidate=makeVerificationHash(code,String(session.verification_salt||"")), hashInput=String(session.code_hash||"");
     const candidateMatches=/^\d{6}$/.test(code)&&hashInput.length===64&&hashInput===candidate;
     if(!candidateMatches){await client.query("UPDATE aurelink_verification_sessions SET attempts=attempts+1,updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(400).json({success:false,message:"Incorrect verification code."});}
     await client.query("UPDATE aurelink_verification_sessions SET status='approved',verified_at=NOW(),updated_at=NOW() WHERE id=$1",[session.id]);
     await client.query("COMMIT");
+    await emitAurelinkWebhookEvent(req.user!.userId,"verification.approved",{verificationId:session.id,purpose:session.purpose,verifiedAt:new Date().toISOString()});
     return res.json({success:true,verified:true,verifiedAt:new Date().toISOString()});
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Verification could not be checked."});}
   finally{client.release();}
