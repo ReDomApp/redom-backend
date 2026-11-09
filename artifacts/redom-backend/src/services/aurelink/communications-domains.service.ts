@@ -174,6 +174,23 @@ async function resolveRecord(record: AurelinkDnsRecord, domain: string): Promise
   }
 }
 
+export async function configureAurelinkBrevoTransactionalWebhook(urlValue:string,secret:string){
+  const url=new URL(urlValue);
+  if(url.protocol!=="https:"||url.username||url.password||url.hash)throw new Error("Brevo webhook URL must be public HTTPS without credentials or fragments.");
+  if(!secret||secret.length<24)throw new Error("AURELINK_BREVO_WEBHOOK_SECRET must be configured before registering the webhook.");
+  const events=["request","delivered","opened","click","softBounce","hardBounce","blocked","spam","invalid","deferred","unsubscribed"];
+  const payload={url:url.toString(),description:"Aurelink transactional email and SMTP delivery events",type:"transactional",channel:"email",events,headers:[{name:"Authorization",value:"Bearer "+secret}]};
+  const listing=await request("brevo","/webhooks?limit=50&offset=0");
+  const rows=Array.isArray(listing?.webhooks)?listing.webhooks:Array.isArray(listing?.data)?listing.data:Array.isArray(listing)?listing:[];
+  const existing=rows.find((item:any)=>String(item.url||"")===url.toString()&&String(item.type||"transactional")==="transactional");
+  if(existing?.id){
+    await request("brevo",\`/webhooks/\${encodeURIComponent(String(existing.id))}\`,"PUT",payload);
+    return {provider:"brevo",webhookId:String(existing.id),action:"updated",url:url.toString(),events};
+  }
+  const created=await request("brevo","/webhooks","POST",payload);
+  if(!created?.id)throw new Error("Brevo did not return a webhook identifier.");
+  return {provider:"brevo",webhookId:String(created.id),action:"created",url:url.toString(),events};
+}
 export async function createAurelinkProviderEmailSender(email:string,name:string):Promise<{providerSenderId:string;active:boolean;raw:unknown}>{
   const result=await request("brevo","/senders","POST",{email,name});
   return {providerSenderId:String(result?.id||""),active:false,raw:result};
