@@ -50,9 +50,12 @@ router.get("/aurelink/communications/domains", aurelinkAuthMiddleware, async (re
 });
 
 router.post("/aurelink/communications/domains", aurelinkAuthMiddleware, async (req,res) => {
-  const domain = String(req.body.domain || "");
-  const provider = String(req.body.provider || process.env.AURELINK_DEFAULT_EMAIL_PROVIDER || "resend");
+  const provider = String(req.body.provider || process.env.AURELINK_DEFAULT_EMAIL_PROVIDER || "resend").toLowerCase();
   if (!emailProviders.has(provider)) return res.status(400).json({success:false,message:"Email domain provider must be resend or brevo."});
+  const providerDefaultDomain = provider === "resend"
+    ? (process.env.AURELINK_RESEND_SENDING_DOMAIN || "mail.wnncompany.com")
+    : (process.env.AURELINK_BREVO_SENDING_DOMAIN || "market.wnncompany.com");
+  const domain = String(req.body.domain || providerDefaultDomain);
   try {
     const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
     const normalized = normalizeDomain(domain);
@@ -265,7 +268,7 @@ router.get("/aurelink/communications/email-senders",aurelinkAuthMiddleware,async
 router.post("/aurelink/communications/email-senders",aurelinkAuthMiddleware,async(req,res)=>{
   const email=String(req.body.email||"").trim().toLowerCase();
   const name=String(req.body.name||"").trim().slice(0,120);
-  const provider=String(req.body.provider||"brevo").toLowerCase();
+  const provider=String(req.body.provider||process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend").toLowerCase();
   if(!emailProviders.has(provider))return res.status(400).json({success:false,message:"Email sender provider must be resend or brevo."});
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!name)return res.status(400).json({success:false,message:"A valid sender email and display name are required."});
   const domain=email.split("@").pop()!;
