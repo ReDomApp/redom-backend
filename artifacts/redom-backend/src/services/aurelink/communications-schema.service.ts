@@ -192,4 +192,40 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       rotated_at TIMESTAMPTZ
     );
   `);
+  await pool.query("ALTER TABLE aurelink_messages DROP CONSTRAINT IF EXISTS aurelink_messages_status_check");
+  await pool.query("ALTER TABLE aurelink_messages ADD CONSTRAINT aurelink_messages_status_check CHECK (status IN ('queued','processing','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed'))");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aurelink_communications_jobs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      message_id UUID NOT NULL UNIQUE REFERENCES aurelink_messages(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      payload_encrypted TEXT NOT NULL,
+      payload_hash CHAR(64) NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      locked_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_communications_jobs_due_idx ON aurelink_communications_jobs(status,next_attempt_at) WHERE status='pending';
+    CREATE TABLE IF NOT EXISTS aurelink_communications_usage (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      message_id UUID NOT NULL UNIQUE REFERENCES aurelink_messages(id) ON DELETE CASCADE,
+      channel VARCHAR(12) NOT NULL CHECK(channel IN ('sms','email')),
+      provider VARCHAR(24) NOT NULL,
+      category VARCHAR(24) NOT NULL,
+      units INTEGER NOT NULL DEFAULT 1 CHECK(units>0),
+      status VARCHAR(16) NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','accepted','delivered','failed')),
+      provider_message_id VARCHAR(220),
+      unit_price_minor INTEGER,
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_communications_usage_workspace_idx ON aurelink_communications_usage(workspace_id,created_at DESC);
+  `);
 }
