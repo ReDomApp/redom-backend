@@ -54,9 +54,10 @@ export async function applyCloudflareDnsRecords(token:string,zoneId:string,domai
     const exact=rows.find((row:any)=>String(row.content||"").replace(/\.$/,"").toLowerCase()===content.replace(/\.$/,"").toLowerCase()&&(type!=="MX"||Number(row.priority)===Number(record.priority||0)));
     if(exact){results.push({type,name,status:"already_present",recordId:exact.id});continue;}
     const isSpf=type==="TXT"&&content.toLowerCase().startsWith("v=spf1");
-    const conflicts=isSpf?rows.filter((row:any)=>String(row.content||"").toLowerCase().startsWith("v=spf1")):type==="TXT"?[]:rows;
+    const isDmarc=type==="TXT"&&content.toLowerCase().startsWith("v=dmarc1");
+    const conflicts=isSpf?rows.filter((row:any)=>String(row.content||"").toLowerCase().startsWith("v=spf1")):isDmarc?rows.filter((row:any)=>String(row.content||"").toLowerCase().startsWith("v=dmarc1")):type==="TXT"?[]:rows;
     if(conflicts.length) {
-      results.push({type,name,status:"conflict",message:isSpf?"An SPF TXT record already exists at this hostname. Merge the provider include into the existing SPF record; never publish multiple SPF records.":"A different record of this type already exists at this hostname. Aurelink will not overwrite it.",existing:conflicts.map((row:any)=>({content:row.content,priority:row.priority}))});
+      results.push({type,name,status:"conflict",message:isSpf?"An SPF TXT record already exists at this hostname. Merge the provider include into the existing SPF record; never publish multiple SPF records.":isDmarc?"A DMARC policy already exists. Aurelink will preserve it; review and edit the existing policy manually if you want to change it.":"A different record of this type already exists at this hostname. Aurelink will not overwrite it.",existing:conflicts.map((row:any)=>({content:row.content,priority:row.priority}))});
       continue;
     }
     const body:any={type,name,content,ttl:1};
