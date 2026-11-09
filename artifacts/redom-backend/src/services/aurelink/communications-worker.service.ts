@@ -59,8 +59,8 @@ async function refundCommunicationCharge(messageId:string){
  finally{client.release();}
 }
 async function processOne(row:any){
- const payload=JSON.parse(decrypt(row.payload_encrypted)) as JobPayload;
  try{
+  const payload=JSON.parse(decrypt(row.payload_encrypted)) as JobPayload;
   let result:any;
   if(payload.channel==="sms"){
     try{result=await sendAurelinkSms(payload.provider,payload.input);}
@@ -88,6 +88,8 @@ async function tick(){
   const batch=await pool.query(`WITH due AS (SELECT id FROM aurelink_communications_jobs WHERE status='pending' AND next_attempt_at<=NOW() ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT 10) UPDATE aurelink_communications_jobs j SET status='processing',attempts=attempts+1,locked_at=NOW(),updated_at=NOW() FROM due WHERE j.id=due.id RETURNING j.*`);
   for(const row of batch.rows)await processOne(row);
   await pool.query("UPDATE aurelink_communications_jobs SET status='pending',locked_at=NULL,next_attempt_at=NOW()+INTERVAL '30 seconds',updated_at=NOW() WHERE status='processing' AND locked_at<NOW()-INTERVAL '5 minutes'");
+  const refunds=await pool.query("SELECT u.message_id FROM aurelink_communications_usage u WHERE u.status='failed' AND u.unit_price_minor>0 AND u.wallet_debit_reference IS NOT NULL AND NOT EXISTS(SELECT 1 FROM aurelink_wallet_ledger l WHERE l.reference='aurelink-communications-refund:'||u.message_id::text) ORDER BY u.updated_at LIMIT 20");
+  for(const item of refunds.rows)await refundCommunicationCharge(String(item.message_id));
  }catch(error){console.error("[Aurelink communications worker]",error instanceof Error?error.message:"unknown error");}
  finally{busy=false;}
 }
