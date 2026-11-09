@@ -11,7 +11,7 @@ export class Aurelink {
  communications:{
    overview():Promise<any>;
    sms:{send(body:{recipient:string;sender:string;content:string;category?:"transactional"|"marketing"|"otp"|"notification";provider?:"brevo"|"twilio";},options?:RequestOptions):Promise<any>};
-   email:{send(body:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;provider?:"resend"|"brevo";},options?:RequestOptions):Promise<any>};
+   email:{send(body:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;provider?:"resend"|"brevo";},options?:RequestOptions):Promise<any>};\n   campaigns:{list():Promise<any>;create(body:{channel:"sms"|"email";name:string;subject?:string;text?:string;html?:string;content?:string}):Promise<any>;send(id:string,body:{sender:string;senderName?:string;provider?:"brevo"|"twilio"|"resend";webUrl?:string}):Promise<any>};
  };
  verify:{start(body:{destination:string;channel?:"sms"|"email";purpose?:string;sender?:string;provider?:"brevo"|"twilio"|"resend";},options?:RequestOptions):Promise<any>;check(id:string,code:string):Promise<any>};
  activations:{quote(body:unknown):Promise<any>;create(body:unknown,options?:RequestOptions):Promise<any>;retrieve(id:string):Promise<any>;messages(id:string):Promise<any>;resend(id:string,body?:unknown):Promise<any>;cancel(id:string,body?:unknown):Promise<any>};
