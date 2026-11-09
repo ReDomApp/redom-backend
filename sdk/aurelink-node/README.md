@@ -43,6 +43,41 @@ The request helper forwards an Idempotency-Key header. Live purchase endpoints r
 - aurelink.wallet — retrieve wallet and ledger.
 - aurelink.request(method, path, options) — call any documented route.
 
+## Communications APIs
+
+Use the same Aurelink API key when it has the relevant permissions: `communications:read`, `communications:send`, and/or `verify:write`.
+
+```js
+const overview = await aurelink.communications.overview();
+
+const sms = await aurelink.communications.sms.send({
+  recipient: "+14155550123",
+  sender: "AURELINK",
+  content: "Your order has shipped.",
+  category: "transactional",
+  provider: "brevo"
+});
+
+const email = await aurelink.communications.email.send({
+  recipient: "customer@example.com",
+  sender: "notifications@example.com",
+  senderName: "Aurelink",
+  subject: "Order update",
+  text: "Your order has shipped.",
+  provider: "resend"
+});
+
+const verification = await aurelink.verify.start({
+  destination: "+14155550123",
+  channel: "sms",
+  purpose: "signup",
+  sender: "AURELINK"
+});
+const result = await aurelink.verify.check(verification.verificationId, "123456");
+```
+
+The current adapter supports Brevo transactional SMS, Twilio Programmable Messaging, Resend Email API and Brevo transactional Email API. Provider acceptance is not proof of handset or inbox delivery; delivery status requires authenticated provider webhooks. SMS sender IDs and email sending domains must be approved and credits/limits must be available at the selected provider. Brevo SMTP credentials are distinct from its API key; Aurelink SMTP relay is a separate infrastructure deliverable and is not exposed by these REST methods.
+
 ## Webhook signature verification
 
 Configure the signing secret shown once when you create an endpoint. Verify the raw request body before parsing it.
