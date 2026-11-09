@@ -192,6 +192,22 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       rotated_at TIMESTAMPTZ
     );
   `);
+  await pool.query(`
+    ALTER TABLE aurelink_sender_ids ADD COLUMN IF NOT EXISTS request_details JSONB NOT NULL DEFAULT '{}'::jsonb;
+    CREATE TABLE IF NOT EXISTS aurelink_dns_provider_connections (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      provider VARCHAR(24) NOT NULL CHECK(provider IN ('cloudflare')),
+      domain VARCHAR(253) NOT NULL,
+      zone_id VARCHAR(64) NOT NULL,
+      secret_encrypted TEXT NOT NULL,
+      secret_prefix VARCHAR(24) NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,provider,domain)
+    );
+  `);
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS campaign_id UUID REFERENCES aurelink_campaigns(id) ON DELETE SET NULL");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS verification_session_id UUID REFERENCES aurelink_verification_sessions(id) ON DELETE SET NULL");
   await pool.query("CREATE INDEX IF NOT EXISTS aurelink_messages_verification_idx ON aurelink_messages(verification_session_id) WHERE verification_session_id IS NOT NULL");
