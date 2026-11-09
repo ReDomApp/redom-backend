@@ -5,7 +5,7 @@ import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import {
   createAurelinkProviderDomain, getAurelinkProviderDomain, inspectAurelinkDomainDns,
-  verifyAurelinkProviderDomain, createAurelinkProviderEmailSender, getAurelinkProviderEmailSender, type AurelinkEmailProvider,
+  verifyAurelinkProviderDomain, updateAurelinkResendDomainTracking, createAurelinkProviderEmailSender, getAurelinkProviderEmailSender, type AurelinkEmailProvider,
 } from "../services/aurelink/communications-domains.service";
 
 const router = Router();
@@ -86,6 +86,21 @@ async function refreshDomain(req:any, res:any, verify:boolean) {
 }
 router.post("/aurelink/communications/domains/:id/check",aurelinkAuthMiddleware,async(req,res)=>refreshDomain(req,res,false));
 router.post("/aurelink/communications/domains/:id/verify",aurelinkAuthMiddleware,async(req,res)=>refreshDomain(req,res,true));
+
+router.post("/aurelink/communications/domains/:id/tracking",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+ const row=(await pool.query("SELECT id,domain,provider,provider_domain_id FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2",[req.params.id,wid])).rows[0];
+ if(!row)return res.status(404).json({success:false,message:"Email domain not found."});
+ if(row.provider!=="resend")return res.status(409).json({success:false,message:"Brevo open/click tracking is controlled by its transactional webhook configuration. Resend domain tracking can be configured here."});
+ try{
+  const settings={openTracking:typeof req.body.openTracking==="boolean"?req.body.openTracking:undefined,clickTracking:typeof req.body.clickTracking==="boolean"?req.body.clickTracking:undefined};
+  const result=await updateAurelinkResendDomainTracking(String(row.provider_domain_id),settings);
+  const saved={openTracking:settings.openTracking,clickTracking:settings.clickTracking,updatedAt:new Date().toISOString()};
+  await pool.query("UPDATE aurelink_email_domains SET tracking_settings=$3::jsonb,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,wid,JSON.stringify(saved)]);
+  return res.json({success:true,domainId:row.id,provider:"resend",tracking:saved,providerResponse:result});
+ }catch(error){return res.status(502).json({success:false,message:error instanceof Error?error.message:"Unable to update Resend tracking settings."});}
+});
+
 
 router.get("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
