@@ -165,10 +165,9 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
     catch{return res.status(400).json({success:false,message:"Approval requires an HTTPS link to the provider/carrier approval evidence."});}
   }
   if(status==="rejected"&&!rejectionReason)return res.status(400).json({success:false,message:"A rejection reason is required."});
-  const wid=await workspaceId(req.user!.userId);
   const result=await pool.query(
-    "UPDATE aurelink_sender_ids SET status=$3,provider_reference=COALESCE(NULLIF($4,''),provider_reference),rejection_reason=CASE WHEN $3='rejected' THEN $5 ELSE NULL END,submitted_at=CASE WHEN $3 IN ('submitted','approved') THEN COALESCE(submitted_at,NOW()) ELSE submitted_at END,approved_at=CASE WHEN $3='approved' THEN NOW() ELSE NULL END,request_details=request_details||$6::jsonb,updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,channel,sender,country_code,provider,status,provider_reference,rejection_reason,request_details,submitted_at,approved_at,updated_at",
-    [req.params.id,wid,status,providerReference,rejectionReason,JSON.stringify(status==="approved"?{providerApprovalEvidenceUrl:evidenceUrl,approvalRecordedAt:new Date().toISOString()}:{})]
+    "UPDATE aurelink_sender_ids SET status=$2,provider_reference=COALESCE(NULLIF($3,''),provider_reference),rejection_reason=CASE WHEN $2='rejected' THEN $4 ELSE NULL END,submitted_at=CASE WHEN $2 IN ('submitted','approved') THEN COALESCE(submitted_at,NOW()) ELSE submitted_at END,approved_at=CASE WHEN $2='approved' THEN NOW() ELSE NULL END,request_details=request_details||$5::jsonb,updated_at=NOW() WHERE id=$1 RETURNING id,workspace_id,channel,sender,country_code,provider,status,provider_reference,rejection_reason,request_details,submitted_at,approved_at,updated_at",
+    [req.params.id,status,providerReference,rejectionReason,JSON.stringify(status==="approved"?{providerApprovalEvidenceUrl:evidenceUrl,approvalRecordedAt:new Date().toISOString()}:{})]
   );
   if(!result.rows[0])return res.status(404).json({success:false,message:"Sender registration request not found."});
   return res.json({success:true,sender:result.rows[0],note:"Approval is recorded only against the provider reference and evidence supplied by the authorized reviewer. Aurelink does not fabricate carrier approval."});
