@@ -53,6 +53,7 @@ const overview = await aurelink.communications.overview();
 const sms = await aurelink.communications.sms.send({
   recipient: "+14155550123",
   sender: "AURELINK",
+  countryCode: "US",
   content: "Your order has shipped.",
   category: "transactional",
   provider: "brevo"
@@ -111,7 +112,7 @@ const started = await aurelink.communications.campaigns.send(campaign.campaign.i
 
 Campaigns include only contacts with recorded opt-in consent. SMS campaigns additionally require an HTTPS `webUrl` for opt-out/event handling.
 
-The current adapter supports Brevo transactional SMS, Twilio Programmable Messaging, Resend Email API and Brevo transactional Email API. Provider acceptance is not proof of handset or inbox delivery; delivery status requires authenticated provider webhooks. SMS sender IDs and email sending domains must be approved and credits/limits must be available at the selected provider. Brevo SMTP credentials are distinct from its API key; Aurelink SMTP relay is a separate infrastructure deliverable and is not exposed by these REST methods.
+The current adapters support Brevo transactional SMS, Twilio Programmable Messaging, Resend Email API and Brevo transactional Email API. Use `aurelink.communications.domains` to create and verify provider domains, inspect DNS and connect Cloudflare for safe record creation. Use `aurelink.communications.senders` to request country-specific SMS sender IDs; a request is not an approval. Use `aurelink.communications.smtp.credentials` to issue/revoke SMTP credentials. The SMTP relay itself is a separate TCP service in `artifacts/aurelink-smtp`; it uses Resend SMTP primary and Brevo SMTP fallback once deployed. Provider acceptance is not proof of handset or inbox delivery; delivery status requires authenticated provider webhooks.
 
 ## Webhook signature verification
 
