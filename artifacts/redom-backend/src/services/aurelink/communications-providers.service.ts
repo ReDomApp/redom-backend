@@ -49,7 +49,7 @@ async function sendResendEmail(input:SendEmailInput):Promise<ProviderSendResult>
 }
 async function sendBrevoEmail(input:SendEmailInput):Promise<ProviderSendResult>{
   const key=process.env.AURELINK_BREVO_API_KEY||process.env.BREVO_API_KEY;if(!key)throw new Error("Brevo Email API is not configured.");
-  const payload={sender:{email:input.sender,...(input.senderName?{name:input.senderName}:{})},to:[{email:input.recipient}],subject:input.subject,...(input.html?{htmlContent:input.html}:{}),...(input.text?{textContent:input.text}:{}),...(input.replyTo?{replyTo:{email:input.replyTo}:{} }),...(input.tags?.length?{tags:input.tags.slice(0,10)}:{})};
+  const payload={sender:{email:input.sender,...(input.senderName?{name:input.senderName}:{})},to:[{email:input.recipient}],subject:input.subject,...(input.html?{htmlContent:input.html}:{}),...(input.text?{textContent:input.text}:{}),...(input.replyTo?{replyTo:{email:input.replyTo}}:{}),...(input.tags?.length?{tags:input.tags.slice(0,10)}:{})};
   const result=await jsonRequest("https://api.brevo.com/v3/smtp/email",{method:"POST",headers:{"api-key":key,"content-type":"application/json",accept:"application/json"},body:JSON.stringify(payload)});
   if(!result.messageId)throw new Error("Brevo accepted no email identifier.");
   return {provider:"brevo",providerMessageId:String(result.messageId),acceptedAt:new Date().toISOString()};
