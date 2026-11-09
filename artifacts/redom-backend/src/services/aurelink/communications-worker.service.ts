@@ -77,7 +77,17 @@ async function processOne(row:any){
     catch(primaryError){const fallback=process.env.AURELINK_SMS_FALLBACK_PROVIDER;if((fallback!=="brevo"&&fallback!=="twilio")||fallback===payload.provider)throw primaryError;result=await sendAurelinkSms(fallback,payload.input);}
   }else{
     try{result=await sendAurelinkEmail(payload.provider,payload.input);}
-    catch(primaryError){const fallback=process.env.AURELINK_EMAIL_FALLBACK_PROVIDER;if((fallback!=="resend"&&fallback!=="brevo")||fallback===payload.provider)throw primaryError;result=await sendAurelinkEmail(fallback,payload.input);}
+    catch(primaryError){
+      const fallback=process.env.AURELINK_EMAIL_FALLBACK_PROVIDER;
+      if((fallback!=="resend"&&fallback!=="brevo")||fallback===payload.provider)throw primaryError;
+      const sender=await pool.query(
+        "SELECT s.email,s.sender_name,s.domain FROM aurelink_email_senders s JOIN aurelink_email_domains d ON d.workspace_id=s.workspace_id AND d.provider=s.provider AND LOWER(d.domain)=LOWER(s.domain) AND d.status='verified' WHERE s.workspace_id=$1 AND s.provider=$2 AND s.status='verified' ORDER BY CASE WHEN LOWER(SPLIT_PART(s.email,'@',1))=LOWER(SPLIT_PART($3,'@',1)) THEN 0 ELSE 1 END,s.created_at ASC LIMIT 1",
+        [row.workspace_id,fallback,payload.input.sender]
+      );
+      if(!sender.rows[0]?.email)throw new Error("No verified "+fallback+" fallback sender and authenticated domain are configured for this Aurelink workspace.");
+      const fallbackInput={...payload.input,sender:String(sender.rows[0].email),senderName:String(sender.rows[0].sender_name||payload.input.senderName||"Aurelink"),replyTo:payload.input.replyTo||payload.input.sender};
+      result=await sendAurelinkEmail(fallback,fallbackInput);
+    }
   }
   await pool.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId]);
   await pool.query("UPDATE aurelink_communications_jobs SET status='completed',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
