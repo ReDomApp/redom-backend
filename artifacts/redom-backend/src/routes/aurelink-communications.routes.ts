@@ -116,6 +116,29 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   }catch(error){if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
 });
 
+router.get("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId),channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null;
+  if(!channel)return res.status(400).json({success:false,message:"Specify channel=sms or channel=email."});
+  const table=channel==="sms"?"aurelink_sms_contacts":"aurelink_email_contacts";
+  const result=await pool.query(`SELECT id,${channel==="sms"?"phone_number":"email"} AS address,display_name,consent_status,consent_source,consented_at,opted_out_at,created_at,updated_at FROM ${table} WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 500`,[wid]);
+  return res.json({success:true,channel,contacts:result.rows});
+});
+
+router.post("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req,res)=>{
+  const channel=req.body.channel==="sms"?"sms":req.body.channel==="email"?"email":null,address=String(req.body.address||"").trim(),displayName=String(req.body.displayName||"").trim()||null;
+  const consentStatus=req.body.consentStatus==="opted_in"?"opted_in":req.body.consentStatus==="opted_out"?"opted_out":"unknown";
+  const consentSource=typeof req.body.consentSource==="string"?req.body.consentSource.trim().slice(0,240):null;
+  if(!channel)return res.status(400).json({success:false,message:"Contact channel must be sms or email."});
+  if(channel==="sms"&&!/^\+[1-9]\d{7,14}$/.test(address))return res.status(400).json({success:false,message:"Phone number must use E.164 format."});
+  if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))return res.status(400).json({success:false,message:"Enter a valid email address."});
+  if(consentStatus==="opted_in"&&!consentSource)return res.status(400).json({success:false,message:"Record the opt-in source when setting consent_status=opted_in."});
+  const wid=await workspaceId(req.user!.userId);
+  const result=channel==="sms"
+    ?await pool.query("INSERT INTO aurelink_sms_contacts(workspace_id,phone_number,display_name,consent_status,consent_source,consented_at,opted_out_at) VALUES($1,$2,$3,$4,$5,CASE WHEN $4='opted_in' THEN NOW() ELSE NULL END,CASE WHEN $4='opted_out' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,phone_number) DO UPDATE SET display_name=EXCLUDED.display_name,consent_status=EXCLUDED.consent_status,consent_source=EXCLUDED.consent_source,consented_at=CASE WHEN EXCLUDED.consent_status='opted_in' THEN NOW() ELSE aurelink_sms_contacts.consented_at END,opted_out_at=CASE WHEN EXCLUDED.consent_status='opted_out' THEN NOW() WHEN EXCLUDED.consent_status='opted_in' THEN NULL ELSE aurelink_sms_contacts.opted_out_at END,updated_at=NOW() RETURNING id,phone_number AS address,display_name,consent_status,consent_source,consented_at,opted_out_at",[wid,address,displayName,consentStatus,consentSource])
+    :await pool.query("INSERT INTO aurelink_email_contacts(workspace_id,email,display_name,consent_status,consent_source,consented_at,opted_out_at) VALUES($1,LOWER($2),$3,$4,$5,CASE WHEN $4='opted_in' THEN NOW() ELSE NULL END,CASE WHEN $4='opted_out' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,email) DO UPDATE SET display_name=EXCLUDED.display_name,consent_status=EXCLUDED.consent_status,consent_source=EXCLUDED.consent_source,consented_at=CASE WHEN EXCLUDED.consent_status='opted_in' THEN NOW() ELSE aurelink_email_contacts.consented_at END,opted_out_at=CASE WHEN EXCLUDED.consent_status='opted_out' THEN NOW() WHEN EXCLUDED.consent_status='opted_in' THEN NULL ELSE aurelink_email_contacts.opted_out_at END,updated_at=NOW() RETURNING id,email AS address,display_name,consent_status,consent_source,consented_at,opted_out_at",[wid,address,displayName,consentStatus,consentSource]);
+  return res.status(200).json({success:true,contact:result.rows[0]});
+});
+
 router.get("/aurelink/communications/messages",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId),limit=Math.min(100,Math.max(1,Number.parseInt(String(req.query.limit||"50"),10)||50)),offset=Math.max(0,Number.parseInt(String(req.query.offset||"0"),10)||0);
   const channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null,status=typeof req.query.status==="string"?req.query.status:null;
