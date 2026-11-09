@@ -13,7 +13,7 @@ export class Aurelink {
     this.wallet={retrieve:()=>this.request("GET","/aurelink/wallet"),ledger:(query)=>this.request("GET","/aurelink/wallet/ledger",{query})};
     this.communications={
       overview:()=>this.request("GET","/aurelink/communications/overview"),
-      messages:{list:(query)=>this.request("GET","/aurelink/communications/messages",{query}),retrieve:(id)=>this.request("GET","/aurelink/communications/messages/"+encodeURIComponent(id))},
+      messages:{list:(query)=>this.request("GET","/aurelink/communications/messages",{query}),retrieve:(id)=>this.request("GET","/aurelink/communications/messages/"+encodeURIComponent(id)),retry:(id,options)=>this.request("POST","/aurelink/communications/messages/"+encodeURIComponent(id)+"/retry",{...options})},
       contacts:{list:(query)=>this.request("GET","/aurelink/communications/contacts",{query}),upsert:(body)=>this.request("POST","/aurelink/communications/contacts",{body})},
       sms:{send:(body,options)=>this.request("POST","/aurelink/communications/sms/send",{body,...options})},
       email:{send:(body,options)=>this.request("POST","/aurelink/communications/email/send",{body,...options})},
