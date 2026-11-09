@@ -15,6 +15,9 @@ const perMinuteLimit = Number(process.env.AURELINK_SMTP_PER_MINUTE_LIMIT || 30);
 const dailyLimit = Number(process.env.AURELINK_SMTP_DAILY_LIMIT || 500);
 const primary = process.env.AURELINK_SMTP_PRIMARY_PROVIDER || "resend";
 const fallback = process.env.AURELINK_SMTP_FALLBACK_PROVIDER || "brevo";
+// Provider-specific Aurelink platform sending identities.
+const resendSendingDomain = String(process.env.AURELINK_RESEND_SENDING_DOMAIN || "mail.wnncompany.com").trim().toLowerCase();
+const brevoSendingDomain = String(process.env.AURELINK_BREVO_SENDING_DOMAIN || "market.wnncompany.com").trim().toLowerCase();
 const apiKey = process.env.AURELINK_RESEND_API_KEY || process.env.RESEND_API_KEY;
 const brevoLogin = process.env.AURELINK_BREVO_SMTP_LOGIN;
 const brevoKey = process.env.AURELINK_BREVO_SMTP_KEY;
@@ -77,8 +80,8 @@ async function handleMessage(session, raw, callback) {
   );
   if (!resendDomain.rows[0]) return callback(new Error("550 Sender domain must be verified with Resend before primary SMTP delivery."));
   const brevoSender = await pool.query(
-    "SELECT s.email,s.sender_name,s.domain FROM aurelink_email_senders s JOIN aurelink_email_domains d ON d.workspace_id=s.workspace_id AND d.provider='brevo' AND LOWER(d.domain)=LOWER(s.domain) AND d.status='verified' WHERE s.workspace_id=$1 AND s.provider='brevo' AND s.status='verified' ORDER BY CASE WHEN LOWER(SPLIT_PART(s.email,'@',1))=LOWER(SPLIT_PART($2,'@',1)) THEN 0 ELSE 1 END,s.created_at ASC LIMIT 1",
-    [auth.workspaceId, from]
+    "SELECT s.email,s.sender_name,s.domain FROM aurelink_email_senders s JOIN aurelink_email_domains d ON d.workspace_id=s.workspace_id AND d.provider='brevo' AND LOWER(d.domain)=LOWER(s.domain) AND d.status='verified' WHERE s.workspace_id=$1 AND s.provider='brevo' AND s.status='verified' AND LOWER(d.domain)=LOWER($2) ORDER BY CASE WHEN LOWER(SPLIT_PART(s.email,'@',1))=LOWER(SPLIT_PART($3,'@',1)) THEN 0 ELSE 1 END,s.created_at ASC LIMIT 1",
+    [auth.workspaceId, brevoSendingDomain, from]
   );
   const usage = await pool.query(
     "SELECT COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '1 minute')::int AS minute_count,COUNT(*) FILTER (WHERE created_at>=date_trunc('day',NOW()))::int AS day_count FROM aurelink_smtp_messages WHERE credential_id=$1",
