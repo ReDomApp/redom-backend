@@ -34,7 +34,8 @@ async function sendTwilioSms(input:SendSmsInput):Promise<ProviderSendResult>{
   const from=process.env.AURELINK_TWILIO_MESSAGING_SERVICE_SID||process.env.TWILIO_MESSAGING_SERVICE_SID||process.env.TWILIO_PHONE_NUMBER;
   if(!sid||!token||!from)throw new Error("Twilio SMS is not configured.");
   const params=new URLSearchParams({To:input.recipient,Body:input.content});
-  if(from.startsWith("MG"))params.set("MessagingServiceSid",from);else params.set("From",from);\n  const callbackUrl=process.env.AURELINK_TWILIO_STATUS_CALLBACK_URL;if(callbackUrl)params.set("StatusCallback",callbackUrl);
+  if(from.startsWith("MG"))params.set("MessagingServiceSid",from);else params.set("From",from);
+  const callbackUrl=process.env.AURELINK_TWILIO_STATUS_CALLBACK_URL;if(callbackUrl)params.set("StatusCallback",callbackUrl);
   const auth=Buffer.from(`${sid}:${token}`).toString("base64"),result=await jsonRequest(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,{method:"POST",headers:{authorization:`Basic ${auth}`,"content-type":"application/x-www-form-urlencoded"},body:params.toString()});
   if(!result.sid)throw new Error("Twilio accepted no message identifier.");
   return {provider:"twilio",providerMessageId:String(result.sid),acceptedAt:new Date().toISOString()};
