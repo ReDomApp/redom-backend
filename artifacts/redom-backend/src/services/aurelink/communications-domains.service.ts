@@ -135,6 +135,13 @@ export async function getAurelinkProviderDomain(provider: AurelinkEmailProvider,
     : await request(provider, `/senders/domains/${encodeURIComponent(normalizeDomain(domain))}`);
   return snapshot(provider, value, providerDomainId);
 }
+export async function updateAurelinkResendDomainTracking(providerDomainId:string,settings:{openTracking?:boolean;clickTracking?:boolean}){
+  const body:any={};
+  if(typeof settings.openTracking==="boolean")body.open_tracking=settings.openTracking;
+  if(typeof settings.clickTracking==="boolean")body.click_tracking=settings.clickTracking;
+  if(!Object.keys(body).length)throw new Error("Specify openTracking and/or clickTracking.");
+  return request("resend",`/domains/${encodeURIComponent(providerDomainId)}`,"PATCH",body);
+}
 export async function verifyAurelinkProviderDomain(provider: AurelinkEmailProvider, providerDomainId: string, domain: string): Promise<AurelinkDomainSnapshot> {
   if (provider === "resend") {
     await request(provider, `/domains/${encodeURIComponent(providerDomainId)}/verify`, "POST", {});
