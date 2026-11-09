@@ -90,36 +90,37 @@ router.get("/aurelink/communications/overview", aurelinkAuthMiddleware, async (r
 });
 
 router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (req,res) => {
-  const provider = String(req.body.provider||process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo");
-  if (!SMS_PROVIDERS.has(provider)) return res.status(400).json({success:false,message:"Unsupported SMS provider."});
-  const category = req.body.category==="marketing"?"marketing":req.body.category==="otp"?"otp":req.body.category==="notification"?"notification":"transactional";
-  const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),content=String(req.body.content||"");
-  if(category==="marketing"){
-    const wid=await workspaceId(req.user!.userId);
-    const contact=(await pool.query("SELECT consent_status FROM aurelink_sms_contacts WHERE workspace_id=$1 AND phone_number=$2",[wid,recipient])).rows[0];
-    if(contact?.consent_status!=="opted_in") return res.status(403).json({success:false,code:"MARKETING_CONSENT_REQUIRED",message:"Marketing SMS requires a contact with recorded opt-in consent."});
-  }
+  const provider=String(req.body.provider||process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo");
+  if(!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported SMS provider."});
+  const category=req.body.category==="marketing"?"marketing":req.body.category==="otp"?"otp":req.body.category==="notification"?"notification":"transactional";
+  const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
   try{
-    const delivered=await sendAurelinkSms(provider as "brevo"|"twilio",{recipient,sender,content,category});
     const wid=await workspaceId(req.user!.userId);
-    const message=await saveMessage({workspaceId:wid,channel:"sms",category,provider:delivered.provider,providerMessageId:delivered.providerMessageId,recipient,sender,content});
-    res.status(202).json({success:true,message});
-  }catch(error){res.status(502).json({success:false,message:error instanceof Error?error.message:"SMS provider failed."});}
+    if(category==="marketing"){
+      const contact=(await pool.query("SELECT consent_status FROM aurelink_sms_contacts WHERE workspace_id=$1 AND phone_number=$2",[wid,recipient])).rows[0];
+      if(contact?.consent_status!=="opted_in")return res.status(403).json({success:false,code:"MARKETING_CONSENT_REQUIRED",message:"Marketing SMS requires a contact with recorded opt-in consent."});
+      if(!webUrl)return res.status(400).json({success:false,message:"Marketing SMS requires an opt-out/event URL."});
+    }
+    const key=String(req.headers["idempotency-key"]||randomUUID()).slice(0,128);
+    const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"sms",category,provider,recipient,sender,content,idempotencyKey:key,payload:{channel:"sms",provider:provider as "brevo"|"twilio",category:category as "transactional"|"marketing"|"otp"|"notification",input:{recipient,sender,content,category:category as "transactional"|"marketing"|"otp"|"notification",webUrl}}});
+    if("conflict" in queued)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
+    return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed)});
+  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue SMS."});}
 });
 
-router.post("/aurelink/communications/email/send", aurelinkAuthMiddleware, async(req,res)=>{
+router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(req,res)=>{
   const provider=String(req.body.provider||process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend");
   if(!EMAIL_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported email provider."});
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),senderName=String(req.body.senderName||""),subject=String(req.body.subject||""),html=typeof req.body.html==="string"?req.body.html:undefined,text=typeof req.body.text==="string"?req.body.text:undefined;
-  const category="transactional";
   try{
     const wid=await workspaceId(req.user!.userId);
     const suppression=(await pool.query("SELECT id FROM aurelink_email_suppressions WHERE workspace_id=$1 AND LOWER(email)=LOWER($2)",[wid,recipient])).rows[0];
     if(suppression)return res.status(403).json({success:false,code:"EMAIL_SUPPRESSED",message:"This recipient is suppressed for this workspace."});
-    const delivered=await sendAurelinkEmail(provider as "resend"|"brevo",{recipient,sender,senderName,subject,html,text,replyTo:req.body.replyTo});
-    const message=await saveMessage({workspaceId:wid,channel:"email",category,provider:delivered.provider,providerMessageId:delivered.providerMessageId,recipient,sender,subject,content:html||text||""});
-    res.status(202).json({success:true,message});
-  }catch(error){res.status(502).json({success:false,message:error instanceof Error?error.message:"Email provider failed."});}
+    const key=String(req.headers["idempotency-key"]||randomUUID()).slice(0,128);
+    const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"transactional",provider,recipient,sender,subject,content:html||text||"",idempotencyKey:key,payload:{channel:"email",provider:provider as "resend"|"brevo",category:"transactional",input:{recipient,sender,senderName,subject,html,text,replyTo:typeof req.body.replyTo==="string"?req.body.replyTo:undefined}}});
+    if("conflict" in queued)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
+    return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed)});
+  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
 });
 
 router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
