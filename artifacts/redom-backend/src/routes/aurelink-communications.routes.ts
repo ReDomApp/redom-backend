@@ -160,7 +160,7 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
   if(!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported SMS provider."});
   const category=req.body.category==="marketing"?"marketing":req.body.category==="otp"?"otp":req.body.category==="notification"?"notification":"transactional";
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),countryCode=String(req.body.countryCode||"").toUpperCase(),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
-  if(!/^\\+?[1-9]\\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender)||!/^[A-Z]{2}$/.test(countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide an E.164 recipient, ISO countryCode, approved 3–11 character alphanumeric sender and message content up to 5000 characters."});
+  if(!/^\+?[1-9]\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender)||!/^[A-Z]{2}$/.test(countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide an E.164 recipient, ISO countryCode, approved 3–11 character alphanumeric sender and message content up to 5000 characters."});
   try{
     const wid=await workspaceId(req.user!.userId);
     if(!await approvedSmsSender(wid,sender,provider,countryCode))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"This sender ID is not approved for the selected provider and destination country."});
@@ -181,7 +181,7 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   const provider=String(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend");
   if(!EMAIL_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported email provider."});
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),senderName=String(req.body.senderName||""),subject=String(req.body.subject||""),html=typeof req.body.html==="string"?req.body.html:undefined,text=typeof req.body.text==="string"?req.body.text:undefined;
-  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient)||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sender)||!subject.trim()||(!html?.trim()&&!text?.trim()))return res.status(400).json({success:false,message:"Provide valid sender/recipient email addresses, a subject and HTML or text content."});
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)||!subject.trim()||(!html?.trim()&&!text?.trim()))return res.status(400).json({success:false,message:"Provide valid sender/recipient email addresses, a subject and HTML or text content."});
   try{
     const wid=await workspaceId(req.user!.userId);
     if(!await verifiedEmailSender(wid,sender,provider))return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify and authenticate this sender domain with the selected provider before sending."});
@@ -281,7 +281,7 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     if(campaign.channel==="sms"&&!/^[A-Z]{2}$/.test(countryCode)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an ISO destination countryCode."});}
     if(campaign.channel==="sms"&&typeof req.body.webUrl!=="string") {await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
     if(!sender){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"An approved sender is required to start a campaign."});}
-    if(campaign.channel==="sms"&&!/^[A-Za-z0-9]{3,11}$/.test(sender)||campaign.channel==="email"&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sender)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"The campaign sender is invalid for the selected channel."});}
+    if(campaign.channel==="sms"&&!/^[A-Za-z0-9]{3,11}$/.test(sender)||campaign.channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"The campaign sender is invalid for the selected channel."});}
     if(campaign.channel==="sms"){
       if(!await approvedSmsSender(wid,sender,provider,countryCode)){await client.query("ROLLBACK");return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"This sender ID is not approved for the selected provider and destination country."});}
       try{if(new URL(String(req.body.webUrl)).protocol!=="https:")throw new Error("invalid");}catch{await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
@@ -360,7 +360,7 @@ router.post("/aurelink/verify/:id/check",aurelinkAuthMiddleware,async(req,res)=>
     if(Number(session.attempts)>=Number(session.max_attempts)){await client.query("UPDATE aurelink_verification_sessions SET status='locked',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(429).json({success:false,message:"Verification attempts exceeded."});}
     const code=String(req.body.code||""), candidate=makeVerificationHash(code,String(session.verification_salt||"")), hashInput=String(session.code_hash||"");
     const supplied=Buffer.from(hashInput,"hex"),expected=Buffer.from(candidate,"hex");
-    const candidateMatches=/^\\d{6}$/.test(code)&&hashInput.length===64&&supplied.length===expected.length&&timingSafeEqual(supplied,expected);
+    const candidateMatches=/^\d{6}$/.test(code)&&hashInput.length===64&&supplied.length===expected.length&&timingSafeEqual(supplied,expected);
     if(!candidateMatches){const wrong=await client.query("UPDATE aurelink_verification_sessions SET attempts=attempts+1,status=CASE WHEN attempts+1>=max_attempts THEN 'locked' ELSE status END,updated_at=NOW() WHERE id=$1 RETURNING attempts,status",[session.id]);await client.query("COMMIT");return res.status(wrong.rows[0]?.status==="locked"?429:400).json({success:false,message:wrong.rows[0]?.status==="locked"?"Verification attempts exceeded.":"Incorrect verification code."});}
     await client.query("UPDATE aurelink_verification_sessions SET status='approved',verified_at=NOW(),updated_at=NOW() WHERE id=$1",[session.id]);
     await client.query("COMMIT");
