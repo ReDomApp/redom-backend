@@ -4,7 +4,7 @@ import { Resend } from "resend";
 type SmsProvider = "brevo" | "twilio";
 type EmailProvider = "resend" | "brevo";
 export interface SendSmsInput { recipient:string; sender:string; content:string; category:"transactional"|"marketing"|"otp"|"notification"; tag?:string; webUrl?:string; }
-export interface SendEmailInput { recipient:string; sender:string; senderName?:string; subject:string; html?:string; text?:string; replyTo?:string; tags?:string[]; }
+export interface SendEmailInput { recipient:string; sender:string; senderName?:string; subject:string; html?:string; text?:string; replyTo?:string; tags?:string[]; attachments?:Array<{filename:string;content:string;contentType?:string}>; }
 export interface ProviderSendResult { provider:string; providerMessageId:string; acceptedAt:string; }
 
 const timeoutMs = 12_000;
@@ -47,7 +47,8 @@ async function sendTwilioSms(input:SendSmsInput):Promise<ProviderSendResult>{
 async function sendResendEmail(input:SendEmailInput):Promise<ProviderSendResult>{
   const key=process.env.AURELINK_RESEND_API_KEY||process.env.RESEND_API_KEY;if(!key)throw new Error("Resend email is not configured.");
   const base={from:input.senderName?`${input.senderName} <${input.sender}>`:input.sender,to:input.recipient,subject:input.subject,...(input.replyTo?{replyTo:input.replyTo}:{}),...(input.tags?.length?{tags:input.tags.map(name=>({name,value:"aurelink"}))}:{})};
-  const payload=input.html?{...base,html:input.html}:{...base,text:input.text||""};
+  const payload:any=input.html?{...base,html:input.html}:{...base,text:input.text||""};
+  if(input.attachments?.length)payload.attachments=input.attachments.map(file=>({filename:file.filename,content:Buffer.from(file.content,"base64"),...(file.contentType?{contentType:file.contentType}:{})}));
   const result=await new Resend(key).emails.send(payload);
   if(result.error)throw new Error(`Resend rejected the email: ${result.error.message}`);
   if(!result.data?.id)throw new Error("Resend accepted no email identifier.");
@@ -55,7 +56,7 @@ async function sendResendEmail(input:SendEmailInput):Promise<ProviderSendResult>
 }
 async function sendBrevoEmail(input:SendEmailInput):Promise<ProviderSendResult>{
   const key=process.env.AURELINK_BREVO_API_KEY||process.env.BREVO_API_KEY;if(!key)throw new Error("Brevo Email API is not configured.");
-  const payload={sender:{email:input.sender,...(input.senderName?{name:input.senderName}:{})},to:[{email:input.recipient}],subject:input.subject,...(input.html?{htmlContent:input.html}:{}),...(input.text?{textContent:input.text}:{}),...(input.replyTo?{replyTo:{email:input.replyTo}}:{}),...(input.tags?.length?{tags:input.tags.slice(0,10)}:{})};
+  const payload={sender:{email:input.sender,...(input.senderName?{name:input.senderName}:{})},to:[{email:input.recipient}],subject:input.subject,...(input.html?{htmlContent:input.html}:{}),...(input.text?{textContent:input.text}:{}),...(input.replyTo?{replyTo:{email:input.replyTo}}:{}),...(input.tags?.length?{tags:input.tags.slice(0,10)}:{}),...(input.attachments?.length?{attachment:input.attachments.map(file=>({name:file.filename,content:file.content}))}:{})};
   const result=await jsonRequest("https://api.brevo.com/v3/smtp/email",{method:"POST",headers:{"api-key":key,"content-type":"application/json",accept:"application/json"},body:JSON.stringify(payload)});
   if(!result.messageId)throw new Error("Brevo accepted no email identifier.");
   return {provider:"brevo",providerMessageId:String(result.messageId),acceptedAt:new Date().toISOString()};
