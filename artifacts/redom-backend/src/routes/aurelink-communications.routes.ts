@@ -215,7 +215,7 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
         if("conflict" in result)skipped++;else queued++;
       }
     }
-    if(queued===0)await pool.query("UPDATE aurelink_campaigns SET status='completed',completed_at=NOW(),updated_at=NOW() WHERE id=$1",[campaign.id]);
+    if(queued===0)await pool.query("UPDATE aurelink_campaigns c SET status=CASE WHEN EXISTS(SELECT 1 FROM (SELECT DISTINCT ON(m.recipient) m.recipient,j.status FROM aurelink_messages m JOIN aurelink_communications_jobs j ON j.message_id=m.id WHERE m.campaign_id=c.id ORDER BY m.recipient,m.created_at DESC) latest WHERE latest.status='failed') THEN 'paused' ELSE 'completed' END,completed_at=NOW(),updated_at=NOW() WHERE c.id=$1 AND NOT EXISTS(SELECT 1 FROM aurelink_messages m JOIN aurelink_communications_jobs j ON j.message_id=m.id WHERE m.campaign_id=c.id AND j.status IN ('pending','processing'))
     return res.status(202).json({success:true,campaignId:campaign.id,queued,skipped,status:queued?"sending":"completed"});
   }catch(error){
     await client.query("ROLLBACK").catch(()=>undefined);
