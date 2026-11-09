@@ -64,10 +64,10 @@ async function processOne(row:any){
   let result:any;
   if(payload.channel==="sms"){
     try{result=await sendAurelinkSms(payload.provider,payload.input);}
-    catch(primaryError){const fallback=process.env.AURELINK_SMS_FALLBACK_PROVIDER;if(!fallback||fallback===payload.provider)throw primaryError;result=await sendAurelinkSms(fallback as "brevo"|"twilio",payload.input);}
+    catch(primaryError){const fallback=process.env.AURELINK_SMS_FALLBACK_PROVIDER;if((fallback!=="brevo"&&fallback!=="twilio")||fallback===payload.provider)throw primaryError;result=await sendAurelinkSms(fallback,payload.input);}
   }else{
     try{result=await sendAurelinkEmail(payload.provider,payload.input);}
-    catch(primaryError){const fallback=process.env.AURELINK_EMAIL_FALLBACK_PROVIDER;if(!fallback||fallback===payload.provider)throw primaryError;result=await sendAurelinkEmail(fallback as "resend"|"brevo",payload.input);}
+    catch(primaryError){const fallback=process.env.AURELINK_EMAIL_FALLBACK_PROVIDER;if((fallback!=="resend"&&fallback!=="brevo")||fallback===payload.provider)throw primaryError;result=await sendAurelinkEmail(fallback,payload.input);}
   }
   await pool.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId]);
   await pool.query("UPDATE aurelink_communications_jobs SET status='completed',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
