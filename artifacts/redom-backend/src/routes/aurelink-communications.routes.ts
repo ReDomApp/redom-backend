@@ -22,7 +22,7 @@ router.post("/aurelink/webhooks/resend", async (req,res) => {
   try {
     const stored=await pool.query("INSERT INTO aurelink_provider_events(provider,provider_event_id,provider_message_id,event_type,payload,processed_at) VALUES('resend',$1,$2,$3,$4::jsonb,NOW()) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[id,messageId||null,String(event?.type||"unknown"),JSON.stringify(event)]);
     if(stored.rows.length&&status&&messageId) await updateAurelinkMessageStatus({provider:"resend",providerMessageId:messageId,status,providerStatus:String(event.type),providerError:event?.data?.bounce?.message||event?.data?.reason||undefined,deliveredAt:status==="delivered"?new Date(event?.created_at||Date.now()):undefined});
-    if(stored.rows.length&&status&&messageId) await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed') THEN 'failed' ELSE status END,updated_at=NOW() WHERE provider='resend' AND provider_message_id=$1",[messageId,status]);
+    if(stored.rows.length&&status&&messageId) await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed') THEN 'failed' WHEN $2='opened' THEN 'opened' WHEN $2='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $2='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $2='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE provider='resend' AND provider_message_id=$1",[messageId,status]);
     return res.status(200).json({received:true,updated:Boolean(stored.rows.length&&status&&messageId),duplicate:!stored.rows.length});
   }catch{return res.status(500).json({success:false,message:"Unable to persist Resend delivery event."});}
 });
@@ -48,12 +48,12 @@ router.post("/aurelink/webhooks/brevo",async(req,res)=>{
       const stored=await pool.query("INSERT INTO aurelink_provider_events(provider,provider_event_id,provider_message_id,event_type,payload,processed_at) VALUES('brevo',$1,$2,$3,$4::jsonb,NOW()) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[eventId,providerMessageId||null,eventType||"unknown",JSON.stringify(event)]);
       if(!stored.rows.length)continue;
       processed++;
-      const status: any=eventType==="delivered"?"delivered":eventType==="hard_bounce"?"bounced":eventType==="soft_bounce"||eventType==="deferred"?"deferred":eventType==="spam"?"complained":eventType==="unsubscribed"?"unsubscribed":["blocked","invalid","error"].includes(eventType)?"failed":eventType==="request"||eventType==="sent"?"accepted":null;
+      const status: any=eventType==="delivered"?"delivered":eventType==="opened"?"opened":eventType==="click"||eventType==="clicked"?"clicked":eventType==="hard_bounce"?"bounced":eventType==="soft_bounce"||eventType==="deferred"?"deferred":eventType==="spam"?"complained":eventType==="unsubscribed"?"unsubscribed":["blocked","invalid","error"].includes(eventType)?"failed":eventType==="request"||eventType==="sent"?"accepted":null;
       const deliveredAt=status==="delivered"?(event.ts_event||event.ts?new Date(Number(event.ts_event||event.ts)*1000):event.date?new Date(event.date):new Date()):undefined;
       if(status&&providerMessageId)await updateAurelinkMessageStatus({provider:"brevo",providerMessageId,status,providerStatus:eventType,providerError:event.reason||undefined,deliveredAt});
       const messageKey=custom.startsWith("aurelink:")?custom.slice("aurelink:".length):"";
       if(messageKey&&status){
-        await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed','unsubscribed') THEN 'failed' ELSE status END,updated_at=NOW() WHERE provider='brevo' AND message_key=$1",[messageKey,status]);
+        await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed','unsubscribed') THEN 'failed' WHEN $2='opened' THEN 'opened' WHEN $2='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $2='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $2='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE provider='brevo' AND message_key=$1",[messageKey,status]);
       }else if(providerMessageId&&status){
         await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed','unsubscribed') THEN 'failed' ELSE status END,updated_at=NOW() WHERE provider='brevo' AND provider_message_id=$1",[providerMessageId,status]);
       }
