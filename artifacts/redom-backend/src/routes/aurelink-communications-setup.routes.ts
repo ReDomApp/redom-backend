@@ -207,6 +207,21 @@ router.post("/aurelink/communications/smtp/credentials",aurelinkAuthMiddleware,a
     warning:"The password is shown once. Store it in a secret manager. SMTP will accept connections only after the separate TCP relay is deployed and AURELINK_SMTP_HOSTNAME is configured."
   });
 });
+
+router.post("/aurelink/communications/smtp/credentials/:id/rotate",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),client=await pool.connect();
+ const username="aul_smtp_"+randomBytes(18).toString("hex"),password=randomBytes(32).toString("base64url"),salt=randomBytes(16),digest=scryptSync(password,salt,64),passwordHash="scrypt$"+salt.toString("base64url")+"$"+digest.toString("base64url");
+ try{
+  await client.query("BEGIN");
+  const old=await client.query("SELECT id,label FROM aurelink_smtp_credentials WHERE id=$1 AND workspace_id=$2 AND status='active' FOR UPDATE",[req.params.id,wid]);
+  if(!old.rows[0]){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Active SMTP credential not found."});}
+  const saved=await client.query("INSERT INTO aurelink_smtp_credentials(workspace_id,username,password_hash,label) VALUES($1,$2,$3,$4) RETURNING id,username,label,status,created_at",[wid,username,passwordHash,String(old.rows[0].label||"SMTP credential")]);
+  await client.query("UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE id=$1",[req.params.id]);
+  await client.query("COMMIT");
+  return res.status(201).json({success:true,credential:{...saved.rows[0],password},revokedCredentialId:req.params.id,smtp:{host:process.env.AURELINK_SMTP_HOSTNAME||null,port:587,security:"STARTTLS required"},warning:"The new password is shown once. The previous credential has been revoked. SMTP connections work only after the separate relay is deployed."});
+ }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to rotate SMTP credentials."});}
+ finally{client.release();}
+});
 router.delete("/aurelink/communications/smtp/credentials/:id",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
   const result=await pool.query("UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE id=$1 AND workspace_id=$2 AND status='active' RETURNING id,username,status,updated_at",[req.params.id,wid]);
