@@ -55,8 +55,8 @@ async function request(provider: AurelinkEmailProvider, path: string, method = "
   } finally { clearTimeout(timer); }
 }
 function normalizeDomain(value: string): string {
-  const domain = value.trim().toLowerCase().replace(/\\.$/, "");
-  if (domain.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(domain)) {
+  const domain = value.trim().toLowerCase().replace(/\.$/, "");
+  if (domain.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) {
     throw new Error("Enter a valid fully qualified domain name (for example, mail.example.com).");
   }
   return domain;
@@ -66,7 +66,7 @@ function normalizeRecords(provider: AurelinkEmailProvider, value: any): Aurelink
     const dns = value?.dns_records || {};
     return Object.entries(dns).flatMap(([purpose, record]: [string, any]) => record && record.type && record.value !== undefined ? [{
       type: String(record.type).toUpperCase(),
-      name: String(record.host_name || "").replace(/\\.$/, ""),
+      name: String(record.host_name || "").replace(/\.$/, ""),
       value: String(record.value),
       ...(record.priority !== undefined ? { priority: Number(record.priority) } : {}),
       status: Boolean(record.status),
@@ -76,7 +76,7 @@ function normalizeRecords(provider: AurelinkEmailProvider, value: any): Aurelink
   const records = Array.isArray(value?.records) ? value.records : [];
   return records.map((record: any) => ({
     type: String(record.type || record.record || "").toUpperCase(),
-    name: String(record.name || "").replace(/\\.$/, ""),
+    name: String(record.name || "").replace(/\.$/, ""),
     value: String(record.value || ""),
     ...(record.ttl !== undefined ? { ttl: record.ttl } : {}),
     ...(record.priority !== undefined ? { priority: Number(record.priority) } : {}),
@@ -122,21 +122,21 @@ export async function verifyAurelinkProviderDomain(provider: AurelinkEmailProvid
   return getAurelinkProviderDomain(provider, providerDomainId, domain);
 }
 async function resolveRecord(record: AurelinkDnsRecord, domain: string): Promise<{ found: boolean; observed: string[]; error?: string }> {
-  const host = (record.name ? (record.name.endsWith(domain) ? record.name : `${record.name}.${domain}`) : domain).replace(/\\.$/, "");
+  const host = (record.name ? (record.name.endsWith(domain) ? record.name : `${record.name}.${domain}`) : domain).replace(/\.$/, "");
   try {
     if (record.type === "TXT") {
       const rows = await resolveTxt(host);
       const observed = rows.map(parts => parts.join(""));
-      return { found: observed.some(value => value.replace(/\\s/g, "") === record.value.replace(/\\s/g, "") || value.includes(record.value)), observed };
+      return { found: observed.some(value => value.replace(/\s/g, "") === record.value.replace(/\s/g, "") || value.includes(record.value)), observed };
     }
     if (record.type === "CNAME") {
       const observed = await resolveCname(host);
-      return { found: observed.some(value => value.replace(/\\.$/, "").toLowerCase() === record.value.replace(/\\.$/, "").toLowerCase()), observed };
+      return { found: observed.some(value => value.replace(/\.$/, "").toLowerCase() === record.value.replace(/\.$/, "").toLowerCase()), observed };
     }
     if (record.type === "MX") {
       const observed = await resolveMx(host);
-      const target = record.value.replace(/\\.$/, "").toLowerCase();
-      const found = observed.some(value => value.exchange.replace(/\\.$/, "").toLowerCase() === target && (record.priority === undefined || value.priority === record.priority));
+      const target = record.value.replace(/\.$/, "").toLowerCase();
+      const found = observed.some(value => value.exchange.replace(/\.$/, "").toLowerCase() === target && (record.priority === undefined || value.priority === record.priority));
       return { found, observed: observed.map(value => `${value.priority} ${value.exchange}`) };
     }
     return { found: false, observed: [], error: "DNS comparison for this record type is not implemented." };
