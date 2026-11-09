@@ -66,7 +66,7 @@ function normalizeRecords(provider: AurelinkEmailProvider, value: any): Aurelink
     const dns = value?.dns_records || {};
     return Object.entries(dns).flatMap(([purpose, record]: [string, any]) => record && record.type && record.value !== undefined ? [{
       type: String(record.type).toUpperCase(),
-      name: String(record.host_name || "").replace(/\.$/, ""),
+      name: String(record.host_name || "").replace(/\.$/, "") === "@" ? "" : String(record.host_name || "").replace(/\.$/, ""),
       value: String(record.value),
       ...(record.priority !== undefined ? { priority: Number(record.priority) } : {}),
       status: Boolean(record.status),
@@ -122,7 +122,7 @@ export async function verifyAurelinkProviderDomain(provider: AurelinkEmailProvid
   return getAurelinkProviderDomain(provider, providerDomainId, domain);
 }
 async function resolveRecord(record: AurelinkDnsRecord, domain: string): Promise<{ found: boolean; observed: string[]; error?: string }> {
-  const host = (record.name ? (record.name.endsWith(domain) ? record.name : `${record.name}.${domain}`) : domain).replace(/\.$/, "");
+  const host = (!record.name || record.name === "@") ? domain : (record.name.endsWith(domain) ? record.name : `${record.name}.${domain}`).replace(/\.$/, "");
   try {
     if (record.type === "TXT") {
       const rows = await resolveTxt(host);
