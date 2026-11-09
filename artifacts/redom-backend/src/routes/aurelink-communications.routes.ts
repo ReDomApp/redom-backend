@@ -124,6 +124,66 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
 });
 
+router.get("/aurelink/communications/campaigns",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId);
+  const rows=await pool.query("SELECT id,channel,name,status,subject,scheduled_at,started_at,completed_at,created_at FROM aurelink_campaigns WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 100",[wid]);
+  return res.json({success:true,campaigns:rows.rows});
+});
+
+router.post("/aurelink/communications/campaigns",aurelinkAuthMiddleware,async(req,res)=>{
+  const channel=req.body.channel==="email"?"email":req.body.channel==="sms"?"sms":null;
+  const name=String(req.body.name||"").trim(),subject=String(req.body.subject||"").trim()||null;
+  const contentText=typeof req.body.text==="string"?req.body.text:typeof req.body.content==="string"?req.body.content:undefined;
+  const contentHtml=typeof req.body.html==="string"?req.body.html:undefined;
+  if(!channel||!name||name.length>140||(!contentText?.trim()&&!contentHtml?.trim()))return res.status(400).json({success:false,message:"Campaign channel, name and message content are required."});
+  if(channel==="email"&&!subject)return res.status(400).json({success:false,message:"Email campaigns require a subject."});
+  const wid=await workspaceId(req.user!.userId);
+  const created=await pool.query("INSERT INTO aurelink_campaigns(workspace_id,channel,name,status,subject,content_text,content_html,audience) VALUES($1,$2,$3,'draft',$4,$5,$6,$7::jsonb) RETURNING id,channel,name,status,created_at",[wid,channel,name,subject,contentText||null,contentHtml||null,JSON.stringify({consentStatus:"opted_in"})]);
+  return res.status(201).json({success:true,campaign:created.rows[0]});
+});
+
+router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId),client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const found=await client.query("SELECT * FROM aurelink_campaigns WHERE id=$1 AND workspace_id=$2 FOR UPDATE",[req.params.id,wid]);
+    const campaign=found.rows[0];
+    if(!campaign){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Campaign not found."});}
+    if(campaign.status!=="draft"&&campaign.status!=="scheduled"){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"Only draft or scheduled campaigns can be started."});}
+    const provider=String(req.body.provider||(campaign.channel==="sms"?"brevo":"resend"));
+    if(campaign.channel==="sms"&&!SMS_PROVIDERS.has(provider)||campaign.channel==="email"&&!EMAIL_PROVIDERS.has(provider)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Unsupported campaign provider."});}
+    const sender=String(req.body.sender||"");
+    if(!sender){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"An approved sender is required to start a campaign."});}
+    const recipients=campaign.channel==="sms"
+      ?await client.query("SELECT id,phone_number AS destination FROM aurelink_sms_contacts WHERE workspace_id=$1 AND consent_status='opted_in' AND phone_number IS NOT NULL ORDER BY id",[wid])
+      :await client.query("SELECT id,email AS destination FROM aurelink_email_contacts WHERE workspace_id=$1 AND consent_status='opted_in' AND email IS NOT NULL ORDER BY id",[wid]);
+    if(!recipients.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"No opted-in contacts are eligible for this campaign."});}
+    await client.query("UPDATE aurelink_campaigns SET status='sending',started_at=NOW(),updated_at=NOW() WHERE id=$1",[campaign.id]);
+    await client.query("COMMIT");
+    let queued=0,skipped=0;
+    for(const contact of recipients.rows){
+      const recipient=String(contact.destination),idempotencyKey=("campaign:"+campaign.id+":"+contact.id).slice(0,128);
+      if(campaign.channel==="sms"){
+        const payload={channel:"sms" as const,provider:provider as "brevo"|"twilio",category:"marketing" as const,input:{recipient,sender,content:String(campaign.content_text||""),category:"marketing" as const,webUrl:typeof req.body.webUrl==="string"?req.body.webUrl:undefined}};
+        if(!payload.input.webUrl){skipped++;continue;}
+        const result=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"sms",category:"campaign",provider,recipient,sender,content:payload.input.content,idempotencyKey,payload});
+        if("conflict" in result)skipped++;else queued++;
+      }else{
+        const suppressed=(await pool.query("SELECT id FROM aurelink_email_suppressions WHERE workspace_id=$1 AND LOWER(email)=LOWER($2)",[wid,recipient])).rows[0];
+        if(suppressed){skipped++;continue;}
+        const payload={channel:"email" as const,provider:provider as "resend"|"brevo",category:"notification" as const,input:{recipient,sender,senderName:String(req.body.senderName||"Aurelink"),subject:String(campaign.subject),html:campaign.content_html||undefined,text:campaign.content_text||undefined}};
+        const result=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"campaign",provider,recipient,sender,subject:String(campaign.subject),content:String(campaign.content_html||campaign.content_text||""),idempotencyKey,payload});
+        if("conflict" in result)skipped++;else queued++;
+      }
+    }
+    await pool.query("UPDATE aurelink_campaigns SET status=CASE WHEN $2=0 THEN 'completed' ELSE 'sending' END,completed_at=CASE WHEN $2=0 THEN NOW() ELSE NULL END,updated_at=NOW() WHERE id=$1",[campaign.id,queued]);
+    return res.status(202).json({success:true,campaignId:campaign.id,queued,skipped,status:queued?"sending":"completed"});
+  }catch(error){
+    await client.query("ROLLBACK").catch(()=>undefined);
+    return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to start campaign."});
+  }finally{client.release();}
+});
+
 router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
   const channel=req.body.channel==="email"?"email":"sms",destination=String(req.body.destination||""),purpose=String(req.body.purpose||"account");
   if(!destination||destination.length>320||!/^[A-Za-z0-9_.-]{1,40}$/.test(purpose))return res.status(400).json({success:false,message:"A valid destination and purpose are required."});
