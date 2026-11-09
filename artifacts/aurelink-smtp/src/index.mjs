@@ -24,9 +24,16 @@ function passwordMatches(password, encoded) {
   const actual = scryptSync(password, Buffer.from(salt, "base64url"), expected.length);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
-function messageId(raw) {
+function clientMessageId(raw) {
   const match = raw.toString("utf8").match(/^Message-ID:\s*<?([^>\r\n]+)>?/im);
-  return match?.[1]?.trim() || createHash("sha256").update(raw).digest("hex");
+  return match?.[1]?.trim() || null;
+}
+function messageId(raw) {
+  return clientMessageId(raw) || createHash("sha256").update(raw).digest("hex");
+}
+function providerMessageId(info) {
+  const response = String(info?.response || "");
+  return response.match(/(?:queued as|message[- ]id[:=])\s*<?([A-Za-z0-9._-]+)>?/i)?.[1] || null;
 }
 function smtpTransport(provider) {
   if (provider === "resend") {
@@ -51,6 +58,7 @@ async function handleMessage(session, raw, callback) {
   const recipients = (session.envelope?.rcptTo || []).map(item => String(item.address || "").toLowerCase());
   if (!from.includes("@") || !recipients.length || recipients.length > maxRecipients) return callback(new Error("550 Invalid envelope or recipient limit exceeded."));
   const domain = from.split("@").pop();
+  const clientId = clientMessageId(raw);
   const messageKey = messageId(raw);
   const duplicate = await pool.query("SELECT provider,provider_message_id,status FROM aurelink_smtp_messages WHERE workspace_id=$1 AND message_key=$2", [auth.workspaceId, messageKey]);
   if (duplicate.rows[0]?.status === "accepted") return callback(null, "250 Message already accepted.");
@@ -77,15 +85,15 @@ async function handleMessage(session, raw, callback) {
     } catch (fallbackError) {
       const detail = String(fallbackError instanceof Error ? fallbackError.message : error).slice(0,500);
       await pool.query(
-        "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,envelope_from,recipients,provider,status,error) VALUES($1,$2,$3,$4,$5::jsonb,$6,'failed',$7) ON CONFLICT(workspace_id,message_key) DO UPDATE SET status='failed',error=EXCLUDED.error,updated_at=NOW()",
-        [auth.workspaceId,auth.credentialId,messageKey,from,JSON.stringify(recipients),provider,detail]
+        "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,status,error) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,'failed',$8) ON CONFLICT(workspace_id,message_key) DO UPDATE SET status='failed',error=EXCLUDED.error,updated_at=NOW()",
+        [auth.workspaceId,auth.credentialId,messageKey,clientId,from,JSON.stringify(recipients),provider,detail]
       );
       return callback(new Error("451 Primary and fallback SMTP providers could not accept this message."));
     }
   }
   await pool.query(
-    "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,envelope_from,recipients,provider,provider_message_id,status) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,'accepted') ON CONFLICT(workspace_id,message_key) DO UPDATE SET provider=EXCLUDED.provider,provider_message_id=EXCLUDED.provider_message_id,status='accepted',updated_at=NOW()",
-    [auth.workspaceId,auth.credentialId,messageKey,from,JSON.stringify(recipients),provider,String(result?.messageId || "accepted")]
+    "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,provider_message_id,status) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,'accepted') ON CONFLICT(workspace_id,message_key) DO UPDATE SET provider=EXCLUDED.provider,provider_message_id=EXCLUDED.provider_message_id,status='accepted',error=NULL,updated_at=NOW()",
+    [auth.workspaceId,auth.credentialId,messageKey,clientId,from,JSON.stringify(recipients),provider,providerMessageId(result)]
   );
   if (firstError) console.warn("[Aurelink SMTP] primary failed; fallback accepted message", String(firstError).slice(0,200));
   callback(null, "250 Message accepted by " + provider + ".");
