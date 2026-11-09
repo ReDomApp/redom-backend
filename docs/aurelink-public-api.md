@@ -113,6 +113,8 @@ Communications endpoints are authenticated with a user session or a developer AP
 | GET | `/aurelink/communications/overview` | `communications:read` |
 | GET | `/aurelink/communications/messages` | `communications:read` |
 | GET | `/aurelink/communications/messages/:id` | `communications:read` |
+| GET | `/aurelink/communications/contacts?channel=sms\|email` | `communications:read` |
+| POST | `/aurelink/communications/contacts` | `communications:send` |
 | POST | `/aurelink/communications/sms/send` | `communications:send` |
 | POST | `/aurelink/communications/email/send` | `communications:send` |
 | POST | `/aurelink/verify/start` | `verify:write` |
@@ -125,6 +127,22 @@ SMS and email send requests are accepted into an encrypted PostgreSQL outbox and
 Every send request must include a unique `Idempotency-Key` header (maximum 128 characters). Reuse the same key only for retries of the same payload. Reusing a key with a different recipient, sender, provider, or content returns HTTP 409. Omitting the key returns HTTP 400. Message content is stored as an encrypted queue payload; configure a stable `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` of at least 32 characters. The backend can fall back to `JWT_ACCESS_SECRET`, but a dedicated key is recommended and must remain stable across deployments.
 
 The communications overview includes usage counts and units by channel/status. Usage is recorded per message. Configure `AURELINK_SMS_UNIT_PRICE_MINOR` and `AURELINK_EMAIL_UNIT_PRICE_MINOR` in USD cents to charge a fixed Aurelink retail rate per message; both default to `0` (no charge). When a non-zero rate is configured, the API reserves/debits the user's Aurelink wallet inside the same database transaction that enqueues the message. If the provider permanently rejects the message after all retries, the worker issues an idempotent wallet refund. `metered_amount_minor` reports configured Aurelink retail charges, not upstream provider cost or a tax-inclusive invoice.
+
+### Contact and consent management
+
+List contacts with `GET /aurelink/communications/contacts?channel=sms` or `channel=email`. Upsert a contact with `POST /aurelink/communications/contacts`:
+
+```json
+{
+  "channel": "email",
+  "address": "customer@example.com",
+  "displayName": "Customer",
+  "consentStatus": "opted_in",
+  "consentSource": "signup_form_2026_11"
+}
+```
+
+For an opt-in record, `consentSource` is required. Set `consentStatus` to `opted_out` to suppress the contact from campaigns; set it to `unknown` when there is no recorded permission. Campaign sends include only opted-in contacts, and hard bounces, spam complaints and unsubscribe events received through Resend are automatically added to the email suppression list.
 
 ### Message history
 
