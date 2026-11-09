@@ -277,6 +277,10 @@ The initial state is `pending_customer_submission`; it is **not** submitted to a
 
 SMS send, OTP and campaign requests require `countryCode` and an approved sender for that country and provider. If SMS failover is configured, the sender must be approved with both the primary and fallback providers for that country. Sender IDs are not universally supported; check destination-country restrictions before submitting.
 
+#### Provider webhook setup
+
+The shared Brevo transactional webhook is provisioned by an Aurelink communications administrator using `POST /aurelink/communications/providers/brevo/webhook/configure`. Configure `AURELINK_BREVO_WEBHOOK_SECRET` and `AURELINK_BREVO_WEBHOOK_URL` first. Aurelink creates or updates the Brevo webhook subscription for sent, delivered, opened, clicked, bounce, spam and unsubscribe events. This is an account-level provider operation, not a customer-supplied webhook endpoint.
+
 #### SMTP credentials and relay
 
 | Method | Route | Purpose |
