@@ -11,7 +11,7 @@ export class Aurelink {
  communications:{
    overview():Promise<any>;
    domains:{list():Promise<any>;create(body:{domain:string;provider?:"resend"|"brevo"}):Promise<any>;check(id:string):Promise<any>;verify(id:string):Promise<any>;applyDns(id:string):Promise<any>;connectCloudflare(body:{domain:string;zoneId:string;apiToken:string}):Promise<any>;cloudflareConnections():Promise<any>};
-   senders:{list():Promise<any>;request(body:{sender:string;provider:"twilio"|"brevo";countryCode:string;businessName:string;businessWebsite:string;messageUseCase:string;sampleMessage:string;senderType?:"alphanumeric"|"longcode"|"shortcode";estimatedMonthlyVolume?:string;registrationDocuments?:string[]}):Promise<any>};
+   senders:{list():Promise<any>;request(body:{sender:string;provider:"twilio"|"brevo";countryCode:string;businessName:string;businessWebsite:string;messageUseCase:string;sampleMessage:string;senderType?:"alphanumeric";estimatedMonthlyVolume?:string;registrationDocuments?:string[]}):Promise<any>};
    smtp:{credentials:{list():Promise<any>;create(body?:{label?:string}):Promise<any>;revoke(id:string):Promise<any>}};
    messages:{list(query?:RequestOptions["query"]):Promise<any>;retrieve(id:string):Promise<any>;retry(id:string,options?:RequestOptions):Promise<any>};
    contacts:{list(query?:RequestOptions["query"]):Promise<any>;upsert(body:{channel:"sms"|"email";address:string;displayName?:string;consentStatus?:"unknown"|"opted_in"|"opted_out";consentSource?:string}):Promise<any>};
