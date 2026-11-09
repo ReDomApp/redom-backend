@@ -14,6 +14,7 @@ export class Aurelink {
     this.communications={
       overview:()=>this.request("GET","/aurelink/communications/overview"),
       messages:{list:(query)=>this.request("GET","/aurelink/communications/messages",{query}),retrieve:(id)=>this.request("GET","/aurelink/communications/messages/"+encodeURIComponent(id))},
+      contacts:{list:(query)=>this.request("GET","/aurelink/communications/contacts",{query}),upsert:(body)=>this.request("POST","/aurelink/communications/contacts",{body})},
       sms:{send:(body,options)=>this.request("POST","/aurelink/communications/sms/send",{body,...options})},
       email:{send:(body,options)=>this.request("POST","/aurelink/communications/email/send",{body,...options})},
       campaigns:{
