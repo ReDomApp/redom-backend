@@ -5,7 +5,7 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 import fs from "node:fs";
 
 const { Pool } = pg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false }, max: 8 });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 8 });
 const port = Number(process.env.SMTP_PORT || 587);
 const maxBytes = Number(process.env.AURELINK_SMTP_MAX_MESSAGE_BYTES || 10485760);
 const maxRecipients = Number(process.env.AURELINK_SMTP_MAX_RECIPIENTS || 20);
@@ -70,9 +70,18 @@ async function handleMessage(session, raw, callback) {
   try { result = await deliver(primary, { from, to: recipients }, raw); }
   catch (error) {
     firstError = error;
-    if (!fallback || fallback === primary) return callback(new Error("451 Primary SMTP provider temporarily rejected delivery."));
-    try { provider = fallback; result = await deliver(fallback, { from, to: recipients }, raw); }
-    catch { return callback(new Error("451 Primary and fallback SMTP providers could not accept this message.")); }
+    try {
+      if (!fallback || fallback === primary) throw error;
+      provider = fallback;
+      result = await deliver(fallback, { from, to: recipients }, raw);
+    } catch (fallbackError) {
+      const detail = String(fallbackError instanceof Error ? fallbackError.message : error).slice(0,500);
+      await pool.query(
+        "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,envelope_from,recipients,provider,status,error) VALUES($1,$2,$3,$4,$5::jsonb,$6,'failed',$7) ON CONFLICT(workspace_id,message_key) DO UPDATE SET status='failed',error=EXCLUDED.error,updated_at=NOW()",
+        [auth.workspaceId,auth.credentialId,messageKey,from,JSON.stringify(recipients),provider,detail]
+      );
+      return callback(new Error("451 Primary and fallback SMTP providers could not accept this message."));
+    }
   }
   await pool.query(
     "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,envelope_from,recipients,provider,provider_message_id,status) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,'accepted') ON CONFLICT(workspace_id,message_key) DO UPDATE SET provider=EXCLUDED.provider,provider_message_id=EXCLUDED.provider_message_id,status='accepted',updated_at=NOW()",
@@ -115,16 +124,19 @@ const server = new SMTPServer({
   onData(stream, session, callback) {
     const chunks = [];
     let size = 0;
+    let settled = false;
+    const done = (error, message) => { if (settled) return; settled = true; callback(error, message); };
     stream.on("data", chunk => {
       size += chunk.length;
       if (size > maxBytes) stream.destroy(new Error("Message exceeds Aurelink SMTP size limit."));
       else chunks.push(chunk);
     });
-    stream.on("error", () => callback(new Error("451 Unable to read SMTP message.")));
+    stream.on("error", () => done(new Error("451 Unable to read SMTP message.")));
     stream.on("end", () => {
-      void handleMessage(session,Buffer.concat(chunks),callback).catch(error => {
+      if (settled) return;
+      void handleMessage(session,Buffer.concat(chunks),done).catch(error => {
         console.error("[Aurelink SMTP delivery]",error instanceof Error?error.message:"unknown error");
-        callback(new Error("451 Aurelink could not queue or deliver this message."));
+        done(new Error("451 Aurelink could not queue or deliver this message."));
       });
     });
   }
