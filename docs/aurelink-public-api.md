@@ -169,6 +169,68 @@ Set these values only on the backend service (never in browser/mobile builds):
 
 The worker falls back to `JWT_ACCESS_SECRET` if dedicated encryption/verification secrets are unset. For production, set dedicated stable values and retain them across deploys and restarts. Configure the Resend webhook to point to `/aurelink/webhooks/resend`; configure Twilio's status callback URL to the full deployed API URL.
 
+### Domain authentication, DNS and sender registration
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/aurelink/communications/domains` | List workspace email domains |
+| POST | `/aurelink/communications/domains` | Create a domain in Resend or Brevo and retrieve that provider's actual DNS records |
+| POST | `/aurelink/communications/domains/:id/check` | Re-check provider state and public DNS |
+| POST | `/aurelink/communications/domains/:id/verify` | Ask the provider to verify/authenticate the domain, then refresh status |
+| POST | `/aurelink/communications/dns/cloudflare/connect` | Connect a zone-scoped Cloudflare API token |
+| GET | `/aurelink/communications/dns/cloudflare/connections` | List connected Cloudflare zones |
+| POST | `/aurelink/communications/domains/:id/apply-dns` | Add provider records to the connected Cloudflare zone without overwriting conflicts |
+| GET | `/aurelink/communications/senders` | List SMS sender registration requests |
+| POST | `/aurelink/communications/senders` | Create a sender registration request for a country/provider |
+| POST | `/aurelink/communications/senders/:id/review` | Admin-only evidence-backed provider status update |
+
+Create a domain with:
+
+```json
+{
+  "domain": "example.com",
+  "provider": "resend"
+}
+```
+
+Aurelink creates the domain with the selected provider and stores the provider's real DNS instructions. Resend and Brevo do not necessarily require identical record sets. Depending on provider and enabled capabilities, the returned records may include TXT ownership verification, SPF, DKIM (TXT or CNAME), DMARC, and MX records. Aurelink does not invent a generic MX record: it displays and checks only records returned by the selected provider. MX is required only when the selected service/capability needs it; it is not a universal requirement for outbound email authentication. SPF must remain a single TXT policy at a hostname; if one already exists, merge authorized includes into it rather than publishing a second SPF record.
+
+Check records with `POST /aurelink/communications/domains/:id/check`. The response includes each expected record, observed DNS values, missing/conflicting status, and provider verification state. A domain becomes send-enabled only when the provider reports it verified/authenticated. DNS propagation alone does not mean the provider has approved it.
+
+For automatic DNS changes, first connect a Cloudflare API token scoped to the customer's zone with **Zone:Read** and **DNS:Edit** permissions:
+
+```json
+{
+  "domain": "example.com",
+  "zoneId": "CLOUDFLARE_ZONE_ID",
+  "apiToken": "CLOUDFLARE_SCOPED_API_TOKEN"
+}
+```
+
+The token is encrypted at rest using `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY`. It is never returned. Apply with `POST /aurelink/communications/domains/:id/apply-dns`. Exact existing records are left untouched. Conflicting records are reported rather than overwritten. Existing SPF records are never replaced automatically. If a customer does not connect Cloudflare, copy the exact records into their DNS host manually.
+
+**MX distinction:** Resend/Brevo sending-domain MX records (often on a bounce/return-path subdomain) are not the same as MX records for receiving mailboxes at the root domain. Aurelink's SMTP submission relay is outbound-only; it does not host inboxes or receive inbound email. Do not point a customer's root MX at the Aurelink SMTP submission service.
+
+#### SMS sender IDs
+
+A sender request requires `sender`, `provider` (`twilio` or `brevo`), `countryCode` (ISO 3166-1 alpha-2), `businessName`, `businessWebsite`, `messageUseCase`, and `sampleMessage`. Optional fields include `senderType`, `estimatedMonthlyVolume`, and HTTPS registration document references.
+
+The initial state is `pending_customer_submission`; it is **not** submitted to a carrier and is not approved. Provider/carrier registration is country-specific and may require business documents, brand authorization, sample content, use-case review and a provider reference. When the provider has accepted a submission, an authorized Aurelink administrator records its real provider reference as `submitted`. An `approved` decision additionally requires an HTTPS link to the provider/carrier approval evidence. Aurelink never turns a request into an approved sender merely because the user entered a brand name.
+
+SMS send, OTP and campaign requests require `countryCode` and an approved sender for that country and provider. If SMS failover is configured, the sender must be approved with both the primary and fallback providers for that country. Sender IDs are not universally supported; check destination-country restrictions before submitting.
+
+#### SMTP credentials and relay
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/aurelink/communications/smtp/credentials` | List SMTP usernames and status (never passwords) |
+| POST | `/aurelink/communications/smtp/credentials` | Issue a new SMTP username/password; password is shown once |
+| DELETE | `/aurelink/communications/smtp/credentials/:id` | Revoke an SMTP credential immediately |
+
+The SMTP submission relay is a separate TCP service in `artifacts/aurelink-smtp`. Its routing is Resend SMTP primary (`smtp.resend.com:465`) and Brevo SMTP fallback (`smtp-relay.brevo.com:587`). Resend uses username `resend` and the Resend API key as password. Brevo requires the separate SMTP login and SMTP key; the Brevo REST API key is not an SMTP password. The relay requires authenticated STARTTLS, verifies that the From domain is authenticated with both providers before using the two-provider route, enforces message-size/recipient/rate limits, and does not act as an open relay.
+
+Aurelink's HTTP API can issue and revoke credentials, but SMTP connections will not work until the separate relay is deployed on a host with public TCP submission access, TLS certificates and the required provider credentials. Render web services expose only one public HTTP port, not a public arbitrary SMTP port; Render free services also block outbound SMTP ports 25, 465 and 587. Choose a TCP-capable host and set `AURELINK_SMTP_HOSTNAME` before advertising the hostname to developers. The relay does not receive inbound mail or host mailboxes.
+
 ### Campaigns
 
 | Method | Route | Required API scope |
@@ -206,6 +268,7 @@ Content-Type: application/json
 
 {
   "recipient": "+14155550123",
+  "countryCode": "US",
   "sender": "AURELINK",
   "content": "Your order has shipped.",
   "category": "transactional",
@@ -213,7 +276,7 @@ Content-Type: application/json
 }
 ```
 
-Supported adapters: Brevo transactional SMS and Twilio Programmable Messaging. The sender ID must be approved for the destination country. Marketing requests require a contact with recorded opt-in consent; campaign sending is not enabled by this endpoint.
+Supported adapters: Brevo transactional SMS and Twilio Programmable Messaging. The sender ID must be approved for the destination country and selected provider. Include the ISO `countryCode` field. If fallback is enabled, the sender must be approved on both providers. Marketing requests require a contact with recorded opt-in consent; campaign sending is not enabled by this endpoint.
 
 ### Email sending
 
@@ -228,7 +291,7 @@ Supported adapters: Brevo transactional SMS and Twilio Programmable Messaging. T
 }
 ```
 
-Supported adapters: Resend Email API and Brevo transactional Email API. The sender domain/address must be authenticated and approved by the provider. Suppressed recipients are rejected.
+Supported adapters: Resend Email API and Brevo transactional Email API. The sender domain must be verified with the selected provider. If a fallback provider is configured, the domain must also be verified with that fallback provider. Suppressed recipients are rejected.
 
 ### Verification
 
