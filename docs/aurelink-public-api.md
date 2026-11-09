@@ -132,6 +132,23 @@ Example project creation:
 
 Then issue a project key by including the returned `projectId` in the API-key creation request. The secret is returned once; store it in a server-side secret manager. SMTP credentials remain separate and are managed independently.
 
+### Request logs and usage
+
+- `GET /aurelink/account/api-logs` — paginated request logs with request IDs, method, path, status, latency, environment and key label. Filter with `limit`, `offset`, `environment`, and `status`.
+- `GET /aurelink/account/api-usage` — 30-day request/error/latency summary and active key counts.
+
+### Developer webhooks
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/aurelink/account/webhooks` | List webhook endpoints |
+| POST | `/aurelink/account/webhooks` | Create endpoint; signing secret shown once |
+| PATCH | `/aurelink/account/webhooks/:id` | Enable/disable or update description |
+| GET | `/aurelink/account/webhooks/:id/deliveries` | Inspect delivery attempts and responses |
+| POST | `/aurelink/account/webhooks/:id/rotate-secret` | Rotate the signing secret |
+
+Webhook deliveries are retried with backoff. Requests include `aurelink-event`, `aurelink-delivery`, `aurelink-timestamp`, and `aurelink-signature` headers. The signature is HMAC-SHA256 over `timestamp + "." + raw JSON body`, prefixed with `v1=`. Receivers should verify the timestamp and signature against the raw request body and deduplicate on event ID.
+
 ## Aurelink Communications
 
 Communications endpoints are authenticated with a user session or a developer API key carrying the listed scope. Provider credentials are never returned to clients.
@@ -142,7 +159,11 @@ Communications endpoints are authenticated with a user session or a developer AP
 | GET | `/aurelink/communications/messages` | `communications:read` |
 | GET | `/aurelink/communications/messages/:id` | `communications:read` |
 | POST | `/aurelink/communications/messages/:id/retry` | `communications:send` |
-| GET | `/aurelink/communications/contacts?channel=sms\|email` | `communications:read` |\n| GET | `/aurelink/communications/templates` | `communications:read` |\n| POST | `/aurelink/communications/templates` | `communications:manage` |\n| PATCH | `/aurelink/communications/templates/:id` | `communications:manage` |\n| DELETE | `/aurelink/communications/templates/:id` | `communications:manage` |
+| GET | `/aurelink/communications/contacts?channel=sms\|email` | `communications:read` |
+| GET | `/aurelink/communications/templates` | `communications:read` |
+| POST | `/aurelink/communications/templates` | `communications:manage` |
+| PATCH | `/aurelink/communications/templates/:id` | `communications:manage` |
+| DELETE | `/aurelink/communications/templates/:id` | `communications:manage` |
 | POST | `/aurelink/communications/contacts` | `communications:send` |
 | POST | `/aurelink/communications/sms/send` | `communications:send` |
 | POST | `/aurelink/communications/email/send` | `communications:send` |
@@ -153,7 +174,7 @@ Communications endpoints are authenticated with a user session or a developer AP
 
 SMS and email send requests are accepted into an encrypted PostgreSQL outbox and return HTTP 202 with a message record in `queued` state. A backend worker sends the message through the selected provider. Provider acceptance changes the state to `accepted`; authenticated provider callbacks update delivery states such as `delivered`, `bounced` or `failed`. Provider failures are retried with exponential backoff (up to eight attempts). A message that exhausts retries is marked failed.
 
-Every send request must include a unique `Idempotency-Key` header (maximum 128 characters). Reuse the same key only for retries of the same payload. Reusing a key with a different recipient, sender, provider, or content returns HTTP 409. Omitting the key returns HTTP 400. Message content is stored as an encrypted queue payload; configure a stable `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` of at least 32 characters. The backend can fall back to `JWT_ACCESS_SECRET`, but a dedicated key is recommended and must remain stable across deployments.
+Email sends support optional `templateId` plus `variables`, base64 `attachments` (maximum 10 files and 10 MB combined), and `scheduledAt` (30 seconds to 30 days in the future). Templates must be marked `active` before use. Template variables use `{{variableName}}`; values inserted into HTML are HTML-escaped. Scheduled jobs remain in the encrypted outbox until their scheduled timestamp.\n\nEvery send request must include a unique `Idempotency-Key` header (maximum 128 characters). Reuse the same key only for retries of the same payload. Reusing a key with a different recipient, sender, provider, or content returns HTTP 409. Omitting the key returns HTTP 400. Message content is stored as an encrypted queue payload; configure a stable `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` of at least 32 characters. The backend can fall back to `JWT_ACCESS_SECRET`, but a dedicated key is recommended and must remain stable across deployments.
 
 The communications overview includes usage counts and units by channel/status. Usage is recorded per message. Configure `AURELINK_SMS_UNIT_PRICE_MINOR` and `AURELINK_EMAIL_UNIT_PRICE_MINOR` in USD cents to charge a fixed Aurelink retail rate per message; both default to `0` (no charge). When a non-zero rate is configured, the API reserves/debits the user's Aurelink wallet inside the same database transaction that enqueues the message. If the provider permanently rejects the message after all retries, the worker issues an idempotent wallet refund. `metered_amount_minor` reports configured Aurelink retail charges, not upstream provider cost or a tax-inclusive invoice.
 
