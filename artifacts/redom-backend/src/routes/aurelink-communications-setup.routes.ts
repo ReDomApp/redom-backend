@@ -5,7 +5,7 @@ import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import {
   createAurelinkProviderDomain, getAurelinkProviderDomain, inspectAurelinkDomainDns,
-  verifyAurelinkProviderDomain, type AurelinkEmailProvider,
+  verifyAurelinkProviderDomain, createAurelinkProviderEmailSender, getAurelinkProviderEmailSender, type AurelinkEmailProvider,
 } from "../services/aurelink/communications-domains.service";
 
 const router = Router();
@@ -200,6 +200,49 @@ router.post("/aurelink/communications/domains/:id/apply-dns",aurelinkAuthMiddlew
     const applied=await applyCloudflareDnsRecords(token,String(row.zone_id),String(row.domain),Array.isArray(row.dns_records)?row.dns_records:[]);
     return res.status(applied.complete?200:207).json({success:applied.complete,domainId:row.id,domain:row.domain,...applied});
   }catch(error){return res.status(502).json({success:false,message:error instanceof Error?error.message:"Cloudflare DNS provisioning failed."});}
+});
+
+
+router.get("/aurelink/communications/email-senders",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId);
+  const rows=await pool.query("SELECT id,provider,email,domain,sender_name,provider_sender_id,status,provider_details,verified_at,created_at,updated_at FROM aurelink_email_senders WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
+  return res.json({success:true,senders:rows.rows});
+});
+router.post("/aurelink/communications/email-senders",aurelinkAuthMiddleware,async(req,res)=>{
+  const email=String(req.body.email||"").trim().toLowerCase();
+  const name=String(req.body.name||"").trim().slice(0,120);
+  const provider=String(req.body.provider||"brevo").toLowerCase();
+  if(!emailProviders.has(provider))return res.status(400).json({success:false,message:"Email sender provider must be resend or brevo."});
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!name)return res.status(400).json({success:false,message:"A valid sender email and display name are required."});
+  const domain=email.split("@").pop()!;
+  const wid=await workspaceId(req.user!.userId);
+  const verifiedDomain=await pool.query("SELECT id FROM aurelink_email_domains WHERE workspace_id=$1 AND domain=$2 AND provider=$3 AND status='verified' LIMIT 1",[wid,domain,provider]);
+  if(!verifiedDomain.rows[0])return res.status(409).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify and authenticate this domain with the selected provider before creating a sender identity."});
+  try{
+    const remote=provider==="brevo"?await createAurelinkProviderEmailSender(email,name):{providerSenderId:"",active:true,raw:{verification:"domain_authenticated"}};
+    const status=remote.active?"verified":"pending_verification";
+    const saved=await pool.query("INSERT INTO aurelink_email_senders(workspace_id,provider,email,domain,sender_name,provider_sender_id,status,provider_details,verified_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,CASE WHEN $7='verified' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,provider,email) DO UPDATE SET sender_name=EXCLUDED.sender_name,provider_sender_id=COALESCE(EXCLUDED.provider_sender_id,aurelink_email_senders.provider_sender_id),status=EXCLUDED.status,provider_details=EXCLUDED.provider_details,verified_at=EXCLUDED.verified_at,updated_at=NOW() RETURNING id,provider,email,domain,sender_name,provider_sender_id,status,provider_details,verified_at,created_at",
+      [wid,provider,email,domain,name,remote.providerSenderId||null,status,JSON.stringify(remote.raw)]);
+    return res.status(provider==="brevo"?202:201).json({success:true,sender:saved.rows[0],nextStep:provider==="brevo"?"Brevo has sent a verification email to this sender address. Complete that email verification, then call the check endpoint.":"Resend uses the authenticated sending domain; no separate sender identity verification endpoint is required."});
+  }catch(error){return res.status(502).json({success:false,message:error instanceof Error?error.message:"Provider sender creation failed."});}
+});
+router.post("/aurelink/communications/email-senders/:id/check",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId);
+  const found=await pool.query("SELECT * FROM aurelink_email_senders WHERE id=$1 AND workspace_id=$2",[req.params.id,wid]);
+  const row=found.rows[0];
+  if(!row)return res.status(404).json({success:false,message:"Email sender identity not found."});
+  try{
+    if(row.provider==="resend"){
+      const domain=await pool.query("SELECT id FROM aurelink_email_domains WHERE workspace_id=$1 AND domain=$2 AND provider='resend' AND status='verified' LIMIT 1",[wid,row.domain]);
+      if(!domain.rows[0])return res.status(409).json({success:false,message:"The Resend domain is no longer verified."});
+      const updated=await pool.query("UPDATE aurelink_email_senders SET status='verified',verified_at=COALESCE(verified_at,NOW()),updated_at=NOW() WHERE id=$1 RETURNING id,provider,email,domain,status,verified_at",[row.id]);
+      return res.json({success:true,sender:updated.rows[0]});
+    }
+    const remote=await getAurelinkProviderEmailSender(String(row.email),String(row.domain));
+    const status=remote.active?"verified":"pending_verification";
+    const updated=await pool.query("UPDATE aurelink_email_senders SET provider_sender_id=COALESCE(NULLIF($2,''),provider_sender_id),status=$3,provider_details=$4::jsonb,verified_at=CASE WHEN $3='verified' THEN COALESCE(verified_at,NOW()) ELSE NULL END,updated_at=NOW() WHERE id=$1 RETURNING id,provider,email,domain,sender_name,provider_sender_id,status,provider_details,verified_at",[row.id,remote.providerSenderId,status,JSON.stringify(remote.raw)]);
+    return res.json({success:true,sender:updated.rows[0]});
+  }catch(error){return res.status(502).json({success:false,message:error instanceof Error?error.message:"Unable to refresh provider sender status."});}
 });
 
 export default router;
