@@ -201,6 +201,35 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   }catch(error){if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
 });
 
+
+router.get("/aurelink/communications/templates",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null;
+ const rows=await pool.query("SELECT id,channel,name,subject,body_text,body_html,variables,status,created_at,updated_at FROM aurelink_message_templates WHERE workspace_id=$1 AND ($2::text IS NULL OR channel=$2) ORDER BY created_at DESC",[wid,channel]);
+ return res.json({success:true,templates:rows.rows});
+});
+router.post("/aurelink/communications/templates",aurelinkAuthMiddleware,async(req,res)=>{
+ const channel=req.body.channel==="sms"?"sms":req.body.channel==="email"?"email":null,name=String(req.body.name||"").trim().slice(0,120),subject=String(req.body.subject||"").trim()||null,bodyText=typeof req.body.text==="string"?req.body.text:undefined,bodyHtml=typeof req.body.html==="string"?req.body.html:undefined,variables=Array.isArray(req.body.variables)?req.body.variables.filter((x:any)=>typeof x==="string").map((x:string)=>x.slice(0,80)).slice(0,50):[];
+ if(!channel||!name||(!bodyText?.trim()&&!bodyHtml?.trim()))return res.status(400).json({success:false,message:"Template channel, name and text or HTML content are required."});
+ if(channel==="email"&&!subject)return res.status(400).json({success:false,message:"Email templates require a subject."});
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+ try{
+  const row=await pool.query("INSERT INTO aurelink_message_templates(workspace_id,channel,name,subject,body_text,body_html,variables,status) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,'draft') RETURNING id,channel,name,subject,body_text,body_html,variables,status,created_at,updated_at",[wid,channel,name,subject,bodyText||null,bodyHtml||null,JSON.stringify(variables)]);
+  return res.status(201).json({success:true,template:row.rows[0]});
+ }catch{return res.status(409).json({success:false,message:"A template with this name already exists for this channel."});}
+});
+router.patch("/aurelink/communications/templates/:id",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),name=typeof req.body.name==="string"?req.body.name.trim().slice(0,120):null,subject=typeof req.body.subject==="string"?req.body.subject.trim():null,bodyText=typeof req.body.text==="string"?req.body.text:null,bodyHtml=typeof req.body.html==="string"?req.body.html:null,status=["draft","active","archived"].includes(req.body.status)?String(req.body.status):null;
+ const row=await pool.query("UPDATE aurelink_message_templates SET name=COALESCE(NULLIF($3,''),name),subject=COALESCE($4,subject),body_text=COALESCE($5,body_text),body_html=COALESCE($6,body_html),status=COALESCE($7,status),updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,channel,name,subject,body_text,body_html,variables,status,created_at,updated_at",[req.params.id,wid,name,subject,bodyText,bodyHtml,status]);
+ if(!row.rows[0])return res.status(404).json({success:false,message:"Template not found."});
+ return res.json({success:true,template:row.rows[0]});
+});
+router.delete("/aurelink/communications/templates/:id",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+ const row=await pool.query("UPDATE aurelink_message_templates SET status='archived',updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,status,updated_at",[req.params.id,wid]);
+ if(!row.rows[0])return res.status(404).json({success:false,message:"Template not found."});
+ return res.json({success:true,template:row.rows[0]});
+});
+
 router.get("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null;
   if(!channel)return res.status(400).json({success:false,message:"Specify channel=sms or channel=email."});
