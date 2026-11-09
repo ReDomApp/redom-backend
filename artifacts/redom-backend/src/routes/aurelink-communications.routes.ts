@@ -86,6 +86,7 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
   if(!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported SMS provider."});
   const category=req.body.category==="marketing"?"marketing":req.body.category==="otp"?"otp":req.body.category==="notification"?"notification":"transactional";
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
+  if(!/^\\+?[1-9]\\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{1,11}$/.test(sender)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide a valid E.164 recipient, 1–11 character sender and message content up to 5000 characters."});
   try{
     const wid=await workspaceId(req.user!.userId);
     if(category==="marketing"){
@@ -105,6 +106,7 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   const provider=String(req.body.provider||process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend");
   if(!EMAIL_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported email provider."});
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),senderName=String(req.body.senderName||""),subject=String(req.body.subject||""),html=typeof req.body.html==="string"?req.body.html:undefined,text=typeof req.body.text==="string"?req.body.text:undefined;
+  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient)||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sender)||!subject.trim()||(!html?.trim()&&!text?.trim()))return res.status(400).json({success:false,message:"Provide valid sender/recipient email addresses, a subject and HTML or text content."});
   try{
     const wid=await workspaceId(req.user!.userId);
     const suppression=(await pool.query("SELECT id FROM aurelink_email_suppressions WHERE workspace_id=$1 AND LOWER(email)=LOWER($2)",[wid,recipient])).rows[0];
@@ -186,6 +188,8 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     const sender=String(req.body.sender||"");
     if(campaign.channel==="sms"&&typeof req.body.webUrl!=="string") {await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
     if(!sender){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"An approved sender is required to start a campaign."});}
+    if(campaign.channel==="sms"&&!/^[A-Za-z0-9]{1,11}$/.test(sender)||campaign.channel==="email"&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sender)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"The campaign sender is invalid for the selected channel."});}
+    if(campaign.channel==="sms"){try{if(new URL(String(req.body.webUrl)).protocol!=="https:")throw new Error("invalid");}catch{await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}}
     const recipients=campaign.channel==="sms"
       ?await client.query("SELECT id,phone_number AS destination FROM aurelink_sms_contacts WHERE workspace_id=$1 AND consent_status='opted_in' AND phone_number IS NOT NULL ORDER BY id",[wid])
       :await client.query("SELECT id,email AS destination FROM aurelink_email_contacts WHERE workspace_id=$1 AND consent_status='opted_in' AND email IS NOT NULL ORDER BY id",[wid]);
