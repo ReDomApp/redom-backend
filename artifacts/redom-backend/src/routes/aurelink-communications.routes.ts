@@ -76,7 +76,7 @@ router.get("/aurelink/communications/overview", aurelinkAuthMiddleware, async (r
     pool.query("SELECT channel,status,COUNT(*)::int AS total FROM aurelink_sender_ids WHERE workspace_id=$1 GROUP BY channel,status",[wid]),
     pool.query("SELECT (SELECT COUNT(*) FROM aurelink_sms_contacts WHERE workspace_id=$1)::int AS sms,(SELECT COUNT(*) FROM aurelink_email_contacts WHERE workspace_id=$1)::int AS email",[wid]),
     pool.query("SELECT channel,status,COUNT(*)::int AS total FROM aurelink_campaigns WHERE workspace_id=$1 GROUP BY channel,status",[wid]),
-    pool.query("SELECT channel,status,COUNT(*)::int AS messages,SUM(units)::int AS units,COALESCE(SUM(unit_price_minor),0)::bigint AS metered_amount_minor,currency FROM aurelink_communications_usage WHERE workspace_id=$1 GROUP BY channel,status,currency",[wid]),
+    pool.query("SELECT channel,status,COUNT(*)::int AS messages,SUM(units)::int AS units,COALESCE(SUM(CASE WHEN wallet_debit_reference IS NULL OR NOT EXISTS(SELECT 1 FROM aurelink_wallet_ledger l WHERE l.reference='aurelink-communications-refund:'||message_id::text) THEN unit_price_minor ELSE 0 END),0)::bigint AS metered_amount_minor,currency FROM aurelink_communications_usage WHERE workspace_id=$1 GROUP BY channel,status,currency",[wid]),
   ]);
   res.json({success:true,workspaceId:wid,providers:PROVIDER_READY,messages:messages.rows,domains:domains.rows,senderIds:senderIds.rows,contacts:contacts.rows[0],campaigns:campaigns.rows,usage:usage.rows});
 });
