@@ -156,11 +156,11 @@ router.get("/aurelink/communications/overview", aurelinkAuthMiddleware, async (r
 });
 
 router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (req,res) => {
-  const provider=String(req.body.provider||process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo");
+  const provider=String(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo");
   if(!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported SMS provider."});
   const category=req.body.category==="marketing"?"marketing":req.body.category==="otp"?"otp":req.body.category==="notification"?"notification":"transactional";
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),countryCode=String(req.body.countryCode||"").toUpperCase(),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
-  if(!/^\\+?[1-9]\\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{1,11}$/.test(sender)||!/[A-Za-z]/.test(sender)||!/^[A-Z]{2}$/.test(countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide an E.164 recipient, ISO countryCode, approved 1–11 character alphanumeric sender and message content up to 5000 characters."});
+  if(!/^\\+?[1-9]\\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender)||!/^[A-Z]{2}$/.test(countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide an E.164 recipient, ISO countryCode, approved 3–11 character alphanumeric sender and message content up to 5000 characters."});
   try{
     const wid=await workspaceId(req.user!.userId);
     if(!await approvedSmsSender(wid,sender,provider,countryCode))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"This sender ID is not approved for the selected provider and destination country."});
@@ -178,7 +178,7 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
 });
 
 router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(req,res)=>{
-  const provider=String(req.body.provider||process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend");
+  const provider=String(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend");
   if(!EMAIL_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported email provider."});
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),senderName=String(req.body.senderName||""),subject=String(req.body.subject||""),html=typeof req.body.html==="string"?req.body.html:undefined,text=typeof req.body.text==="string"?req.body.text:undefined;
   if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient)||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sender)||!subject.trim()||(!html?.trim()&&!text?.trim()))return res.status(400).json({success:false,message:"Provide valid sender/recipient email addresses, a subject and HTML or text content."});
@@ -274,7 +274,7 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     const campaign=found.rows[0];
     if(!campaign){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Campaign not found."});}
     if(campaign.status!=="draft"&&campaign.status!=="scheduled"&&campaign.status!=="sending"&&campaign.status!=="paused"){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"Only draft or scheduled campaigns can be started."});}
-    const provider=String(req.body.provider||(campaign.channel==="sms"?(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo"):(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend")));
+    const provider=String(campaign.channel==="sms"?(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo"):(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend"));
     if(campaign.channel==="sms"&&!SMS_PROVIDERS.has(provider)||campaign.channel==="email"&&!EMAIL_PROVIDERS.has(provider)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Unsupported campaign provider."});}
     const sender=String(req.body.sender||"");
     const countryCode=String(req.body.countryCode||"").toUpperCase();
