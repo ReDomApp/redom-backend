@@ -72,7 +72,8 @@ const verification = await aurelink.verify.start({
   destination: "+14155550123",
   channel: "sms",
   purpose: "signup",
-  sender: "AURELINK"
+  sender: "AURELINK",
+  countryCode: "US"
 });
 const result = await aurelink.verify.check(verification.verificationId, "123456");
 ```
