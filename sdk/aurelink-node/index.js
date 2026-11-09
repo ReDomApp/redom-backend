@@ -38,7 +38,7 @@ export class Aurelink {
           revoke:(id)=>this.request("DELETE","/aurelink/communications/smtp/credentials/"+encodeURIComponent(id))
         }
       },
-      messages:{list:(query)=>this.request("GET","/aurelink/communications/messages",{query}),retrieve:(id)=>this.request("GET","/aurelink/communications/messages/"+encodeURIComponent(id)),retry:(id,options)=>this.request("POST","/aurelink/communications/messages/"+encodeURIComponent(id)+"/retry",{...options})},
+      templates:{list:(query)=>this.request("GET","/aurelink/communications/templates",{query}),create:(body)=>this.request("POST","/aurelink/communications/templates",{body}),update:(id,body)=>this.request("PATCH","/aurelink/communications/templates/"+encodeURIComponent(id),{body}),archive:(id)=>this.request("DELETE","/aurelink/communications/templates/"+encodeURIComponent(id))},\n      messages:{list:(query)=>this.request("GET","/aurelink/communications/messages",{query}),retrieve:(id)=>this.request("GET","/aurelink/communications/messages/"+encodeURIComponent(id)),retry:(id,options)=>this.request("POST","/aurelink/communications/messages/"+encodeURIComponent(id)+"/retry",{...options})},
       contacts:{list:(query)=>this.request("GET","/aurelink/communications/contacts",{query}),upsert:(body)=>this.request("POST","/aurelink/communications/contacts",{body})},
       sms:{send:(body,options)=>this.request("POST","/aurelink/communications/sms/send",{body,...options})},
       email:{send:(body,options)=>this.request("POST","/aurelink/communications/email/send",{body,...options})},
