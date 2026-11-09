@@ -76,6 +76,41 @@ const verification = await aurelink.verify.start({
 const result = await aurelink.verify.check(verification.verificationId, "123456");
 ```
 
+Message sends are asynchronous and require an idempotency key:
+
+```js
+import { randomUUID } from "node:crypto";
+const queued = await aurelink.communications.sms.send({
+  recipient: "+14155550123",
+  sender: "AURELINK",
+  content: "Your order has shipped.",
+  category: "transactional",
+  provider: "brevo"
+}, { idempotencyKey: randomUUID() });
+
+console.log(queued.message.status); // queued
+```
+
+Use the same idempotency key only when retrying the same send. Poll the message through your integration's message reporting or consume delivery webhooks for the final provider status.
+
+Campaigns are available through `aurelink.communications.campaigns`:
+
+```js
+const campaign = await aurelink.communications.campaigns.create({
+  channel: "email",
+  name: "Product update",
+  subject: "Aurelink product update",
+  text: "We have shipped new developer API capabilities."
+});
+const started = await aurelink.communications.campaigns.send(campaign.campaign.id, {
+  sender: "updates@example.com",
+  senderName: "Aurelink",
+  provider: "resend"
+});
+```
+
+Campaigns include only contacts with recorded opt-in consent. SMS campaigns additionally require an HTTPS `webUrl` for opt-out/event handling.
+
 The current adapter supports Brevo transactional SMS, Twilio Programmable Messaging, Resend Email API and Brevo transactional Email API. Provider acceptance is not proof of handset or inbox delivery; delivery status requires authenticated provider webhooks. SMS sender IDs and email sending domains must be approved and credits/limits must be available at the selected provider. Brevo SMTP credentials are distinct from its API key; Aurelink SMTP relay is a separate infrastructure deliverable and is not exposed by these REST methods.
 
 ## Webhook signature verification
