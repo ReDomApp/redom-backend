@@ -24,7 +24,8 @@ export function mapAurelinkResendEvent(eventType:string):string|null {
     "email.bounced":"bounced",
     "email.failed":"failed",
     "email.complained":"complained",
-    "email.suppressed":"rejected",\n    "email.unsubscribed":"unsubscribed"
+    "email.suppressed":"rejected",
+    "email.unsubscribed":"unsubscribed"
   };
   return map[eventType]??null;
 }
