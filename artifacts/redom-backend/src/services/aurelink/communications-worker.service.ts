@@ -5,14 +5,14 @@ import { sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.s
 
 type JobPayload =
   | { channel:"sms"; provider:"brevo"|"twilio"; category:"transactional"|"marketing"|"otp"|"notification"; input:{recipient:string;sender:string;content:string;category:"transactional"|"marketing"|"otp"|"notification";tag?:string;webUrl?:string} }
-  | { channel:"email"; provider:"resend"|"brevo"; category:"transactional"|"notification"; input:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;tags?:string[]} };
+  | { channel:"email"; provider:"resend"|"brevo"; category:"transactional"|"notification"; input:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;tags?:string[];attachments?:Array<{filename:string;content:string;contentType?:string}>} };
 
 function key(){const source=process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET;if(!source||source.length<32)throw new Error("Set AURELINK_COMMUNICATIONS_ENCRYPTION_KEY (32+ characters) or JWT_ACCESS_SECRET before enabling communications delivery.");return createHash("sha256").update(source).update("|aurelink-communications-v1").digest();}
 function encrypt(value:string){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",key(),iv),body=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);return [iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),body.toString("base64url")].join(".");}
 function decrypt(value:string){const [iv,tag,body]=value.split(".");if(!iv||!tag||!body)throw new Error("Communications job payload is corrupt.");const decipher=createDecipheriv("aes-256-gcm",key(),Buffer.from(iv,"base64url"));decipher.setAuthTag(Buffer.from(tag,"base64url"));return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");}
 
 export async function enqueueAurelinkMessage(input:{
- userId:string;workspaceId:string;channel:"sms"|"email";category:string;provider:string;recipient:string;sender:string;subject?:string;content:string;idempotencyKey:string;payload:JobPayload;campaignId?:string;verificationId?:string;
+ userId:string;workspaceId:string;channel:"sms"|"email";category:string;provider:string;recipient:string;sender:string;subject?:string;content:string;idempotencyKey:string;payload:JobPayload;campaignId?:string;verificationId?:string;scheduledAt?:Date;
 }){
  const payloadHash=createHash("sha256").update(JSON.stringify(input.payload)).digest("hex");
  const client=await pool.connect();
@@ -30,7 +30,7 @@ export async function enqueueAurelinkMessage(input:{
    return {message:row,replayed:true as const};
   }
   const message=inserted.rows[0];
-  await client.query("INSERT INTO aurelink_communications_jobs(message_id,workspace_id,payload_encrypted,payload_hash) VALUES($1,$2,$3,$4)",[message.id,input.workspaceId,encrypt(JSON.stringify(input.payload)),payloadHash]);
+  await client.query("INSERT INTO aurelink_communications_jobs(message_id,workspace_id,payload_encrypted,payload_hash,next_attempt_at) VALUES($1,$2,$3,$4,COALESCE($5,NOW()))",[message.id,input.workspaceId,encrypt(JSON.stringify(input.payload)),payloadHash,input.scheduledAt||null]);
   const unitPriceMinor=Number(input.channel==="sms"?(process.env.AURELINK_SMS_UNIT_PRICE_MINOR||"0"):(process.env.AURELINK_EMAIL_UNIT_PRICE_MINOR||"0"));
   if(!Number.isSafeInteger(unitPriceMinor)||unitPriceMinor<0)throw new Error("Communications unit price must be a non-negative integer in USD cents.");
   const debitReference=unitPriceMinor>0?"aurelink-communications:"+String(message.id):null;
