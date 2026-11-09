@@ -31,6 +31,13 @@ function clientMessageId(raw) {
 function messageId(raw) {
   return clientMessageId(raw) || createHash("sha256").update(raw).digest("hex");
 }
+function withBrevoCorrelationHeader(raw, key) {
+  const source = raw.toString("utf8");
+  const separator = source.indexOf("\r\n\r\n");
+  if (separator < 0) return raw;
+  const header = "X-Mailin-custom: aurelink:" + key + "\r\n";
+  return Buffer.from(source.slice(0,separator + 2) + header + source.slice(separator + 2),"utf8");
+}
 function providerMessageId(info) {
   const response = String(info?.response || "");
   return response.match(/(?:queued as|message[- ]id[:=])\s*<?([A-Za-z0-9._-]+)>?/i)?.[1] || null;
@@ -83,7 +90,7 @@ async function handleMessage(session, raw, callback) {
     try {
       if (!fallback || fallback === primary) throw error;
       provider = fallback;
-      result = await deliver(fallback, { from, to: recipients }, raw);
+      result = await deliver(fallback, { from, to: recipients }, withBrevoCorrelationHeader(raw,messageKey));
     } catch (fallbackError) {
       const detail = String(fallbackError instanceof Error ? fallbackError.message : error).slice(0,500);
       await pool.query(
