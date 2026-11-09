@@ -41,6 +41,16 @@ export async function enqueueAurelinkMessage(input:{
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
 }
 
+export async function retryAurelinkMessage(input:{userId:string;workspaceId:string;messageId:string;idempotencyKey:string}){
+ const found=await pool.query("SELECT m.*,w.user_id,j.payload_encrypted FROM aurelink_messages m JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id JOIN aurelink_communications_jobs j ON j.message_id=m.id WHERE m.id=$1 AND m.workspace_id=$2",[input.messageId,input.workspaceId]);
+ const original=found.rows[0];
+ if(!original||String(original.user_id)!==input.userId)throw new Error("MESSAGE_NOT_FOUND");
+ if(original.status!=="failed"||original.campaign_id||original.verification_session_id)throw new Error("MESSAGE_NOT_RETRYABLE");
+ const payload=JSON.parse(decrypt(original.payload_encrypted)) as JobPayload;
+ const content=payload.channel==="sms"?payload.input.content:(payload.input.html||payload.input.text||"");
+ return enqueueAurelinkMessage({userId:input.userId,workspaceId:input.workspaceId,channel:original.channel,category:original.category,provider:payload.provider,recipient:original.recipient,sender:original.sender||"",subject:original.subject||undefined,content,idempotencyKey:input.idempotencyKey,payload});
+}
+
 let timer:ReturnType<typeof setInterval>|undefined;let busy=false;
 async function finalizeCampaign(messageId:string){
  await pool.query("UPDATE aurelink_campaigns c SET status=CASE WHEN EXISTS(SELECT 1 FROM (SELECT DISTINCT ON(m.recipient) m.recipient,j.status FROM aurelink_messages m JOIN aurelink_communications_jobs j ON j.message_id=m.id WHERE m.campaign_id=c.id ORDER BY m.recipient,m.created_at DESC) latest WHERE latest.status='failed') THEN 'paused' ELSE 'completed' END,completed_at=NOW(),updated_at=NOW() WHERE c.id=(SELECT campaign_id FROM aurelink_messages WHERE id=$1) AND NOT EXISTS(SELECT 1 FROM (SELECT DISTINCT ON(m.recipient) m.recipient,j.status FROM aurelink_messages m JOIN aurelink_communications_jobs j ON j.message_id=m.id WHERE m.campaign_id=c.id ORDER BY m.recipient,m.created_at DESC) latest WHERE latest.status IN ('pending','processing'))",[messageId]);
