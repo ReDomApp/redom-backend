@@ -96,6 +96,21 @@ function snapshot(provider: AurelinkEmailProvider, value: any, id?: string): Aur
 }
 export async function createAurelinkProviderDomain(provider: AurelinkEmailProvider, inputDomain: string): Promise<AurelinkDomainSnapshot> {
   const domain = normalizeDomain(inputDomain);
+  const listed = await request(provider, provider === "resend" ? "/domains" : "/senders/domains");
+  const entries = provider === "resend"
+    ? (Array.isArray(listed) ? listed : Array.isArray(listed?.data) ? listed.data : [])
+    : (Array.isArray(listed?.domains) ? listed.domains : []);
+  const existing = entries.find((item:any) => String(item.name || item.domain_name || item.domain || "").toLowerCase() === domain);
+  if (existing) {
+    if (provider === "resend") {
+      const id = String(existing.id || "");
+      if (!id) throw new Error("Existing Resend domain has no provider identifier.");
+      const details = await request(provider, `/domains/${encodeURIComponent(id)}`);
+      return snapshot(provider, details, id);
+    }
+    const details = await request(provider, `/senders/domains/${encodeURIComponent(domain)}`);
+    return snapshot(provider, details, String(existing.id || domain));
+  }
   if (provider === "resend") {
     const created = await request(provider, "/domains", "POST", { name: domain });
     const id = String(created?.id || "");
