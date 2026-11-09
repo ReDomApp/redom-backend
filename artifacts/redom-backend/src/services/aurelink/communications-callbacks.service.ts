@@ -45,7 +45,7 @@ export async function updateAurelinkMessageStatus(input:{
   for(const row of updated.rows){
     await pool.query("UPDATE aurelink_communications_usage SET status=$2,updated_at=NOW() WHERE message_id=$1",[row.id,input.status==="delivered"?"delivered":input.status==="failed"||input.status==="bounced"||input.status==="rejected"?"failed":"accepted"]).catch(()=>undefined);
     const channel=String(row.channel)==="sms"?"sms":"email";
-    const suffix=input.status==="delivered"?"delivered":input.status==="accepted"?"accepted":channel==="email"&&input.status==="bounced"?"bounced":channel==="email"&&input.status==="complained"?"complained":input.status==="failed"||input.status==="bounced"||input.status==="rejected"?"failed":"failed";
+    const suffix=input.status==="delivered"?"delivered":input.status==="accepted"||input.status==="sent"||input.status==="deferred"?"accepted":channel==="email"&&input.status==="bounced"?"bounced":channel==="email"&&input.status==="complained"?"complained":channel==="email"&&input.status==="unsubscribed"?"unsubscribed":"failed";
     await emitAurelinkWebhookEventFromWorkspace(String(row.workspace_id),channel+"."+suffix,{messageId:row.id,providerMessageId:input.providerMessageId,recipient:row.recipient,status:input.status,provider:input.provider});
   }
 }
