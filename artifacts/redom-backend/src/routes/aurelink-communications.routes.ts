@@ -250,11 +250,14 @@ router.post("/aurelink/verify/:id/check",aurelinkAuthMiddleware,async(req,res)=>
     const found=await client.query("SELECT * FROM aurelink_verification_sessions WHERE id=$1 AND workspace_id=$2 FOR UPDATE",[req.params.id,wid]);
     const session=found.rows[0];
     if(!session){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Verification session not found."});}
-    if(session.status!=="pending"||new Date(session.expires_at).getTime()<=Date.now()){await client.query("UPDATE aurelink_verification_sessions SET status='expired',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");await emitAurelinkWebhookEvent(req.user!.userId,"verification.expired",{verificationId:session.id,purpose:session.purpose});return res.status(410).json({success:false,message:"Verification session expired or is no longer pending."});}
+    if(session.status==="approved"){await client.query("COMMIT");return res.json({success:true,verified:true,verifiedAt:session.verified_at||null});}
+    if(session.status!=="pending"){await client.query("ROLLBACK");return res.status(410).json({success:false,message:"Verification session is no longer active."});}
+    if(new Date(session.expires_at).getTime()<=Date.now()){await client.query("UPDATE aurelink_verification_sessions SET status='expired',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");await emitAurelinkWebhookEvent(req.user!.userId,"verification.expired",{verificationId:session.id,purpose:session.purpose});return res.status(410).json({success:false,message:"Verification session expired."});}
     if(Number(session.attempts)>=Number(session.max_attempts)){await client.query("UPDATE aurelink_verification_sessions SET status='locked',updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(429).json({success:false,message:"Verification attempts exceeded."});}
     const code=String(req.body.code||""), candidate=makeVerificationHash(code,String(session.verification_salt||"")), hashInput=String(session.code_hash||"");
-    const candidateMatches=/^\d{6}$/.test(code)&&hashInput.length===64&&hashInput===candidate;
-    if(!candidateMatches){await client.query("UPDATE aurelink_verification_sessions SET attempts=attempts+1,updated_at=NOW() WHERE id=$1",[session.id]);await client.query("COMMIT");return res.status(400).json({success:false,message:"Incorrect verification code."});}
+    const supplied=Buffer.from(hashInput,"hex"),expected=Buffer.from(candidate,"hex");
+    const candidateMatches=/^\\d{6}$/.test(code)&&hashInput.length===64&&supplied.length===expected.length&&timingSafeEqual(supplied,expected);
+    if(!candidateMatches){const wrong=await client.query("UPDATE aurelink_verification_sessions SET attempts=attempts+1,status=CASE WHEN attempts+1>=max_attempts THEN 'locked' ELSE status END,updated_at=NOW() WHERE id=$1 RETURNING attempts,status",[session.id]);await client.query("COMMIT");return res.status(wrong.rows[0]?.status==="locked"?429:400).json({success:false,message:wrong.rows[0]?.status==="locked"?"Verification attempts exceeded.":"Incorrect verification code."});}
     await client.query("UPDATE aurelink_verification_sessions SET status='approved',verified_at=NOW(),updated_at=NOW() WHERE id=$1",[session.id]);
     await client.query("COMMIT");
     await emitAurelinkWebhookEvent(req.user!.userId,"verification.approved",{verificationId:session.id,purpose:session.purpose,verifiedAt:new Date().toISOString()});
