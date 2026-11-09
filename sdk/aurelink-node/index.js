@@ -11,6 +11,15 @@ export class Aurelink {
     this.countries={list:(query)=>this.request("GET","/aurelink/catalog/countries",{query})};
     this.orders={list:(query)=>this.request("GET","/aurelink/orders",{query})};
     this.wallet={retrieve:()=>this.request("GET","/aurelink/wallet"),ledger:(query)=>this.request("GET","/aurelink/wallet/ledger",{query})};
+    this.communications={
+      overview:()=>this.request("GET","/aurelink/communications/overview"),
+      sms:{send:(body,options)=>this.request("POST","/aurelink/communications/sms/send",{body,...options})},
+      email:{send:(body,options)=>this.request("POST","/aurelink/communications/email/send",{body,...options})}
+    };
+    this.verify={
+      start:(body,options)=>this.request("POST","/aurelink/verify/start",{body,...options}),
+      check:(id,code)=>this.request("POST","/aurelink/verify/"+encodeURIComponent(id)+"/check",{body:{code}})
+    };
     this.activations={
       quote:(body)=>this.request("POST","/aurelink/quotes",{body}),
       create:(body,options)=>this.request("POST","/aurelink/activations",{body,...options}),
