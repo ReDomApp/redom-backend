@@ -70,6 +70,7 @@ async function handleMessage(session, raw, callback) {
   const recipients = (session.envelope?.rcptTo || []).map(item => String(item.address || "").toLowerCase());
   if (!from.includes("@") || !recipients.length || recipients.length > maxRecipients) return callback(new Error("550 Invalid envelope or recipient limit exceeded."));
   const domain = from.split("@").pop();
+  if (domain !== resendSendingDomain) return callback(new Error("550 Aurelink SMTP primary sender must use the configured Resend platform domain: " + resendSendingDomain + "."));
   const clientId = clientMessageId(raw);
   const messageKey = messageId(raw);
   const duplicate = await pool.query("SELECT provider,provider_message_id,status FROM aurelink_smtp_messages WHERE workspace_id=$1 AND message_key=$2", [auth.workspaceId, messageKey]);
