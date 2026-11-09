@@ -71,13 +71,15 @@ async function handleMessage(session, raw, callback) {
   const messageKey = messageId(raw);
   const duplicate = await pool.query("SELECT provider,provider_message_id,status FROM aurelink_smtp_messages WHERE workspace_id=$1 AND message_key=$2", [auth.workspaceId, messageKey]);
   if (duplicate.rows[0]?.status === "accepted") return callback(null, "250 Message already accepted.");
-  const allowed = await pool.query(
-    "SELECT COUNT(DISTINCT provider)::int AS count FROM aurelink_email_domains WHERE workspace_id=$1 AND domain=$2 AND status='verified' AND provider IN ('resend','brevo')",
+  const resendDomain = await pool.query(
+    "SELECT id FROM aurelink_email_domains WHERE workspace_id=$1 AND provider='resend' AND LOWER(domain)=LOWER($2) AND status='verified' LIMIT 1",
     [auth.workspaceId, domain]
   );
-  if (Number(allowed.rows[0]?.count || 0) < 2) return callback(new Error("550 Sender domain must be verified with both Resend and Brevo before SMTP relay use."));
-  const brevoSender = await pool.query("SELECT id FROM aurelink_email_senders WHERE workspace_id=$1 AND provider='brevo' AND LOWER(email)=LOWER($2) AND status='verified' LIMIT 1",[auth.workspaceId,from]);
-  if (!brevoSender.rows[0]) return callback(new Error("550 Sender address must also be verified in Brevo before SMTP relay use."));
+  if (!resendDomain.rows[0]) return callback(new Error("550 Sender domain must be verified with Resend before primary SMTP delivery."));
+  const brevoSender = await pool.query(
+    "SELECT s.email,s.sender_name,s.domain FROM aurelink_email_senders s JOIN aurelink_email_domains d ON d.workspace_id=s.workspace_id AND d.provider='brevo' AND LOWER(d.domain)=LOWER(s.domain) AND d.status='verified' WHERE s.workspace_id=$1 AND s.provider='brevo' AND s.status='verified' ORDER BY CASE WHEN LOWER(SPLIT_PART(s.email,'@',1))=LOWER(SPLIT_PART($2,'@',1)) THEN 0 ELSE 1 END,s.created_at ASC LIMIT 1",
+    [auth.workspaceId, from]
+  );
   const usage = await pool.query(
     "SELECT COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '1 minute')::int AS minute_count,COUNT(*) FILTER (WHERE created_at>=date_trunc('day',NOW()))::int AS day_count FROM aurelink_smtp_messages WHERE credential_id=$1",
     [auth.credentialId]
@@ -91,8 +93,21 @@ async function handleMessage(session, raw, callback) {
     firstError = error;
     try {
       if (!fallback || fallback === primary) throw error;
-      provider = fallback;
-      result = await deliver(fallback, { from, to: recipients }, withBrevoCorrelationHeader(raw,messageKey));
+      if (fallback === "brevo") {
+        const sender = brevoSender.rows[0];
+        if (!sender?.email) throw new Error("No verified Brevo fallback sender is configured for this Aurelink workspace.");
+        const originalFrom = from;
+        const rewritten = raw.toString("utf8");
+        const fromHeader = new RegExp("^From:[^\\r\\n]*(?:\\r?\\n[ \\t][^\\r\\n]*)*","im");
+        const fallbackFrom = "From: " + (sender.sender_name ? '"' + String(sender.sender_name).replace(/["\\\\]/g,"") + '" ' : "") + "<" + sender.email + ">";
+        let fallbackRaw = fromHeader.test(rewritten) ? rewritten.replace(fromHeader,fallbackFrom) : fallbackFrom + "\\r\\n" + rewritten;
+        if (!/^Reply-To:/im.test(fallbackRaw)) fallbackRaw = fallbackRaw.replace(/\\r\\n\\r\\n/,"\\r\\nReply-To: " + originalFrom + "\\r\\n\\r\\n");
+        provider = fallback;
+        result = await deliver(fallback, { from: sender.email, to: recipients }, withBrevoCorrelationHeader(Buffer.from(fallbackRaw,"utf8"),messageKey));
+      } else {
+        provider = fallback;
+        result = await deliver(fallback, { from, to: recipients }, raw);
+      }
     } catch (fallbackError) {
       const detail = String(fallbackError instanceof Error ? fallbackError.message : error).slice(0,500);
       await pool.query(
