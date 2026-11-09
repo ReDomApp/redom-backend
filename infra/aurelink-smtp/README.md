@@ -7,8 +7,9 @@ This is a separate TCP SMTP submission service. It is not part of the HTTP API p
 - Primary: Resend SMTP at `smtp.resend.com:465` (username `resend`, password = Resend API key).
 - Fallback: Brevo SMTP at `smtp-relay.brevo.com:587` (SMTP login + SMTP key; a Brevo REST API key is not accepted).
 - The relay attempts Brevo only after Resend rejects/fails the SMTP transaction.
-- Resend is the primary sending identity on `mail.wnncompany.com`.
-- Brevo is a separate fallback identity on its own authenticated domain, currently `market.wnncompany.com`.
+- Resend is the primary Aurelink sending identity on `mail.wnncompany.com` (`AURELINK_RESEND_SENDING_DOMAIN`).
+- Brevo is a separate fallback identity on `market.wnncompany.com` (`AURELINK_BREVO_SENDING_DOMAIN`). These domains are intentionally separate; never copy one provider's DNS records into the other provider's domain.
+- The domain setup endpoint defaults to the matching provider domain when `domain` is omitted: Resend → `mail.wnncompany.com`; Brevo → `market.wnncompany.com`. Customer-owned domains can still be registered separately.
 - The domains are registered and verified independently. Aurelink never requires the same domain to be authenticated at both providers and never copies one provider's DNS records into the other provider's domain.
 - Before primary delivery, the original From domain must be verified with Resend. If Resend fails, the relay selects a verified Brevo sender identity in the same workspace, rewrites the fallback From header to that Brevo address, and preserves the original From address as Reply-To. If no verified Brevo identity and domain are available, fallback is rejected rather than sending from an unverified identity.
 
@@ -25,6 +26,9 @@ Required environment:
 - `AURELINK_BREVO_SMTP_KEY`
 - `AURELINK_SMTP_PRIMARY_PROVIDER=resend`
 - `AURELINK_SMTP_FALLBACK_PROVIDER=brevo`
+- `AURELINK_RESEND_SENDING_DOMAIN=mail.wnncompany.com`
+- `AURELINK_BREVO_SENDING_DOMAIN=market.wnncompany.com`
+- `AURELINK_SMTP_HOSTNAME=smtp.wnncompany.com` (public TCP relay hostname; separate from the Resend sending domain)
 
 ## Safety controls
 
@@ -34,4 +38,4 @@ Required environment:
 - Message size, recipients, per-minute throughput and daily send counts are capped.
 - No unauthenticated/open relay is provided.
 
-Configure a DNS A/AAAA record for the SMTP hostname to this service and publish the appropriate SPF/DKIM/DMARC records for each provider. Do not point the domain's MX records at this submission service: it is an authenticated outbound relay, not an inbound mailbox server.
+Configure `smtp.wnncompany.com` (or `AURELINK_SMTP_HOSTNAME`) with an A/AAAA record to this TCP relay. Keep Resend authentication on `mail.wnncompany.com` and Brevo authentication on `market.wnncompany.com`; the provider APIs are the source of truth for each record set. Add only records reported missing by that provider. Never publish duplicate SPF records at the same hostname. Do not point the domain's MX records at this submission service: it is an authenticated outbound relay, not an inbound mailbox server.
