@@ -75,7 +75,8 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="GET"&&path==="/aurelink/communications/senders")return ok({senders:[],testMode:true});
  if(req.method==="GET"&&path==="/aurelink/communications/email-senders")return ok({senders:[],testMode:true});
  if(req.method==="GET"&&path==="/aurelink/communications/smtp/credentials")return ok({credentials:[],smtp:{testMode:true,liveHostNotProvisioned:true},testMode:true});
- if(req.method==="GET"&&path==="/aurelink/communications/analytics")return ok({periodDays:30,summary:[],suppressions:[],testMode:true});\n if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({providers:{sms:{brevo:false,twilio:false},email:{resend:false,brevo:false}},messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/analytics")return ok({periodDays:30,summary:[],suppressions:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({providers:{sms:{brevo:false,twilio:false},email:{resend:false,brevo:false}},messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
  if(req.method==="POST"&&path==="/aurelink/verify/start")return ok({verificationId:id,expiresAt:new Date(Date.now()+300000).toISOString(),testCode:"123456",testMode:true},202);
  if(req.method==="POST"&&p[1]==="verify"&&p[3]==="check")return ok({verified:String(req.body.code||"")==="123456",verificationId:p[2],testMode:true},String(req.body.code||"")==="123456"?200:400);
  if(req.method==="POST"&&p[1]==="communications"&&p[2]==="domains")return ok({domain:{id,testMode:true,status:"verification_pending",dnsRecords:[]},testMode:true},202);
