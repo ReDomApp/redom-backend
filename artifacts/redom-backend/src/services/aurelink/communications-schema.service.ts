@@ -192,6 +192,8 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       rotated_at TIMESTAMPTZ
     );
   `);
+  await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS campaign_id UUID REFERENCES aurelink_campaigns(id) ON DELETE SET NULL");
+  await pool.query("CREATE INDEX IF NOT EXISTS aurelink_messages_campaign_idx ON aurelink_messages(campaign_id,status) WHERE campaign_id IS NOT NULL");
   await pool.query("ALTER TABLE aurelink_messages DROP CONSTRAINT IF EXISTS aurelink_messages_status_check");
   await pool.query("ALTER TABLE aurelink_messages ADD CONSTRAINT aurelink_messages_status_check CHECK (status IN ('queued','processing','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed'))");
   await pool.query(`
