@@ -244,7 +244,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
   if(!destination||destination.length>320||!/^[A-Za-z0-9_.-]{1,40}$/.test(purpose))return res.status(400).json({success:false,message:"A valid destination and purpose are required."});
   if(channel==="sms"&&!/^\+[1-9]\d{7,14}$/.test(destination))return res.status(400).json({success:false,message:"Phone number must use E.164 format."});
   if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination))return res.status(400).json({success:false,message:"Enter a valid email address."});
-  const wid=await workspaceId(req.user!.userId),code=createOtpCode(),salt=randomUUID(),expiresAt=new Date(Date.now()+5*60*1000),provider=channel==="email"?String(req.body.provider||"resend"):String(req.body.provider||"brevo");
+  const wid=await workspaceId(req.user!.userId),code=createOtpCode(),salt=randomUUID(),expiresAt=new Date(Date.now()+5*60*1000),provider=String(req.body.provider||(channel==="email"?(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend"):(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo")));
   if(channel==="email"&&!EMAIL_PROVIDERS.has(provider)||channel==="sms"&&!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported verification provider."});
   const sender=String(req.body.sender||"");
   if(channel==="sms"&&!/^[A-Za-z0-9]{1,11}$/.test(sender))return res.status(400).json({success:false,message:"SMS sender must be 1–11 alphanumeric characters."});
