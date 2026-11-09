@@ -161,7 +161,7 @@ Set these values only on the backend service (never in browser/mobile builds):
 | `AURELINK_TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_PHONE_NUMBER` | Twilio sender configuration |
 | `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` | Stable 32+ character key for encrypting queued message payloads; falls back to `JWT_ACCESS_SECRET` |
 | `AURELINK_VERIFICATION_PEPPER` | Optional dedicated 32+ character OTP HMAC secret; falls back to `JWT_ACCESS_SECRET` |
-| `AURELINK_RESEND_WEBHOOK_SECRET` | Resend/Svix signing secret for delivery callbacks |
+| `AURELINK_RESEND_WEBHOOK_SECRET` | Resend/Svix signing secret for delivery callbacks |\n| `AURELINK_BREVO_SMTP_LOGIN`, `AURELINK_BREVO_SMTP_KEY` | Separate Brevo SMTP credentials for the standalone SMTP relay; not the REST API key |\n| `AURELINK_SMTP_HOSTNAME` | Public hostname of the deployed SMTP TCP relay; leave unset until deployed |
 | `AURELINK_TWILIO_STATUS_CALLBACK_URL` | Public HTTPS URL ending in `/aurelink/webhooks/twilio/status` |
 | `AURELINK_DEFAULT_SMS_PROVIDER`, `AURELINK_DEFAULT_EMAIL_PROVIDER` | Primary provider selection |
 | `AURELINK_SMS_FALLBACK_PROVIDER`, `AURELINK_EMAIL_FALLBACK_PROVIDER` | Optional failover provider |
@@ -295,13 +295,13 @@ Supported adapters: Resend Email API and Brevo transactional Email API. The send
 
 ### Verification
 
-Aurelink generates and validates the OTP itself. A session expires after five minutes and permits at most five verification attempts. Only a per-session HMAC hash and separate random salt are stored; the OTP is never returned by the live API. Configure a stable `AURELINK_VERIFICATION_PEPPER` (32+ characters); if unset, the backend uses `JWT_ACCESS_SECRET`. Provider services deliver the message but do not decide whether the verification succeeds.
+Aurelink generates and validates the OTP itself. SMS verification requests must include the ISO destination `countryCode` and an approved sender for that country/provider; email verification requires an authenticated sender domain. A session expires after five minutes and permits at most five verification attempts. Only a per-session HMAC hash and separate random salt are stored; the OTP is never returned by the live API. Configure a stable `AURELINK_VERIFICATION_PEPPER` (32+ characters); if unset, the backend uses `JWT_ACCESS_SECRET`. Provider services deliver the message but do not decide whether the verification succeeds.
 
 ### Provider setup and SMTP distinction
 
 The communications overview reports which adapters have credentials configured. This does not mean that a sender ID/domain has been approved or that the provider account has available credits.
 
-Brevo Email API and Brevo SMTP are different transports. SMTP requires a Brevo SMTP login and SMTP key, distinct from the REST API key. The current implementation provides REST API delivery; customer-facing Aurelink SMTP relay hosting, credential issuance and SMTP ingress are a separate infrastructure phase and must not be represented as already active.
+Brevo Email API and Brevo SMTP are different transports. SMTP requires a Brevo SMTP login and SMTP key, distinct from the REST API key. The REST API delivery path is active in code. The new SMTP credential APIs and standalone TCP relay package are also implemented in this branch, but the relay has not been deployed to a public TCP-capable host and must not be advertised as live until its DNS hostname, TLS certificate and provider credentials are configured.
 
 Resend and Brevo both require domain/sender authentication at the provider. SMS sender IDs may need country-specific registration and approval. Provider acceptance is not handset/inbox delivery confirmation; update delivered/bounced states only from authenticated provider webhooks.
 
