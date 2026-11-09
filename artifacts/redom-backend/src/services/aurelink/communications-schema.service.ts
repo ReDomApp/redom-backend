@@ -1,8 +1,8 @@
 import { pool } from "../../database/db";
 
 /**
- * Additive schema bootstrap for Aurelink's multi-channel communications product.
- * All billing and provider state belongs to aurelink_users, not ReDom users.
+ * Additive schema bootstrap for Aurelink's communications products.
+ * These records are tenant-scoped to aurelink_users, never to ReDom users.
  */
 export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
   await pool.query(`
@@ -15,7 +15,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(user_id)
     );
-
     CREATE TABLE IF NOT EXISTS aurelink_communications_members (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -25,7 +24,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       invited_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(workspace_id,email)
     );
-
     CREATE TABLE IF NOT EXISTS aurelink_sender_ids (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -42,7 +40,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS aurelink_sender_ids_workspace_idx ON aurelink_sender_ids(workspace_id,channel,status);
-
     CREATE TABLE IF NOT EXISTS aurelink_email_domains (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -57,7 +54,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(workspace_id,domain,provider)
     );
-
     CREATE TABLE IF NOT EXISTS aurelink_email_suppressions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -67,7 +63,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(workspace_id,email)
     );
-
     CREATE TABLE IF NOT EXISTS aurelink_message_templates (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -82,7 +77,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(workspace_id,channel,name)
     );
-
     CREATE TABLE IF NOT EXISTS aurelink_messages (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -112,7 +106,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS aurelink_messages_workspace_created_idx ON aurelink_messages(workspace_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS aurelink_messages_provider_id_idx ON aurelink_messages(provider,provider_message_id) WHERE provider_message_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS aurelink_messages_status_idx ON aurelink_messages(workspace_id,channel,status,created_at DESC);
-
     CREATE TABLE IF NOT EXISTS aurelink_verification_sessions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -121,6 +114,7 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       destination TEXT NOT NULL,
       destination_hash CHAR(64) NOT NULL,
       code_hash CHAR(64) NOT NULL,
+      verification_salt VARCHAR(64) NOT NULL,
       status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','expired','locked','cancelled')),
       attempts INTEGER NOT NULL DEFAULT 0,
       max_attempts INTEGER NOT NULL DEFAULT 5,
@@ -132,7 +126,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS aurelink_verification_due_idx ON aurelink_verification_sessions(workspace_id,status,expires_at);
-
     CREATE TABLE IF NOT EXISTS aurelink_sms_contacts (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -146,7 +139,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(workspace_id,phone_number)
     );
-
     CREATE TABLE IF NOT EXISTS aurelink_email_contacts (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -160,7 +152,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(workspace_id,email)
     );
-
     CREATE TABLE IF NOT EXISTS aurelink_campaigns (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -177,7 +168,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-
     CREATE TABLE IF NOT EXISTS aurelink_provider_events (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       provider VARCHAR(24) NOT NULL,
@@ -190,7 +180,6 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       UNIQUE(provider,provider_event_id)
     );
     CREATE INDEX IF NOT EXISTS aurelink_provider_events_message_idx ON aurelink_provider_events(provider,provider_message_id);
-
     CREATE TABLE IF NOT EXISTS aurelink_provider_credentials (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
