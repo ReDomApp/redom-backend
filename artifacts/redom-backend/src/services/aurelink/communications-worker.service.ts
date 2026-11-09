@@ -22,9 +22,9 @@ export async function enqueueAurelinkMessage(input:{
    [input.workspaceId,input.channel,input.category,input.provider,input.recipient,input.sender,input.subject||null,createHash("sha256").update(input.content).digest("hex"),input.idempotencyKey]
   );
   if(!inserted.rows.length){
-   const existing=await client.query("SELECT id,channel,category,provider,recipient,status,created_at,content_hash FROM aurelink_messages WHERE workspace_id=$1 AND idempotency_key=$2 FOR UPDATE",[input.workspaceId,input.idempotencyKey]);
+   const existing=await client.query("SELECT m.id,m.channel,m.category,m.provider,m.recipient,m.status,m.created_at,m.content_hash,j.payload_hash FROM aurelink_messages m LEFT JOIN aurelink_communications_jobs j ON j.message_id=m.id WHERE m.workspace_id=$1 AND m.idempotency_key=$2 FOR UPDATE OF m",[input.workspaceId,input.idempotencyKey]);
    const row=existing.rows[0];
-   if(!row||row.content_hash!==createHash("sha256").update(input.content).digest("hex")){await client.query("ROLLBACK");return {conflict:true as const};}
+   if(!row||row.content_hash!==createHash("sha256").update(input.content).digest("hex")||row.payload_hash!==payloadHash){await client.query("ROLLBACK");return {conflict:true as const};}
    await client.query("COMMIT");
    return {message:row,replayed:true as const};
   }
