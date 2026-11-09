@@ -118,10 +118,11 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
  const p=req.path.split("/").filter(Boolean);
  if(!apiKeyAllowed(req)){res.status(403).json({success:false,message:"This API key cannot access this route."});return;}
  const digest=createHash("sha256").update(secret).digest();
- const found=await pool.query("SELECT k.id,k.user_id,k.key_hash,k.environment,k.scopes,k.rate_limit_per_minute,k.expires_at,u.account_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.key_prefix IN ($1,$2,$3) AND k.revoked_at IS NULL LIMIT 1",[secret.slice(0,20),secret.slice(0,16),secret.slice(0,12)]);
- const row=found.rows[0] as {id:string;user_id:string;key_hash:string;environment:string;scopes:unknown;rate_limit_per_minute:number;expires_at:Date|null;account_status:string}|undefined;
+ const found=await pool.query("SELECT k.id,k.user_id,k.key_hash,k.environment,k.scopes,k.rate_limit_per_minute,k.expires_at,k.project_id,u.account_status,p.status AS project_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id LEFT JOIN aurelink_developer_projects p ON p.id=k.project_id WHERE k.key_prefix IN ($1,$2,$3) AND k.revoked_at IS NULL LIMIT 1",[secret.slice(0,20),secret.slice(0,16),secret.slice(0,12)]);
+ const row=found.rows[0] as {id:string;user_id:string;key_hash:string;environment:string;scopes:unknown;rate_limit_per_minute:number;expires_at:Date|null;project_id:string|null;project_status:string|null;account_status:string}|undefined;
  const stored=row?.key_hash||"";if(!row||stored.length!==64||! /^[a-f0-9]{64}$/i.test(stored)||!timingSafeEqual(Buffer.from(stored,"hex"),digest)){res.status(401).json({success:false,message:"Invalid or revoked Aurelink API key."});return;}
  if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}
+ if(row.project_id&&(row.project_status!=="active"||p[1]!=="communications")){res.status(403).json({success:false,code:"PROJECT_KEY_SCOPE",message:row.project_status!=="active"?"This developer project is suspended or archived.":"Project-scoped API keys currently have access only to their isolated communications workspace."});return;}
  if(row.expires_at&&new Date(row.expires_at).getTime()<=Date.now()){res.status(401).json({success:false,message:"This Aurelink API key has expired."});return;}
  const scope=scopeFor(req),scopes=Array.isArray(row.scopes)?row.scopes.map(String):[];
  if(!scopes.includes(scope)){res.status(403).json({success:false,code:"INSUFFICIENT_SCOPE",message:"This API key does not have the required "+scope+" permission."});return;}
@@ -148,7 +149,7 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
   idempotency={key:supplied,hash:requestHash};
  }
  await pool.query("UPDATE aurelink_api_keys SET last_used_at=NOW() WHERE id=$1",[row.id]);
- (req as any).aurelinkApiKey=key;
+ (req as any).aurelinkApiKey=key;(req as any).aurelinkProjectId=row.project_id?String(row.project_id):undefined;
  req.user={userId:row.user_id,profileId:row.user_id,sessionId:"api-key:"+row.id};
  const originalJson=res.json.bind(res);
  res.json=(body:any)=>{if(key.environment==="test"){const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data,key.environment);}if(idempotency){const saved=idempotency;void pool.query("UPDATE aurelink_api_idempotency SET state='completed',response_status=$3,response_body=$4::jsonb WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,saved.key,res.statusCode,JSON.stringify(body)]).then(()=>originalJson(body)).catch(()=>originalJson(body));return res;}return originalJson(body);};
