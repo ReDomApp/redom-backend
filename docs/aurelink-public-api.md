@@ -23,7 +23,7 @@ Authorization: Bearer aul_live_...
 Accept: application/json
 \`\`\`
 
-Create separate test and live keys in the Aurelink Developer workspace. Test keys begin with \`aul_test_\`; live keys begin with \`aul_live_\`.
+Create separate test and live keys in the Aurelink Developer workspace. The account also supports isolated projects, project-bound communications workspaces, request logs, usage summaries, and webhook endpoint management. Test keys begin with \`aul_test_\`; live keys begin with \`aul_live_\`.
 
 - Test keys use a sandbox. They do not contact number providers, create real numbers, or debit a wallet.
 - Live keys call real Aurelink services and can create billable orders.
@@ -142,7 +142,7 @@ Communications endpoints are authenticated with a user session or a developer AP
 | GET | `/aurelink/communications/messages` | `communications:read` |
 | GET | `/aurelink/communications/messages/:id` | `communications:read` |
 | POST | `/aurelink/communications/messages/:id/retry` | `communications:send` |
-| GET | `/aurelink/communications/contacts?channel=sms\|email` | `communications:read` |
+| GET | `/aurelink/communications/contacts?channel=sms\|email` | `communications:read` |\n| GET | `/aurelink/communications/templates` | `communications:read` |\n| POST | `/aurelink/communications/templates` | `communications:manage` |\n| PATCH | `/aurelink/communications/templates/:id` | `communications:manage` |\n| DELETE | `/aurelink/communications/templates/:id` | `communications:manage` |
 | POST | `/aurelink/communications/contacts` | `communications:send` |
 | POST | `/aurelink/communications/sms/send` | `communications:send` |
 | POST | `/aurelink/communications/email/send` | `communications:send` |
