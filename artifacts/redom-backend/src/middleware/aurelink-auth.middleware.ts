@@ -21,7 +21,8 @@ function apiKeyAllowed(req:Request):boolean{
  if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
   if(req.path==="/aurelink/communications/domains"||req.path==="/aurelink/communications/senders"||req.path==="/aurelink/communications/email-senders"||req.path==="/aurelink/communications/templates"||req.path==="/aurelink/communications/dns/cloudflare/connect"||req.path==="/aurelink/communications/smtp/credentials")return true;
-  if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["check","verify","apply-dns"].includes(p[3]))return true;\n  if(p[1]==="communications"&&p[2]==="templates"&&p.length===4&&(req.method==="PATCH"||req.method==="DELETE"))return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["check","verify","apply-dns"].includes(p[3]))return true;
+  if(p[1]==="communications"&&p[2]==="templates"&&p.length===4&&(req.method==="PATCH"||req.method==="DELETE"))return true;
   if(["/aurelink/communications/sms/send","/aurelink/communications/email/send","/aurelink/communications/campaigns","/aurelink/communications/contacts","/aurelink/verify/start"].includes(req.path))return true;
   if(p[1]==="communications"&&p[2]==="campaigns"&&p.length===5&&p[4]==="send")return true;
   if(p[1]==="communications"&&p[2]==="messages"&&p.length===5&&p[4]==="retry")return true;
