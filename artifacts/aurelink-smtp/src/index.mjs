@@ -91,6 +91,7 @@ async function authenticate(auth, session, callback) {
     );
     const row = result.rows[0];
     if (!row || row.workspace_status !== "active" || !passwordMatches(password,row.password_hash)) return callback(new Error("Invalid Aurelink SMTP credentials."));
+    await pool.query("UPDATE aurelink_smtp_credentials SET last_used_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);
     session.aurelink = { workspaceId: String(row.workspace_id), credentialId: String(row.id) };
     callback(null, { user: username });
   } catch { callback(new Error("SMTP authentication temporarily unavailable.")); }
