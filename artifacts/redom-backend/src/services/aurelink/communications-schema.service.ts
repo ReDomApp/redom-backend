@@ -224,10 +224,12 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       status VARCHAR(16) NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','accepted','delivered','failed')),
       provider_message_id VARCHAR(220),
       unit_price_minor INTEGER,
+      wallet_debit_reference VARCHAR(160),
       currency CHAR(3) NOT NULL DEFAULT 'USD',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_communications_usage ADD COLUMN IF NOT EXISTS wallet_debit_reference VARCHAR(160);
     CREATE INDEX IF NOT EXISTS aurelink_communications_usage_workspace_idx ON aurelink_communications_usage(workspace_id,created_at DESC);
   `);
 }
