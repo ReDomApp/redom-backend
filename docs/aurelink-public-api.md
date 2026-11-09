@@ -148,6 +148,26 @@ For an opt-in record, `consentSource` is required. Set `consentStatus` to `opted
 
 Use `GET /aurelink/communications/messages` to list the authenticated workspace's recent outbound messages. Optional query parameters: `limit` (1–100, default 50), `offset` (default 0), `channel` (`sms` or `email`), and `status`. Retrieve one message with `GET /aurelink/communications/messages/:id`. Message records include provider acceptance/delivery status and timestamps, not the original message body.
 
+### Provider configuration
+
+Set these values only on the backend service (never in browser/mobile builds):
+
+| Variable | Purpose |
+| --- | --- |
+| `AURELINK_BREVO_API_KEY` | Required when Brevo is selected for SMS or Email |
+| `AURELINK_RESEND_API_KEY` or `RESEND_API_KEY` | Required when Resend is selected for Email |
+| `AURELINK_TWILIO_ACCOUNT_SID`, `AURELINK_TWILIO_AUTH_TOKEN` | Twilio credentials; existing `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are accepted as fallbacks |
+| `AURELINK_TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_PHONE_NUMBER` | Twilio sender configuration |
+| `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` | Stable 32+ character key for encrypting queued message payloads; falls back to `JWT_ACCESS_SECRET` |
+| `AURELINK_VERIFICATION_PEPPER` | Optional dedicated 32+ character OTP HMAC secret; falls back to `JWT_ACCESS_SECRET` |
+| `AURELINK_RESEND_WEBHOOK_SECRET` | Resend/Svix signing secret for delivery callbacks |
+| `AURELINK_TWILIO_STATUS_CALLBACK_URL` | Public HTTPS URL ending in `/aurelink/webhooks/twilio/status` |
+| `AURELINK_DEFAULT_SMS_PROVIDER`, `AURELINK_DEFAULT_EMAIL_PROVIDER` | Primary provider selection |
+| `AURELINK_SMS_FALLBACK_PROVIDER`, `AURELINK_EMAIL_FALLBACK_PROVIDER` | Optional failover provider |
+| `AURELINK_SMS_UNIT_PRICE_MINOR`, `AURELINK_EMAIL_UNIT_PRICE_MINOR` | Fixed retail charge per message in USD cents; default `0` |
+
+The worker falls back to `JWT_ACCESS_SECRET` if dedicated encryption/verification secrets are unset. For production, set dedicated stable values and retain them across deploys and restarts. Configure the Resend webhook to point to `/aurelink/webhooks/resend`; configure Twilio's status callback URL to the full deployed API URL.
+
 ### Campaigns
 
 | Method | Route | Required API scope |
