@@ -186,21 +186,62 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
 router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(req,res)=>{
   const provider=String(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend");
   if(!EMAIL_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported email provider."});
-  const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),senderName=String(req.body.senderName||""),subject=String(req.body.subject||""),html=typeof req.body.html==="string"?req.body.html:undefined,text=typeof req.body.text==="string"?req.body.text:undefined;
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)||!subject.trim()||(!html?.trim()&&!text?.trim()))return res.status(400).json({success:false,message:"Provide valid sender/recipient email addresses, a subject and HTML or text content."});
+  const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),senderName=String(req.body.senderName||"Aurelink"),templateId=String(req.body.templateId||"");
+  let subject=String(req.body.subject||""),html=typeof req.body.html==="string"?req.body.html:undefined,text=typeof req.body.text==="string"?req.body.text:undefined;
+  const rawVariables=req.body.variables&&typeof req.body.variables==="object"&&!Array.isArray(req.body.variables)?req.body.variables:{};
+  const variables:Record<string,string>={};
+  for(const [key,value] of Object.entries(rawVariables).slice(0,50)){if(["string","number","boolean"].includes(typeof value))variables[key]=String(value).slice(0,10000);}
+  const render=(source:string,escape:boolean)=>source.replace(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g,(_match,key:string)=>{
+    const value=variables[key]??"";
+    return escape?value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"):value;
+  });
+  const attachments:Array<{filename:string;content:string;contentType?:string}>=[];
+  if(Array.isArray(req.body.attachments)){
+    if(req.body.attachments.length>10)return res.status(400).json({success:false,message:"A maximum of 10 email attachments is allowed."});
+    let total=0;
+    for(const item of req.body.attachments){
+      const filename=String(item?.filename||"");
+      const content=String(item?.content||"");
+      if(!/^[A-Za-z0-9._-]{1,128}$/.test(filename)||!content||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(content))return res.status(400).json({success:false,message:"Each attachment requires a safe filename and valid base64 content."});
+      const bytes=Buffer.from(content,"base64");
+      if(bytes.toString("base64")!==content)return res.status(400).json({success:false,message:"An attachment contains invalid base64 data."});
+      total+=bytes.length;
+      if(total>10*1024*1024)return res.status(413).json({success:false,message:"Combined email attachments may not exceed 10 MB."});
+      attachments.push({filename,content,contentType:typeof item.contentType==="string"?item.contentType.slice(0,120):undefined});
+    }
+  }
+  let scheduledAt:Date|undefined;
+  if(req.body.scheduledAt){
+    const timestamp=Date.parse(String(req.body.scheduledAt));
+    if(!Number.isFinite(timestamp)||timestamp<Date.now()+30_000||timestamp>Date.now()+30*24*60*60*1000)return res.status(400).json({success:false,message:"scheduledAt must be between 30 seconds and 30 days in the future."});
+    scheduledAt=new Date(timestamp);
+  }
   try{
     const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
-    if(!await verifiedEmailSender(wid,sender,provider))return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify and authenticate this sender domain with the selected provider before sending."});
+    if(templateId){
+      const template=(await pool.query("SELECT subject,body_text,body_html,status FROM aurelink_message_templates WHERE id=$1 AND workspace_id=$2 AND channel='email'",[templateId,wid])).rows[0];
+      if(!template)return res.status(404).json({success:false,message:"Email template not found in this project."});
+      if(template.status!=="active")return res.status(409).json({success:false,message:"Only active email templates can be used for delivery."});
+      subject=render(String(template.subject||subject),false);
+      html=template.body_html?render(String(template.body_html),true):undefined;
+      text=template.body_text?render(String(template.body_text),false):undefined;
+    }else{
+      if(html)html=render(html,true);
+      if(text)text=render(text,false);
+      subject=render(subject,false);
+    }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)||!subject.trim()||(!html?.trim()&&!text?.trim()))return res.status(400).json({success:false,message:"Provide valid sender/recipient email addresses, a subject and HTML or text content (or an active templateId)."});
+    if(!await verifiedEmailSender(wid,sender,provider))return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify and authenticate this sender domain and fallback sender identity before sending."});
     const suppression=(await pool.query("SELECT id FROM aurelink_email_suppressions WHERE workspace_id=$1 AND LOWER(email)=LOWER($2)",[wid,recipient])).rows[0];
     if(suppression)return res.status(403).json({success:false,code:"EMAIL_SUPPRESSED",message:"This recipient is suppressed for this workspace."});
     const key=String(req.headers["idempotency-key"]||"").trim();
     if(!key||key.length>128)return res.status(400).json({success:false,code:"IDEMPOTENCY_KEY_REQUIRED",message:"Send a unique Idempotency-Key header (maximum 128 characters)."});
-    const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"transactional",provider,recipient,sender,subject,content:html||text||"",idempotencyKey:key,payload:{channel:"email",provider:provider as "resend"|"brevo",category:"transactional",input:{recipient,sender,senderName,subject,html,text,replyTo:typeof req.body.replyTo==="string"?req.body.replyTo:undefined}}});
+    const payload={channel:"email" as const,provider:provider as "resend"|"brevo",category:"transactional" as const,scheduledAt:scheduledAt?.toISOString(),input:{recipient,sender,senderName,subject,html,text,replyTo:typeof req.body.replyTo==="string"?req.body.replyTo:undefined,attachments}};
+    const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"transactional",provider,recipient,sender,subject,content:html||text||"",idempotencyKey:key,payload,scheduledAt});
     if("conflict" in queued)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
-    return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed)});
+    return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed),scheduledAt:scheduledAt?.toISOString()||null});
   }catch(error){if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
 });
-
 
 router.get("/aurelink/communications/templates",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId),channel=req.query.channel==="sms"||req.query.channel==="email"?String(req.query.channel):null;
