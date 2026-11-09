@@ -156,6 +156,7 @@ Communications endpoints are authenticated with a user session or a developer AP
 | Method | Route | Required API scope |
 | --- | --- | --- |
 | GET | `/aurelink/communications/overview` | `communications:read` |
+| GET | `/aurelink/communications/analytics?days=30&channel=email` | `communications:read` |
 | GET | `/aurelink/communications/messages` | `communications:read` |
 | GET | `/aurelink/communications/messages/:id` | `communications:read` |
 | POST | `/aurelink/communications/messages/:id/retry` | `communications:send` |
