@@ -5,11 +5,11 @@ on:
     branches:
       - feat/aurelink-communications-platform
     paths:
-      - "artifacts/aurelink-smtp/**"
+      - "infra/aurelink-smtp/**"
       - ".github/workflows/aurelink-smtp.yml"
   pull_request:
     paths:
-      - "artifacts/aurelink-smtp/**"
+      - "infra/aurelink-smtp/**"
       - ".github/workflows/aurelink-smtp.yml"
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: artifacts/aurelink-smtp
+        working-directory: infra/aurelink-smtp
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
