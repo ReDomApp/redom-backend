@@ -6,7 +6,7 @@ import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioS
 import {
   createOtpCode, makeVerificationHash,
 } from "../services/aurelink/communications-providers.service";
-import { enqueueAurelinkMessage } from "../services/aurelink/communications-worker.service";
+import { enqueueAurelinkMessage, retryAurelinkMessage } from "../services/aurelink/communications-worker.service";
 import { emitAurelinkWebhookEvent } from "../services/aurelink/developer-platform.service";
 
 const router = Router();
@@ -154,6 +154,21 @@ router.get("/aurelink/communications/messages/:id",aurelinkAuthMiddleware,async(
   const result=await pool.query("SELECT id,channel,category,provider,provider_message_id,recipient,sender,subject,status,provider_status,provider_error,segments,cost_minor,currency,created_at,accepted_at,delivered_at,updated_at FROM aurelink_messages WHERE workspace_id=$1 AND id=$2",[wid,req.params.id]);
   if(!result.rows[0])return res.status(404).json({success:false,message:"Message not found."});
   return res.json({success:true,message:result.rows[0]});
+});
+
+router.post("/aurelink/communications/messages/:id/retry",aurelinkAuthMiddleware,async(req,res)=>{
+  const key=String(req.headers["idempotency-key"]||"").trim();
+  if(!key||key.length>128)return res.status(400).json({success:false,code:"IDEMPOTENCY_KEY_REQUIRED",message:"Send a unique Idempotency-Key header (maximum 128 characters)."});
+  try{
+    const wid=await workspaceId(req.user!.userId),result=await retryAurelinkMessage({userId:req.user!.userId,workspaceId:wid,messageId:String(req.params.id),idempotencyKey:key});
+    if("conflict" in result)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
+    return res.status(202).json({success:true,message:result.message,replayed:Boolean(result.replayed)});
+  }catch(error){
+    if(error instanceof Error&&error.message==="MESSAGE_NOT_FOUND")return res.status(404).json({success:false,message:"Message not found."});
+    if(error instanceof Error&&error.message==="MESSAGE_NOT_RETRYABLE")return res.status(409).json({success:false,message:"Only failed direct messages can be retried here. Campaign retries use the campaign send endpoint."});
+    if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this retry."});
+    return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to retry message."});
+  }
 });
 
 router.get("/aurelink/communications/campaigns",aurelinkAuthMiddleware,async(req,res)=>{
