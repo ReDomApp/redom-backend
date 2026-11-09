@@ -117,8 +117,9 @@ const server = new SMTPServer({
   authMethods: ["PLAIN","LOGIN"],
   authOptional: false,
   allowInsecureAuth: false,
-  requireTLS: true,
   size: maxBytes,
+  rejectOversized: true,
+  maxRecipients,
   maxClients: Number(process.env.AURELINK_SMTP_MAX_CONNECTIONS || 100),
   onAuth: authenticate,
   onData(stream, session, callback) {
@@ -128,12 +129,12 @@ const server = new SMTPServer({
     const done = (error, message) => { if (settled) return; settled = true; callback(error, message); };
     stream.on("data", chunk => {
       size += chunk.length;
-      if (size > maxBytes) stream.destroy(new Error("Message exceeds Aurelink SMTP size limit."));
-      else chunks.push(chunk);
+      chunks.push(chunk);
     });
     stream.on("error", () => done(new Error("451 Unable to read SMTP message.")));
     stream.on("end", () => {
       if (settled) return;
+      if (stream.sizeExceeded || size > maxBytes) return done(new Error("552 Message exceeds Aurelink SMTP size limit."));
       void handleMessage(session,Buffer.concat(chunks),done).catch(error => {
         console.error("[Aurelink SMTP delivery]",error instanceof Error?error.message:"unknown error");
         done(new Error("451 Aurelink could not queue or deliver this message."));
