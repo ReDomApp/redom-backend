@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomBytes, scryptSync } from "node:crypto";
 import { decryptAurelinkDnsSecret, encryptAurelinkDnsSecret, validateCloudflareZoneToken, applyCloudflareDnsRecords } from "../services/aurelink/communications-dns.service";
 
 router.post("/aurelink/communications/dns/cloudflare/connect",aurelinkAuthMiddleware,async(req,res)=>{
@@ -171,6 +172,33 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
   );
   if(!result.rows[0])return res.status(404).json({success:false,message:"Sender registration request not found."});
   return res.json({success:true,sender:result.rows[0],note:"Approval is recorded only against the provider reference and evidence supplied by the authorized reviewer. Aurelink does not fabricate carrier approval."});
+});
+
+
+router.get("/aurelink/communications/smtp/credentials",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId);
+  const rows=await pool.query("SELECT id,username,label,status,created_at,updated_at,last_used_at FROM aurelink_smtp_credentials WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
+  return res.json({success:true,host:process.env.AURELINK_SMTP_HOSTNAME||null,port:587,security:"STARTTLS required",credentials:rows.rows});
+});
+router.post("/aurelink/communications/smtp/credentials",aurelinkAuthMiddleware,async(req,res)=>{
+  const label=String(req.body.label||"SMTP credential").trim().slice(0,120)||"SMTP credential";
+  const username="aul_smtp_"+randomBytes(18).toString("hex");
+  const password=randomBytes(32).toString("base64url");
+  const salt=randomBytes(16),digest=scryptSync(password,salt,64);
+  const passwordHash="scrypt$"+salt.toString("base64url")+"$"+digest.toString("base64url");
+  const wid=await workspaceId(req.user!.userId);
+  const saved=await pool.query("INSERT INTO aurelink_smtp_credentials(workspace_id,username,password_hash,label) VALUES($1,$2,$3,$4) RETURNING id,username,label,status,created_at",[wid,username,passwordHash,label]);
+  return res.status(201).json({
+    success:true,credential:{...saved.rows[0],password},
+    smtp:{host:process.env.AURELINK_SMTP_HOSTNAME||null,port:587,security:"STARTTLS required",authentication:"Username and password"},
+    warning:"The password is shown once. Store it in a secret manager. SMTP will accept connections only after the separate TCP relay is deployed and AURELINK_SMTP_HOSTNAME is configured."
+  });
+});
+router.delete("/aurelink/communications/smtp/credentials/:id",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId);
+  const result=await pool.query("UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE id=$1 AND workspace_id=$2 AND status='active' RETURNING id,username,status,updated_at",[req.params.id,wid]);
+  if(!result.rows[0])return res.status(404).json({success:false,message:"Active SMTP credential not found."});
+  return res.json({success:true,credential:result.rows[0]});
 });
 
 export default router;
