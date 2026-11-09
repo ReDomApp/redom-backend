@@ -87,12 +87,6 @@ function normalizeRecords(provider: AurelinkEmailProvider, value: any): Aurelink
 function snapshot(provider: AurelinkEmailProvider, value: any, id?: string): AurelinkDomainSnapshot {
   const providerDomainId = String(id || value?.id || value?.domain_name || value?.domain || "");
   const records = normalizeRecords(provider, value);
-  if (!records.some(record => record.type === "TXT" && record.name.toLowerCase().startsWith("_dmarc"))) {
-    records.push({
-      type:"TXT", name:"_dmarc", value:"v=DMARC1; p=none;",
-      status:"recommended", purpose:"recommended_dmarc", required:false,
-    } as AurelinkDnsRecord);
-  }
   return {
     provider, providerDomainId,
     verified: value?.verified === true || value?.status === "verified",
@@ -150,8 +144,18 @@ export async function verifyAurelinkProviderDomain(provider: AurelinkEmailProvid
   }
   return getAurelinkProviderDomain(provider, providerDomainId, domain);
 }
+function providerRecordHostname(recordName: string, domain: string): string {
+  const name=String(recordName||"").trim().replace(/\.$/,"").toLowerCase();
+  const normalized=domain.toLowerCase();
+  if(!name||name==="@")return normalized;
+  if(name===normalized||name.endsWith("."+normalized))return name;
+  const labels=normalized.split(".");
+  const parent=labels.length>2?labels.slice(1).join("."):"";
+  if(parent&&(name===labels[0]||name.endsWith("."+labels[0])))return name+"."+parent;
+  return name+"."+normalized;
+}
 async function resolveRecord(record: AurelinkDnsRecord, domain: string): Promise<{ found: boolean; observed: string[]; error?: string }> {
-  const host = (!record.name || record.name === "@") ? domain : (record.name.endsWith(domain) ? record.name : `${record.name}.${domain}`).replace(/\.$/, "");
+  const host = providerRecordHostname(record.name,domain);
   try {
     if (record.type === "TXT") {
       const rows = await resolveTxt(host);
