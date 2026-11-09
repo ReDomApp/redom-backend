@@ -6,6 +6,7 @@ import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioS
 import {
   sendAurelinkSms, sendAurelinkEmail, createOtpCode, hashCommunicationContent, makeVerificationHash,
 } from "../services/aurelink/communications-providers.service";
+import { enqueueAurelinkMessage } from "../services/aurelink/communications-worker.service";
 
 const router = Router();
 
