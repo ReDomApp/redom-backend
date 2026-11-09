@@ -113,6 +113,7 @@ Communications endpoints are authenticated with a user session or a developer AP
 | GET | `/aurelink/communications/overview` | `communications:read` |
 | GET | `/aurelink/communications/messages` | `communications:read` |
 | GET | `/aurelink/communications/messages/:id` | `communications:read` |
+| POST | `/aurelink/communications/messages/:id/retry` | `communications:send` |
 | GET | `/aurelink/communications/contacts?channel=sms\|email` | `communications:read` |
 | POST | `/aurelink/communications/contacts` | `communications:send` |
 | POST | `/aurelink/communications/sms/send` | `communications:send` |
@@ -146,7 +147,7 @@ For an opt-in record, `consentSource` is required. Set `consentStatus` to `opted
 
 ### Message history
 
-Use `GET /aurelink/communications/messages` to list the authenticated workspace's recent outbound messages. Optional query parameters: `limit` (1–100, default 50), `offset` (default 0), `channel` (`sms` or `email`), and `status`. Retrieve one message with `GET /aurelink/communications/messages/:id`. Message records include provider acceptance/delivery status and timestamps, not the original message body.
+Use `GET /aurelink/communications/messages` to list the authenticated workspace's recent outbound messages. Optional query parameters: `limit` (1–100, default 50), `offset` (default 0), `channel` (`sms` or `email`), and `status`. Retrieve one message with `GET /aurelink/communications/messages/:id`. Message records include provider acceptance/delivery status and timestamps, not the original message body. Retry a terminally failed direct message with `POST /aurelink/communications/messages/:id/retry` and a new `Idempotency-Key`; campaign and verification messages must be retried through their respective workflows.
 
 ### Provider configuration
 
