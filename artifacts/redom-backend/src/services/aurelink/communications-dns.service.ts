@@ -44,14 +44,14 @@ export async function applyCloudflareDnsRecords(token:string,zoneId:string,domai
   for(const record of records) {
     const type=String(record.type||"").toUpperCase();
     if(!["TXT","CNAME","MX"].includes(type)){results.push({type,name:record.name,status:"unsupported",message:"Aurelink only auto-applies TXT, CNAME and MX records."});continue;}
-    const shortName=String(record.name||"").replace(/\\.$/,"");
+    const shortName=String(record.name||"").replace(/\.$/,"");
     const name=!shortName?domain:(shortName===domain||shortName.endsWith("."+domain)?shortName:`${shortName}.${domain}`);
     const content=String(record.value||"").trim();
     if(!content){results.push({type,name,status:"invalid",message:"Provider supplied an empty DNS value."});continue;}
     const query=new URLSearchParams({type,name});
     const existing=await cloudflareRequest(token,`/zones/${zoneId}/dns_records?${query.toString()}`);
     const rows=Array.isArray(existing)?existing:[];
-    const exact=rows.find((row:any)=>String(row.content||"").replace(/\\.$/,"").toLowerCase()===content.replace(/\\.$/,"").toLowerCase()&&(type!=="MX"||Number(row.priority)===Number(record.priority||0)));
+    const exact=rows.find((row:any)=>String(row.content||"").replace(/\.$/,"").toLowerCase()===content.replace(/\.$/,"").toLowerCase()&&(type!=="MX"||Number(row.priority)===Number(record.priority||0)));
     if(exact){results.push({type,name,status:"already_present",recordId:exact.id});continue;}
     if(rows.length) {
       const isSpf=type==="TXT"&&content.toLowerCase().startsWith("v=spf1");
