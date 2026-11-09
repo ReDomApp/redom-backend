@@ -1,4 +1,33 @@
 import { Router } from "express";
+import { decryptAurelinkDnsSecret, encryptAurelinkDnsSecret, validateCloudflareZoneToken, applyCloudflareDnsRecords } from "../services/aurelink/communications-dns.service";
+
+router.post("/aurelink/communications/dns/cloudflare/connect",aurelinkAuthMiddleware,async(req,res)=>{
+  const domainRaw=String(req.body.domain||""),zoneId=String(req.body.zoneId||""),apiToken=String(req.body.apiToken||"");
+  try{
+    const domain=normalizeDomain(domainRaw),zone=await validateCloudflareZoneToken(apiToken,zoneId,domain),wid=await workspaceId(req.user!.userId);
+    const encrypted=encryptAurelinkDnsSecret(apiToken);
+    const saved=await pool.query("INSERT INTO aurelink_dns_provider_connections(workspace_id,provider,domain,zone_id,secret_encrypted,secret_prefix,status) VALUES($1,'cloudflare',$2,$3,$4,$5,'active') ON CONFLICT(workspace_id,provider,domain) DO UPDATE SET zone_id=EXCLUDED.zone_id,secret_encrypted=EXCLUDED.secret_encrypted,secret_prefix=EXCLUDED.secret_prefix,status='active',updated_at=NOW() RETURNING id,provider,domain,zone_id,status,created_at,updated_at",[wid,domain,zoneId,encrypted,apiToken.slice(0,8)]);
+    return res.status(201).json({success:true,connection:saved.rows[0],zoneName:zone.zoneName,requiredTokenPermissions:["Zone:Read","DNS:Edit"],secretStoredEncrypted:true});
+  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to connect Cloudflare DNS."});}
+});
+router.get("/aurelink/communications/dns/cloudflare/connections",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId);
+  const rows=await pool.query("SELECT id,provider,domain,zone_id,status,secret_prefix,created_at,updated_at FROM aurelink_dns_provider_connections WHERE workspace_id=$1 AND provider='cloudflare' ORDER BY created_at DESC",[wid]);
+  return res.json({success:true,connections:rows.rows});
+});
+router.post("/aurelink/communications/domains/:id/apply-dns",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId);
+  const found=await pool.query("SELECT d.id,d.domain,d.dns_records,c.zone_id,c.secret_encrypted FROM aurelink_email_domains d JOIN aurelink_dns_provider_connections c ON c.workspace_id=d.workspace_id AND c.domain=d.domain AND c.provider='cloudflare' AND c.status='active' WHERE d.id=$1 AND d.workspace_id=$2",[req.params.id,wid]);
+  const row=found.rows[0];
+  if(!row)return res.status(404).json({success:false,message:"Domain or matching active Cloudflare DNS connection not found. Connect a token scoped to this domain first."});
+  try{
+    const token=decryptAurelinkDnsSecret(String(row.secret_encrypted));
+    await validateCloudflareZoneToken(token,String(row.zone_id),String(row.domain));
+    const applied=await applyCloudflareDnsRecords(token,String(row.zone_id),String(row.domain),Array.isArray(row.dns_records)?row.dns_records:[]);
+    return res.status(applied.complete?200:207).json({success:applied.complete,domainId:row.id,domain:row.domain,...applied});
+  }catch(error){return res.status(502).json({success:false,message:error instanceof Error?error.message:"Cloudflare DNS provisioning failed."});}
+});
+
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import {
