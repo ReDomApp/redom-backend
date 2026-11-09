@@ -14,7 +14,7 @@ export function verifyAurelinkResendWebhook(raw:Buffer,id:string,timestamp:strin
  });
 }
 export function mapAurelinkResendEvent(eventType:string):string|null{
- const map:Record<string,string>={"email.sent":"sent","email.delivered":"delivered","email.delivery_delayed":"deferred","email.bounced":"bounced","email.failed":"failed","email.complained":"complained","email.suppressed":"rejected","email.unsubscribed":"unsubscribed"};
+ const map:Record<string,string>={"email.sent":"sent","email.delivered":"delivered","email.delivery_delayed":"deferred","email.bounced":"bounced","email.failed":"failed","email.complained":"complained","email.suppressed":"rejected","email.unsubscribed":"unsubscribed","email.opened":"opened","email.clicked":"clicked"};
  return map[eventType]??null;
 }
 export function mapAurelinkTwilioStatus(status:string):string|null{
