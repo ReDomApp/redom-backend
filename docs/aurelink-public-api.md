@@ -116,6 +116,41 @@ Communications endpoints are authenticated with a user session or a developer AP
 | POST | `/aurelink/verify/start` | `verify:write` |
 | POST | `/aurelink/verify/:verificationId/check` | `verify:write` |
 
+### Asynchronous delivery, retries and idempotency
+
+SMS and email send requests are accepted into an encrypted PostgreSQL outbox and return HTTP 202 with a message record in `queued` state. A backend worker sends the message through the selected provider. Provider acceptance changes the state to `accepted`; authenticated provider callbacks update delivery states such as `delivered`, `bounced` or `failed`. Provider failures are retried with exponential backoff (up to eight attempts). A message that exhausts retries is marked failed.
+
+Every send request must include a unique `Idempotency-Key` header (maximum 128 characters). Reuse the same key only for retries of the same payload. Reusing a key with a different recipient, sender, provider, or content returns HTTP 409. Omitting the key returns HTTP 400. Message content is stored as an encrypted queue payload; configure a stable `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` of at least 32 characters. The backend can fall back to `JWT_ACCESS_SECRET`, but a dedicated key is recommended and must remain stable across deployments.
+
+The communications overview includes usage counts and units by channel/status. This is operational usage metering only: it does not yet calculate provider-specific prices, debit the Aurelink wallet, or create wallet ledger entries. Do not treat `metered_amount_minor` as an invoice total.
+
+### Campaigns
+
+| Method | Route | Required API scope |
+| --- | --- | --- |
+| GET | `/aurelink/communications/campaigns` | `communications:read` |
+| POST | `/aurelink/communications/campaigns` | `communications:send` |
+| POST | `/aurelink/communications/campaigns/:id/send` | `communications:send` |
+
+Create a draft with `channel` (`sms` or `email`), `name`, and text content. Email campaigns also require `subject`; optional HTML is supported. Starting a campaign requires an approved `sender`. Only contacts with recorded `opted_in` consent are included; suppressed email addresses are skipped. SMS campaigns require an HTTPS opt-out/event `webUrl`. Campaign sends are queued per contact and campaign status moves to completed or paused when the queue reaches a terminal state. Start with a small opted-in test audience before sending to a full list.
+
+Example campaign creation:
+
+```http
+POST /redom-backend/v1/aurelink/communications/campaigns
+Authorization: Bearer aul_live_...
+Content-Type: application/json
+
+{
+  "channel": "email",
+  "name": "Product update",
+  "subject": "Aurelink product update",
+  "text": "We have shipped new developer API capabilities."
+}
+```
+
+Start it with `POST /aurelink/communications/campaigns/:id/send` and a JSON body containing `sender`, optional `senderName`, and optional `provider`. SMS campaigns must also provide `webUrl`.
+
 ### SMS sending
 
 ```http
