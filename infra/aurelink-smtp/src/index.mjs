@@ -100,8 +100,8 @@ async function handleMessage(session, raw, callback) {
         const rewritten = raw.toString("utf8");
         const fromHeader = new RegExp("^From:[^\\r\\n]*(?:\\r?\\n[ \\t][^\\r\\n]*)*","im");
         const fallbackFrom = "From: " + (sender.sender_name ? '"' + String(sender.sender_name).replace(/["\\\\]/g,"") + '" ' : "") + "<" + sender.email + ">";
-        let fallbackRaw = fromHeader.test(rewritten) ? rewritten.replace(fromHeader,fallbackFrom) : fallbackFrom + "\\r\\n" + rewritten;
-        if (!/^Reply-To:/im.test(fallbackRaw)) fallbackRaw = fallbackRaw.replace(/\\r\\n\\r\\n/,"\\r\\nReply-To: " + originalFrom + "\\r\\n\\r\\n");
+        let fallbackRaw = fromHeader.test(rewritten) ? rewritten.replace(fromHeader,fallbackFrom) : fallbackFrom + "\r\n" + rewritten;
+        if (!/^Reply-To:/im.test(fallbackRaw)) fallbackRaw = fallbackRaw.replace(/\\r\\n\\r\\n/,"\r\nReply-To: " + originalFrom + "\r\n\r\n");
         provider = fallback;
         result = await deliver(fallback, { from: sender.email, to: recipients }, withBrevoCorrelationHeader(Buffer.from(fallbackRaw,"utf8"),messageKey));
       } else {
