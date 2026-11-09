@@ -43,10 +43,17 @@ async function finalizeCampaign(messageId:string){
 async function processOne(row:any){
  const payload=JSON.parse(decrypt(row.payload_encrypted)) as JobPayload;
  try{
-  const result=payload.channel==="sms"?await sendAurelinkSms(payload.provider as "brevo"|"twilio",payload.input as Extract<JobPayload,{channel:"sms"}>["input"]):await sendAurelinkEmail(payload.provider as "resend"|"brevo",payload.input as Extract<JobPayload,{channel:"email"}>["input"]);
-  await pool.query("UPDATE aurelink_messages SET provider_message_id=$2,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.providerMessageId]);
+  let result:any;
+  if(payload.channel==="sms"){
+    try{result=await sendAurelinkSms(payload.provider,payload.input);}
+    catch(primaryError){const fallback=process.env.AURELINK_SMS_FALLBACK_PROVIDER;if(!fallback||fallback===payload.provider)throw primaryError;result=await sendAurelinkSms(fallback as "brevo"|"twilio",payload.input);}
+  }else{
+    try{result=await sendAurelinkEmail(payload.provider,payload.input);}
+    catch(primaryError){const fallback=process.env.AURELINK_EMAIL_FALLBACK_PROVIDER;if(!fallback||fallback===payload.provider)throw primaryError;result=await sendAurelinkEmail(fallback as "resend"|"brevo",payload.input);}
+  }
+  await pool.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId]);
   await pool.query("UPDATE aurelink_communications_jobs SET status='completed',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
-  await pool.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.providerMessageId]);
+  await pool.query("UPDATE aurelink_communications_usage SET provider=$2,status='accepted',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
   await finalizeCampaign(row.message_id);
  }catch(error){
   const attempts=Number(row.attempts),failed=attempts>=8,delay=Math.min(3600,30*Math.pow(2,attempts-1)),message=error instanceof Error?error.message:"Provider delivery failed.";
