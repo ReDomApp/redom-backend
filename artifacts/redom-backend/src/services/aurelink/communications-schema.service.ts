@@ -208,6 +208,36 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       UNIQUE(workspace_id,provider,domain)
     );
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aurelink_smtp_credentials (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      username VARCHAR(96) NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      label VARCHAR(120) NOT NULL DEFAULT 'SMTP credential',
+      status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_smtp_credentials_workspace_idx ON aurelink_smtp_credentials(workspace_id,status);
+    CREATE TABLE IF NOT EXISTS aurelink_smtp_messages (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      credential_id UUID NOT NULL REFERENCES aurelink_smtp_credentials(id) ON DELETE CASCADE,
+      message_key VARCHAR(255) NOT NULL,
+      envelope_from VARCHAR(320) NOT NULL,
+      recipients JSONB NOT NULL DEFAULT '[]'::jsonb,
+      provider VARCHAR(24) NOT NULL,
+      provider_message_id VARCHAR(255),
+      status VARCHAR(24) NOT NULL DEFAULT 'accepted' CHECK(status IN ('accepted','delivered','failed')),
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,message_key)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_smtp_messages_credential_idx ON aurelink_smtp_messages(credential_id,created_at DESC);
+  `);
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS campaign_id UUID REFERENCES aurelink_campaigns(id) ON DELETE SET NULL");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS verification_session_id UUID REFERENCES aurelink_verification_sessions(id) ON DELETE SET NULL");
   await pool.query("CREATE INDEX IF NOT EXISTS aurelink_messages_verification_idx ON aurelink_messages(verification_session_id) WHERE verification_session_id IS NOT NULL");
