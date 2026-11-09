@@ -104,6 +104,63 @@ A repeated key with the same request returns the stored response. Reusing a key 
 
 Pool selection and provider credentials are internal Aurelink implementation details and are not exposed as public API controls.
 
+## Aurelink Communications
+
+Communications endpoints are authenticated with a user session or a developer API key carrying the listed scope. Provider credentials are never returned to clients.
+
+| Method | Route | Required API scope |
+| --- | --- | --- |
+| GET | `/aurelink/communications/overview` | `communications:read` |
+| POST | `/aurelink/communications/sms/send` | `communications:send` |
+| POST | `/aurelink/communications/email/send` | `communications:send` |
+| POST | `/aurelink/verify/start` | `verify:write` |
+| POST | `/aurelink/verify/:verificationId/check` | `verify:write` |
+
+### SMS sending
+
+```http
+POST /redom-backend/v1/aurelink/communications/sms/send
+Authorization: Bearer aul_live_...
+Content-Type: application/json
+
+{
+  "recipient": "+14155550123",
+  "sender": "AURELINK",
+  "content": "Your order has shipped.",
+  "category": "transactional",
+  "provider": "brevo"
+}
+```
+
+Supported adapters: Brevo transactional SMS and Twilio Programmable Messaging. The sender ID must be approved for the destination country. Marketing requests require a contact with recorded opt-in consent; campaign sending is not enabled by this endpoint.
+
+### Email sending
+
+```json
+{
+  "recipient": "customer@example.com",
+  "sender": "notifications@example.com",
+  "senderName": "Aurelink",
+  "subject": "Order update",
+  "text": "Your order has shipped.",
+  "provider": "resend"
+}
+```
+
+Supported adapters: Resend Email API and Brevo transactional Email API. The sender domain/address must be authenticated and approved by the provider. Suppressed recipients are rejected.
+
+### Verification
+
+Aurelink generates and validates the OTP itself. A session expires after five minutes and permits at most five verification attempts. Only a hash and separate per-session salt are stored; the OTP is never returned by the API. Provider services deliver the message but do not decide whether the verification succeeds.
+
+### Provider setup and SMTP distinction
+
+The communications overview reports which adapters have credentials configured. This does not mean that a sender ID/domain has been approved or that the provider account has available credits.
+
+Brevo Email API and Brevo SMTP are different transports. SMTP requires a Brevo SMTP login and SMTP key, distinct from the REST API key. The current implementation provides REST API delivery; customer-facing Aurelink SMTP relay hosting, credential issuance and SMTP ingress are a separate infrastructure phase and must not be represented as already active.
+
+Resend and Brevo both require domain/sender authentication at the provider. SMS sender IDs may need country-specific registration and approval. Provider acceptance is not handset/inbox delivery confirmation; update delivered/bounced states only from authenticated provider webhooks.
+
 ## Webhooks
 
 Create HTTPS endpoints in Developer → Webhooks. Choose **Test** or **Live** for each endpoint. Sandbox events are delivered only to test endpoints; production order and wallet events are delivered only to live endpoints. Subscribe to:
