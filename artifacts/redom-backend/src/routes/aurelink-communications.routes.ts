@@ -1,12 +1,49 @@
 import { Router } from "express";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, randomInt } from "node:crypto";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
+import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus, updateAurelinkMessageStatus } from "../services/aurelink/communications-callbacks.service";
 import {
   sendAurelinkSms, sendAurelinkEmail, createOtpCode, hashCommunicationContent, makeVerificationHash,
 } from "../services/aurelink/communications-providers.service";
 
 const router = Router();
+
+router.post("/aurelink/webhooks/resend", async (req,res) => {
+  const secret=process.env.AURELINK_RESEND_WEBHOOK_SECRET || process.env.RESEND_WEBHOOK_SECRET;
+  if(!secret) return res.status(503).json({success:false,message:"Aurelink Resend webhook secret is not configured."});
+  if(!Buffer.isBuffer(req.body)) return res.status(400).json({success:false,message:"Expected raw Resend webhook payload."});
+  const id=String(req.headers["svix-id"]||""),timestamp=String(req.headers["svix-timestamp"]||""),signature=String(req.headers["svix-signature"]||"");
+  if(!verifyAurelinkResendWebhook(req.body,id,timestamp,signature,secret)) return res.status(400).json({success:false,message:"Invalid Resend webhook signature."});
+  let event:any;try{event=JSON.parse(req.body.toString("utf8"));}catch{return res.status(400).json({success:false,message:"Invalid JSON payload."});}
+  const status=mapAurelinkResendEvent(String(event?.type||"")),messageId=String(event?.data?.email_id||event?.data?.id||"");
+  try {
+    await pool.query("INSERT INTO aurelink_provider_events(provider,provider_event_id,provider_message_id,event_type,payload,processed_at) VALUES('resend',$1,$2,$3,$4::jsonb,NOW()) ON CONFLICT(provider,provider_event_id) DO NOTHING",[id,messageId||null,String(event?.type||"unknown"),JSON.stringify(event)]);
+    if(status&&messageId) await updateAurelinkMessageStatus({provider:"resend",providerMessageId:messageId,status,providerStatus:String(event.type),providerError:event?.data?.bounce?.message||event?.data?.reason||undefined,deliveredAt:status==="delivered"?new Date(event?.created_at||Date.now()):undefined});
+    return res.status(200).json({received:true,updated:Boolean(status&&messageId)});
+  }catch{return res.status(500).json({success:false,message:"Unable to persist Resend delivery event."});}
+});
+
+router.post("/aurelink/webhooks/twilio/status", async (req,res) => {
+  const authToken=process.env.AURELINK_TWILIO_AUTH_TOKEN||process.env.TWILIO_AUTH_TOKEN;
+  if(!authToken) return res.status(503).send("Aurelink Twilio callback is not configured.");
+  const signature=String(req.headers["x-twilio-signature"]||"");
+  const protocol=String(req.headers["x-forwarded-proto"]||req.protocol).split(",")[0].trim();
+  const host=String(req.headers["x-forwarded-host"]||req.headers.host||"").split(",")[0].trim();
+  if(!signature||!host) return res.status(400).send("Missing Twilio callback signature.");
+  const url=protocol+"://"+host+req.originalUrl;
+  const params=req.body&&typeof req.body==="object"?req.body:{};
+  const keys=Object.keys(params).sort();
+  let data=url;for(const key of keys)data+=key+String((params as any)[key]);
+  const expected=createHmac("sha1",authToken).update(data).digest("base64");
+  const a=Buffer.from(expected),b=Buffer.from(signature);
+  if(a.length!==b.length||!timingSafeEqual(a,b)) return res.status(403).send("Invalid Twilio signature.");
+  const sid=String((params as any).MessageSid||""),rawStatus=String((params as any).MessageStatus||""),status=mapAurelinkTwilioStatus(rawStatus);
+  try {
+    if(sid&&status) await updateAurelinkMessageStatus({provider:"twilio",providerMessageId:sid,status,providerStatus:rawStatus,providerError:(params as any).ErrorMessage||undefined,deliveredAt:status==="delivered"?new Date():undefined});
+    return res.status(204).end();
+  }catch{return res.status(500).send("Unable to persist Twilio delivery status.");}
+});
 const EMAIL_PROVIDERS = new Set(["resend", "brevo"]);
 const SMS_PROVIDERS = new Set(["brevo", "twilio"]);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
