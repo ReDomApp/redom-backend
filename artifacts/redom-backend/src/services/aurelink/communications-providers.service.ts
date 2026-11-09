@@ -31,10 +31,14 @@ async function sendBrevoSms(input:SendSmsInput):Promise<ProviderSendResult>{
 async function sendTwilioSms(input:SendSmsInput):Promise<ProviderSendResult>{
   const sid=process.env.AURELINK_TWILIO_ACCOUNT_SID||process.env.TWILIO_ACCOUNT_SID;
   const token=process.env.AURELINK_TWILIO_AUTH_TOKEN||process.env.TWILIO_AUTH_TOKEN;
-  const from=process.env.AURELINK_TWILIO_MESSAGING_SERVICE_SID||process.env.TWILIO_MESSAGING_SERVICE_SID||process.env.TWILIO_PHONE_NUMBER;
-  if(!sid||!token||!from)throw new Error("Twilio SMS is not configured.");
+  const messagingService=process.env.AURELINK_TWILIO_MESSAGING_SERVICE_SID||process.env.TWILIO_MESSAGING_SERVICE_SID;
+  const phoneNumber=process.env.TWILIO_PHONE_NUMBER;
+  if(!sid||!token||(!messagingService&&!phoneNumber&&!input.sender))throw new Error("Twilio SMS is not configured.");
   const params=new URLSearchParams({To:input.recipient,Body:input.content});
-  if(from.startsWith("MG"))params.set("MessagingServiceSid",from);else params.set("From",from);
+  if(input.sender && /^[A-Za-z]/.test(input.sender)) params.set("From",input.sender);
+  else if(messagingService) params.set("MessagingServiceSid",messagingService);
+  else if(phoneNumber) params.set("From",phoneNumber);
+  else throw new Error("A valid Twilio sender or Messaging Service is required.");
   const callbackUrl=process.env.AURELINK_TWILIO_STATUS_CALLBACK_URL;if(callbackUrl)params.set("StatusCallback",callbackUrl);
   const auth=Buffer.from(`${sid}:${token}`).toString("base64"),result=await jsonRequest(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,{method:"POST",headers:{authorization:`Basic ${auth}`,"content-type":"application/x-www-form-urlencoded"},body:params.toString()});
   if(!result.sid)throw new Error("Twilio accepted no message identifier.");
@@ -59,7 +63,7 @@ async function sendBrevoEmail(input:SendEmailInput):Promise<ProviderSendResult>{
 /** Provider adapters deliver only; Aurelink owns consent, OTP lifecycle, metering and customer billing. */
 export async function sendAurelinkSms(provider:SmsProvider,input:SendSmsInput):Promise<ProviderSendResult>{
   if(!/^\+?[1-9]\d{7,14}$/.test(input.recipient))throw new Error("Enter a valid E.164 SMS recipient.");
-  if(!/^[A-Za-z0-9]{1,11}$/.test(input.sender))throw new Error("SMS sender must be 1–11 alphanumeric characters.");
+  if(!/^[A-Za-z0-9]{3,11}$/.test(input.sender))throw new Error("SMS sender must be 3–11 alphanumeric characters.");
   if(!input.content.trim()||input.content.length>5000)throw new Error("SMS content must contain 1–5000 characters.");
   if(input.category==="marketing"&&!input.webUrl)throw new Error("Marketing SMS requires an opt-out/event URL.");
   return provider==="brevo"?sendBrevoSms(input):sendTwilioSms(input);
