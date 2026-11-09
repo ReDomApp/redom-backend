@@ -8,7 +8,7 @@ function secrets(){const access=process.env.JWT_ACCESS_SECRET;if(!access)throw n
 function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
-  if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||p[1]==="communications"&&p[2]==="messages"&&p.length===4)return true;
+  if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||req.path==="/aurelink/communications/contacts"||p[1]==="communications"&&(p[2]==="messages"||p[2]==="contacts")&&p.length===4)return true;
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
   if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
@@ -19,7 +19,7 @@ function apiKeyAllowed(req:Request):boolean{
  }
  if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
-  if(["/aurelink/communications/sms/send","/aurelink/communications/email/send","/aurelink/communications/campaigns","/aurelink/verify/start"].includes(req.path))return true;
+  if(["/aurelink/communications/sms/send","/aurelink/communications/email/send","/aurelink/communications/campaigns","/aurelink/communications/contacts","/aurelink/verify/start"].includes(req.path))return true;
   if(p[1]==="communications"&&p[2]==="campaigns"&&p.length===5&&p[4]==="send")return true;
   if(p[1]==="verify"&&p.length===4&&p[3]==="check")return true;
   if(["/aurelink/quotes","/aurelink/rental-quotes","/aurelink/checkout","/aurelink/activations","/aurelink/rentals","/aurelink/dedicated/quote","/aurelink/dedicated/orders","/aurelink/nonvoip/orders"].includes(req.path))return true;
