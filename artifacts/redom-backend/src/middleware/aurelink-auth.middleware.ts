@@ -62,10 +62,11 @@ function testResponse(req:Request,res:Response):boolean{
  res.setHeader("X-Aurelink-Test-Mode","true");res.setHeader("Cache-Control","no-store");
  const ok=(data:unknown,status=200)=>{res.status(status).json({success:true,environment:"test",data,...(data&&typeof data==="object"&&!Array.isArray(data)?data as object:{})});return true;};
  if(req.method==="GET"&&path==="/aurelink/status")return ok({status:"operational",testMode:true});
- if(req.method==="POST"&&path==="/aurelink/verify/start")return ok({verificationId:id,expiresAt:new Date(Date.now()+300000).toISOString(),testMode:true},202);
- if(req.method==="POST"&&p[1]==="verify"&&p[3]==="check")return ok({verified:true,verificationId:p[2],testMode:true});
- if(req.method==="POST"&&p[1]==="communications")return ok({message:{id,provider:"sandbox",status:"accepted",testMode:true}},202);
- if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({providers:{sms:{brevo:false,twilio:false},email:{resend:false,brevo:false}},messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
+ if(req.method==="POST"&&path==="/aurelink/verify/start")return ok({verificationId:id,expiresAt:new Date(Date.now()+300000).toISOString(),testCode:"123456",testMode:true},202);
+ if(req.method==="POST"&&p[1]==="verify"&&p[3]==="check")return ok({verified:String(req.body.code||"")==="123456",verificationId:p[2],testMode:true},String(req.body.code||"")==="123456"?200:400);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="sms"&&p[3]==="send")return ok({message:{id,channel:"sms",provider:"sandbox",status:"accepted",testMode:true}},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="email"&&p[3]==="send")return ok({message:{id,channel:"email",provider:"sandbox",status:"accepted",testMode:true}},202);
  if(req.method==="GET"&&(path==="/aurelink/catalog/services"||path==="/aurelink/catalog/countries"||path==="/aurelink/catalog/suggested-countries"))return ok({services:[{id:"telegram",name:"Telegram"},{id:"google",name:"Google"},{id:"facebook",name:"Facebook"}],countries:[{code:"US",name:"United States",dialCode:"+1"},{code:"GB",name:"United Kingdom",dialCode:"+44"}]});
  if(req.method==="GET"&&path==="/aurelink/catalog/rentals")return ok({rentals:[],countries:[{code:"US",name:"United States"}],testMode:true});
  if(req.method==="GET"&&p[1]==="catalog"&&p[2]==="rentals"&&p[4]==="services")return ok({services:[{id:"test-service",name:"Test verification",available:true}],testMode:true});
