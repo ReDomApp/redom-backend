@@ -9,7 +9,7 @@ function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
   if(p[1]==="communications"&&(["domains","senders","email-senders","smtp","templates"].includes(p[2]||"")&&(p.length===3||p[2]==="smtp"&&p[3]==="credentials"&&p.length===4)||p[2]==="dns"&&p[3]==="cloudflare"&&p[4]==="connections"&&p.length===5))return true;
-  if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||req.path==="/aurelink/communications/contacts"||p[1]==="communications"&&(p[2]==="messages"||p[2]==="contacts")&&p.length===4)return true;
+  if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/analytics"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||req.path==="/aurelink/communications/contacts"||p[1]==="communications"&&(p[2]==="messages"||p[2]==="contacts")&&p.length===4)return true;
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
   if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
@@ -75,7 +75,7 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="GET"&&path==="/aurelink/communications/senders")return ok({senders:[],testMode:true});
  if(req.method==="GET"&&path==="/aurelink/communications/email-senders")return ok({senders:[],testMode:true});
  if(req.method==="GET"&&path==="/aurelink/communications/smtp/credentials")return ok({credentials:[],smtp:{testMode:true,liveHostNotProvisioned:true},testMode:true});
- if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({providers:{sms:{brevo:false,twilio:false},email:{resend:false,brevo:false}},messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/analytics")return ok({periodDays:30,summary:[],suppressions:[],testMode:true});\n if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({providers:{sms:{brevo:false,twilio:false},email:{resend:false,brevo:false}},messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
  if(req.method==="POST"&&path==="/aurelink/verify/start")return ok({verificationId:id,expiresAt:new Date(Date.now()+300000).toISOString(),testCode:"123456",testMode:true},202);
  if(req.method==="POST"&&p[1]==="verify"&&p[3]==="check")return ok({verified:String(req.body.code||"")==="123456",verificationId:p[2],testMode:true},String(req.body.code||"")==="123456"?200:400);
  if(req.method==="POST"&&p[1]==="communications"&&p[2]==="domains")return ok({domain:{id,testMode:true,status:"verification_pending",dnsRecords:[]},testMode:true},202);
