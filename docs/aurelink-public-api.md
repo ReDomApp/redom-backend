@@ -213,7 +213,7 @@ The token is encrypted at rest using `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY`. I
 
 #### SMS sender IDs
 
-A sender request requires `sender`, `provider` (`twilio` or `brevo`), `countryCode` (ISO 3166-1 alpha-2), `businessName`, `businessWebsite`, `messageUseCase`, and `sampleMessage`. Optional fields include `senderType`, `estimatedMonthlyVolume`, and HTTPS registration document references.
+A sender request requires `sender`, `provider` (`twilio` or `brevo`), `countryCode` (ISO 3166-1 alpha-2), `businessName`, `businessWebsite`, `messageUseCase`, and `sampleMessage`. Optional fields include `estimatedMonthlyVolume` and HTTPS registration document references. This endpoint handles alphanumeric sender IDs only (1–11 ASCII letters/digits, with at least one letter); phone-number, toll-free and short-code registration are separate country-specific workflows. Alphanumeric sender IDs are not supported in the United States or Canada.
 
 The initial state is `pending_customer_submission`; it is **not** submitted to a carrier and is not approved. Provider/carrier registration is country-specific and may require business documents, brand authorization, sample content, use-case review and a provider reference. When the provider has accepted a submission, an authorized Aurelink administrator records its real provider reference as `submitted`. An `approved` decision additionally requires an HTTPS link to the provider/carrier approval evidence. Aurelink never turns a request into an approved sender merely because the user entered a brand name.
 
