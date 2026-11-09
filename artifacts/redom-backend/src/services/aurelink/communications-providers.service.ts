@@ -42,7 +42,9 @@ async function sendTwilioSms(input:SendSmsInput):Promise<ProviderSendResult>{
 }
 async function sendResendEmail(input:SendEmailInput):Promise<ProviderSendResult>{
   const key=process.env.AURELINK_RESEND_API_KEY||process.env.RESEND_API_KEY;if(!key)throw new Error("Resend email is not configured.");
-  const result=await new Resend(key).emails.send({from:input.senderName?`${input.senderName} <${input.sender}>`:input.sender,to:input.recipient,subject:input.subject,...(input.html?{html:input.html}:{}),...(input.text?{text:input.text}:{}),...(input.replyTo?{replyTo:input.replyTo}:{}),...(input.tags?.length?{tags:input.tags.map(name=>({name,value:"aurelink"}))}:{})});
+  const base={from:input.senderName?`${input.senderName} <${input.sender}>`:input.sender,to:input.recipient,subject:input.subject,...(input.replyTo?{replyTo:input.replyTo}:{}),...(input.tags?.length?{tags:input.tags.map(name=>({name,value:"aurelink"}))}:{})};
+  const payload=input.html?{...base,html:input.html}:{...base,text:input.text||""};
+  const result=await new Resend(key).emails.send(payload);
   if(result.error)throw new Error(`Resend rejected the email: ${result.error.message}`);
   if(!result.data?.id)throw new Error("Resend accepted no email identifier.");
   return {provider:"resend",providerMessageId:result.data.id,acceptedAt:new Date().toISOString()};
