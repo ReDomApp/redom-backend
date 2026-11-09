@@ -92,7 +92,7 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   const provider=String(req.body.provider||"twilio").toLowerCase();
   const countryCode=String(req.body.countryCode||"").toUpperCase();
   const requestDetails={
-    senderType:String(req.body.senderType||"alphanumeric"),
+    senderType:"alphanumeric",
     businessName:String(req.body.businessName||"").trim().slice(0,160),
     businessWebsite:String(req.body.businessWebsite||"").trim().slice(0,500),
     messageUseCase:String(req.body.messageUseCase||"").trim().slice(0,1000),
@@ -101,10 +101,13 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
     registrationDocuments:Array.isArray(req.body.registrationDocuments)?req.body.registrationDocuments.filter((x:any)=>typeof x==="string").slice(0,10):[],
   };
   if(!channel||channel!=="sms")return res.status(400).json({success:false,message:"This registration workflow currently accepts SMS sender IDs only."});
-  if(!sender||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender))return res.status(400).json({success:false,message:"Alphanumeric sender IDs must be 3–11 ASCII letters or digits and include at least one letter."});
+  if(!sender||!/^[A-Za-z0-9]{1,11}$/.test(sender)||!/[A-Za-z]/.test(sender))return res.status(400).json({success:false,message:"Alphanumeric sender IDs must be 1–11 ASCII letters or digits and include at least one letter."});
   if(!senderProviders.has(provider))return res.status(400).json({success:false,message:"SMS sender registration provider must be twilio or brevo."});
   if(!/^[A-Z]{2}$/.test(countryCode))return res.status(400).json({success:false,message:"A two-letter ISO destination country code is required."});
+  if(countryCode==="US"||countryCode==="CA")return res.status(422).json({success:false,code:"ALPHANUMERIC_SENDER_UNSUPPORTED",message:"Alphanumeric sender IDs are not supported in the United States or Canada. Use an eligible registered phone-number sender instead."});
+  if(req.body.senderType && req.body.senderType!=="alphanumeric")return res.status(400).json({success:false,message:"This endpoint registers alphanumeric sender IDs only. Phone-number, toll-free and short-code registration require separate country-specific workflows."});
   if(!requestDetails.businessName||!requestDetails.businessWebsite||!requestDetails.messageUseCase||!requestDetails.sampleMessage)return res.status(400).json({success:false,message:"Business name, business website, messaging use case and sample message are required for carrier review."});
+  if(requestDetails.registrationDocuments.some((value:string)=>{try{return new URL(value).protocol!=="https:";}catch{return true;}}))return res.status(400).json({success:false,message:"Registration document references must be HTTPS URLs."});
   try{
     const website=new URL(requestDetails.businessWebsite);
     if(website.protocol!=="https:")throw new Error("Business website must use HTTPS.");
