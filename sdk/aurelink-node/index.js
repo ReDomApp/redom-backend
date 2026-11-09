@@ -18,7 +18,7 @@ export class Aurelink {
         list:()=>this.request("GET","/aurelink/communications/domains"),
         create:(body)=>this.request("POST","/aurelink/communications/domains",{body}),
         check:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/check"),
-        verify:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/verify"),
+        verify:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/verify"),tracking:(id,body)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/tracking",{body}),
         applyDns:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/apply-dns"),
         connectCloudflare:(body)=>this.request("POST","/aurelink/communications/dns/cloudflare/connect",{body}),
         cloudflareConnections:()=>this.request("GET","/aurelink/communications/dns/cloudflare/connections")
