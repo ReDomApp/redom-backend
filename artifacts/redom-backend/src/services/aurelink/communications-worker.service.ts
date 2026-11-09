@@ -5,7 +5,7 @@ import { sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.s
 
 type JobPayload =
   | { channel:"sms"; provider:"brevo"|"twilio"; category:"transactional"|"marketing"|"otp"|"notification"; input:{recipient:string;sender:string;content:string;category:"transactional"|"marketing"|"otp"|"notification";tag?:string;webUrl?:string} }
-  | { channel:"email"; provider:"resend"|"brevo"; category:"transactional"|"notification"; input:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;tags?:string[];attachments?:Array<{filename:string;content:string;contentType?:string}>} };
+  | { channel:"email"; provider:"resend"|"brevo"; category:"transactional"|"notification"; scheduledAt?:string; input:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;tags?:string[];attachments?:Array<{filename:string;content:string;contentType?:string}>} };
 
 function key(){const source=process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET;if(!source||source.length<32)throw new Error("Set AURELINK_COMMUNICATIONS_ENCRYPTION_KEY (32+ characters) or JWT_ACCESS_SECRET before enabling communications delivery.");return createHash("sha256").update(source).update("|aurelink-communications-v1").digest();}
 function encrypt(value:string){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",key(),iv),body=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);return [iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),body.toString("base64url")].join(".");}
