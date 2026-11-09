@@ -10,6 +10,7 @@ export class Aurelink {
  wallet:{retrieve():Promise<any>;ledger(query?:RequestOptions["query"]):Promise<any>};
  communications:{
    overview():Promise<any>;
+   messages:{list(query?:RequestOptions["query"]):Promise<any>;retrieve(id:string):Promise<any>};
    sms:{send(body:{recipient:string;sender:string;content:string;category?:"transactional"|"marketing"|"otp"|"notification";provider?:"brevo"|"twilio";},options?:RequestOptions):Promise<any>};
    email:{send(body:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;provider?:"resend"|"brevo";},options?:RequestOptions):Promise<any>};
    campaigns:{list():Promise<any>;create(body:{channel:"sms"|"email";name:string;subject?:string;text?:string;html?:string;content?:string}):Promise<any>;send(id:string,body:{sender:string;senderName?:string;provider?:"brevo"|"twilio"|"resend";webUrl?:string}):Promise<any>};
