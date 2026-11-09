@@ -4,7 +4,7 @@ import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus, updateAurelinkMessageStatus } from "../services/aurelink/communications-callbacks.service";
 import {
-  sendAurelinkSms, sendAurelinkEmail, createOtpCode, hashCommunicationContent, makeVerificationHash,
+  createOtpCode, makeVerificationHash,
 } from "../services/aurelink/communications-providers.service";
 import { enqueueAurelinkMessage } from "../services/aurelink/communications-worker.service";
 
@@ -64,17 +64,6 @@ async function workspaceId(userId: string): Promise<string> {
   const row = (await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND status='active'", [userId])).rows[0];
   if (!row) throw new Error("Aurelink communications workspace is unavailable.");
   return String(row.id);
-}
-async function saveMessage(input: {
-  workspaceId: string; channel: "sms"|"email"; category: string; provider: string; providerMessageId: string;
-  recipient: string; sender: string; subject?: string; content: string;
-}) {
-  const idempotencyKey = randomUUID();
-  const result = await pool.query(
-    "INSERT INTO aurelink_messages(workspace_id,channel,category,provider,provider_message_id,idempotency_key,recipient,sender,subject,content_hash,status,accepted_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'accepted',NOW()) RETURNING id,channel,category,provider,provider_message_id,status,accepted_at,created_at",
-    [input.workspaceId,input.channel,input.category,input.provider,input.providerMessageId,idempotencyKey,input.recipient,input.sender,input.subject??null,hashCommunicationContent(input.content)],
-  );
-  return result.rows[0];
 }
 
 /** Provider sends are available only to live Aurelink account sessions at this stage. */
@@ -212,13 +201,20 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId),code=createOtpCode(),salt=randomUUID(),expiresAt=new Date(Date.now()+5*60*1000),provider=channel==="email"?String(req.body.provider||"resend"):String(req.body.provider||"brevo");
   if(channel==="email"&&!EMAIL_PROVIDERS.has(provider)||channel==="sms"&&!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported verification provider."});
   const saved=await pool.query("INSERT INTO aurelink_verification_sessions(workspace_id,channel,purpose,destination,destination_hash,code_hash,verification_salt,provider,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,expires_at",[wid,channel,purpose,destination,hash(destination.toLowerCase()),makeVerificationHash(code,salt),salt,provider,expiresAt]);
+  const sender=String(req.body.sender||"");
+  if(channel==="sms"&&!/^[A-Za-z0-9]{1,11}$/.test(sender))return res.status(400).json({success:false,message:"SMS sender must be 1–11 alphanumeric characters."});
+  if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender))return res.status(400).json({success:false,message:"A valid sender email address is required."});
   try{
-    if(channel==="sms")await sendAurelinkSms(provider as "brevo"|"twilio",{recipient:destination,sender:String(req.body.sender||""),content:`Your Aurelink verification code is ${code}. It expires in 5 minutes.`,category:"otp"});
-    else await sendAurelinkEmail(provider as "resend"|"brevo",{recipient:destination,sender:String(req.body.sender||""),senderName:"Aurelink",subject:"Your Aurelink verification code",text:`Your Aurelink verification code is ${code}. It expires in 5 minutes. Never share this code.`});
-    res.status(202).json({success:true,verificationId:saved.rows[0].id,expiresAt});
+    const content=channel==="sms"?`Your Aurelink verification code is ${code}. It expires in 5 minutes.`:`Your Aurelink verification code is ${code}. It expires in 5 minutes. Never share this code.`;
+    const queued=channel==="sms"
+      ?await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"sms",category:"otp",provider,recipient:destination,sender,content,idempotencyKey:"verification:"+String(saved.rows[0].id),verificationId:String(saved.rows[0].id),payload:{channel:"sms",provider:provider as "brevo"|"twilio",category:"otp",input:{recipient:destination,sender,content,category:"otp"}}})
+      :await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"otp",provider,recipient:destination,sender,subject:"Your Aurelink verification code",content,idempotencyKey:"verification:"+String(saved.rows[0].id),verificationId:String(saved.rows[0].id),payload:{channel:"email",provider:provider as "resend"|"brevo",category:"notification",input:{recipient:destination,sender,senderName:"Aurelink",subject:"Your Aurelink verification code",text:content}}});
+    if("conflict" in queued)throw new Error("Unable to create the verification delivery job.");
+    return res.status(202).json({success:true,verificationId:saved.rows[0].id,expiresAt,messageStatus:"queued"});
   }catch(error){
     await pool.query("UPDATE aurelink_verification_sessions SET status='cancelled',updated_at=NOW() WHERE id=$1",[saved.rows[0].id]);
-    return res.status(502).json({success:false,message:error instanceof Error?error.message:"Verification delivery failed."});
+    if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for verification delivery."});
+    return res.status(502).json({success:false,message:error instanceof Error?error.message:"Verification delivery could not be queued."});
   }
 });
 
