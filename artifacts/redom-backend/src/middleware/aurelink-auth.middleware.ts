@@ -8,7 +8,7 @@ function secrets(){const access=process.env.JWT_ACCESS_SECRET;if(!access)throw n
 function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
-  if(p[1]==="communications"&&(["domains","senders","email-senders","smtp"].includes(p[2]||"")&&(p.length===3||p[2]==="smtp"&&p[3]==="credentials"&&p.length===4)||p[2]==="dns"&&p[3]==="cloudflare"&&p[4]==="connections"&&p.length===5))return true;
+  if(p[1]==="communications"&&(["domains","senders","email-senders","smtp","templates"].includes(p[2]||"")&&(p.length===3||p[2]==="smtp"&&p[3]==="credentials"&&p.length===4)||p[2]==="dns"&&p[3]==="cloudflare"&&p[4]==="connections"&&p.length===5))return true;
   if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||req.path==="/aurelink/communications/contacts"||p[1]==="communications"&&(p[2]==="messages"||p[2]==="contacts")&&p.length===4)return true;
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
@@ -20,8 +20,8 @@ function apiKeyAllowed(req:Request):boolean{
  }
  if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
-  if(req.path==="/aurelink/communications/domains"||req.path==="/aurelink/communications/senders"||req.path==="/aurelink/communications/email-senders"||req.path==="/aurelink/communications/dns/cloudflare/connect"||req.path==="/aurelink/communications/smtp/credentials")return true;
-  if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["check","verify","apply-dns"].includes(p[3]))return true;
+  if(req.path==="/aurelink/communications/domains"||req.path==="/aurelink/communications/senders"||req.path==="/aurelink/communications/email-senders"||req.path==="/aurelink/communications/templates"||req.path==="/aurelink/communications/dns/cloudflare/connect"||req.path==="/aurelink/communications/smtp/credentials")return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["check","verify","apply-dns"].includes(p[3]))return true;\n  if(p[1]==="communications"&&p[2]==="templates"&&p.length===4&&(req.method==="PATCH"||req.method==="DELETE"))return true;
   if(["/aurelink/communications/sms/send","/aurelink/communications/email/send","/aurelink/communications/campaigns","/aurelink/communications/contacts","/aurelink/verify/start"].includes(req.path))return true;
   if(p[1]==="communications"&&p[2]==="campaigns"&&p.length===5&&p[4]==="send")return true;
   if(p[1]==="communications"&&p[2]==="messages"&&p.length===5&&p[4]==="retry")return true;
@@ -40,7 +40,7 @@ function scopeFor(req:Request):string{
  const p=req.path.split("/").filter(Boolean);
  if(req.path==="/aurelink/communications/overview"||req.method==="GET"&&p[1]==="communications")return "communications:read";
  if(p[1]==="verify")return "verify:write";
- if(p[1]==="communications"&&(["domains","senders","email-senders","dns","smtp"].includes(p[2]||""))&&!(req.method==="GET"))return "communications:manage";
+ if(p[1]==="communications"&&(["domains","senders","email-senders","dns","smtp","templates"].includes(p[2]||""))&&!(req.method==="GET"))return "communications:manage";
  if(p[1]==="communications"&&(["domains","senders","email-senders","smtp"].includes(p[2]||""))&&req.method==="GET")return "communications:read";
  if(p[1]==="communications")return "communications:send";
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
