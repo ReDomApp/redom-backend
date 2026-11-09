@@ -23,6 +23,7 @@ import { ensureAurelinkAccountSchema } from "./services/aurelink/account-schema-
 import { startAurelinkLifecycleWorker, stopAurelinkLifecycleWorker } from "./services/aurelink/aurelink-lifecycle-worker.service";
 import { startAurelinkDedicatedRenewalWorker, stopAurelinkDedicatedRenewalWorker } from "./services/aurelink/aurelink-dedicated-renewal.service";
 import { ensureAurelinkDeveloperSchema, startAurelinkWebhookWorker, stopAurelinkWebhookWorker } from "./services/aurelink/developer-platform.service";
+import { ensureAurelinkCommunicationsSchema } from "./services/aurelink/communications-schema.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -36,6 +37,7 @@ async function start(): Promise<void> {
   await ensureAurelinkAccountSchema(pool);
   await ensureAurelinkSchema(pool);
   await ensureAurelinkDeveloperSchema();
+  await ensureAurelinkCommunicationsSchema();
   await ensureBugReportSchema();
   await ensureStarsSchema();
   await ensureRefundSchema();
