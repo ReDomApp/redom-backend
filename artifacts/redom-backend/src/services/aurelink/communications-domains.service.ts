@@ -184,7 +184,7 @@ export async function configureAurelinkBrevoTransactionalWebhook(urlValue:string
   const rows=Array.isArray(listing?.webhooks)?listing.webhooks:Array.isArray(listing?.data)?listing.data:Array.isArray(listing)?listing:[];
   const existing=rows.find((item:any)=>String(item.url||"")===url.toString()&&String(item.type||"transactional")==="transactional");
   if(existing?.id){
-    await request("brevo",\`/webhooks/\${encodeURIComponent(String(existing.id))}\`,"PUT",payload);
+    await request("brevo","/webhooks/"+encodeURIComponent(String(existing.id)),"PUT",payload);
     return {provider:"brevo",webhookId:String(existing.id),action:"updated",url:url.toString(),events};
   }
   const created=await request("brevo","/webhooks","POST",payload);
