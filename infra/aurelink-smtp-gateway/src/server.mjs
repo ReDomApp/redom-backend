@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
+import { mkdir, readFile, stat } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { createHash, createDecipheriv } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createSmtpServer } from "smtp-server";
@@ -7,14 +9,25 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import { simpleParser } from "mailparser";
 
-const required = ["DATABASE_URL", "SMTP_TLS_CERT_PATH", "SMTP_TLS_KEY_PATH"];
+const required = ["DATABASE_URL"];
 for (const name of required) {
   if (!process.env[name]) throw new Error(name + " is required by the Aurelink SMTP gateway.");
 }
 const encryptionSecret = process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY || process.env.JWT_ACCESS_SECRET;
 if (!encryptionSecret || encryptionSecret.length < 32) throw new Error("The shared Aurelink communications encryption secret (or backend JWT_ACCESS_SECRET fallback) is required.");
-const cert = readFileSync(process.env.SMTP_TLS_CERT_PATH);
-const key = readFileSync(process.env.SMTP_TLS_KEY_PATH);
+
+const smtpHostname = String(process.env.SMTP_HOSTNAME || "smtp.aurelink.org").toLowerCase();
+if (!/^[a-z0-9.-]+$/.test(smtpHostname) || !smtpHostname.includes(".")) throw new Error("SMTP_HOSTNAME must be a valid public hostname.");
+const dataDir = process.env.ACME_DATA_DIR || "/data";
+const webrootDir = `${dataDir}/acme-webroot`;
+const configDir = `${dataDir}/letsencrypt`;
+const workDir = `${dataDir}/letsencrypt-work`;
+const logsDir = `${dataDir}/letsencrypt-logs`;
+const certPath = `${configDir}/live/${smtpHostname}/fullchain.pem`;
+const keyPath = `${configDir}/live/${smtpHostname}/privkey.pem`;
+const acmeEmail = process.env.ACME_EMAIL || "";
+const acmeRetryMs = Math.max(60_000, Number(process.env.ACME_RETRY_INTERVAL_MS || 600_000));
+const acmeRenewMs = Math.max(60 * 60_000, Number(process.env.ACME_RENEW_INTERVAL_MS || 43_200_000));
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ...(process.env.DATABASE_SSL === "disable" ? { ssl: false } : {}),
@@ -87,7 +100,7 @@ async function resolveCredential(password) {
   return { credentialId: row.id, workspaceId: row.workspace_id, domain: row.domain, providerKey };
 }
 
-function makeSmtpOptions({ secure, requireTLS }) {
+function makeSmtpOptions({ secure, requireTLS, key, cert }) {
   return {
     secure,
     requireTLS,
@@ -184,20 +197,67 @@ function makeSmtpOptions({ secure, requireTLS }) {
   };
 }
 
-const implicitTlsServer = createSmtpServer(makeSmtpOptions({ secure: true, requireTLS: false }));
-const startTlsServer = createSmtpServer(makeSmtpOptions({ secure: false, requireTLS: true }));
-const healthServer = createHttpServer(async (req, res) => {
-  if (req.url !== "/healthz") {
-    res.writeHead(404).end();
-    return;
-  }
+let implicitTlsServer = null;
+let startTlsServer = null;
+let smtpReady = false;
+let acmeBusy = false;
+let lastAcmeError = null;
+let challengeServer;
+let healthServer;
+
+const port465 = Number(process.env.SMTP_PORT_SSL || 465);
+const port587 = Number(process.env.SMTP_PORT_STARTTLS || 587);
+const healthPort = Number(process.env.HEALTH_PORT || 8080);
+const challengePort = Number(process.env.ACME_HTTP_PORT || 8081);
+
+function sendText(res, status, body) {
+  res.writeHead(status, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+  res.end(body);
+}
+
+async function ensureAcmeDirectories() {
+  await Promise.all([
+    mkdir(webrootDir, { recursive: true }),
+    mkdir(configDir, { recursive: true }),
+    mkdir(workDir, { recursive: true }),
+    mkdir(logsDir, { recursive: true }),
+  ]);
+}
+
+challengeServer = createHttpServer(async (req, res) => {
+  const pathname = new URL(req.url || "/", "http://localhost").pathname;
+  const prefix = "/.well-known/acme-challenge/";
+  if (req.method !== "GET" && req.method !== "HEAD") return sendText(res, 405, "Method not allowed");
+  if (!pathname.startsWith(prefix)) return sendText(res, 404, "Not found");
+  const token = pathname.slice(prefix.length);
+  if (!/^[A-Za-z0-9_-]{1,256}$/.test(token)) return sendText(res, 400, "Invalid challenge token");
   try {
-    await pool.query("SELECT 1");
-    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, service: "aurelink-smtp-gateway" }));
+    const body = await readFile(`${webrootDir}/.well-known/acme-challenge/${token}`);
+    res.writeHead(200, { "content-type": "application/octet-stream", "cache-control": "no-store" });
+    res.end(req.method === "HEAD" ? undefined : body);
   } catch {
-    res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ ok: false }));
+    sendText(res, 404, "Challenge not found");
   }
 });
+
+healthServer = createHttpServer(async (req, res) => {
+  if (req.url !== "/healthz") return sendText(res, 404, "Not found");
+  try {
+    await pool.query("SELECT 1");
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({
+      ok: true,
+      service: "aurelink-smtp-gateway",
+      smtpReady,
+      hostname: smtpHostname,
+      certificate: smtpReady ? "loaded" : "waiting_for_dns_and_certificate",
+      acmeError: lastAcmeError,
+    }));
+  } catch {
+    res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, database: "unavailable" }));
+  }
+});
+
 const listen = (server, port) => new Promise((resolve, reject) => {
   server.once("error", reject);
   server.listen(port, "0.0.0.0", () => {
@@ -205,25 +265,103 @@ const listen = (server, port) => new Promise((resolve, reject) => {
     resolve();
   });
 });
-const port465 = Number(process.env.SMTP_PORT_SSL || 465);
-const port587 = Number(process.env.SMTP_PORT_STARTTLS || 587);
-const healthPort = Number(process.env.HEALTH_PORT || 8080);
 
+function runCertbot(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("certbot", [
+      "--config-dir", configDir,
+      "--work-dir", workDir,
+      "--logs-dir", logsDir,
+      ...args,
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { output += chunk.toString(); });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (output.trim()) console.log("[certbot]", output.trim().slice(-6000));
+      if (code === 0) resolve();
+      else reject(new Error("Certbot exited with code " + code));
+    });
+  });
+}
+
+async function loadCertificate() {
+  const [cert, key] = await Promise.all([readFile(certPath), readFile(keyPath)]);
+  return { cert, key };
+}
+
+async function startSmtpServers() {
+  if (smtpReady) return;
+  const { cert, key } = await loadCertificate();
+  implicitTlsServer = createSmtpServer(makeSmtpOptions({ secure: true, requireTLS: false, key, cert }));
+  startTlsServer = createSmtpServer(makeSmtpOptions({ secure: false, requireTLS: true, key, cert }));
+  await Promise.all([
+    listen(implicitTlsServer, port465),
+    listen(startTlsServer, port587),
+  ]);
+  smtpReady = true;
+  lastAcmeError = null;
+  console.log(`Aurelink SMTP is ready for ${smtpHostname} on ports 465 and 587.`);
+}
+
+async function issueInitialCertificate() {
+  const args = [
+    "certonly", "--webroot", "--webroot-path", webrootDir,
+    "--cert-name", smtpHostname, "-d", smtpHostname,
+    "--agree-tos", "--non-interactive", "--no-eff-email",
+  ];
+  if (acmeEmail) args.push("--email", acmeEmail);
+  else args.push("--register-unsafely-without-email");
+  await runCertbot(args);
+}
+
+async function acquireOrRenewCertificate() {
+  if (acmeBusy) return;
+  acmeBusy = true;
+  try {
+    await ensureAcmeDirectories();
+    if (!existsSync(certPath) || !existsSync(keyPath)) {
+      console.log(`No TLS certificate found. Requesting a Let's Encrypt certificate for ${smtpHostname}.`);
+      await issueInitialCertificate();
+      await startSmtpServers();
+      return;
+    }
+
+    const before = (await stat(certPath)).mtimeMs;
+    await runCertbot(["renew", "--cert-name", smtpHostname, "--non-interactive"]);
+    const after = (await stat(certPath)).mtimeMs;
+    if (after > before + 1000) {
+      console.log("Let's Encrypt renewed the SMTP certificate; restarting to load the new certificate.");
+      process.exit(1);
+    }
+    if (!smtpReady) await startSmtpServers();
+  } catch (error) {
+    lastAcmeError = String(error?.message || error).slice(0, 500);
+    console.error("Aurelink TLS certificate operation failed:", lastAcmeError);
+    if (smtpReady) {
+      // Keep the currently valid certificate and SMTP listeners running.
+      return;
+    }
+  } finally {
+    acmeBusy = false;
+  }
+}
+
+await ensureAcmeDirectories();
 await pool.query("SELECT 1");
 await Promise.all([
-  listen(implicitTlsServer, port465),
-  listen(startTlsServer, port587),
+  listen(challengeServer, challengePort),
   listen(healthServer, healthPort),
 ]);
-console.log("Aurelink SMTP gateway listening on 465 (implicit TLS), 587 (STARTTLS), and health port " + healthPort);
+console.log(`Aurelink gateway control plane listening on HTTP ${challengePort} (ACME) and ${healthPort} (health).`);
+await acquireOrRenewCertificate();
+setInterval(() => void acquireOrRenewCertificate(), smtpReady ? acmeRenewMs : acmeRetryMs).unref();
 
 async function shutdown(signal) {
   console.log("Aurelink SMTP gateway shutting down:", signal);
-  await Promise.all([
-    new Promise((resolve) => implicitTlsServer.close(resolve)),
-    new Promise((resolve) => startTlsServer.close(resolve)),
-    new Promise((resolve) => healthServer.close(resolve)),
-  ]);
+  const servers = [implicitTlsServer, startTlsServer, challengeServer, healthServer].filter(Boolean);
+  await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
   await pool.end();
   process.exit(0);
 }
