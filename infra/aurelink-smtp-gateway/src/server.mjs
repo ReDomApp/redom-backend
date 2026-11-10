@@ -3,7 +3,7 @@ import { mkdir, readFile, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createHash, createDecipheriv } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
-import { createServer as createSmtpServer } from "smtp-server";
+import { SMTPServer } from "smtp-server";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
@@ -294,7 +294,7 @@ async function loadCertificate() {
 async function startSmtpServers() {
   if (smtpReady) return;
   const { cert, key } = await loadCertificate();
-  implicitTlsServer = createSmtpServer(makeSmtpOptions({ secure: true, requireTLS: false, key, cert }));
+  implicitTlsServer = new SMTPServer(makeSmtpOptions({ secure: true, requireTLS: false, key, cert }));
   startTlsServer = createSmtpServer(makeSmtpOptions({ secure: false, requireTLS: true, key, cert }));
   await Promise.all([
     listen(implicitTlsServer, port465),
