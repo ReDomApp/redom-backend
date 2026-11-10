@@ -228,7 +228,7 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS aurelink_smtp_credentials (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
-      username VARCHAR(96) NOT NULL UNIQUE,
+      username VARCHAR(96) NOT NULL DEFAULT 'aurelink',
       password_hash TEXT NOT NULL,
       label VARCHAR(120) NOT NULL DEFAULT 'SMTP credential',
       status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
@@ -237,12 +237,17 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       last_used_at TIMESTAMPTZ
     );
     CREATE INDEX IF NOT EXISTS aurelink_smtp_credentials_workspace_idx ON aurelink_smtp_credentials(workspace_id,status);
-    ALTER TABLE aurelink_smtp_credentials ALTER COLUMN username DROP NOT NULL;
+    ALTER TABLE aurelink_smtp_credentials DROP CONSTRAINT IF EXISTS aurelink_smtp_credentials_username_key;
+    ALTER TABLE aurelink_smtp_credentials ALTER COLUMN username SET DEFAULT 'aurelink';
+    UPDATE aurelink_smtp_credentials SET username='aurelink' WHERE username IS NULL OR username <> 'aurelink';
+    ALTER TABLE aurelink_smtp_credentials ALTER COLUMN username SET NOT NULL;
     ALTER TABLE aurelink_smtp_credentials ALTER COLUMN password_hash DROP NOT NULL;
     ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS provider_key_id VARCHAR(180);
     ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS provider_domain_id VARCHAR(180);
     ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS email_domain_id UUID REFERENCES aurelink_email_domains(id) ON DELETE SET NULL;
     ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS token_prefix VARCHAR(16);
+    ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS provider_key_encrypted TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_smtp_credentials_token_prefix_idx ON aurelink_smtp_credentials(token_prefix) WHERE token_prefix IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_smtp_credentials_provider_key_idx ON aurelink_smtp_credentials(provider_key_id) WHERE provider_key_id IS NOT NULL;
     UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE provider_key_id IS NULL AND status='active';
     CREATE TABLE IF NOT EXISTS aurelink_smtp_messages (
