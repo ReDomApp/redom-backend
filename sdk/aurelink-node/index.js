@@ -35,7 +35,7 @@ export class Aurelink {
       smtp:{
         credentials:{
           list:()=>this.request("GET","/aurelink/communications/smtp/credentials"),
-          create:(body={})=>this.request("POST","/aurelink/communications/smtp/credentials",{body}),
+          create:(body)=>this.request("POST","/aurelink/communications/smtp/credentials",{body}),
           revoke:(id)=>this.request("DELETE","/aurelink/communications/smtp/credentials/"+encodeURIComponent(id))
         }
       },
