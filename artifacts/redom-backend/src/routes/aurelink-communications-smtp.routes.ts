@@ -60,7 +60,7 @@ async function saveCredential(input: {
 router.get("/aurelink/communications/smtp/credentials", aurelinkAuthMiddleware, async (req, res) => {
   const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId);
   const rows = await pool.query(
-    "SELECT c.id,c.label,c.status,c.token_prefix,c.created_at,c.updated_at,d.id AS domain_id,d.domain,d.status AS domain_status,c.last_used_at FROM aurelink_smtp_credentials c LEFT JOIN aurelink_email_domains d ON d.id=c.email_domain_id WHERE c.workspace_id=$1 AND c.provider_key_id IS NOT NULL ORDER BY c.created_at DESC",
+    "SELECT c.id,c.label,c.status,c.created_at,c.updated_at,d.id AS domain_id,d.domain,d.status AS domain_status,c.last_used_at FROM aurelink_smtp_credentials c LEFT JOIN aurelink_email_domains d ON d.id=c.email_domain_id WHERE c.workspace_id=$1 AND c.provider_key_id IS NOT NULL ORDER BY c.created_at DESC",
     [wid],
   );
   return res.json({ success: true, provider: "aurelink", smtp: CUSTOMER_SMTP, credentials: rows.rows });
