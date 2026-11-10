@@ -281,25 +281,26 @@ SMS send, OTP and campaign requests require `countryCode` and an approved sender
 
 The shared Brevo transactional webhook is provisioned by an Aurelink communications administrator using `POST /aurelink/communications/providers/brevo/webhook/configure`. Configure `AURELINK_BREVO_WEBHOOK_SECRET` and `AURELINK_BREVO_WEBHOOK_URL` first. Aurelink creates or updates the Brevo webhook subscription for sent, delivered, opened, clicked, bounce, spam and unsubscribe events. This is an account-level provider operation, not a customer-supplied webhook endpoint.
 
-#### SMTP credentials through Resend
+#### Aurelink SMTP credentials
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| GET | `/aurelink/communications/smtp/credentials` | List this project's Resend SMTP key metadata (never returns passwords) |
-| POST | `/aurelink/communications/smtp/credentials` | Create a Resend sending-only API key restricted to a verified customer domain; token is shown once |
-| POST | `/aurelink/communications/smtp/credentials/:id/rotate` | Create a replacement Resend key and revoke the previous provider key |
-| DELETE | `/aurelink/communications/smtp/credentials/:id` | Revoke the Resend API key immediately |
+| GET | `/aurelink/communications/smtp/credentials` | List Aurelink SMTP credential metadata (passwords are never returned) |
+| POST | `/aurelink/communications/smtp/credentials` | Issue a unique Aurelink SMTP password mapped internally to a domain-restricted Resend key; password shown once |
+| POST | `/aurelink/communications/smtp/credentials/:id/rotate` | Issue a replacement Aurelink password and replace/revoke its internal Resend key |
+| DELETE | `/aurelink/communications/smtp/credentials/:id` | Revoke the Aurelink credential and its internal Resend key |
 
-Aurelink does not run an SMTP daemon, proxy, or separate relay. SMTP is provided directly by Resend:
+Customer-facing SMTP settings are always Aurelink's own endpoint:
 
 | Setting | Value |
 | --- | --- |
-| Host | `smtp.resend.com` |
+| Host | `smtp.aurelink.org` |
 | Port | `465` |
 | Encryption | SSL/TLS |
 | Alternate port | `587` with STARTTLS |
-| Username | `resend` |
-| Password | The one-time Resend API key issued by Aurelink |
+| Username | `aurelink` |
+| Password | Unique Aurelink-issued password (not the Resend API key) |
+| Provider | Aurelink SMTP |
 
 Create credentials by sending the Aurelink domain record ID (the ID returned by `POST /aurelink/communications/domains`) as `domainId`:
 
@@ -310,9 +311,9 @@ Create credentials by sending the Aurelink domain record ID (the ID returned by 
 }
 ```
 
-Aurelink checks that the domain belongs to the authenticated project, uses the Resend provider, and is marked verified by Resend. It then creates a Resend API key with `permission: sending_access` and the provider's `domain_id`. The returned token is the SMTP password and is displayed only once. Aurelink stores the provider key ID and metadata, never the token. Resend enforces the domain restriction, so the credential cannot send from another domain. Rotate and revoke operations call Resend's API; they do not merely disable a local password.
+Aurelink checks that the domain belongs to the authenticated project and is verified. It creates a Resend API key with `permission: sending_access` and the provider's `domain_id`, then independently generates a unique customer-facing Aurelink password. Aurelink stores a bcrypt hash of the customer password, a unique lookup prefix, the provider key ID, and the Resend key encrypted at rest with AES-256-GCM. The full Aurelink password is displayed once. The SMTP gateway authenticates that password, resolves its account/domain association, and uses the corresponding Resend key internally. Customers never receive Resend's SMTP hostname, username, or API key. Rotation replaces both credentials; revocation disables the Aurelink password and revokes the corresponding provider key.
 
-The customer's DNS records are still generated and verified by the selected provider's domain API. For the Resend SMTP credential, the customer's sending domain must be verified in Resend first. Brevo remains a separate email provider with its own domain records and REST integration; Brevo is not silently substituted into a Resend SMTP session. Aurelink's API email delivery can continue to use its configured Resend-primary/Brevo-fallback policy independently of direct customer SMTP sessions.
+The customer's DNS records are still generated and verified by the selected provider's domain API. The sending domain must be verified before Aurelink can issue SMTP credentials. The gateway checks that the domain remains verified and only accepts envelope/header From addresses belonging to that domain. Resend remains an internal delivery provider; Brevo is a separate provider integration and is not substituted into the Resend SMTP session.
 
 ### Campaigns
 
@@ -384,7 +385,7 @@ Aurelink generates and validates the OTP itself. SMS verification requests must 
 
 The communications overview reports which adapters have credentials configured. This does not mean that a sender ID/domain has been approved or that the provider account has available credits.
 
-Brevo Email API and Brevo SMTP are different transports. SMTP requires a Brevo SMTP login and SMTP key, distinct from the REST API key. The REST API delivery path is active in code. The new SMTP credential APIs and standalone TCP relay package are also implemented in this branch, but the relay has not been deployed to a public TCP-capable host and must not be advertised as live until its DNS hostname, TLS certificate and provider credentials are configured.
+Brevo Email API and Brevo SMTP are different transports. SMTP requires a Brevo SMTP login and SMTP key, distinct from the REST API key. The REST API delivery path is active in code. The Aurelink SMTP gateway package is implemented in this branch. It accepts public TCP connections on ports 465 and 587, requires TLS, authenticates Aurelink-issued credentials, resolves account-specific encrypted Resend keys, and forwards messages to Resend. It is not live until deployed on a public TCP-capable host with smtp.aurelink.org DNS, a valid TLS certificate, shared database access and the backend's stable encryption secret.
 
 Resend and Brevo both require domain/sender authentication at the provider. SMS sender IDs may need country-specific registration and approval. Provider acceptance is not handset/inbox delivery confirmation; update delivered/bounced states only from authenticated provider webhooks.
 
