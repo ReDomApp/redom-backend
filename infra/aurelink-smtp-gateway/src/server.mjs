@@ -159,8 +159,9 @@ function makeSmtpOptions({ secure, requireTLS }) {
 
           const transport = nodemailer.createTransport({
             host: "smtp.resend.com",
-            port: 465,
-            secure: true,
+            port: 587,
+            secure: false,
+            requireTLS: true,
             auth: { user: "resend", pass: session.user.providerKey },
             connectionTimeout: 15000,
             greetingTimeout: 15000,
