@@ -48,3 +48,4 @@ jobs:
           node-version: 22
       - run: npm install --omit=dev --no-audit --no-fund
       - run: node --check src/server.mjs
+      - run: docker build --tag aurelink-smtp-gateway:test .
