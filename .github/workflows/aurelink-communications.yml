@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "artifacts/redom-backend/**"
+      - "artifacts/aurelink-smtp-gateway/**"
       - "artifacts/aurelink/tests/communications-webhook.test.ts"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -33,3 +34,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @workspace/redom-backend run typecheck
       - run: pnpm --filter @workspace/redom-backend run test:aurelink-communications
+
+  smtp-gateway:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: artifacts/aurelink-smtp-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --omit=dev --no-audit --no-fund
+      - run: node --check src/server.mjs
