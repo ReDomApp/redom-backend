@@ -13,22 +13,18 @@ primary_region = "iad"
 [deploy]
   strategy = "immediate"
 
-# SMTP is a long-lived TCP service. Keep one Machine running; do not
-# configure autostop/scale-to-zero because clients need a continuously
-# reachable SMTP listener.
-[vm]
+# SMTP is a long-lived TCP service. Keep the listener available.
+[[vm]]
   cpu_kind = "shared"
   cpus = 1
   memory = "512mb"
 
-# Raw TCP passthrough is intentional: TLS terminates inside the gateway,
-# which presents the smtp.aurelink.org certificate on ports 465 and 587.
+# Raw TCP passthrough: TLS terminates inside the gateway.
 [[services]]
   protocol = "tcp"
   internal_port = 465
   auto_stop_machines = "off"
-  auto_start_machines = true
-  min_machines_running = 1
+  auto_start_machines = false
 
   [[services.ports]]
     port = 465
@@ -42,8 +38,7 @@ primary_region = "iad"
   protocol = "tcp"
   internal_port = 587
   auto_stop_machines = "off"
-  auto_start_machines = true
-  min_machines_running = 1
+  auto_start_machines = false
 
   [[services.ports]]
     port = 587
@@ -53,7 +48,7 @@ primary_region = "iad"
     interval = "15s"
     timeout = "3s"
 
-# Private Machine health check. This does not publish port 8080 publicly.
+# Internal health check only; port 8080 is not publicly exposed.
 [checks.gateway_health]
   type = "http"
   port = 8080
@@ -61,4 +56,4 @@ primary_region = "iad"
   path = "/healthz"
   interval = "30s"
   timeout = "5s"
-  grace_period = "20s"
+  grace_period = "30s"
