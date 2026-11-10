@@ -247,6 +247,7 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
     ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS email_domain_id UUID REFERENCES aurelink_email_domains(id) ON DELETE SET NULL;
     ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS token_prefix VARCHAR(16);
     ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS provider_key_encrypted TEXT;
+    UPDATE aurelink_smtp_credentials SET token_prefix=NULL,status='revoked',updated_at=NOW() WHERE provider_key_encrypted IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_smtp_credentials_token_prefix_idx ON aurelink_smtp_credentials(token_prefix) WHERE token_prefix IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_smtp_credentials_provider_key_idx ON aurelink_smtp_credentials(provider_key_id) WHERE provider_key_id IS NOT NULL;
     UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE provider_key_id IS NULL AND status='active';
