@@ -21,11 +21,11 @@ Required environment:
 - SMTP_TLS_CERT_PATH and SMTP_TLS_KEY_PATH: paths to the certificate and private key for smtp.aurelink.org, mounted into the container.
 - Optional: SMTP_PORT_SSL (465), SMTP_PORT_STARTTLS (587), HEALTH_PORT (8080), SMTP_MAX_CLIENTS (200), SMTP_MAX_MESSAGE_BYTES (15728640), DATABASE_POOL_MAX (12).
 
-The gateway uses the shared PostgreSQL aurelink_smtp_credentials and aurelink_email_domains records. Each customer password is bcrypt-hashed; the first 16 characters are a non-secret lookup prefix with a unique database index. The associated Resend key is encrypted at rest with AES-256-GCM and is only decrypted in memory for the outbound session. No provider key or customer password is written to logs.
+The gateway must be given these values at runtime before it can start. Missing `DATABASE_URL`, `SMTP_TLS_CERT_PATH`, `SMTP_TLS_KEY_PATH`, or the shared encryption secret causes startup to fail. The TLS certificate and private key must be mounted into the container; the Docker build intentionally excludes certificate/key files. The gateway uses the shared PostgreSQL aurelink_smtp_credentials and aurelink_email_domains records. Each customer password is bcrypt-hashed; the first 16 characters are a non-secret lookup prefix with a unique database index. The associated Resend key is encrypted at rest with AES-256-GCM and is only decrypted in memory for the outbound session. No provider key or customer password is written to logs.
 
 ## Message handling
 
-The gateway accepts SMTP AUTH LOGIN/PLAIN only over TLS. The username must be aurelink; the password uniquely identifies one active Aurelink credential. It checks that the credential's domain remains verified, validates the envelope sender and message From addresses against that domain, and forwards using the associated Resend key (username resend) to smtp.resend.com:465. A revoked credential or unverified domain cannot authenticate.
+The gateway accepts SMTP AUTH LOGIN/PLAIN only over TLS. The username must be aurelink; the password uniquely identifies one active Aurelink credential. It checks that the credential's domain remains verified, validates the envelope sender and message From addresses against that domain, and forwards using the associated Resend key (username resend) to smtp.resend.com:587 with STARTTLS required. A revoked credential or unverified domain cannot authenticate.
 
 The health endpoint is HTTP /healthz on port 8080. Open 465/TCP and 587/TCP publicly; keep 8080 restricted to platform health checks.
 
