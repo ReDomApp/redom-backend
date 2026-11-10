@@ -18,6 +18,11 @@ primary_region = "iad"
 [deploy]
   strategy = "immediate"
 
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
+
 # Let's Encrypt HTTP-01 requires public port 80. The gateway serves only
 # /.well-known/acme-challenge/* on internal port 8081.
 [[services]]
