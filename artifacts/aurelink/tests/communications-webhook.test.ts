@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus } from "../../redom-backend/src/services/aurelink/communications-webhooks.utils.ts";
+import { createAurelinkResendSmtpKey, revokeAurelinkResendSmtpKey } from "../../redom-backend/src/services/aurelink/communications-smtp.service.ts";
 
 test("Resend Svix signatures verify against the exact raw payload",()=>{
   const raw=Buffer.from(JSON.stringify({type:"email.delivered",data:{email_id:"email_123"}}));
@@ -24,4 +25,47 @@ test("Provider status maps preserve accepted and delivery failure states",()=>{
   assert.equal(mapAurelinkTwilioStatus("queued"),"accepted");
   assert.equal(mapAurelinkTwilioStatus("delivered"),"delivered");
   assert.equal(mapAurelinkTwilioStatus("undelivered"),"failed");
+});
+
+test("Aurelink creates Resend SMTP keys with sending-only access scoped to one domain",async()=>{
+  const originalFetch=globalThis.fetch,originalKey=process.env.AURELINK_RESEND_API_KEY;
+  const requests:Array<{url:string;init:RequestInit}>=[];
+  process.env.AURELINK_RESEND_API_KEY="re_platform_test_key";
+  globalThis.fetch=(async(input:any,init?:RequestInit)=>{
+    requests.push({url:String(input),init:init||{}});
+    return new Response(JSON.stringify({id:"key_domain_123",token:"re_customer_smtp_token"}),{status:201,headers:{"content-type":"application/json"}});
+  }) as typeof fetch;
+  try{
+    const result=await createAurelinkResendSmtpKey({workspaceId:"workspace-12345678",domainId:"domain_provider_123",label:"Production SMTP"});
+    assert.deepEqual(result,{providerKeyId:"key_domain_123",token:"re_customer_smtp_token"});
+    assert.equal(requests[0].url,"https://api.resend.com/api-keys");
+    assert.equal(requests[0].init.method,"POST");
+    assert.deepEqual(JSON.parse(String(requests[0].init.body)),{
+      name:JSON.parse(String(requests[0].init.body)).name,
+      permission:"sending_access",
+      domain_id:"domain_provider_123"
+    });
+    assert.ok(String(JSON.parse(String(requests[0].init.body)).name).length<=50);
+  }finally{
+    globalThis.fetch=originalFetch;
+    if(originalKey===undefined)delete process.env.AURELINK_RESEND_API_KEY;else process.env.AURELINK_RESEND_API_KEY=originalKey;
+  }
+});
+
+test("Aurelink revokes the provider-owned Resend SMTP API key",async()=>{
+  const originalFetch=globalThis.fetch,originalKey=process.env.AURELINK_RESEND_API_KEY;
+  let request:{url:string;init:RequestInit}|undefined;
+  process.env.AURELINK_RESEND_API_KEY="re_platform_test_key";
+  globalThis.fetch=(async(input:any,init?:RequestInit)=>{
+    request={url:String(input),init:init||{}};
+    return new Response("",{status:200});
+  }) as typeof fetch;
+  try{
+    await revokeAurelinkResendSmtpKey("key_domain_123");
+    assert.equal(request?.url,"https://api.resend.com/api-keys/key_domain_123");
+    assert.equal(request?.init.method,"DELETE");
+  }finally{
+    globalThis.fetch=originalFetch;
+    if(originalKey===undefined)delete process.env.AURELINK_RESEND_API_KEY;else process.env.AURELINK_RESEND_API_KEY=originalKey;
+  }
 });
