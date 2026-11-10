@@ -237,6 +237,14 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       last_used_at TIMESTAMPTZ
     );
     CREATE INDEX IF NOT EXISTS aurelink_smtp_credentials_workspace_idx ON aurelink_smtp_credentials(workspace_id,status);
+    ALTER TABLE aurelink_smtp_credentials ALTER COLUMN username DROP NOT NULL;
+    ALTER TABLE aurelink_smtp_credentials ALTER COLUMN password_hash DROP NOT NULL;
+    ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS provider_key_id VARCHAR(180);
+    ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS provider_domain_id VARCHAR(180);
+    ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS email_domain_id UUID REFERENCES aurelink_email_domains(id) ON DELETE SET NULL;
+    ALTER TABLE aurelink_smtp_credentials ADD COLUMN IF NOT EXISTS token_prefix VARCHAR(16);
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_smtp_credentials_provider_key_idx ON aurelink_smtp_credentials(provider_key_id) WHERE provider_key_id IS NOT NULL;
+    UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE provider_key_id IS NULL AND status='active';
     CREATE TABLE IF NOT EXISTS aurelink_smtp_messages (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
