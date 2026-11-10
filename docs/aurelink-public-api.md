@@ -214,8 +214,6 @@ Set these values only on the backend service (never in browser/mobile builds):
 | `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` | Stable 32+ character key for encrypting queued message payloads; falls back to `JWT_ACCESS_SECRET` |
 | `AURELINK_VERIFICATION_PEPPER` | Optional dedicated 32+ character OTP HMAC secret; falls back to `JWT_ACCESS_SECRET` |
 | `AURELINK_RESEND_WEBHOOK_SECRET` | Resend/Svix signing secret for delivery callbacks |
-| `AURELINK_BREVO_SMTP_LOGIN`, `AURELINK_BREVO_SMTP_KEY` | Separate Brevo SMTP credentials for the standalone SMTP relay; not the REST API key |
-| `AURELINK_SMTP_HOSTNAME` | Public hostname of the deployed SMTP TCP relay; leave unset until deployed |
 | `AURELINK_TWILIO_STATUS_CALLBACK_URL` | Public HTTPS URL ending in `/aurelink/webhooks/twilio/status` |
 | `AURELINK_DEFAULT_SMS_PROVIDER`, `AURELINK_DEFAULT_EMAIL_PROVIDER` | Primary provider selection |
 | `AURELINK_SMS_FALLBACK_PROVIDER`, `AURELINK_EMAIL_FALLBACK_PROVIDER` | Optional failover provider |
@@ -225,7 +223,7 @@ The worker falls back to `JWT_ACCESS_SECRET` if dedicated encryption/verificatio
 
 ### Domain authentication, DNS and sender registration
 
-**Aurelink platform routing:** the platform's Resend primary sending identity is `mail.wnncompany.com`; Brevo fallback uses its own authenticated identity, currently `market.wnncompany.com`. Keep each provider's DNS records attached to its own domain. Do not create a second SPF record at the same hostname, and do not add Resend records to the Brevo domain or vice versa. The public SMTP relay hostname (`AURELINK_SMTP_HOSTNAME`) is a separate TCP service endpoint; it is not automatically the same thing as either provider's sender domain.
+**Aurelink provider identities:** the platform's Resend sending identity is `mail.wnncompany.com`; Brevo remains a separate provider identity on `market.wnncompany.com`. Keep each provider's DNS records attached to its own domain. Do not create a second SPF record at the same hostname, and do not add Resend records to the Brevo domain or vice versa. Customer SMTP credentials are issued by creating Resend sending-only API keys restricted to each customer's verified Resend domain. SMTP connections go directly to Resend; Aurelink does not operate a separate SMTP relay.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
@@ -269,7 +267,7 @@ For automatic DNS changes, first connect a Cloudflare API token scoped to the cu
 
 The token is encrypted at rest using `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY`. It is never returned. Apply with `POST /aurelink/communications/domains/:id/apply-dns`. Exact existing records are left untouched. Conflicting records are reported rather than overwritten. Existing SPF records are never replaced automatically. If a customer does not connect Cloudflare, copy the exact records into their DNS host manually.
 
-**MX distinction:** Resend/Brevo sending-domain MX records (often on a bounce/return-path subdomain) are not the same as MX records for receiving mailboxes at the root domain. Aurelink's SMTP submission relay is outbound-only; it does not host inboxes or receive inbound email. Do not point a customer's root MX at the Aurelink SMTP submission service.
+**MX distinction:** Resend/Brevo sending-domain MX records (often on a bounce/return-path subdomain) are not the same as MX records for receiving mailboxes at the root domain. SMTP submission through Resend is outbound-only; it does not host inboxes or receive inbound email. Do not point a customer's root MX at an SMTP submission hostname.
 
 #### SMS sender IDs
 
@@ -283,18 +281,38 @@ SMS send, OTP and campaign requests require `countryCode` and an approved sender
 
 The shared Brevo transactional webhook is provisioned by an Aurelink communications administrator using `POST /aurelink/communications/providers/brevo/webhook/configure`. Configure `AURELINK_BREVO_WEBHOOK_SECRET` and `AURELINK_BREVO_WEBHOOK_URL` first. Aurelink creates or updates the Brevo webhook subscription for sent, delivered, opened, clicked, bounce, spam and unsubscribe events. This is an account-level provider operation, not a customer-supplied webhook endpoint.
 
-#### SMTP credentials and relay
+#### SMTP credentials through Resend
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| GET | `/aurelink/communications/smtp/credentials` | List SMTP usernames and status (never passwords) |
-| POST | `/aurelink/communications/smtp/credentials` | Issue a new SMTP username/password; password is shown once |
-| POST | `/aurelink/communications/smtp/credentials/:id/rotate` | Issue a replacement and revoke the old credential atomically |
-| DELETE | `/aurelink/communications/smtp/credentials/:id` | Revoke an SMTP credential immediately |
+| GET | `/aurelink/communications/smtp/credentials` | List this project's Resend SMTP key metadata (never returns passwords) |
+| POST | `/aurelink/communications/smtp/credentials` | Create a Resend sending-only API key restricted to a verified customer domain; token is shown once |
+| POST | `/aurelink/communications/smtp/credentials/:id/rotate` | Create a replacement Resend key and revoke the previous provider key |
+| DELETE | `/aurelink/communications/smtp/credentials/:id` | Revoke the Resend API key immediately |
 
-The SMTP submission relay is a separate TCP service in `infra/aurelink-smtp`. Its routing is Resend SMTP primary (`smtp.resend.com:465`) and Brevo SMTP fallback (`smtp-relay.brevo.com:587`). The platform sender identity is provider-specific: Resend primary uses `mail.wnncompany.com`; Brevo fallback uses its own verified sender on `market.wnncompany.com`. These domains must not be cross-configured. The public Aurelink SMTP client hostname is separate: `smtp.wnncompany.com` (configured by `AURELINK_SMTP_HOSTNAME`). Aurelink rejects a primary SMTP envelope sender outside the configured Resend sending domain, and on fallback rewrites the provider-facing From address to the verified Brevo sender while preserving the original address as Reply-To. The environment overrides are `AURELINK_RESEND_SENDING_DOMAIN` and `AURELINK_BREVO_SENDING_DOMAIN`; their defaults are the two domains above. Aurelink accepts client submission on port 587 with STARTTLS and port 465 with implicit TLS; optional port 25 is disabled by default and, if enabled, requires STARTTLS and SMTP authentication. For Brevo delivery receipts, configure a Brevo transactional webhook with events `delivered`, `hardBounce`, `softBounce`, `blocked`, `spam`, `invalid`, `deferred`, and `unsubscribed`; set its URL to `https://YOUR_API_HOST/aurelink/webhooks/brevo` and configure Bearer authentication using the same `AURELINK_BREVO_WEBHOOK_SECRET` stored by Aurelink. Brevo supports Bearer-authenticated webhooks. The SMTP relay adds an `X-Mailin-custom` correlation value so fallback delivery events can update the correct SMTP message. Resend uses username `resend` and the Resend API key as password. Brevo requires the separate SMTP login and SMTP key; the Brevo REST API key is not an SMTP password. The relay requires authenticated STARTTLS, verifies the configured Resend platform domain for primary delivery, and uses a separately verified Brevo sender identity on the configured Brevo domain for fallback. When failover occurs, Aurelink changes the provider-facing From address to the verified Brevo sender and preserves the original address as Reply-To. The two providers do not authenticate the same domain. The relay enforces message-size/recipient/rate limits and does not act as an open relay.
+Aurelink does not run an SMTP daemon, proxy, or separate relay. SMTP is provided directly by Resend:
 
-Aurelink's HTTP API can issue and revoke credentials, but SMTP connections will not work until the separate relay is deployed on a host with public TCP submission access, TLS certificates and the required provider credentials. The domain setup route defaults to `mail.wnncompany.com` for Resend and `market.wnncompany.com` for Brevo when no domain is supplied; each provider's own DNS records are retrieved independently, and only missing records should be added. Render web services expose only one public HTTP port, not a public arbitrary SMTP port; Render free services also block outbound SMTP ports 25, 465 and 587. Choose a TCP-capable host and set `AURELINK_SMTP_HOSTNAME` before advertising the hostname to developers. The relay does not receive inbound mail or host mailboxes.
+| Setting | Value |
+| --- | --- |
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| Encryption | SSL/TLS |
+| Alternate port | `587` with STARTTLS |
+| Username | `resend` |
+| Password | The one-time Resend API key issued by Aurelink |
+
+Create credentials by sending the Aurelink domain record ID (the ID returned by `POST /aurelink/communications/domains`) as `domainId`:
+
+```json
+{
+  "domainId": "AURELINK_VERIFIED_DOMAIN_RECORD_ID",
+  "label": "Production SMTP"
+}
+```
+
+Aurelink checks that the domain belongs to the authenticated project, uses the Resend provider, and is marked verified by Resend. It then creates a Resend API key with `permission: sending_access` and the provider's `domain_id`. The returned token is the SMTP password and is displayed only once. Aurelink stores the provider key ID and metadata, never the token. Resend enforces the domain restriction, so the credential cannot send from another domain. Rotate and revoke operations call Resend's API; they do not merely disable a local password.
+
+The customer's DNS records are still generated and verified by the selected provider's domain API. For the Resend SMTP credential, the customer's sending domain must be verified in Resend first. Brevo remains a separate email provider with its own domain records and REST integration; Brevo is not silently substituted into a Resend SMTP session. Aurelink's API email delivery can continue to use its configured Resend-primary/Brevo-fallback policy independently of direct customer SMTP sessions.
 
 ### Campaigns
 
