@@ -356,7 +356,15 @@ await Promise.all([
 ]);
 console.log(`Aurelink gateway control plane listening on HTTP ${challengePort} (ACME) and ${healthPort} (health).`);
 await acquireOrRenewCertificate();
-setInterval(() => void acquireOrRenewCertificate(), smtpReady ? acmeRenewMs : acmeRetryMs).unref();
+function scheduleAcmeCheck() {
+  const delay = smtpReady ? acmeRenewMs : acmeRetryMs;
+  const timer = setTimeout(async () => {
+    await acquireOrRenewCertificate();
+    scheduleAcmeCheck();
+  }, delay);
+  timer.unref();
+}
+scheduleAcmeCheck();
 
 async function shutdown(signal) {
   console.log("Aurelink SMTP gateway shutting down:", signal);
