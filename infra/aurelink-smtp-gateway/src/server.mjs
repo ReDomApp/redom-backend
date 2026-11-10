@@ -295,7 +295,7 @@ async function startSmtpServers() {
   if (smtpReady) return;
   const { cert, key } = await loadCertificate();
   implicitTlsServer = new SMTPServer(makeSmtpOptions({ secure: true, requireTLS: false, key, cert }));
-  startTlsServer = createSmtpServer(makeSmtpOptions({ secure: false, requireTLS: true, key, cert }));
+  startTlsServer = new SMTPServer(makeSmtpOptions({ secure: false, requireTLS: true, key, cert }));
   await Promise.all([
     listen(implicitTlsServer, port465),
     listen(startTlsServer, port587),
