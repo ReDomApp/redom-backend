@@ -7,10 +7,12 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import { simpleParser } from "mailparser";
 
-const required = ["DATABASE_URL", "AURELINK_COMMUNICATIONS_ENCRYPTION_KEY", "SMTP_TLS_CERT_PATH", "SMTP_TLS_KEY_PATH"];
+const required = ["DATABASE_URL", "SMTP_TLS_CERT_PATH", "SMTP_TLS_KEY_PATH"];
 for (const name of required) {
   if (!process.env[name]) throw new Error(name + " is required by the Aurelink SMTP gateway.");
 }
+const encryptionSecret = process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY || process.env.JWT_ACCESS_SECRET;
+if (!encryptionSecret || encryptionSecret.length < 32) throw new Error("The shared Aurelink communications encryption secret (or backend JWT_ACCESS_SECRET fallback) is required.");
 const cert = readFileSync(process.env.SMTP_TLS_CERT_PATH);
 const key = readFileSync(process.env.SMTP_TLS_KEY_PATH);
 const pool = new Pool({
@@ -20,7 +22,7 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
 });
-const encryptionKey = createHash("sha256").update(process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY).digest();
+const encryptionKey = createHash("sha256").update(encryptionSecret).digest();
 
 function decryptProviderKey(value) {
   const [iv, tag, ciphertext] = String(value || "").split(".");
