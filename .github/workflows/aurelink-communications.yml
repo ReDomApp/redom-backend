@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "artifacts/redom-backend/**"
-      - "artifacts/aurelink-smtp-gateway/**"
+      - "infra/aurelink-smtp-gateway/**"
       - "artifacts/aurelink/tests/communications-webhook.test.ts"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -14,7 +14,7 @@ on:
       - feat/aurelink-communications-platform
     paths:
       - "artifacts/redom-backend/**"
-      - "artifacts/aurelink-smtp-gateway/**"
+      - "infra/aurelink-smtp-gateway/**"
       - "artifacts/aurelink/tests/communications-webhook.test.ts"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: artifacts/aurelink-smtp-gateway
+        working-directory: infra/aurelink-smtp-gateway
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
