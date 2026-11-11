@@ -354,10 +354,10 @@ async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:st
   await client.query("BEGIN");
   const row=(await client.query("SELECT * FROM aurelink_sender_provider_submissions WHERE request_token_hash=$1 FOR UPDATE",[tokenHash])).rows[0];
   if(!row){await client.query("ROLLBACK");return {found:false,duplicate:false};}
+  if(row.token_consumed_at){await client.query("COMMIT");return {found:true,duplicate:false,terminal:true,ignoredAfterTerminal:true};}
   if(!["submitted","processing"].includes(String(row.status))){await client.query("ROLLBACK");return {found:false,duplicate:false,notSubmitted:true};}
   const event=await client.query("INSERT INTO aurelink_sender_provider_events(provider,provider_event_id,submission_id,event_status,payload) VALUES('brevo',$1,$2,$3,$4::jsonb) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[input.eventId,row.id,status,JSON.stringify(input.payload||{})]);
-  if(!event.rows.length){await client.query("COMMIT");return {found:true,duplicate:true,terminal:Boolean(row.token_consumed_at)};}
-  if(row.token_consumed_at){await client.query("COMMIT");return {found:true,duplicate:false,terminal:true,ignoredAfterTerminal:true};}
+  if(!event.rows.length){await client.query("COMMIT");return {found:true,duplicate:true,terminal:false};}
   if(terminal){
    if(!input.providerReference){await client.query("ROLLBACK");throw new Error("A terminal Brevo result must include its provider registration reference.");}
    const queueStatus=approved?"completed":"rejected";
