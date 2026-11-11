@@ -100,7 +100,7 @@ router.post("/aurelink/communications/smtp/credentials", aurelinkAuthMiddleware,
         provider: "aurelink",
         credential,
         smtp: activeSmtp(),
-        warning: temporaryDirectResend() ? "Temporary direct Resend SMTP is active. The domain-scoped Resend sending key is shown once as the SMTP password. Reissue credentials when Aurelink's own SMTP gateway is ready." : "The Aurelink SMTP password is displayed once. Store it securely; it cannot be retrieved later.",
+        warning: temporaryDirectResend() ? "Temporary direct Resend SMTP is active. The domain-scoped Resend sending key is shown once as the SMTP password. Sends bypass Aurelink per-message wallet metering until the Aurelink-owned SMTP gateway is active. Reissue credentials when the gateway is ready." : "The Aurelink SMTP password is displayed once. Store it securely; it cannot be retrieved later.",
       });
     } catch (databaseError) {
       await revokeAurelinkResendSmtpKey(remote.providerKeyId).catch(() => undefined);
@@ -144,7 +144,7 @@ router.post("/aurelink/communications/smtp/credentials/:id/rotate", aurelinkAuth
     return res.status(201).json({
       success: true, provider: "aurelink", credential,
       revokedCredentialId: old.id, smtp: activeSmtp(),
-      warning: temporaryDirectResend() ? "Temporary direct Resend password displayed once. The previous provider key has been revoked. Reissue when switching to Aurelink SMTP." : "The replacement Aurelink SMTP password is displayed once. The previous credential and its internal provider key have been revoked.",
+      warning: temporaryDirectResend() ? "Temporary direct Resend password displayed once. Direct sends bypass Aurelink per-message wallet metering until the Aurelink-owned SMTP gateway is active. The previous provider key has been revoked; reissue when switching to Aurelink SMTP." : "The replacement Aurelink SMTP password is displayed once. The previous credential and its internal provider key have been revoked.",
     });
   } catch (error) {
     if (replacement && !insertedId) await revokeAurelinkResendSmtpKey(replacement.providerKeyId).catch(() => undefined);
