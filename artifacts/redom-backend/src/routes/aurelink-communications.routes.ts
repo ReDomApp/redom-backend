@@ -484,6 +484,7 @@ router.get("/aurelink/admin/communications/manual-review",aurelinkAuthMiddleware
 });
 router.post("/aurelink/admin/communications/messages/:id/reconcile",aurelinkAuthMiddleware,async(req,res)=>{
   if(!communicationsAdminAllowed(req))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink communications administrator access is required."});
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(req.params.id||"")))return res.status(400).json({success:false,code:"INVALID_MESSAGE_ID",message:"A valid message ID is required."});
   const outcome=String(req.body?.outcome||"");
   const evidence=String(req.body?.evidenceReference||"").trim();
   const providerMessageId=String(req.body?.providerMessageId||"").trim();
@@ -501,6 +502,7 @@ router.post("/aurelink/admin/communications/messages/:id/reconcile",aurelinkAuth
     if(!row){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Communications message not found."});}
     if(row.job_status!=="manual_review"||row.submission_state!=="unknown"){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"NOT_AWAITING_RECONCILIATION",message:"This message is not awaiting provider reconciliation."});}
     if(outcome==="accepted"){
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",[String(row.provider)+":"+providerMessageId]);
       const duplicate=await client.query("SELECT id FROM aurelink_messages WHERE provider=$1 AND provider_message_id=$2 AND id<>$3 LIMIT 1",[row.provider,providerMessageId,row.message_id]);
       if(duplicate.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_MESSAGE_ID_IN_USE",message:"That provider message ID is already linked to another Aurelink message."});}
       await client.query("UPDATE aurelink_messages SET provider_message_id=$2,status='accepted',provider_status='operator_confirmed_accepted',provider_error=NULL,accepted_at=COALESCE(accepted_at,NOW()),updated_at=NOW() WHERE id=$1",[row.message_id,providerMessageId]);
