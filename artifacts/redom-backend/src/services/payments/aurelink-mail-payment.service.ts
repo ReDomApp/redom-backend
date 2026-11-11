@@ -201,7 +201,7 @@ export async function verifyAurelinkMailCheckout(userId:string,ref:string){
   }else if(p.payment_provider==="paystack"&&p.paystack_reference){
     const v=await paystack<any>("get","/transaction/verify/"+encodeURIComponent(p.paystack_reference));
     const d=v.data;
-    if(d.status==="success") await fulfill(ref,String(d.id),"paystack",Number(d.amount),String(d.currency).toUpperCase(),String(d.subscription?.subscription_code||"")||undefined,String(d.customer?.customer_code||"")||undefined);
+    if(d.status==="success") await fulfill(ref,String(d.id),"paystack",Number(d.amount),String(d.currency).toUpperCase(),String(d.subscription?.subscription_code||"")||undefined);
   }
   const refreshed=(await pool.query("SELECT status,purchase_type,email_credits FROM aurelink_email_billing_payments WHERE reference=$1",[ref])).rows[0];
   return {status:String(refreshed.status),purchaseType:String(refreshed.purchase_type),creditsAdded:refreshed.status==="paid"&&refreshed.purchase_type==="email_credits"?String(refreshed.email_credits):undefined};
