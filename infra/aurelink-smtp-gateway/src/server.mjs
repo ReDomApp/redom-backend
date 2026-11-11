@@ -108,25 +108,84 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
   const units = recipients.length;
   try {
     await client.query("BEGIN");
-    const priceResult = await client.query("SELECT id,unit_price_minor,currency FROM aurelink_communications_price_catalog WHERE service='smtp_message' AND active=TRUE AND country_code='*' AND (provider='resend' OR provider='*') AND (category='transactional' OR category='*') AND (workspace_id=$1 OR workspace_id IS NULL) AND effective_from<=NOW() AND (effective_until IS NULL OR effective_until>NOW()) ORDER BY (provider='resend')::int DESC,(category='transactional')::int DESC,COALESCE((workspace_id=$1)::int,0) DESC,effective_from DESC LIMIT 1", [user.workspaceId]);
-    const price = priceResult.rows[0];
-    if (!price || Number(price.unit_price_minor) <= 0 || String(price.currency) !== "USD") throw smtpError("Aurelink SMTP usage pricing is not configured for this workspace.", 451);
-    const unitPrice = BigInt(String(price.unit_price_minor));
-    const amount = unitPrice * BigInt(units);
-    await client.query("INSERT INTO aurelink_wallets(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING", [user.userId]);
-    const wallet = (await client.query("SELECT balance_minor FROM aurelink_wallets WHERE user_id=$1 FOR UPDATE", [user.userId])).rows[0];
-    const balance = BigInt(String(wallet?.balance_minor || "0"));
-    if (balance < amount) throw smtpError("Insufficient Aurelink wallet balance. Top up before sending.", 452);
-    const nextBalance = balance - amount;
-    const reference = "AL-COMM-" + messageId;
-    await client.query("UPDATE aurelink_wallets SET balance_minor=$2,updated_at=NOW() WHERE user_id=$1", [user.userId, nextBalance.toString()]);
-    await client.query("INSERT INTO aurelink_wallet_ledger(user_id,entry_type,direction,amount_minor,balance_after_minor,currency,reference,description,metadata) VALUES($1,'purchase','debit',$2,$3,'USD',$4,'Aurelink SMTP usage reservation',$5::jsonb)", [user.userId, amount.toString(), nextBalance.toString(), reference, JSON.stringify({ messageId, credentialId: user.credentialId, recipients: units })]);
     const contentHash = createHash("sha256").update(raw).digest("hex");
-    await client.query("INSERT INTO aurelink_messages(id,workspace_id,channel,direction,category,provider,recipient,sender,subject,content_hash,status,segments,metadata) VALUES($1,$2,'email','outbound','transactional','resend',$3,$4,$5,$6,'queued',1,$7::jsonb)", [messageId,user.workspaceId,JSON.stringify(recipients),envelopeFrom,String(parsed.subject || ""),contentHash,JSON.stringify({ transport:"smtp",credentialId:user.credentialId,recipientCount:units,clientMessageId:parsed.messageId || null })]);
-    await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,price_id,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'charge','reserved',$4,$5,$6,$7,'USD',$8,$9::jsonb)", [user.userId,user.workspaceId,messageId,price.id,units,Number(price.unit_price_minor),amount.toString(),reference,JSON.stringify({ service:"smtp_message", provider:"resend", credentialId:user.credentialId })]);
-    await client.query("INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,'email','resend','transactional',$3,'queued',$4,$5)", [user.workspaceId,messageId,units,Number(price.unit_price_minor),reference]);
+    await client.query(
+      "INSERT INTO aurelink_messages(id,workspace_id,channel,direction,category,provider,recipient,sender,subject,content_hash,status,segments,metadata) VALUES($1,$2,'email','outbound','transactional','resend',$3,$4,$5,$6,'queued',1,$7::jsonb)",
+      [messageId,user.workspaceId,JSON.stringify(recipients),envelopeFrom,String(parsed.subject || ""),contentHash,JSON.stringify({transport:"smtp",credentialId:user.credentialId,recipientCount:units,clientMessageId:parsed.messageId || null})]
+    );
+
+    const subscriptionResult = await client.query(
+      `SELECT id,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback
+         FROM aurelink_email_subscriptions
+        WHERE workspace_id=$1 AND user_id=$2 AND status='active'
+          AND billing_period_start<=NOW() AND billing_period_end>NOW()
+        ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+      [user.workspaceId,user.userId]
+    );
+    const subscription = subscriptionResult.rows[0];
+    let source = null;
+    if (subscription) {
+      const remaining = BigInt(String(subscription.monthly_email_allowance)) - BigInt(String(subscription.used_emails)) - BigInt(String(subscription.reserved_emails));
+      if (remaining >= BigInt(units)) {
+        await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails+$2,updated_at=NOW() WHERE id=$1",[subscription.id,units]);
+        source = "subscription";
+      } else if (!subscription.allow_prepaid_fallback) {
+        throw smtpError("The monthly Aurelink Mail allowance is exhausted. Upgrade the package, enable prepaid fallback, or wait for renewal.",452);
+      }
+    }
+
+    if (!source) {
+      await client.query("INSERT INTO aurelink_email_credit_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[user.workspaceId,user.userId]);
+      const credit = (await client.query("SELECT balance_emails FROM aurelink_email_credit_wallets WHERE workspace_id=$1 FOR UPDATE",[user.workspaceId])).rows[0];
+      const creditBalance = BigInt(String(credit?.balance_emails || "0"));
+      if (creditBalance >= BigInt(units)) {
+        const next = creditBalance - BigInt(units);
+        await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=$2,updated_at=NOW() WHERE workspace_id=$1",[user.workspaceId,next.toString()]);
+        const reference = "AL-EMAIL-USE-" + messageId;
+        await client.query(
+          "INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,description,metadata) VALUES($1,$2,'usage','debit',$3,$4,$5,'Aurelink prepaid SMTP email usage',$6::jsonb)",
+          [user.workspaceId,user.userId,units,next.toString(),reference,JSON.stringify({messageId,credentialId:user.credentialId,recipients:units})]
+        );
+        source = "prepaid";
+      } else if (subscription) {
+        throw smtpError("The monthly Aurelink Mail allowance and prepaid email credits are insufficient.",452);
+      }
+    }
+
+    let reference = null;
+    let unitPriceMinor = null;
+    let amountMinor = null;
+    if (!source) {
+      const priceResult = await client.query(
+        "SELECT id,unit_price_minor,currency FROM aurelink_communications_price_catalog WHERE service='smtp_message' AND active=TRUE AND country_code='*' AND (provider='resend' OR provider='*') AND (category='transactional' OR category='*') AND (workspace_id=$1 OR workspace_id IS NULL) AND effective_from<=NOW() AND (effective_until IS NULL OR effective_until>NOW()) ORDER BY (provider='resend')::int DESC,(category='transactional')::int DESC,COALESCE((workspace_id=$1)::int,0) DESC,effective_from DESC LIMIT 1",
+        [user.workspaceId]
+      );
+      const price = priceResult.rows[0];
+      if (!price || Number(price.unit_price_minor) <= 0 || String(price.currency) !== "USD") throw smtpError("Aurelink SMTP usage pricing is not configured for this workspace.",451);
+      unitPriceMinor = Number(price.unit_price_minor);
+      amountMinor = (BigInt(String(price.unit_price_minor)) * BigInt(units)).toString();
+      await client.query("INSERT INTO aurelink_wallets(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.userId]);
+      const wallet = (await client.query("SELECT balance_minor FROM aurelink_wallets WHERE user_id=$1 FOR UPDATE",[user.userId])).rows[0];
+      const balance = BigInt(String(wallet?.balance_minor || "0"));
+      if (balance < BigInt(amountMinor)) throw smtpError("Insufficient Aurelink wallet balance. Top up before sending.",452);
+      const nextBalance = balance - BigInt(amountMinor);
+      reference = "AL-COMM-" + messageId;
+      await client.query("UPDATE aurelink_wallets SET balance_minor=$2,updated_at=NOW() WHERE user_id=$1",[user.userId,nextBalance.toString()]);
+      await client.query("INSERT INTO aurelink_wallet_ledger(user_id,entry_type,direction,amount_minor,balance_after_minor,currency,reference,description,metadata) VALUES($1,'purchase','debit',$2,$3,'USD',$4,'Aurelink SMTP usage reservation',$5::jsonb)",[user.userId,amountMinor,nextBalance.toString(),reference,JSON.stringify({messageId,credentialId:user.credentialId,recipients:units})]);
+      await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,price_id,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'charge','reserved',$4,$5,$6,$7,'USD',$8,$9::jsonb)",[user.userId,user.workspaceId,messageId,price.id,units,unitPriceMinor,amountMinor,reference,JSON.stringify({service:"smtp_message",provider:"resend",credentialId:user.credentialId})]);
+      source = "wallet";
+    }
+
+    await client.query(
+      "INSERT INTO aurelink_email_usage_reservations(message_id,user_id,workspace_id,source,subscription_id,units,unit_price_minor,amount_minor,wallet_reference,status,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved',$10::jsonb)",
+      [messageId,user.userId,user.workspaceId,source,source==="subscription"?subscription.id:null,units,unitPriceMinor,amountMinor,reference,JSON.stringify({transport:"smtp",provider:"resend",credentialId:user.credentialId})]
+    );
+    await client.query(
+      "INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,'email','resend','transactional',$3,'queued',$4,$5)",
+      [user.workspaceId,messageId,units,unitPriceMinor,reference]
+    );
     await client.query("COMMIT");
-    return { messageId, reference, amountMinor: amount.toString(), unitPriceMinor: Number(price.unit_price_minor), units };
+    return {messageId,reference,amountMinor,unitPriceMinor,units,source};
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -137,15 +196,24 @@ async function captureSmtpUsage(user, reservation, info, mailFrom, recipients) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("UPDATE aurelink_communications_billing_ledger SET status='posted',updated_at=NOW() WHERE message_id=$1 AND entry_type='charge' AND status='reserved'", [reservation.messageId]);
-    await client.query("UPDATE aurelink_messages SET status='accepted',provider_message_id=$2,accepted_at=NOW(),updated_at=NOW() WHERE id=$1", [reservation.messageId,String(info.messageId || "") || null]);
-    await client.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1", [reservation.messageId,String(info.messageId || "") || null]);
-    await client.query("INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,provider_message_id,status) VALUES($1,$2,$3,$4,$5,$6::jsonb,'resend',$7,'accepted') ON CONFLICT(workspace_id,message_key) DO UPDATE SET provider_message_id=EXCLUDED.provider_message_id,status='accepted',updated_at=NOW()", [user.workspaceId,user.credentialId,reservation.messageId,String(info.messageId || "") || null,mailFrom,JSON.stringify(recipients),String(info.messageId || "") || null]);
+    const usage = (await client.query("SELECT * FROM aurelink_email_usage_reservations WHERE message_id=$1 FOR UPDATE",[reservation.messageId])).rows[0];
+    if (!usage) throw new Error("Aurelink SMTP billing reservation is missing.");
+    if (usage.status === "reserved") {
+      if (usage.source === "subscription") {
+        const updated = await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails-$2,used_emails=used_emails+$2,updated_at=NOW() WHERE id=$1 AND reserved_emails >= $2",[usage.subscription_id,usage.units]);
+        if (!updated.rowCount) throw new Error("Aurelink email subscription reservation mismatch.");
+      } else if (usage.source === "wallet") {
+        await client.query("UPDATE aurelink_communications_billing_ledger SET status='posted',updated_at=NOW() WHERE message_id=$1 AND entry_type='charge' AND status='reserved'",[reservation.messageId]);
+      }
+      await client.query("UPDATE aurelink_email_usage_reservations SET status='captured',updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[reservation.messageId]);
+    }
+    await client.query("UPDATE aurelink_messages SET status='accepted',provider_message_id=$2,accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[reservation.messageId,String(info.messageId || "") || null]);
+    await client.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[reservation.messageId,String(info.messageId || "") || null]);
+    await client.query("INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,provider_message_id,status) VALUES($1,$2,$3,$4,$5,$6::jsonb,'resend',$7,'accepted') ON CONFLICT(workspace_id,message_key) DO UPDATE SET provider_message_id=EXCLUDED.provider_message_id,status='accepted',updated_at=NOW()",[user.workspaceId,user.credentialId,reservation.messageId,String(info.messageId || "") || null,mailFrom,JSON.stringify(recipients),String(info.messageId || "") || null]);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
-    // Provider acceptance has already happened. Do not return SMTP failure and cause duplicate retries.
-    console.error("SMTP billing capture requires reconciliation:", { messageId: reservation.messageId, error: error?.message || "unknown error" });
+    console.error("SMTP billing capture requires reconciliation:",{messageId:reservation.messageId,error:error?.message || "unknown error"});
   } finally { client.release(); }
 }
 
@@ -153,24 +221,37 @@ async function refundSmtpUsage(user, reservation, reason) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const charge = (await client.query("SELECT status,amount_minor,currency,wallet_reference,units,unit_price_minor FROM aurelink_communications_billing_ledger WHERE message_id=$1 AND entry_type='charge' FOR UPDATE", [reservation.messageId])).rows[0];
-    if (charge && charge.status !== "refunded") {
-      const refundReference = String(charge.wallet_reference) + "-R";
-      await client.query("INSERT INTO aurelink_wallets(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING", [user.userId]);
-      const wallet = (await client.query("SELECT balance_minor FROM aurelink_wallets WHERE user_id=$1 FOR UPDATE", [user.userId])).rows[0];
-      const nextBalance = BigInt(String(wallet.balance_minor)) + BigInt(String(charge.amount_minor));
-      await client.query("UPDATE aurelink_wallets SET balance_minor=$2,updated_at=NOW() WHERE user_id=$1", [user.userId,nextBalance.toString()]);
-      await client.query("INSERT INTO aurelink_wallet_ledger(user_id,entry_type,direction,amount_minor,balance_after_minor,currency,reference,description,metadata) VALUES($1,'refund','credit',$2,$3,'USD',$4,'Refund for failed Aurelink SMTP delivery',$5::jsonb) ON CONFLICT(reference) DO NOTHING", [user.userId,String(charge.amount_minor),nextBalance.toString(),refundReference,JSON.stringify({ messageId:reservation.messageId,reason })]);
-      await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',$4,$5,$6,'USD',$7,$8::jsonb) ON CONFLICT(message_id,entry_type) DO NOTHING", [user.userId,user.workspaceId,reservation.messageId,Number(charge.units),Number(charge.unit_price_minor),String(charge.amount_minor),refundReference,JSON.stringify({ reason })]);
-      await client.query("UPDATE aurelink_communications_billing_ledger SET status='refunded',updated_at=NOW() WHERE message_id=$1 AND entry_type='charge'", [reservation.messageId]);
+    const usage = (await client.query("SELECT * FROM aurelink_email_usage_reservations WHERE message_id=$1 FOR UPDATE",[reservation.messageId])).rows[0];
+    if (usage && usage.status === "reserved") {
+      if (usage.source === "subscription") {
+        const updated = await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails-$2,updated_at=NOW() WHERE id=$1 AND reserved_emails >= $2",[usage.subscription_id,usage.units]);
+        if (!updated.rowCount) throw new Error("Aurelink email subscription reservation mismatch.");
+      } else if (usage.source === "prepaid") {
+        const wallet = (await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=balance_emails+$2,updated_at=NOW() WHERE workspace_id=$1 RETURNING balance_emails",[user.workspaceId,usage.units])).rows[0];
+        if (!wallet) throw new Error("Aurelink prepaid email credit wallet is missing.");
+        await client.query("INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,description,metadata) VALUES($1,$2,'refund','credit',$3,$4,$5,'Refund for rejected Aurelink SMTP submission',$6::jsonb) ON CONFLICT(reference) DO NOTHING",[user.workspaceId,user.userId,usage.units,wallet.balance_emails,"AL-EMAIL-REFUND-"+reservation.messageId,JSON.stringify({messageId:reservation.messageId,reason})]);
+      } else if (usage.source === "wallet") {
+        const charge = (await client.query("SELECT status,amount_minor,wallet_reference FROM aurelink_communications_billing_ledger WHERE message_id=$1 AND entry_type='charge' FOR UPDATE",[reservation.messageId])).rows[0];
+        if (charge && charge.status !== "refunded") {
+          const refundReference = String(charge.wallet_reference) + "-R";
+          await client.query("INSERT INTO aurelink_wallets(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[user.userId]);
+          const wallet = (await client.query("SELECT balance_minor FROM aurelink_wallets WHERE user_id=$1 FOR UPDATE",[user.userId])).rows[0];
+          const nextBalance = BigInt(String(wallet.balance_minor)) + BigInt(String(charge.amount_minor));
+          await client.query("UPDATE aurelink_wallets SET balance_minor=$2,updated_at=NOW() WHERE user_id=$1",[user.userId,nextBalance.toString()]);
+          await client.query("INSERT INTO aurelink_wallet_ledger(user_id,entry_type,direction,amount_minor,balance_after_minor,currency,reference,description,metadata) VALUES($1,'refund','credit',$2,$3,'USD',$4,'Refund for failed Aurelink SMTP delivery',$5::jsonb) ON CONFLICT(reference) DO NOTHING",[user.userId,String(charge.amount_minor),nextBalance.toString(),refundReference,JSON.stringify({messageId:reservation.messageId,reason})]);
+          await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',$4,$5,$6,'USD',$7,$8::jsonb) ON CONFLICT(message_id,entry_type) DO NOTHING",[user.userId,user.workspaceId,reservation.messageId,Number(usage.units),Number(usage.unit_price_minor),String(charge.amount_minor),refundReference,JSON.stringify({reason})]);
+          await client.query("UPDATE aurelink_communications_billing_ledger SET status='refunded',updated_at=NOW() WHERE message_id=$1 AND entry_type='charge'",[reservation.messageId]);
+        }
+      }
+      await client.query("UPDATE aurelink_email_usage_reservations SET status='refunded',updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[reservation.messageId]);
     }
-    await client.query("UPDATE aurelink_messages SET status='failed',provider_error=$2,updated_at=NOW() WHERE id=$1", [reservation.messageId,String(reason || "SMTP provider rejected message").slice(0,500)]);
-    await client.query("UPDATE aurelink_communications_usage SET status='failed',updated_at=NOW() WHERE message_id=$1", [reservation.messageId]);
-    await client.query("UPDATE aurelink_smtp_messages SET status='failed',error=$2,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$3", [user.workspaceId,String(reason || "SMTP provider rejected message").slice(0,500),reservation.messageId]);
+    await client.query("UPDATE aurelink_messages SET status='failed',provider_error=$2,updated_at=NOW() WHERE id=$1",[reservation.messageId,String(reason || "SMTP provider rejected message").slice(0,500)]);
+    await client.query("UPDATE aurelink_communications_usage SET status='failed',updated_at=NOW() WHERE message_id=$1",[reservation.messageId]);
+    await client.query("UPDATE aurelink_smtp_messages SET status='failed',error=$2,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$3",[user.workspaceId,String(reason || "SMTP provider rejected message").slice(0,500),reservation.messageId]);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
-    console.error("SMTP usage refund requires reconciliation:", { messageId: reservation.messageId, error: error?.message || "unknown error" });
+    console.error("SMTP usage refund requires reconciliation:",{messageId:reservation.messageId,error:error?.message || "unknown error"});
   } finally { client.release(); }
 }
 
