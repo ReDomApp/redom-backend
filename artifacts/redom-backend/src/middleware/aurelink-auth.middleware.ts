@@ -20,9 +20,10 @@ function apiKeyAllowed(req:Request):boolean{
  }
  if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
-  if(p[1]==="communications"&&p[2]==="team"&&p[3]==="invitations"&&p.length===4)return true;
+  if(p[1]==="communications"&&p[2]==="team"&&p[3]==="invitations"&&(p.length===4||p.length===5&&p[4]==="accept"))return true;
   if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["suspend","resume"].includes(p[3]))return true;
-  if(p[1]==="communications"&&p[2]==="domains"&&p[3]==="tracking-domain"&&p.length===5&&p[4]==="verify")return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p.length===6&&p[4]==="tracking-domain"&&p[5]==="verify")return true;
+  if(p[1]==="communications"&&p[2]==="reputation"&&p[3]==="alerts"&&p.length===6&&p[5]==="acknowledge")return true;
   if(req.path==="/aurelink/communications/domains"||req.path==="/aurelink/communications/senders"||req.path==="/aurelink/communications/email-senders"||req.path==="/aurelink/communications/templates"||req.path==="/aurelink/communications/dns/cloudflare/connect"||req.path==="/aurelink/communications/smtp/credentials")return true;
   if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["check","verify","apply-dns","tracking"].includes(p[3]))return true;
   if(p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials"&&p.length===6&&p[5]==="rotate")return true;
@@ -37,10 +38,10 @@ function apiKeyAllowed(req:Request):boolean{
   if(p[1]==="rentals"&&p.length===4&&p[3]==="renew")return true;
   if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="cancel")return true;
  }
- if(req.method==="PUT"&&p[1]==="communications"&&p[2]==="domains"&&p[3]==="tracking-domain"&&p.length===4)return true;
- if(req.method==="PATCH"&&p[1]==="communications"&&p[2]==="team"&&p[3]==="members"&&p.length===5&&p[5]==="role")return true;
+ if(req.method==="PUT"&&p[1]==="communications"&&p[2]==="domains"&&p.length===5&&p[4]==="tracking-domain")return true;
+ if(req.method==="PATCH"&&p[1]==="communications"&&p[2]==="team"&&p[3]==="members"&&p.length===6&&p[5]==="role")return true;
  if((req.method==="PATCH"||req.method==="DELETE")&&p[1]==="communications"&&p[2]==="templates"&&p.length===4)return true;
- if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="domains"&&p.length===3)return true;
+ if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="domains"&&p.length===4)return true;
  if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="team"&&p[3]==="members"&&p.length===5)return true;
  if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials"&&p.length===5)return true;
  return false;
