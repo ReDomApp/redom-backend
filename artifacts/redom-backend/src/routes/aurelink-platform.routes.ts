@@ -127,7 +127,7 @@ router.post("/aurelink/communications/team/invitations",aurelinkAuthMiddleware,a
   const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   await requireManager(req.user!.userId,String(ws.id));
   const email=String(req.body.email||"").trim().toLowerCase(),role=String(req.body.role||"developer");
-  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||email.length>320)return res.status(400).json({success:false,message:"Enter a valid invitation email address."});
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>320)return res.status(400).json({success:false,message:"Enter a valid invitation email address."});
   if(!["admin","developer","analyst","billing"].includes(role))return res.status(400).json({success:false,message:"Role must be admin, developer, analyst or billing."});
   const token=randomBytes(32).toString("base64url"),tokenHash=hash(token),expiresAt=new Date(Date.now()+7*86400000);
   const result=await pool.query(`INSERT INTO aurelink_communications_members(workspace_id,email,role,status,invitation_token_hash,invitation_expires_at,created_by_user_id)
