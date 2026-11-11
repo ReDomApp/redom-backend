@@ -175,6 +175,21 @@ router.post("/aurelink/admin/communications/email/pricing/options/:id/disable",a
   return res.json({success:true,option:result.rows[0]});
 });
 
+router.post("/aurelink/admin/communications/email/pricing/credit-packs",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
+  const parsed=z.object({emailCredits:z.number().int().positive().max(1000000000),priceMinor:z.number().int().positive().max(1000000000)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Provide a positive email-credit quantity and USD price in cents."});
+  const result=await pool.query("INSERT INTO aurelink_email_credit_packs(email_credits,price_minor) VALUES($1,$2) ON CONFLICT(email_credits,price_minor) DO UPDATE SET active=TRUE,updated_at=NOW() RETURNING id,email_credits,price_minor,currency,active",[parsed.data.emailCredits,parsed.data.priceMinor]);
+  return res.status(201).json({success:true,creditPack:result.rows[0]});
+});
+
+router.post("/aurelink/admin/communications/email/pricing/credit-packs/:id/disable",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
+  const result=await pool.query("UPDATE aurelink_email_credit_packs SET active=FALSE,updated_at=NOW() WHERE id=$1 AND active=TRUE RETURNING id,active",[req.params.id]);
+  if(!result.rows[0])return res.status(404).json({success:false,message:"Active prepaid email credit pack not found."});
+  return res.json({success:true,creditPack:result.rows[0]});
+});
+
 router.post("/aurelink/admin/communications/email/credits/adjust",aurelinkAuthMiddleware,async(req,res)=>{
   if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
   const parsed=z.object({workspaceId:z.string().uuid(),amountEmails:z.number().int().positive().max(1000000000),direction:z.enum(["credit","debit"]),reason:z.string().min(8).max(500),reference:z.string().min(8).max(120)}).safeParse(req.body);
