@@ -66,9 +66,8 @@ router.post("/aurelink/webhooks/resend", async (req,res) => {
         await billingClient.query("COMMIT");
       }catch(error){
         await billingClient.query("ROLLBACK").catch(()=>undefined);
-        billingClient.release();
         return res.status(503).json({received:false,retry:true,message:"SMTP billing capture is awaiting a successful reconciliation transaction."});
-      }finally{if(!billingClient.released)billingClient.release();}
+      }finally{billingClient.release();}
       await pool.query("UPDATE aurelink_smtp_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3 IN ('sent','accepted') THEN 'accepted' WHEN $3='opened' THEN 'opened' WHEN $3='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $3='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $3='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$4",[smtp.workspace_id,messageId||null,status,String(smtp.message_key)]);
       await pool.query("UPDATE aurelink_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3 IN ('opened','clicked') THEN $3 ELSE status END,provider_status=$4,provider_error=$5,delivered_at=CASE WHEN $3='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,updated_at=NOW() WHERE id=$1",[smtp.message_key,messageId||null,status,String(event.type),event?.data?.bounce?.message||event?.data?.reason||event?.data?.suppressed?.message||null]);
       await pool.query("UPDATE aurelink_communications_usage SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' ELSE status END,updated_at=NOW() WHERE message_id=$1",[smtp.message_key,messageId||null,status]);
