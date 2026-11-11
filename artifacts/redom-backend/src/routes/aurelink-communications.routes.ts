@@ -2,13 +2,13 @@ import { Router } from "express";
 import { createHash, randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 import { pool } from "../database/db";
 import { captureAurelinkUsage, refundAurelinkUsage } from "../services/aurelink/communications-billing.service";
-import { captureAurelinkEmailUsage, refundAurelinkEmailUsage } from "../services/aurelink/communications-email-billing.service";
+import { captureAurelinkEmailUsage, refundAurelinkEmailUsage, resizeAurelinkEmailUsageReservation } from "../services/aurelink/communications-email-billing.service";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus, updateAurelinkMessageStatus } from "../services/aurelink/communications-callbacks.service";
 import {
   createOtpCode, makeVerificationHash,
 } from "../services/aurelink/communications-providers.service";
-import { enqueueAurelinkMessage, retryAurelinkMessage } from "../services/aurelink/communications-worker.service";
+import { enqueueAurelinkMessage, retryAurelinkMessage, finalizeCampaign } from "../services/aurelink/communications-worker.service";
 import { emitAurelinkWebhookEvent } from "../services/aurelink/developer-platform.service";
 import { isAurelinkE164ForCountry, getAurelinkSmsCountry, isAurelinkBrevoSenderFormatValid } from "../services/aurelink/sms-country-registry";
 
