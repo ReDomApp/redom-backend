@@ -420,7 +420,7 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
           if (!mailFrom || !domainAllowed(mailFrom, session.user.domain)) {
             return callback(smtpError("The envelope sender must belong to your verified Aurelink sending domain.", 553));
           }
-          const recipients = (session.envelope.rcptTo || []).map((entry) => entry.address).filter(Boolean);
+          const recipients = [...new Map((session.envelope.rcptTo || []).map((entry) => entry.address).filter(Boolean).map((address) => [String(address).toLowerCase(),String(address)])).values()];
           if (!recipients.length) return callback(smtpError("At least one recipient is required.", 554));
           const clientMessageId=String(parsed.messageId || "").trim();
           if(!clientMessageId||clientMessageId.length>255)return callback(smtpError("A valid Message-ID header (1–255 characters) is required for safe Aurelink SMTP billing and retry protection.",554));
