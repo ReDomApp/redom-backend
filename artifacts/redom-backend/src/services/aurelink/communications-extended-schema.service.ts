@@ -46,6 +46,52 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     );
     CREATE INDEX IF NOT EXISTS aurelink_sender_security_restrictions_active_idx
       ON aurelink_sender_security_restrictions(user_id,workspace_id,status,ends_at);
+    ALTER TABLE aurelink_sender_ids DROP CONSTRAINT IF EXISTS aurelink_sender_ids_registration_state_check;
+    ALTER TABLE aurelink_sender_ids ADD CONSTRAINT aurelink_sender_ids_registration_state_check
+      CHECK (registration_state IN ('draft','verification_required','security_review','ready_for_submission','scheduled_for_brevo','brevo_submission_ready','brevo_submitted','approved','rejected','suspended'));
+    ALTER TABLE aurelink_sender_ids
+      ADD COLUMN IF NOT EXISTS brevo_review_due_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS brevo_submitted_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS brevo_request_token_hash CHAR(64),
+      ADD COLUMN IF NOT EXISTS brevo_provider_reference VARCHAR(180),
+      ADD COLUMN IF NOT EXISTS brevo_terminal_status VARCHAR(24),
+      ADD COLUMN IF NOT EXISTS brevo_terminal_at TIMESTAMPTZ;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sender_ids_brevo_token_idx
+      ON aurelink_sender_ids(brevo_request_token_hash) WHERE brevo_request_token_hash IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS aurelink_sender_provider_submissions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      sender_application_id UUID NOT NULL UNIQUE REFERENCES aurelink_sender_ids(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      provider VARCHAR(24) NOT NULL CHECK(provider='brevo'),
+      request_token_hash CHAR(64) NOT NULL UNIQUE,
+      request_token_encrypted TEXT NOT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'scheduled'
+        CHECK(status IN ('scheduled','ready_for_operator_submission','submitted','processing','completed','rejected','failed','cancelled')),
+      scheduled_at TIMESTAMPTZ NOT NULL,
+      submitted_at TIMESTAMPTZ,
+      provider_reference VARCHAR(180),
+      provider_status VARCHAR(80),
+      terminal_payload JSONB,
+      terminal_event_id VARCHAR(180),
+      token_consumed_at TIMESTAMPTZ,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_provider_submissions_due_idx
+      ON aurelink_sender_provider_submissions(status,scheduled_at);
+
+    CREATE TABLE IF NOT EXISTS aurelink_sms_supported_countries (
+      country_code CHAR(2) PRIMARY KEY,
+      country_name VARCHAR(120) NOT NULL,
+      calling_code VARCHAR(12) NOT NULL,
+      international_prefix VARCHAR(16) NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS aurelink_verified_websites (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
