@@ -25,6 +25,7 @@ import { startAurelinkDedicatedRenewalWorker, stopAurelinkDedicatedRenewalWorker
 import { ensureAurelinkDeveloperSchema, startAurelinkWebhookWorker, stopAurelinkWebhookWorker } from "./services/aurelink/developer-platform.service";
 import { ensureAurelinkCommunicationsSchema } from "./services/aurelink/communications-schema.service";
 import { ensureAurelinkCommunicationsExtendedSchema } from "./services/aurelink/communications-extended-schema.service";
+import { ensureAurelinkEmailBillingSchema } from "./services/aurelink/communications-email-billing-schema.service";
 import { startAurelinkCommunicationsWorker, stopAurelinkCommunicationsWorker } from "./services/aurelink/communications-worker.service";
 import { startAurelinkReputationWorker, stopAurelinkReputationWorker } from "./services/aurelink/communications-reputation.service";
 
@@ -42,6 +43,7 @@ async function start(): Promise<void> {
   await ensureAurelinkDeveloperSchema();
   await ensureAurelinkCommunicationsSchema();
   await ensureAurelinkCommunicationsExtendedSchema();
+  await ensureAurelinkEmailBillingSchema();
   await ensureBugReportSchema();
   await ensureStarsSchema();
   await ensureRefundSchema();
