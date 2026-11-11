@@ -2,6 +2,7 @@ import { Router } from "express";
 import { createHash, randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 import { pool } from "../database/db";
 import { captureAurelinkUsage, refundAurelinkUsage } from "../services/aurelink/communications-billing.service";
+import { captureAurelinkEmailUsage, refundAurelinkEmailUsage } from "../services/aurelink/communications-email-billing.service";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus, updateAurelinkMessageStatus } from "../services/aurelink/communications-callbacks.service";
 import {
@@ -530,12 +531,22 @@ router.post("/aurelink/admin/communications/messages/:id/reconcile",aurelinkAuth
       await client.query("UPDATE aurelink_communications_jobs SET status='completed',submission_state='accepted',completed_at=NOW(),last_error=NULL,locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.job_id]);
       await client.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[row.message_id,providerMessageId]);
       await client.query("UPDATE aurelink_verification_sessions SET provider_message_id=$2,updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1)",[row.message_id,providerMessageId]);
-      await captureAurelinkUsage(client,String(row.message_id));
+      if(row.channel==="email"){
+        await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1 AND status='unknown'",[row.message_id]);
+        await captureAurelinkEmailUsage(client,String(row.message_id));
+      }else{
+        await captureAurelinkUsage(client,String(row.message_id));
+      }
     }else{
       await client.query("UPDATE aurelink_messages SET status='failed',provider_status='operator_confirmed_not_accepted',provider_error='Provider console review confirmed that the submission was not accepted.',updated_at=NOW() WHERE id=$1",[row.message_id]);
       await client.query("UPDATE aurelink_communications_jobs SET status='failed',submission_state='rejected',last_error='Provider console review confirmed that the submission was not accepted.',locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.job_id]);
       await client.query("UPDATE aurelink_communications_usage SET status='failed',updated_at=NOW() WHERE message_id=$1",[row.message_id]);
-      await refundAurelinkUsage(client,String(row.message_id),String(row.user_id),String(row.workspace_id));
+      if(row.channel==="email"){
+        await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1 AND status='unknown'",[row.message_id]);
+        await refundAurelinkEmailUsage(client,String(row.message_id));
+      }else{
+        await refundAurelinkUsage(client,String(row.message_id),String(row.user_id),String(row.workspace_id));
+      }
     }
     await client.query(
       "INSERT INTO aurelink_communications_reconciliation_audit(message_id,workspace_id,admin_user_id,outcome,provider_message_id,evidence_reference) VALUES($1,$2,$3,$4,$5,$6)",
