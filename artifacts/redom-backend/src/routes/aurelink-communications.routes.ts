@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createHash, randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 import { pool } from "../database/db";
+import { captureAurelinkUsage, refundAurelinkUsage } from "../services/aurelink/communications-billing.service";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus, updateAurelinkMessageStatus } from "../services/aurelink/communications-callbacks.service";
 import {
@@ -463,6 +464,66 @@ router.post("/aurelink/verify/:id/check",aurelinkAuthMiddleware,async(req,res)=>
     return res.json({success:true,verified:true,verifiedAt:new Date().toISOString()});
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Verification could not be checked."});}
   finally{client.release();}
+});
+
+
+// Ambiguous provider submissions are never silently retried or refunded.
+// Only explicitly configured Aurelink administrators may reconcile them after checking the provider console.
+function communicationsAdminAllowed(req:any):boolean{
+  const ids=(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map((value:string)=>value.trim()).filter(Boolean);
+  return Boolean(req.user?.userId&&ids.includes(String(req.user.userId)));
+}
+router.get("/aurelink/admin/communications/manual-review",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!communicationsAdminAllowed(req))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink communications administrator access is required."});
+  const limit=Math.max(1,Math.min(100,Number.parseInt(String(req.query.limit||"50"),10)||50));
+  const result=await pool.query(
+    "SELECT m.id AS message_id,m.workspace_id,m.channel,m.provider,m.provider_message_id,m.recipient,m.sender,m.category,m.status AS message_status,m.provider_error,j.id AS job_id,j.attempts,j.submission_state,j.last_error,j.updated_at FROM aurelink_communications_jobs j JOIN aurelink_messages m ON m.id=j.message_id WHERE j.status='manual_review' ORDER BY j.updated_at ASC LIMIT $1",
+    [limit]
+  );
+  return res.json({success:true,items:result.rows,count:result.rows.length});
+});
+router.post("/aurelink/admin/communications/messages/:id/reconcile",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!communicationsAdminAllowed(req))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink communications administrator access is required."});
+  const outcome=String(req.body?.outcome||"");
+  const evidence=String(req.body?.evidenceReference||"").trim();
+  const providerMessageId=String(req.body?.providerMessageId||"").trim();
+  if(!["accepted","rejected"].includes(outcome)||evidence.length<8||evidence.length>500||(outcome==="accepted"&&!providerMessageId)||providerMessageId.length>220){
+    return res.status(400).json({success:false,code:"INVALID_RECONCILIATION",message:"Provide an accepted/rejected outcome, an evidence reference, and a provider message ID when accepted."});
+  }
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const found=await client.query(
+      "SELECT j.id AS job_id,j.status AS job_status,j.submission_state,m.id AS message_id,m.workspace_id,m.provider,m.channel,w.user_id FROM aurelink_communications_jobs j JOIN aurelink_messages m ON m.id=j.message_id JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id WHERE m.id=$1 FOR UPDATE OF j,m",
+      [req.params.id]
+    );
+    const row=found.rows[0];
+    if(!row){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Communications message not found."});}
+    if(row.job_status!=="manual_review"||row.submission_state!=="unknown"){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"NOT_AWAITING_RECONCILIATION",message:"This message is not awaiting provider reconciliation."});}
+    if(outcome==="accepted"){
+      const duplicate=await client.query("SELECT id FROM aurelink_messages WHERE provider=$1 AND provider_message_id=$2 AND id<>$3 LIMIT 1",[row.provider,providerMessageId,row.message_id]);
+      if(duplicate.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_MESSAGE_ID_IN_USE",message:"That provider message ID is already linked to another Aurelink message."});}
+      await client.query("UPDATE aurelink_messages SET provider_message_id=$2,status='accepted',provider_status='operator_confirmed_accepted',provider_error=NULL,accepted_at=COALESCE(accepted_at,NOW()),updated_at=NOW() WHERE id=$1",[row.message_id,providerMessageId]);
+      await client.query("UPDATE aurelink_communications_jobs SET status='completed',submission_state='accepted',completed_at=NOW(),last_error=NULL,locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.job_id]);
+      await client.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[row.message_id,providerMessageId]);
+      await client.query("UPDATE aurelink_verification_sessions SET provider_message_id=$2,updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1)",[row.message_id,providerMessageId]);
+      await captureAurelinkUsage(client,String(row.message_id));
+    }else{
+      await client.query("UPDATE aurelink_messages SET status='failed',provider_status='operator_confirmed_not_accepted',provider_error='Provider console review confirmed that the submission was not accepted.',updated_at=NOW() WHERE id=$1",[row.message_id]);
+      await client.query("UPDATE aurelink_communications_jobs SET status='failed',submission_state='rejected',last_error='Provider console review confirmed that the submission was not accepted.',locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.job_id]);
+      await client.query("UPDATE aurelink_communications_usage SET status='failed',updated_at=NOW() WHERE message_id=$1",[row.message_id]);
+      await refundAurelinkUsage(client,String(row.message_id),String(row.user_id),String(row.workspace_id));
+    }
+    await client.query(
+      "INSERT INTO aurelink_communications_reconciliation_audit(message_id,workspace_id,admin_user_id,outcome,provider_message_id,evidence_reference) VALUES($1,$2,$3,$4,$5,$6)",
+      [row.message_id,row.workspace_id,req.user!.userId,outcome,providerMessageId||null,evidence]
+    );
+    await client.query("COMMIT");
+    return res.json({success:true,messageId:row.message_id,outcome,financialAction:outcome==="accepted"?"charge_captured":"charge_refunded"});
+  }catch(error){
+    await client.query("ROLLBACK").catch(()=>undefined);
+    return res.status(500).json({success:false,message:"Provider reconciliation could not be saved."});
+  }finally{client.release();}
 });
 
 export default router;
