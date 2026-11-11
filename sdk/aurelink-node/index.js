@@ -14,10 +14,31 @@ export class Aurelink {
     this.communications={
       overview:()=>this.request("GET","/aurelink/communications/overview"),
       analytics:(query)=>this.request("GET","/aurelink/communications/analytics",{query}),
+      billing:{
+        overview:()=>this.request("GET","/aurelink/communications/billing/overview"),
+        usage:(query)=>this.request("GET","/aurelink/communications/billing/usage",{query}),
+        statement:(month)=>this.request("GET","/aurelink/communications/billing/statement",{query:{month}})
+      },
+      reputation:{
+        retrieve:()=>this.request("GET","/aurelink/communications/reputation"),
+        acknowledge:(id)=>this.request("POST","/aurelink/communications/reputation/alerts/"+encodeURIComponent(id)+"/acknowledge")
+      },
+      team:{
+        members:()=>this.request("GET","/aurelink/communications/team/members"),
+        invite:(body)=>this.request("POST","/aurelink/communications/team/invitations",{body}),
+        acceptInvitation:(token)=>this.request("POST","/aurelink/communications/team/invitations/accept",{body:{token}}),
+        changeRole:(id,role)=>this.request("PATCH","/aurelink/communications/team/members/"+encodeURIComponent(id)+"/role",{body:{role}}),
+        revoke:(id)=>this.request("DELETE","/aurelink/communications/team/members/"+encodeURIComponent(id))
+      },
       domains:{
         list:()=>this.request("GET","/aurelink/communications/domains"),
         create:(body)=>this.request("POST","/aurelink/communications/domains",{body}),
         check:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/check"),
+        suspend:(id,reason)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/suspend",{body:{reason}}),
+        resume:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/resume"),
+        remove:(id)=>this.request("DELETE","/aurelink/communications/domains/"+encodeURIComponent(id)),
+        setTrackingDomain:(id,trackingDomain)=>this.request("PUT","/aurelink/communications/domains/"+encodeURIComponent(id)+"/tracking-domain",{body:{trackingDomain}}),
+        verifyTrackingDomain:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/tracking-domain/verify"),
         verify:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/verify"),tracking:(id,body)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/tracking",{body}),
         applyDns:(id)=>this.request("POST","/aurelink/communications/domains/"+encodeURIComponent(id)+"/apply-dns"),
         connectCloudflare:(body)=>this.request("POST","/aurelink/communications/dns/cloudflare/connect",{body}),
