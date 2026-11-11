@@ -456,6 +456,7 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitte
 });
 async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:string;status:string;providerReference?:string;reason?:string;payload?:unknown;actorUserId?:string}){
  const tokenHash=hash(input.token),status=input.status.toLowerCase();
+ if(input.token.length>160||input.eventId.length>180||status.length>40||(input.providerReference&&input.providerReference.length>180)||(input.reason&&input.reason.length>1000))throw new Error("Brevo registration status fields exceed their permitted lengths.");
  const terminal=status==="completed"||status==="complete"||status==="successful"||status==="success"||status==="approved"||status==="rejected"||status==="declined"||status==="failed"||status==="denied";
  const intermediateStatuses=new Set(["pending","processing","submitted","received","in_review","under_review","queued","in-progress","in_progress"]);
  if(!terminal&&!intermediateStatuses.has(status))throw new Error("Unsupported Brevo Sender ID registration status.");
