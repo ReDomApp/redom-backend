@@ -97,7 +97,7 @@ export async function refundAurelinkUsage(
   workspaceId: string,
 ): Promise<void> {
   const result = await client.query(
-    "SELECT id,amount_minor,currency,wallet_reference,status FROM aurelink_communications_billing_ledger WHERE message_id=$1 AND user_id=$2 AND workspace_id=$3 AND entry_type='charge' FOR UPDATE",
+    "SELECT id,amount_minor,currency,wallet_reference,status,units,unit_price_minor FROM aurelink_communications_billing_ledger WHERE message_id=$1 AND user_id=$2 AND workspace_id=$3 AND entry_type='charge' FOR UPDATE",
     [messageId,userId,workspaceId],
   );
   const charge = result.rows[0];
@@ -112,8 +112,8 @@ export async function refundAurelinkUsage(
     metadata: { messageId, originalReference: charge.wallet_reference },
   });
   await client.query(
-    "INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',1,1,$4,$5,$6,$7::jsonb) ON CONFLICT(message_id,entry_type) DO NOTHING",
-    [userId,workspaceId,messageId,String(charge.amount_minor),String(charge.currency),refundReference,JSON.stringify({ originalChargeId: charge.id })],
+    "INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT(message_id,entry_type) DO NOTHING",
+    [userId,workspaceId,messageId,Number(charge.units),Number(charge.unit_price_minor),String(charge.amount_minor),String(charge.currency),refundReference,JSON.stringify({ originalChargeId: charge.id })],
   );
   await client.query(
     "UPDATE aurelink_communications_billing_ledger SET status='refunded',updated_at=NOW() WHERE id=$1",
