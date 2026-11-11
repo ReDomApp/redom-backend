@@ -52,7 +52,7 @@ export async function calculateAurelinkReputation():Promise<void>{
     }
     activeKeys.set(String(raw.workspace_id)+"|"+(domain||""),keys);
   }
-  const open=await pool.query("SELECT id,workspace_id,domain,alert_key FROM aurelink_communications_reputation_alerts WHERE status='open'");
+  const open=await pool.query("SELECT id,workspace_id,domain,alert_key FROM aurelink_communications_reputation_alerts WHERE status IN ('open','acknowledged')");
   for(const alert of open.rows){
     const key=String(alert.workspace_id)+"|"+(alert.domain||"");
     if(!activeKeys.get(key)?.has(String(alert.alert_key)))await pool.query("UPDATE aurelink_communications_reputation_alerts SET status='resolved',resolved_at=NOW(),last_seen_at=NOW() WHERE id=$1",[alert.id]);
