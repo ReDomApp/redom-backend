@@ -279,7 +279,7 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
   try{
     await client.query("BEGIN");
     const found=await client.query(
-      "SELECT m.id,m.workspace_id,m.provider,m.channel,r.source,r.units,r.status AS billing_status,r.metadata,w.user_id FROM aurelink_messages m JOIN aurelink_email_usage_reservations r ON r.message_id=m.id JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id WHERE m.id=$1 FOR UPDATE OF m,r",
+      "SELECT m.id,m.workspace_id,m.provider,m.channel,m.provider_message_id,r.source,r.units,r.status AS billing_status,r.metadata,w.user_id FROM aurelink_messages m JOIN aurelink_email_usage_reservations r ON r.message_id=m.id JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id WHERE m.id=$1 FOR UPDATE OF m,r",
       [req.params.id]
     );
     const row=found.rows[0];
@@ -300,12 +300,14 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
         await client.query("UPDATE aurelink_messages SET recipient=$2,provider_status='smtp_partial_acceptance',provider_error=$3,updated_at=NOW() WHERE id=$1",[row.id,JSON.stringify(acceptedRecipients),"Provider rejected recipient(s): "+rejectedRecipients.join(", ")]);
         await client.query("UPDATE aurelink_smtp_messages SET recipients=$2::jsonb,error=$3,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$4",[row.workspace_id,JSON.stringify(acceptedRecipients),"Provider rejected recipient(s): "+rejectedRecipients.join(", "),String(row.id)]);
       }
-      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",["resend:"+providerMessageId]);
-      const duplicate=await client.query("SELECT id FROM aurelink_messages WHERE provider='resend' AND provider_message_id=$1 AND id<>$2 LIMIT 1",[providerMessageId,row.id]);
-      if(duplicate.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_MESSAGE_ID_IN_USE",message:"That Resend message ID is already linked to another Aurelink message."});}
+      const provider=String(row.provider||"");
+      if(!["resend","brevo"].includes(provider)){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"UNSUPPORTED_SMTP_PROVIDER",message:"This SMTP provider cannot be reconciled through the current billing workflow."});}
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",[provider+":"+providerMessageId]);
+      const duplicate=await client.query("SELECT id FROM aurelink_messages WHERE provider=$1 AND provider_message_id=$2 AND id<>$3 LIMIT 1",[provider,providerMessageId,row.id]);
+      if(duplicate.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_MESSAGE_ID_IN_USE",message:"That provider message ID is already linked to another Aurelink message."});}
       await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1",[row.id]);
-      await client.query("UPDATE aurelink_messages SET provider='resend',provider_message_id=$2,status='accepted',provider_status=CASE WHEN $3 THEN 'operator_confirmed_partial_acceptance' ELSE 'operator_confirmed_accepted' END,provider_error=CASE WHEN $3 THEN provider_error ELSE NULL END,accepted_at=COALESCE(accepted_at,NOW()),updated_at=NOW() WHERE id=$1",[row.id,providerMessageId,partial]);
-      await client.query("UPDATE aurelink_communications_usage SET provider='resend',status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[row.id,providerMessageId]);
+      await client.query("UPDATE aurelink_messages SET provider=$4,provider_message_id=$2,status='accepted',provider_status=CASE WHEN $3 THEN 'operator_confirmed_partial_acceptance' ELSE 'operator_confirmed_accepted' END,provider_error=CASE WHEN $3 THEN provider_error ELSE NULL END,accepted_at=COALESCE(accepted_at,NOW()),updated_at=NOW() WHERE id=$1",[row.id,providerMessageId,partial,provider]);
+      await client.query("UPDATE aurelink_communications_usage SET provider=$3,status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[row.id,providerMessageId,provider]);
       await client.query("UPDATE aurelink_smtp_messages SET provider_message_id=$2,status='accepted',error=CASE WHEN $4 THEN error ELSE NULL END,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$3",[row.workspace_id,providerMessageId,String(row.id),partial]);
       await captureAurelinkEmailUsage(client,String(row.id));
     }else{
