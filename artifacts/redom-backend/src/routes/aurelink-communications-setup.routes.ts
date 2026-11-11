@@ -195,7 +195,7 @@ router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,a
 });
 router.get("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
- const rows=await pool.query("SELECT id,original_filename,mime_type,byte_size,sha256,status,sender_application_id,created_at,updated_at FROM aurelink_sender_evidence_documents WHERE workspace_id=$1 AND uploaded_by_user_id=$2 ORDER BY created_at DESC LIMIT 100",[wid,req.user!.userId]);
+ const rows=await pool.query("SELECT id,original_filename,mime_type,byte_size,sha256,status,sender_application_id,created_at,updated_at FROM aurelink_sender_evidence_documents WHERE workspace_id=$1 AND uploaded_by_user_id=$2 AND status<>'deleted' ORDER BY created_at DESC LIMIT 100",[wid,req.user!.userId]);
  return res.json({success:true,documents:rows.rows});
 });
 router.delete("/aurelink/communications/senders/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
@@ -203,7 +203,7 @@ router.delete("/aurelink/communications/senders/evidence/:documentId",aurelinkAu
  const row=(await pool.query("SELECT id,object_key FROM aurelink_sender_evidence_documents WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[req.params.documentId,wid,req.user!.userId])).rows[0];
  if(!row)return res.status(404).json({success:false,message:"Unattached evidence upload not found. Evidence attached to an application cannot be deleted by the applicant."});
  await senderEvidenceR2.send(new DeleteObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:String(row.object_key)}));
- await pool.query("DELETE FROM aurelink_sender_evidence_documents WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[row.id,wid,req.user!.userId]);
+ await pool.query("UPDATE aurelink_sender_evidence_documents SET status='deleted',updated_at=NOW() WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[row.id,wid,req.user!.userId]);
  return res.json({success:true,deleted:true});
 });
 router.get("/aurelink/admin/communications/senders/:id/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
