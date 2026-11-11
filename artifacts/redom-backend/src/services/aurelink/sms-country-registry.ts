@@ -228,3 +228,13 @@ export function isAurelinkE164ForCountry(phone: string, countryCode: string): bo
   const acceptedPrefixes = sharedPlanPrefixes[country.countryCode] || [country.callingCode];
   return acceptedPrefixes.some(prefix => phone.startsWith(prefix));
 }
+
+const senderIdNoDigits = new Set(["BG","GM","GT","HN","LR","NI","NG","PK","RO","RW"]);
+export function isAurelinkBrevoSenderFormatValid(sender: string, countryCode: string): boolean {
+  const code = countryCode.trim().toUpperCase();
+  if (!getAurelinkSmsCountry(code)) return false;
+  if (code === "US" || code === "CA") return /^\+1(?:800|833|844|855|866|877|888)\d{7}$/.test(sender);
+  if (!/^[A-Za-z0-9]{3,11}$/.test(sender) || !/[A-Za-z]/.test(sender)) return false;
+  if (senderIdNoDigits.has(code) && /\d/.test(sender)) return false;
+  return true;
+}
