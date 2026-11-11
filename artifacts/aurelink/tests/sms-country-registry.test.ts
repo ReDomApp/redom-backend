@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AURELINK_SMS_COUNTRIES, getAurelinkSmsCountry, isAurelinkE164ForCountry, isAurelinkBrevoSenderFormatValid, requiresAurelinkBrevoNumberSender } from "../../redom-backend/src/services/aurelink/sms-country-registry.ts";
+import { AURELINK_SMS_COUNTRIES, getAurelinkSmsCountry, isAurelinkE164ForCountry, isAurelinkBrevoSenderFormatValid, requiresAurelinkBrevoNumberSender, getAurelinkSmsCountryPrefixes } from "../../redom-backend/src/services/aurelink/sms-country-registry.ts";
 
 test("Aurelink publishes its supported SMS destinations without Singapore",()=>{
   assert.equal(AURELINK_SMS_COUNTRIES.length,205);
@@ -14,6 +14,7 @@ test("Aurelink validates international E.164 prefixes for supported destinations
   assert.equal(isAurelinkE164ForCountry("+447700900123","GB"),true);
   assert.equal(isAurelinkE164ForCountry("+18095551234","DO"),true);
   assert.equal(isAurelinkE164ForCountry("+18295551234","DO"),true);
+  assert.deepEqual(getAurelinkSmsCountryPrefixes("DO"),["+1809","+1829","+1849"]);
   assert.equal(isAurelinkE164ForCountry("+2348012345678","GH"),false);
   assert.equal(isAurelinkE164ForCountry("+6591234567","SG"),false);
   assert.equal(isAurelinkE164ForCountry("08012345678","NG"),false);
