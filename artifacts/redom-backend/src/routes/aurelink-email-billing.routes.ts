@@ -303,9 +303,9 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
       const duplicate=await client.query("SELECT id FROM aurelink_messages WHERE provider='resend' AND provider_message_id=$1 AND id<>$2 LIMIT 1",[providerMessageId,row.id]);
       if(duplicate.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_MESSAGE_ID_IN_USE",message:"That Resend message ID is already linked to another Aurelink message."});}
       await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1",[row.id]);
-      await client.query("UPDATE aurelink_messages SET provider='resend',provider_message_id=$2,status='accepted',provider_status='operator_confirmed_accepted',provider_error=NULL,accepted_at=COALESCE(accepted_at,NOW()),updated_at=NOW() WHERE id=$1",[row.id,providerMessageId]);
+      await client.query("UPDATE aurelink_messages SET provider='resend',provider_message_id=$2,status='accepted',provider_status=CASE WHEN $4 THEN 'operator_confirmed_partial_acceptance' ELSE 'operator_confirmed_accepted' END,provider_error=CASE WHEN $4 THEN provider_error ELSE NULL END,accepted_at=COALESCE(accepted_at,NOW()),updated_at=NOW() WHERE id=$1",[row.id,providerMessageId,null,partial]);
       await client.query("UPDATE aurelink_communications_usage SET provider='resend',status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[row.id,providerMessageId]);
-      await client.query("UPDATE aurelink_smtp_messages SET provider_message_id=$2,status='accepted',error=NULL,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$3",[row.workspace_id,providerMessageId,String(row.id)]);
+      await client.query("UPDATE aurelink_smtp_messages SET provider_message_id=$2,status='accepted',error=CASE WHEN $4 THEN error ELSE NULL END,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$3",[row.workspace_id,providerMessageId,String(row.id),partial]);
       await captureAurelinkEmailUsage(client,String(row.id));
     }else{
       await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1",[row.id]);
@@ -314,7 +314,7 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
       await client.query("UPDATE aurelink_smtp_messages SET status='failed',error='Provider review confirmed that the SMTP submission was not accepted.',updated_at=NOW() WHERE workspace_id=$1 AND message_key=$2",[row.workspace_id,String(row.id)]);
       await refundAurelinkEmailUsage(client,String(row.id));
     }
-    await client.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,target_id,details) VALUES($1,$2,'smtp_usage_reconciled',$3,$4::jsonb)",[row.workspace_id,req.user!.userId,row.id,JSON.stringify({outcome:parsed.data.outcome,evidenceReference:parsed.data.evidenceReference,providerMessageId:parsed.data.providerMessageId||null,source:row.source,units:row.units})]);
+    await client.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,target_id,details) VALUES($1,$2,'smtp_usage_reconciled',$3,$4::jsonb)",[row.workspace_id,req.user!.userId,row.id,JSON.stringify({outcome:parsed.data.outcome,evidenceReference:parsed.data.evidenceReference,providerMessageId:parsed.data.providerMessageId||null,source:row.source,units:partial?acceptedRecipients.length:row.units,rejectedRecipients:partial?rejectedRecipients:[]})]);
     await client.query("COMMIT");
     return res.json({success:true,messageId:row.id,outcome:parsed.data.outcome,financialAction:parsed.data.outcome==="accepted"?"usage_captured":"reservation_released_or_refunded"});
   }catch(error){
