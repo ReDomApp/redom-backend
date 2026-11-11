@@ -101,13 +101,25 @@ async function processOne(row:any){
       result=await sendAurelinkEmail(fallback,fallbackInput);
     }
   }
-  await pool.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId]);
-  await pool.query("UPDATE aurelink_communications_jobs SET status='completed',submission_state='accepted',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
-  await pool.query("UPDATE aurelink_communications_usage SET provider=$2,status='accepted',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
   const billingClient=await pool.connect();
-  try { await billingClient.query("BEGIN"); if(payload.channel==="email") await captureAurelinkEmailUsage(billingClient,String(row.message_id)); else await captureAurelinkUsage(billingClient,String(row.message_id)); await billingClient.query("COMMIT"); }
-  catch(error) { await billingClient.query("ROLLBACK").catch(()=>undefined); console.error("[Aurelink usage capture]",error instanceof Error?error.message:"unknown error"); }
-  finally { billingClient.release(); }
+  try{
+    await billingClient.query("BEGIN");
+    if(payload.channel==="email")await captureAurelinkEmailUsage(billingClient,String(row.message_id));
+    else await captureAurelinkUsage(billingClient,String(row.message_id));
+    await billingClient.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId]);
+    await billingClient.query("UPDATE aurelink_communications_jobs SET status='completed',submission_state='accepted',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
+    await billingClient.query("UPDATE aurelink_communications_usage SET provider=$2,status='accepted',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
+    await billingClient.query("COMMIT");
+  }catch(error){
+    await billingClient.query("ROLLBACK").catch(()=>undefined);
+    const detail=error instanceof Error?error.message:"Billing capture failed after provider acceptance.";
+    await pool.query("UPDATE aurelink_communications_jobs SET status='manual_review',submission_state='unknown',last_error=$2,locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.id,detail.slice(0,500)]);
+    await pool.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='unknown',provider_status='provider_accepted_billing_reconciliation_required',provider_error=$4,updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId,detail.slice(0,500)]);
+    await pool.query("UPDATE aurelink_communications_usage SET provider=$2,status='queued',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
+    if(payload.channel==="email"){const reconcileClient=await pool.connect();try{await reconcileClient.query("BEGIN");await markAurelinkEmailUsageUnknown(reconcileClient,String(row.message_id));await reconcileClient.query("COMMIT");}catch(markError){await reconcileClient.query("ROLLBACK").catch(()=>undefined);throw markError;}finally{reconcileClient.release();}}
+    console.error("[Aurelink usage capture requires manual review]",detail);
+    return;
+  }finally{billingClient.release();}
   await pool.query("UPDATE aurelink_verification_sessions SET provider_message_id=$2,updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1)",[row.message_id,result.providerMessageId]);
   await finalizeCampaign(row.message_id);
  }catch(error){
