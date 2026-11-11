@@ -286,14 +286,15 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS aurelink_communications_workspaces_project_idx ON aurelink_communications_workspaces(user_id,project_id) WHERE project_id IS NOT NULL");
   await pool.query("ALTER TABLE aurelink_email_domains ADD COLUMN IF NOT EXISTS tracking_settings JSONB NOT NULL DEFAULT '{}'::jsonb");
   await pool.query("ALTER TABLE aurelink_messages DROP CONSTRAINT IF EXISTS aurelink_messages_status_check");
-  await pool.query("ALTER TABLE aurelink_messages ADD CONSTRAINT aurelink_messages_status_check CHECK(status IN ('queued','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed','opened','clicked'))");
+  await pool.query("ALTER TABLE aurelink_messages ADD CONSTRAINT aurelink_messages_status_check CHECK(status IN ('queued','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed','opened','clicked','unknown'))");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS delivery_latency_ms BIGINT");
   await pool.query("ALTER TABLE aurelink_smtp_messages DROP CONSTRAINT IF EXISTS aurelink_smtp_messages_status_check");
-  await pool.query("ALTER TABLE aurelink_smtp_messages ADD CONSTRAINT aurelink_smtp_messages_status_check CHECK(status IN ('accepted','delivered','failed','opened','clicked'))");
+  await pool.query("ALTER TABLE aurelink_smtp_messages ADD CONSTRAINT aurelink_smtp_messages_status_check CHECK(status IN ('accepted','delivered','failed','opened','clicked','unknown'))");
   await pool.query("ALTER TABLE aurelink_smtp_messages ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE aurelink_smtp_messages ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS aurelink_smtp_messages_client_id_idx ON aurelink_smtp_messages(workspace_id,client_message_id) WHERE client_message_id IS NOT NULL");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS campaign_id UUID REFERENCES aurelink_campaigns(id) ON DELETE SET NULL");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS verification_session_id UUID REFERENCES aurelink_verification_sessions(id) ON DELETE SET NULL");
   await pool.query("CREATE INDEX IF NOT EXISTS aurelink_messages_verification_idx ON aurelink_messages(verification_session_id) WHERE verification_session_id IS NOT NULL");
