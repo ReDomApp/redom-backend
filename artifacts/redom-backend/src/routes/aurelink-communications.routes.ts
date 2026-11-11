@@ -131,7 +131,7 @@ async function approvedSmsSender(wid:string,sender:string,provider:string,countr
   const providers=[provider,process.env.AURELINK_SMS_FALLBACK_PROVIDER].filter((value,index,array):value is string=>Boolean(value)&&array.indexOf(value)===index);
   for(const selected of providers){
     if(!SMS_PROVIDERS.has(selected))return false;
-    const row=await pool.query("SELECT id FROM aurelink_sender_ids WHERE workspace_id=$1 AND channel='sms' AND LOWER(sender)=LOWER($2) AND provider=$3 AND country_code=$4 AND status='approved' AND registration_state='approved' AND security_review_status='passed' AND security_reviewed_at IS NOT NULL AND website_verification_id IS NOT NULL LIMIT 1",[wid,sender,selected,countryCode]);
+    const row=await pool.query("SELECT id FROM aurelink_sender_ids WHERE workspace_id=$1 AND channel='sms' AND LOWER(sender)=LOWER($2) AND provider=$3 AND country_code=$4 AND status='approved' AND registration_state='approved' AND security_review_status='passed' AND security_reviewed_at IS NOT NULL AND website_verification_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM aurelink_sender_security_restrictions r WHERE r.workspace_id=aurelink_sender_ids.workspace_id AND r.status='active' AND r.ends_at>NOW()) LIMIT 1",[wid,sender,selected,countryCode]);
     if(!row.rows[0])return false;
   }
   return true;
