@@ -122,12 +122,14 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       activated_at TIMESTAMPTZ,
       cancelled_at TIMESTAMPTZ,
       cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+      stripe_event_created_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CHECK(billing_period_end > billing_period_start),
       CHECK(used_emails + reserved_emails <= monthly_email_allowance)
     );
     ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS stripe_event_created_at TIMESTAMPTZ;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_subscriptions_active_workspace_idx
       ON aurelink_email_subscriptions(workspace_id) WHERE status IN ('active','past_due','pending_payment');
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_subscriptions_stripe_idx
