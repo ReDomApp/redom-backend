@@ -163,6 +163,16 @@ function decryptSenderToken(value:string){
  return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");
 }
 function senderAdmin(userId:string){return new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(v=>v.trim()).filter(Boolean)).has(userId);}
+async function verifySenderEvidenceFiles(applicationId:string){
+ const rows=(await pool.query("SELECT id,object_key,original_filename,mime_type,byte_size,sha256 FROM aurelink_sender_evidence_documents WHERE sender_application_id=$1 AND status='attached' ORDER BY created_at ASC",[applicationId])).rows;
+ for(const row of rows){
+  const object=await senderEvidenceR2.send(new GetObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:String(row.object_key)}));
+  if(!object.Body)throw new Error("A private Sender ID evidence object is missing.");
+  const bytes=Buffer.from(await object.Body.transformToByteArray());
+  if(bytes.length!==Number(row.byte_size)||createHash("sha256").update(bytes).digest("hex")!==String(row.sha256))throw new Error("A Sender ID evidence file failed its server-side SHA-256 integrity check.");
+ }
+ return rows;
+}
 router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,async(req,res)=>{
  try{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
@@ -180,7 +190,7 @@ router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,a
 router.get("/aurelink/admin/communications/senders/:id/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
  if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
  try{
-  const row=(await pool.query("SELECT id,object_key,original_filename,mime_type,byte_size,sha256 FROM aurelink_sender_evidence_documents WHERE id=$1 AND sender_application_id=$2 AND status IN ('attached','verified')",[req.params.documentId,req.params.id])).rows[0];
+  const row=(await pool.query("SELECT id,object_key,original_filename,mime_type,byte_size,sha256 FROM aurelink_sender_evidence_documents WHERE id=$1 AND sender_application_id=$2 AND status IN ('attached','verified','rejected')",[req.params.documentId,req.params.id])).rows[0];
   if(!row)return res.status(404).json({success:false,message:"Sender evidence document not found."});
   const object=await senderEvidenceR2.send(new GetObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:String(row.object_key)}));
   if(!object.Body)return res.status(404).json({success:false,message:"Stored evidence object is missing."});
