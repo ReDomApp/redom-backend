@@ -117,6 +117,9 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_sender_evidence_documents DROP CONSTRAINT IF EXISTS aurelink_sender_evidence_documents_status_check;
+    ALTER TABLE aurelink_sender_evidence_documents ADD CONSTRAINT aurelink_sender_evidence_documents_status_check
+      CHECK(status IN ('uploaded','attached','verified','rejected','deleted'));
     CREATE INDEX IF NOT EXISTS aurelink_sender_evidence_workspace_idx
       ON aurelink_sender_evidence_documents(workspace_id,uploaded_by_user_id,status,created_at DESC);
     CREATE INDEX IF NOT EXISTS aurelink_sender_evidence_application_idx
