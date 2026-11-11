@@ -111,7 +111,7 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       mime_type VARCHAR(32) NOT NULL CHECK(mime_type IN ('application/pdf','image/jpeg','image/png')),
       byte_size INTEGER NOT NULL CHECK(byte_size BETWEEN 1 AND 10485760),
       sha256 CHAR(64) NOT NULL,
-      status VARCHAR(16) NOT NULL DEFAULT 'uploaded' CHECK(status IN ('uploaded','attached','verified','rejected')),
+      status VARCHAR(16) NOT NULL DEFAULT 'uploaded' CHECK(status IN ('uploaded','attached','verified','rejected','deleted')),
       verified_at TIMESTAMPTZ,
       verified_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
