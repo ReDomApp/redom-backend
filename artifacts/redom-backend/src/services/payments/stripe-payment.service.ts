@@ -24,6 +24,7 @@ type StripeSession = {
   payment_status?: string | null;
   subscription?: string | { id?: string } | null;
   customer?: string | { id?: string } | null;
+  expires_at?: number | null;
 };
 
 function authHeaders() {
@@ -644,7 +645,8 @@ export async function createAurelinkEmailBillingCheckout(input:{
     amountMinor=Number(option.monthly_price_minor);planOptionId=String(option.id);productName="Aurelink Mail "+String(option.display_name)+" — "+Number(option.monthly_email_allowance).toLocaleString("en-US")+" emails/month";mode="subscription";
     const active=await pool.query("SELECT id FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status IN ('active','past_due','pending_payment') LIMIT 1",[input.workspaceId]);
     if(active.rows[0])throw new Error("This workspace already has an active or pending monthly email subscription. Change or cancel it before starting another checkout.");
-    const pending=await pool.query("SELECT reference FROM aurelink_email_billing_payments WHERE workspace_id=$1 AND purchase_type='subscription' AND status='pending' LIMIT 1",[input.workspaceId]);
+    await pool.query("UPDATE aurelink_email_billing_payments SET status='cancelled',updated_at=NOW() WHERE workspace_id=$1 AND purchase_type='subscription' AND status='pending' AND expires_at<=NOW()",[input.workspaceId]);
+    const pending=await pool.query("SELECT reference FROM aurelink_email_billing_payments WHERE workspace_id=$1 AND purchase_type='subscription' AND status='pending' AND (expires_at IS NULL OR expires_at>NOW()) LIMIT 1",[input.workspaceId]);
     if(pending.rows[0])throw new Error("A monthly email checkout is already pending for this workspace. Complete or cancel it before starting another.");
   }else{
     if(!input.creditPackId)throw new Error("Select a prepaid email credit pack.");
@@ -694,7 +696,7 @@ export async function createAurelinkEmailBillingCheckout(input:{
     }
     const session=await stripeRequest<StripeSession>("post","/checkout/sessions",form(fields));
     if(!session.id||!session.url)throw new Error("Stripe did not return a hosted email checkout URL.");
-    await pool.query("UPDATE aurelink_email_billing_payments SET stripe_checkout_session_id=$1,updated_at=NOW() WHERE reference=$2",[session.id,reference]);
+    await pool.query("UPDATE aurelink_email_billing_payments SET stripe_checkout_session_id=$1,expires_at=CASE WHEN $3::bigint IS NULL THEN NULL ELSE to_timestamp($3::bigint) END,updated_at=NOW() WHERE reference=$2",[session.id,reference,session.expires_at??null]);
     return {reference,checkoutUrl:session.url,amountMinor,currency:"USD",purchaseType:input.purchaseType};
   }catch(error){
     await pool.query("UPDATE aurelink_email_billing_payments SET status='failed',updated_at=NOW() WHERE reference=$1",[reference]).catch(()=>undefined);
@@ -768,6 +770,7 @@ export async function verifyAurelinkEmailBillingCheckout(userId:string,reference
   const session=await stripeRequest<StripeSession>("get","/checkout/sessions/"+encodeURIComponent(String(payment.stripe_checkout_session_id)));
   if(String(session.metadata?.reference||"")!==reference)throw new Error("Stripe checkout session does not match the Aurelink payment reference.");
   if(String(session.payment_status||"")==="paid")await fulfillAurelinkEmailBillingCheckout(session);
+  else if(String(session.status||"")==="expired")await pool.query("UPDATE aurelink_email_billing_payments SET status='cancelled',updated_at=NOW() WHERE reference=$1 AND status='pending'",[reference]);
   const refreshed=(await pool.query("SELECT status FROM aurelink_email_billing_payments WHERE reference=$1 AND user_id=$2",[reference,userId])).rows[0];
   return {status:String(refreshed?.status||"pending"),purchaseType:String(payment.purchase_type),creditsAdded:payment.purchase_type==="email_credits"&&refreshed?.status==="paid"?String(payment.email_credits):undefined};
 }
