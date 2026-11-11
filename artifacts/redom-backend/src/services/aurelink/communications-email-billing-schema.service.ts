@@ -125,6 +125,7 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       CHECK(billing_period_end > billing_period_start),
       CHECK(used_emails + reserved_emails <= monthly_email_allowance)
     );
+    ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_subscriptions_active_workspace_idx
       ON aurelink_email_subscriptions(workspace_id) WHERE status IN ('active','past_due','pending_payment');
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_subscriptions_stripe_idx
