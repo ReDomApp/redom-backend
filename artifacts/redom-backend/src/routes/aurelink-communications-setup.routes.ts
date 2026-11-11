@@ -432,7 +432,7 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/reveal-token"
   if(row.status!=="ready_for_operator_submission"||row.website_status!=="verified"||new Date(row.scheduled_at).getTime()>Date.now()){await client.query("ROLLBACK");return res.status(423).json({success:false,message:"The one-hour review window has not elapsed or this request is no longer ready for submission."});}
   if(row.token_revealed_at||!row.request_token_encrypted){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"TOKEN_ALREADY_REVEALED",message:"The one-time provider correlation token has already been revealed. Use the existing secure operator record; do not generate a second mapping."});}
   const token=decryptSenderToken(String(row.request_token_encrypted));
-  await client.query("UPDATE aurelink_sender_provider_submissions SET token_revealed_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);
+  await client.query("UPDATE aurelink_sender_provider_submissions SET token_revealed_at=NOW(),request_token_encrypted=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
   const owner=(await client.query("SELECT sender_application_id,workspace_id FROM aurelink_sender_provider_submissions WHERE id=$1",[row.id])).rows[0];
   await client.query("INSERT INTO aurelink_sender_security_audit(sender_application_id,workspace_id,actor_user_id,action,details) VALUES($1,$2,$3,'provider_token_revealed',jsonb_build_object('revealedOnce',true))",[owner.sender_application_id,owner.workspace_id,req.user!.userId]);
   await client.query("COMMIT");
