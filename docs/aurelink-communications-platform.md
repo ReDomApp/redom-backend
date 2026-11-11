@@ -151,3 +151,67 @@ An uncertain provider submission is intentionally held for operator review. The 
 - `POST /aurelink/admin/communications/messages/:id/reconcile` — resolves one manual-review item. Requires `outcome` (`accepted` or `rejected`) and an `evidenceReference` documenting the provider-console check. For `accepted`, it also requires the actual provider `providerMessageId`.
 
 Both endpoints require a signed-in Aurelink account whose user ID is explicitly listed in `AURELINK_ADMIN_USER_IDS`. The reconciliation operation locks the job and message in one database transaction, rejects already-resolved records, prevents reuse of a provider message ID, writes an immutable administrator audit row, and then either captures the reserved charge (accepted) or issues the idempotent refund (confirmed not accepted). The API never exposes the stored message body or encrypted provider payload in the manual-review listing. The evidence reference should identify the provider console record, ticket or other independently checked evidence; it is an audit pointer, not proof automatically fetched by Aurelink.
+
+
+## Aurelink Mail billing and enforcement
+
+Outbound email billing is owned by Aurelink. Provider acceptance is the billable submission point; delivery, bounce, open and click events update message analytics but do not silently create a second charge or automatic refund.
+
+### Billing modes
+
+- **Free:** 100 accepted/reserved outbound emails per database day and up to 100,000 stored email contacts. Free daily usage is reserved atomically before provider submission. If the daily allowance is exhausted, prepaid credits may be used; otherwise the send is rejected.
+- **Monthly subscription:** Stripe recurring monthly checkout for one exact configured allowance. The subscription stores its billing period, allowance, accepted usage and in-flight reservations. Usage resets only on a verified Stripe renewal invoice.
+- **Prepaid email credits:** separately purchased email quantities. Credits do not expire. Credit purchases are fulfilled only after Stripe confirms payment.
+- **Pay-as-you-go:** uses the existing Aurelink USD wallet and active `email_message` / `smtp_message` price-catalog entry. Missing pricing or insufficient balance blocks the send.
+
+For a paid subscription, the monthly allowance is consumed first. Prepaid fallback is opt-in per subscription. Without a paid subscription, Free mode consumes its daily allowance first, then prepaid credits; Pay-as-you-go mode consumes prepaid credits first and then the USD wallet.
+
+### Initial configurable catalogue
+
+The schema seeds these exact starting configurations:
+
+| Plan | Allowance | Monthly price |
+|---|---:|---:|
+| Starter | 7,000 | $5 |
+| Standard | 21,000 | $20 |
+| Individual Max | 150,000 | $490 |
+| Business | 600,000 | $1,010 |
+
+The plan catalogue defines allowed ranges. Administrators create additional exact allowance/price options inside those ranges; customers never buy a broad range at one fixed price. Enterprise options are administrator-configured at 1 million or more. Prices are USD cents in the database.
+
+Initial prepaid credit packs are 1,000/$1.50, 10,000/$13, 50,000/$55, 100,000/$100, 250,000/$225 and 500,000/$425. Administrators can add or disable packs.
+
+### Enforcement and financial state
+
+Every email send, whether REST API or SMTP, reserves usage inside a database transaction before calling the upstream provider. The reservation records its source: Free daily allowance, monthly subscription, prepaid credits or USD wallet.
+
+- Confirmed provider acceptance captures the reservation.
+- Confirmed provider rejection releases the reservation or refunds prepaid/wallet value.
+- Timeout, connection loss after submission, or another ambiguous outcome is marked `unknown`; Aurelink does not automatically retry or refund it.
+- An administrator must reconcile an unknown outcome with provider evidence.
+- Idempotency is enforced for REST requests. SMTP requires a stable `Message-ID`; an already accepted or unknown Message-ID is not submitted again.
+- Stripe webhooks are signature-verified and idempotent. Subscription renewals, failed invoices, cancellations and credit purchases are reflected only after server-side provider verification.
+- Direct Resend SMTP credentials are disabled. Customer SMTP traffic must pass through the Aurelink-owned gateway so metering cannot be bypassed.
+
+The email-credit ledger is append-only. Wallet balances and subscription usage are updated transactionally, with unique references and row locks to prevent duplicate credits, double spending and concurrent overrun.
+
+### Billing API
+
+- `GET /aurelink/communications/email/billing/plans`
+- `GET /aurelink/communications/email/billing/credit-packs`
+- `GET /aurelink/communications/email/billing/overview`
+- `POST /aurelink/communications/email/billing/checkout`
+- `GET /aurelink/communications/email/billing/verify/:reference`
+- `PATCH /aurelink/communications/email/billing/mode` — Free or Pay-as-you-go when no active subscription exists
+- `PATCH /aurelink/communications/email/billing/prepaid-fallback`
+- `POST /aurelink/communications/email/billing/cancel` — schedules Stripe cancellation at period end
+- `GET /aurelink/admin/communications/email/smtp/manual-review`
+- `POST /aurelink/admin/communications/email/smtp/:id/reconcile`
+
+Pricing-option, credit-pack and reconciliation administration is restricted to `AURELINK_ADMIN_USER_IDS`. Workspace billing actions require owner, administrator or billing role.
+
+### Required configuration
+
+Set `AURELINK_EMAIL_BILLING_SUCCESS_URL` and `AURELINK_EMAIL_BILLING_CANCEL_URL` to the Aurelink application return URLs before enabling Stripe email checkout. Stripe must send signed events to `/payments/stripe/webhook` (or the corresponding `/redom-backend/payments/stripe/webhook` deployment path), including Checkout Session, Invoice and Subscription lifecycle events. The webhook signing secret must be configured through the existing Stripe environment configuration.
+
+These schema and service changes are additive. They do not change SMS billing, SMS provider routing, inbound mail, MX hosting, mailboxes, IMAP or POP3.
