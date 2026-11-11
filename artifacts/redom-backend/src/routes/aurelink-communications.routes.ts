@@ -21,12 +21,20 @@ router.post("/aurelink/webhooks/resend", async (req,res) => {
   const id=String(req.headers["svix-id"]||""),timestamp=String(req.headers["svix-timestamp"]||""),signature=String(req.headers["svix-signature"]||"");
   if(!verifyAurelinkResendWebhook(req.body,id,timestamp,signature,secret)) return res.status(400).json({success:false,message:"Invalid Resend webhook signature."});
   let event:any;try{event=JSON.parse(req.body.toString("utf8"));}catch{return res.status(400).json({success:false,message:"Invalid JSON payload."});}
-  const status=mapAurelinkResendEvent(String(event?.type||"")),messageId=String(event?.data?.email_id||event?.data?.id||"");
+  const status=mapAurelinkResendEvent(String(event?.type||"")),messageId=String(event?.data?.email_id||event?.data?.id||""),clientMessageId=String(event?.data?.message_id||"");
   try {
     const stored=await pool.query("INSERT INTO aurelink_provider_events(provider,provider_event_id,provider_message_id,event_type,payload,processed_at) VALUES('resend',$1,$2,$3,$4::jsonb,NOW()) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[id,messageId||null,String(event?.type||"unknown"),JSON.stringify(event)]);
     if(stored.rows.length&&status&&messageId) await updateAurelinkMessageStatus({provider:"resend",providerMessageId:messageId,status,providerStatus:String(event.type),providerError:event?.data?.bounce?.message||event?.data?.reason||undefined,deliveredAt:status==="delivered"?new Date(event?.created_at||Date.now()):undefined});
-    if(stored.rows.length&&status&&messageId) await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed') THEN 'failed' WHEN $2='opened' THEN 'opened' WHEN $2='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $2='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $2='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE provider='resend' AND provider_message_id=$1",[messageId,status]);
-    return res.status(200).json({received:true,updated:Boolean(stored.rows.length&&status&&messageId),duplicate:!stored.rows.length});
+    if(stored.rows.length&&status){
+      const smtpRows=clientMessageId
+        ?await pool.query("UPDATE aurelink_smtp_messages SET provider_message_id=COALESCE(provider_message_id,$1),status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed') THEN 'failed' WHEN $2='opened' THEN 'opened' WHEN $2='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $2='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $2='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE provider='resend' AND client_message_id=$3 RETURNING workspace_id,message_key",[messageId||null,status,clientMessageId])
+        :await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed') THEN 'failed' WHEN $2='opened' THEN 'opened' WHEN $2='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $2='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $2='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE provider='resend' AND provider_message_id=$1 RETURNING workspace_id,message_key",[messageId,status]);
+      for(const smtp of smtpRows.rows){
+        await pool.query("UPDATE aurelink_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed') THEN 'failed' WHEN $3 IN ('opened','clicked') THEN $3 ELSE status END,provider_status=$4,provider_error=$5,delivered_at=CASE WHEN $3='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,updated_at=NOW() WHERE id=$1",[smtp.message_key,messageId||null,status,String(event.type),event?.data?.bounce?.message||event?.data?.reason||null]);
+        await pool.query("UPDATE aurelink_communications_usage SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed') THEN 'failed' ELSE status END,updated_at=NOW() WHERE message_id=$1",[smtp.message_key,messageId||null,status]);
+      }
+    }
+    return res.status(200).json({received:true,updated:Boolean(stored.rows.length&&status&&(messageId||clientMessageId)),duplicate:!stored.rows.length});
   }catch{return res.status(500).json({success:false,message:"Unable to persist Resend delivery event."});}
 });
 
