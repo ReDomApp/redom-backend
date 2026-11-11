@@ -937,8 +937,8 @@ async function reconcileAurelinkEmailStripeEvent(type:string,object:any):Promise
     const start=Number(object?.current_period_start),end=Number(object?.current_period_end);
     if(Number.isFinite(start)&&Number.isFinite(end)&&end>start){
       await pool.query(
-        "UPDATE aurelink_email_subscriptions SET status=$2,billing_period_start=to_timestamp($3),billing_period_end=to_timestamp($4),updated_at=NOW() WHERE stripe_subscription_id=$1",
-        [subscriptionId,status,start,end]
+        "UPDATE aurelink_email_subscriptions SET status=$2,billing_period_start=to_timestamp($3),billing_period_end=to_timestamp($4),cancel_at_period_end=$5,updated_at=NOW() WHERE stripe_subscription_id=$1",
+        [subscriptionId,status,start,end,Boolean(object?.cancel_at_period_end)]
       );
     }else{
       await pool.query("UPDATE aurelink_email_subscriptions SET status=$2,updated_at=NOW() WHERE stripe_subscription_id=$1",[subscriptionId,status]);
