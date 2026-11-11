@@ -19,26 +19,32 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
   const billingMode=String(account?.billing_mode||"free");
 
   const subscriptionResult=await client.query(
-    `SELECT id,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback
+    `SELECT id,status,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback,
+            (billing_period_start<=NOW() AND billing_period_end>NOW()) AS period_active
        FROM aurelink_email_subscriptions
-      WHERE workspace_id=$1 AND status='active'
-        AND billing_period_start<=NOW() AND billing_period_end>NOW()
+      WHERE workspace_id=$1 AND status IN ('active','past_due')
       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
     [input.workspaceId]
   );
   const subscription=subscriptionResult.rows[0];
   if(subscription){
-    const remaining=BigInt(String(subscription.monthly_email_allowance))-BigInt(String(subscription.used_emails))-BigInt(String(subscription.reserved_emails));
-    if(remaining>=BigInt(input.units)){
-      await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails+$2,updated_at=NOW() WHERE id=$1",[subscription.id,input.units]);
-      await client.query(
-        "INSERT INTO aurelink_email_usage_reservations(message_id,user_id,workspace_id,source,subscription_id,units,status,metadata) VALUES($1,$2,$3,'subscription',$4,$5,'reserved',$6::jsonb)",
-        [input.messageId,input.userId,input.workspaceId,subscription.id,input.units,JSON.stringify({transport:input.transport,provider:input.provider,category:input.category,...input.metadata})]
-      );
-      return {source:"subscription",units:input.units,unitPriceMinor:null,amountMinor:null,walletReference:null};
+    const periodActive=subscription.status==="active"&&subscription.period_active===true;
+    if(periodActive){
+      const remaining=BigInt(String(subscription.monthly_email_allowance))-BigInt(String(subscription.used_emails))-BigInt(String(subscription.reserved_emails));
+      if(remaining>=BigInt(input.units)){
+        await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails+$2,updated_at=NOW() WHERE id=$1",[subscription.id,input.units]);
+        await client.query(
+          "INSERT INTO aurelink_email_usage_reservations(message_id,user_id,workspace_id,source,subscription_id,units,status,metadata) VALUES($1,$2,$3,'subscription',$4,$5,'reserved',$6::jsonb)",
+          [input.messageId,input.userId,input.workspaceId,subscription.id,input.units,JSON.stringify({transport:input.transport,provider:input.provider,category:input.category,...input.metadata})]
+        );
+        return {source:"subscription",units:input.units,unitPriceMinor:null,amountMinor:null,walletReference:null};
+      }
     }
     if(!subscription.allow_prepaid_fallback){
-      throw Object.assign(new Error("The monthly Aurelink Mail allowance is exhausted. Upgrade the package, enable prepaid fallback, or wait for renewal."),{code:"AURELINK_EMAIL_PLAN_LIMIT_REACHED"});
+      const message=subscription.status==="past_due"||!periodActive
+        ?"The Aurelink Mail subscription is not currently paid and active. Resolve payment or explicitly enable prepaid fallback."
+        :"The monthly Aurelink Mail allowance is exhausted. Upgrade the package, enable prepaid fallback, or wait for renewal.";
+      throw Object.assign(new Error(message),{code:"AURELINK_EMAIL_PLAN_LIMIT_REACHED"});
     }
   }
 
