@@ -129,6 +129,22 @@ function normalizeSenderDomain(value:string){
  if(domain.length>253||! /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain))throw new Error("A valid public business website domain is required.");
  return domain;
 }
+function senderTokenKey(){
+ const source=process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET;
+ if(!source||source.length<32)throw new Error("A 32+ character Aurelink communications encryption key is required.");
+ return createHash("sha256").update(source).update("|aurelink-sender-registration-token-v1").digest();
+}
+function encryptSenderToken(value:string){
+ const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",senderTokenKey(),iv),body=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);
+ return [iv.toString("base64url"),cipher.getAuthTag().toString("base64url"),body.toString("base64url")].join(".");
+}
+function decryptSenderToken(value:string){
+ const [iv,tag,body]=value.split(".");
+ if(!iv||!tag||!body)throw new Error("Sender registration token ciphertext is invalid.");
+ const decipher=createDecipheriv("aes-256-gcm",senderTokenKey(),Buffer.from(iv,"base64url"));
+ decipher.setAuthTag(Buffer.from(tag,"base64url"));
+ return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");
+}
 function senderAdmin(userId:string){return new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(v=>v.trim()).filter(Boolean)).has(userId);}
 router.get("/aurelink/communications/sms/countries",aurelinkAuthMiddleware,async(_req,res)=>{
  const rows=await pool.query("SELECT country_code,country_name,calling_code,international_prefix FROM aurelink_sms_supported_countries WHERE enabled=true ORDER BY country_name ASC");
@@ -222,9 +238,18 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
   const checklist=req.body.securityChecklist||{};
   const required=["legalBusinessVerified","brandOwnershipVerified","documentAuthenticityVerified","websiteContentVerified","privacyPolicyStatementVerified","termsContentVerified","consentEvidenceVerified","smsUseCaseVerified","countryRequirementsVerified"];
   const missing=required.filter((key:string)=>checklist[key]!==true);
-  if(found.website_status!=="verified"||!found.evidence_fingerprint||!found.consent_evidence_reference||!Array.isArray(found.request_details?.registrationDocuments)||!found.request_details.registrationDocuments.length||found.request_details?.attestations?.documentsAreAuthentic!==true||missing.length)return res.status(422).json({success:false,code:"SECURITY_GATE_INCOMPLETE",missingChecks:missing,message:"Website ownership, legal/brand verification, original-document authenticity, policy content, opt-in evidence and destination-specific carrier requirements must all be manually verified before the security gate can pass."});
-  const updated=await pool.query("UPDATE aurelink_sender_ids SET security_review_status='passed',security_reviewed_at=NOW(),security_reviewed_by=$2,registration_state='ready_for_submission',last_security_reason=NULL,request_details=request_details||jsonb_build_object('securityChecklist',$3::jsonb,'securityChecklistCompletedAt',NOW()),updated_at=NOW() WHERE id=$1 RETURNING id,status,registration_state,security_review_status,security_reviewed_at",[req.params.id,req.user!.userId,JSON.stringify(checklist)]);
-  return res.json({success:true,sender:updated.rows[0],providerSubmission:"not_submitted",note:"Security review passed. This does not submit to a carrier or approve the Sender ID."});
+  if(found.website_status!=="verified"||!found.evidence_fingerprint||!found.consent_evidence_reference||!Array.isArray(found.request_details?.registrationDocuments)||!found.request_details.registrationDocuments.length||found.request_details?.attestations?.documentsAreAuthentic!==true||missing.length)return res.status(422).json({success:false,code:"SECURITY_GATE_INCOMPLETE",missingChecks:missing,message:"Website ownership, legal/brand verification, original-document authenticity, policy content, opt-in evidence and destination-specific carrier requirements must all be manually verified before security approval."});
+  const token="AUR-SID-"+randomBytes(32).toString("base64url"),tokenHash=hash(token),encryptedToken=encryptSenderToken(token);
+  const client=await pool.connect();
+  try{
+   await client.query("BEGIN");
+   const due=await client.query("SELECT NOW()+INTERVAL '1 hour' AS due_at");
+   const reviewDueAt=due.rows[0].due_at;
+   const updated=await client.query("UPDATE aurelink_sender_ids SET security_review_status='passed',security_reviewed_at=NOW(),security_reviewed_by=$2,registration_state='scheduled_for_brevo',brevo_review_due_at=$3,brevo_request_token_hash=$4,last_security_reason=NULL,request_details=request_details||jsonb_build_object('securityChecklist',$5::jsonb,'securityChecklistCompletedAt',NOW(),'provider','brevo'),updated_at=NOW() WHERE id=$1 RETURNING id,status,registration_state,security_review_status,security_reviewed_at,brevo_review_due_at",[req.params.id,req.user!.userId,reviewDueAt,tokenHash,JSON.stringify(checklist)]);
+   await client.query("INSERT INTO aurelink_sender_provider_submissions(sender_application_id,workspace_id,provider,request_token_hash,request_token_encrypted,status,scheduled_at) VALUES($1,$2,'brevo',$3,$4,'scheduled',$5)",[req.params.id,found.workspace_id,tokenHash,encryptedToken,reviewDueAt]);
+   await client.query("COMMIT");
+   return res.json({success:true,sender:updated.rows[0],provider:"brevo",providerSubmission:"scheduled",reviewDelayMinutes:60,reviewDueAt,requestTokenLinked:true,note:"Aurelink security review passed. The application is held for the one-hour internal review window before it enters Brevo's submission queue. Carrier approval remains separate."});
+  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
  }
  if(status==="security_failed"){
   const restrictionDays=Number(req.body.restrictionDays);
