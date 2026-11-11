@@ -26,15 +26,17 @@ export async function chargeAurelinkUsage(
         AND (country_code=$2 OR country_code='*')
         AND (provider=$3 OR provider='*')
         AND (category=$4 OR category='*')
+        AND (workspace_id=$5 OR workspace_id IS NULL)
         AND effective_from<=NOW()
         AND (effective_until IS NULL OR effective_until>NOW())
       ORDER BY
         (country_code=$2)::int DESC,
         (provider=$3)::int DESC,
         (category=$4)::int DESC,
+        (workspace_id=$5)::int DESC,
         effective_from DESC
       LIMIT 1`,
-    [input.service, country, provider, category],
+    [input.service, country, provider, category, input.workspaceId],
   );
   const price = result.rows[0];
   if (!price) {
