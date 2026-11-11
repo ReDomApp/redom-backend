@@ -334,6 +334,11 @@ async function markSmtpUnknown(user, reservation, reason, mailFrom, recipients, 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const reservationState=(await client.query("SELECT status FROM aurelink_email_usage_reservations WHERE message_id=$1 FOR UPDATE",[reservation.messageId])).rows[0];
+    if(!reservationState||["captured","refunded","released"].includes(String(reservationState.status))){
+      await client.query("COMMIT");
+      return;
+    }
     await client.query("UPDATE aurelink_email_usage_reservations SET status='unknown',metadata=metadata||$2::jsonb,updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[reservation.messageId,JSON.stringify(allocation||{})]);
     await client.query("UPDATE aurelink_messages SET status='unknown',provider_message_id=COALESCE($3,provider_message_id),provider_status=CASE WHEN $4 THEN 'provider_accepted_billing_reconciliation_required' WHEN $3 IS NULL THEN 'provider_outcome_unknown' ELSE 'provider_accepted_billing_reconciliation_required' END,provider_error=$2,updated_at=NOW() WHERE id=$1",[reservation.messageId,String(reason || "SMTP provider outcome is unknown").slice(0,500),providerMessageId,providerAccepted]);
     await client.query("UPDATE aurelink_communications_usage SET status='queued',updated_at=NOW() WHERE message_id=$1",[reservation.messageId]);
