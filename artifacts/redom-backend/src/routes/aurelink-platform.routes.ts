@@ -66,7 +66,7 @@ router.get("/aurelink/communications/billing/statement",aurelinkAuthMiddleware,a
  try{
   const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   const month=String(req.query.month||new Date().toISOString().slice(0,7));
-  if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month))return res.status(400).json({success:false,message:"month must use YYYY-MM."});
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))return res.status(400).json({success:false,message:"month must use YYYY-MM."});
   const result=await pool.query(`SELECT entry_type,status,currency,COUNT(*)::int AS entries,COALESCE(SUM(amount_minor),0)::bigint AS amount_minor
     FROM aurelink_communications_billing_ledger WHERE workspace_id=$1
     AND created_at>=($2||'-01')::date AND created_at<(($2||'-01')::date+INTERVAL '1 month')
