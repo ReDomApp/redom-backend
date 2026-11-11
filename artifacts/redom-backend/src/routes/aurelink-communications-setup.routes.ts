@@ -443,8 +443,8 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitte
 });
 async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:string;status:string;providerReference?:string;reason?:string;payload?:unknown;actorUserId?:string}){
  const tokenHash=hash(input.token),status=input.status.toLowerCase();
- const terminal=status==="completed"||status==="successful"||status==="success"||status==="approved"||status==="rejected"||status==="declined"||status==="failed"||status==="denied";
- const approved=["completed","successful","success","approved"].includes(status);
+ const terminal=status==="completed"||status==="complete"||status==="successful"||status==="success"||status==="approved"||status==="rejected"||status==="declined"||status==="failed"||status==="denied";
+ const approved=["completed","complete","successful","success","approved"].includes(status);
  const rejected=["rejected","declined","failed","denied"].includes(status);
  const client=await pool.connect();
  try{
@@ -476,7 +476,7 @@ router.post("/aurelink/webhooks/brevo/sender-registration",async(req,res)=>{
  if(!supplied||a.length!==b.length||!timingSafeEqual(a,b))return res.status(403).json({success:false,message:"Invalid sender-registration callback authentication."});
  const token=String(req.body.requestToken||""),eventId=String(req.body.eventId||""),status=String(req.body.status||"").toLowerCase();
  if(!token||!eventId||!status)return res.status(400).json({success:false,message:"requestToken, eventId and status are required."});
- if(["completed","successful","success","approved","rejected","declined","failed","denied"].includes(status)){
+ if(["completed","complete","successful","success","approved","rejected","declined","failed","denied"].includes(status)){
   const evidenceUrl=String(req.body.evidenceUrl||"");
   try{const parsed=new URL(evidenceUrl);if(parsed.protocol!=="https:"||parsed.username||parsed.password)throw new Error("invalid");}catch{return res.status(400).json({success:false,code:"BREVO_TERMINAL_EVIDENCE_REQUIRED",message:"Terminal registration outcomes require an HTTPS Brevo evidence URL and provider reference."});}
  }
