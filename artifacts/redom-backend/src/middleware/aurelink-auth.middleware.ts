@@ -9,7 +9,7 @@ function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
   if(p[1]==="communications"&&(["domains","senders","email-senders","smtp","templates"].includes(p[2]||"")&&(p.length===3||p[2]==="smtp"&&p[3]==="credentials"&&p.length===4)||p[2]==="dns"&&p[3]==="cloudflare"&&p[4]==="connections"&&p.length===5))return true;
-  if(req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/analytics"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||req.path==="/aurelink/communications/contacts"||p[1]==="communications"&&(p[2]==="messages"||p[2]==="contacts")&&p.length===4)return true;
+  if(p[1]==="communications"&&(["billing","reputation","team"].includes(p[2]||"")||p[2]==="domains"&&p[3]==="")||req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/analytics"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||req.path==="/aurelink/communications/contacts"||p[1]==="communications"&&(p[2]==="messages"||p[2]==="contacts")&&p.length===4)return true;
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
   if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
@@ -20,6 +20,9 @@ function apiKeyAllowed(req:Request):boolean{
  }
  if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
+  if(p[1]==="communications"&&p[2]==="team"&&p[3]==="invitations"&&p.length===4)return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["suspend","resume"].includes(p[3]))return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p[3]==="tracking-domain"&&p.length===5&&p[4]==="verify")return true;
   if(req.path==="/aurelink/communications/domains"||req.path==="/aurelink/communications/senders"||req.path==="/aurelink/communications/email-senders"||req.path==="/aurelink/communications/templates"||req.path==="/aurelink/communications/dns/cloudflare/connect"||req.path==="/aurelink/communications/smtp/credentials")return true;
   if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["check","verify","apply-dns","tracking"].includes(p[3]))return true;
   if(p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials"&&p.length===6&&p[5]==="rotate")return true;
@@ -34,7 +37,11 @@ function apiKeyAllowed(req:Request):boolean{
   if(p[1]==="rentals"&&p.length===4&&p[3]==="renew")return true;
   if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="cancel")return true;
  }
+ if(req.method==="PUT"&&p[1]==="communications"&&p[2]==="domains"&&p[3]==="tracking-domain"&&p.length===4)return true;
+ if(req.method==="PATCH"&&p[1]==="communications"&&p[2]==="team"&&p[3]==="members"&&p.length===5&&p[5]==="role")return true;
  if((req.method==="PATCH"||req.method==="DELETE")&&p[1]==="communications"&&p[2]==="templates"&&p.length===4)return true;
+ if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="domains"&&p.length===3)return true;
+ if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="team"&&p[3]==="members"&&p.length===5)return true;
  if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials"&&p.length===5)return true;
  return false;
 }
