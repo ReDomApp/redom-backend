@@ -101,10 +101,10 @@ router.get("/aurelink/communications/email/billing/overview",aurelinkAuthMiddlew
     pool.query("SELECT balance_emails FROM aurelink_email_credit_wallets WHERE workspace_id=$1",[wid]),
     pool.query("SELECT balance_minor,currency FROM aurelink_wallets WHERE user_id=$1",[req.user!.userId]),
     pool.query(
-      `SELECT COUNT(*) FILTER(WHERE status IN ('accepted','delivered'))::bigint AS accepted_messages,
-              COALESCE(SUM(units) FILTER(WHERE status IN ('accepted','delivered')),0)::bigint AS accepted_emails,
-              COALESCE(SUM(units) FILTER(WHERE status='queued'),0)::bigint AS pending_emails
-         FROM aurelink_communications_usage WHERE workspace_id=$1 AND channel='email'
+      `SELECT COUNT(*) FILTER(WHERE status='captured')::bigint AS accepted_messages,
+              COALESCE(SUM(units) FILTER(WHERE status='captured'),0)::bigint AS accepted_emails,
+              COALESCE(SUM(units) FILTER(WHERE status IN ('reserved','unknown')),0)::bigint AS pending_emails
+         FROM aurelink_email_usage_reservations WHERE workspace_id=$1
           AND created_at>=date_trunc('month',NOW())`,[wid]
     ),
     pool.query("SELECT billing_mode FROM aurelink_email_billing_accounts WHERE workspace_id=$1",[wid]),
