@@ -68,12 +68,17 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
   const credit=await client.query("SELECT balance_emails FROM aurelink_email_credit_wallets WHERE workspace_id=$1 FOR UPDATE",[input.workspaceId]);
   const creditBalance=BigInt(String(credit.rows[0]?.balance_emails??"0"));
   if(creditBalance>=BigInt(input.units)){
+    if(input.category!=="transactional")throw Object.assign(new Error("Prepaid Mail is restricted to low-volume transactional sending. Use an active subscription for campaigns and business mailing."),{code:"AURELINK_PREPAID_FEATURE_RESTRICTED"});
+    await client.query("INSERT INTO aurelink_email_prepaid_daily_usage(workspace_id,usage_date) VALUES($1,CURRENT_DATE) ON CONFLICT(workspace_id,usage_date) DO NOTHING",[input.workspaceId]);
+    const daily=(await client.query("SELECT usage_date,used_emails,reserved_emails FROM aurelink_email_prepaid_daily_usage WHERE workspace_id=$1 AND usage_date=CURRENT_DATE FOR UPDATE",[input.workspaceId])).rows[0];
+    if(BigInt(String(daily.used_emails))+BigInt(String(daily.reserved_emails))+BigInt(input.units)>2500n)throw Object.assign(new Error("Prepaid Mail is limited to 2,500 emails per workspace per day. A subscription is required for higher-volume sending."),{code:"AURELINK_PREPAID_DAILY_LIMIT"});
+    await client.query("UPDATE aurelink_email_prepaid_daily_usage SET reserved_emails=reserved_emails+$2,updated_at=NOW() WHERE workspace_id=$1 AND usage_date=CURRENT_DATE",[input.workspaceId,input.units]);
     const next=creditBalance-BigInt(input.units);
     await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=$2,updated_at=NOW() WHERE workspace_id=$1",[input.workspaceId,next.toString()]);
     const reference="AL-EMAIL-USE-"+input.messageId;
     await client.query(
       "INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,description,metadata) VALUES($1,$2,'usage','debit',$3,$4,$5,'Aurelink prepaid email usage',$6::jsonb)",
-      [input.workspaceId,input.userId,input.units,next.toString(),reference,JSON.stringify({messageId:input.messageId,transport:input.transport,provider:input.provider,...input.metadata})]
+      [input.workspaceId,input.userId,input.units,next.toString(),reference,JSON.stringify({messageId:input.messageId,transport:input.transport,provider:input.provider,usageDate:String(daily.usage_date),dailyLimit:2500,...input.metadata})]
     );
     await client.query(
       "INSERT INTO aurelink_email_usage_reservations(message_id,user_id,workspace_id,source,units,status,metadata) VALUES($1,$2,$3,'prepaid',$4,'reserved',$5::jsonb)",
@@ -113,6 +118,8 @@ export async function resizeAurelinkEmailUsageReservation(client:Db,messageId:st
     const updated=await client.query("UPDATE aurelink_email_free_daily_usage SET reserved_emails=reserved_emails-$3,updated_at=NOW() WHERE workspace_id=$1 AND usage_date=$2::date AND reserved_emails >= $3",[reservation.workspace_id,usageDate,rejectedUnits]);
     if(!updated.rowCount)throw new Error("AURELINK_EMAIL_FREE_DAILY_RESERVATION_MISMATCH");
   }else if(reservation.source==="prepaid"){
+    const usageDate=String(reservation.metadata?.usageDate||new Date().toISOString().slice(0,10));
+    await client.query("UPDATE aurelink_email_prepaid_daily_usage SET reserved_emails=GREATEST(0,reserved_emails-$3),updated_at=NOW() WHERE workspace_id=$1 AND usage_date=$2::date",[reservation.workspace_id,usageDate,rejectedUnits]);
     const wallet=(await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=balance_emails+$2,updated_at=NOW() WHERE workspace_id=$1 RETURNING balance_emails",[reservation.workspace_id,rejectedUnits])).rows[0];
     if(!wallet)throw new Error("AURELINK_EMAIL_CREDIT_WALLET_MISSING");
     await client.query(
@@ -156,6 +163,10 @@ export async function captureAurelinkEmailUsage(client:Db,messageId:string):Prom
       [reservation.workspace_id,usageDate,reservation.units]
     );
     if(!updated.rowCount)throw new Error("AURELINK_EMAIL_FREE_DAILY_RESERVATION_MISMATCH");
+  }else if(reservation.source==="prepaid"){
+    const usageDate=String(reservation.metadata?.usageDate||new Date().toISOString().slice(0,10));
+    const daily=await client.query("UPDATE aurelink_email_prepaid_daily_usage SET reserved_emails=reserved_emails-$3,used_emails=used_emails+$3,updated_at=NOW() WHERE workspace_id=$1 AND usage_date=$2::date AND reserved_emails >= $3",[reservation.workspace_id,usageDate,reservation.units]);
+    if(!daily.rowCount)throw new Error("AURELINK_PREPAID_DAILY_RESERVATION_MISMATCH");
   }else if(reservation.source==="wallet"){
     await captureAurelinkUsage(client,messageId);
   }
@@ -182,6 +193,8 @@ export async function refundAurelinkEmailUsage(client:Db,messageId:string):Promi
     );
     if(!updated.rowCount)throw new Error("AURELINK_EMAIL_FREE_DAILY_RESERVATION_MISMATCH");
   }else if(reservation.source==="prepaid"){
+    const usageDate=String(reservation.metadata?.usageDate||new Date().toISOString().slice(0,10));
+    await client.query("UPDATE aurelink_email_prepaid_daily_usage SET reserved_emails=GREATEST(0,reserved_emails-$3),updated_at=NOW() WHERE workspace_id=$1 AND usage_date=$2::date",[reservation.workspace_id,usageDate,reservation.units]);
     const wallet=await client.query(
       "UPDATE aurelink_email_credit_wallets SET balance_emails=balance_emails+$2,updated_at=NOW() WHERE workspace_id=$1 RETURNING balance_emails",
       [reservation.workspace_id,reservation.units]
