@@ -1,10 +1,10 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { pool } from "../../database/db";
-import { walletCredit, walletDebit } from "./aurelink-wallet.service";
+import { chargeAurelinkUsage, countSmsSegments, refundAurelinkUsage } from "./communications-billing.service";
 import { sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.service";
 
 type JobPayload =
-  | { channel:"sms"; provider:"brevo"|"twilio"; category:"transactional"|"marketing"|"otp"|"notification"; input:{recipient:string;sender:string;content:string;category:"transactional"|"marketing"|"otp"|"notification";tag?:string;webUrl?:string} }
+  | { channel:"sms"; provider:"brevo"|"twilio"; category:"transactional"|"marketing"|"otp"|"notification"; input:{recipient:string;sender:string;content:string;category:"transactional"|"marketing"|"otp"|"notification";countryCode?:string;tag?:string;webUrl?:string} }
   | { channel:"email"; provider:"resend"|"brevo"; category:"transactional"|"notification"; scheduledAt?:string; input:{recipient:string;sender:string;senderName?:string;subject:string;html?:string;text?:string;replyTo?:string;tags?:string[];attachments?:Array<{filename:string;content:string;contentType?:string}>} };
 
 function key(){const source=process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET;if(!source||source.length<32)throw new Error("Set AURELINK_COMMUNICATIONS_ENCRYPTION_KEY (32+ characters) or JWT_ACCESS_SECRET before enabling communications delivery.");return createHash("sha256").update(source).update("|aurelink-communications-v1").digest();}
@@ -31,11 +31,10 @@ export async function enqueueAurelinkMessage(input:{
   }
   const message=inserted.rows[0];
   await client.query("INSERT INTO aurelink_communications_jobs(message_id,workspace_id,payload_encrypted,payload_hash,next_attempt_at) VALUES($1,$2,$3,$4,COALESCE($5,NOW()))",[message.id,input.workspaceId,encrypt(JSON.stringify(input.payload)),payloadHash,input.scheduledAt||null]);
-  const unitPriceMinor=Number(input.channel==="sms"?(process.env.AURELINK_SMS_UNIT_PRICE_MINOR||"0"):(process.env.AURELINK_EMAIL_UNIT_PRICE_MINOR||"0"));
-  if(!Number.isSafeInteger(unitPriceMinor)||unitPriceMinor<0)throw new Error("Communications unit price must be a non-negative integer in USD cents.");
-  const debitReference=unitPriceMinor>0?"aurelink-communications:"+String(message.id):null;
-  if(unitPriceMinor>0)await walletDebit(client,{userId:input.userId,amountMinor:unitPriceMinor,reference:String(debitReference),type:"purchase",description:"Aurelink communications message send",metadata:{messageId:message.id,channel:input.channel,provider:input.provider,category:input.category}});
-  await client.query("INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,$3,$4,$5,1,'queued',$6,$7)",[input.workspaceId,message.id,input.channel,input.provider,input.category,unitPriceMinor,debitReference]);
+  const smsUnits=input.channel==="sms"?countSmsSegments(input.content):1;
+  const countryCode=input.channel==="sms"?(input.payload.channel==="sms"?(input.payload.input.countryCode||"*"):"*"):"*";
+  const billable=await chargeAurelinkUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),service:input.channel==="sms"?"sms_segment":"email_message",units:smsUnits,countryCode,metadata:{channel:input.channel,provider:input.provider,category:input.category}});
+  await client.query("INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8)",[input.workspaceId,message.id,input.channel,input.provider,input.category,smsUnits,billable.unitPriceMinor,billable.reference]);
   await client.query("COMMIT");
   return {message,replayed:false as const};
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
@@ -59,11 +58,9 @@ async function refundCommunicationCharge(messageId:string){
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
-  const charge=await client.query("SELECT w.user_id,u.unit_price_minor,u.wallet_debit_reference FROM aurelink_messages m JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id JOIN aurelink_communications_usage u ON u.message_id=m.id WHERE m.id=$1 FOR UPDATE OF u",[messageId]);
+  const charge=await client.query("SELECT m.workspace_id,w.user_id FROM aurelink_messages m JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id WHERE m.id=$1 FOR UPDATE OF m",[messageId]);
   const row=charge.rows[0];
-  if(row&&Number(row.unit_price_minor)>0&&row.wallet_debit_reference){
-    await walletCredit(client,{userId:String(row.user_id),amountMinor:Number(row.unit_price_minor),reference:"aurelink-communications-refund:"+messageId,type:"refund",description:"Refund for failed Aurelink communications delivery",metadata:{messageId,originalDebitReference:row.wallet_debit_reference}});
-  }
+  if(row) await refundAurelinkUsage(client,messageId,String(row.user_id),String(row.workspace_id));
   await client.query("COMMIT");
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);console.error("[Aurelink communications refund]",error instanceof Error?error.message:"unknown error");}
  finally{client.release();}
@@ -108,7 +105,7 @@ async function tick(){
   const batch=await pool.query(`WITH due AS (SELECT id FROM aurelink_communications_jobs WHERE status='pending' AND next_attempt_at<=NOW() ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT 10) UPDATE aurelink_communications_jobs j SET status='processing',attempts=attempts+1,locked_at=NOW(),updated_at=NOW() FROM due WHERE j.id=due.id RETURNING j.*`);
   for(const row of batch.rows)await processOne(row);
   await pool.query("UPDATE aurelink_communications_jobs SET status='pending',locked_at=NULL,next_attempt_at=NOW()+INTERVAL '30 seconds',updated_at=NOW() WHERE status='processing' AND locked_at<NOW()-INTERVAL '5 minutes'");
-  const refunds=await pool.query("SELECT u.message_id FROM aurelink_communications_usage u WHERE u.status='failed' AND u.unit_price_minor>0 AND u.wallet_debit_reference IS NOT NULL AND NOT EXISTS(SELECT 1 FROM aurelink_wallet_ledger l WHERE l.reference='aurelink-communications-refund:'||u.message_id::text) ORDER BY u.updated_at LIMIT 20");
+  const refunds=await pool.query("SELECT u.message_id FROM aurelink_communications_usage u JOIN aurelink_communications_billing_ledger b ON b.message_id=u.message_id AND b.entry_type='charge' AND b.status='posted' WHERE u.status='failed' AND NOT EXISTS(SELECT 1 FROM aurelink_communications_billing_ledger r WHERE r.message_id=u.message_id AND r.entry_type='refund') ORDER BY u.updated_at LIMIT 20");
   for(const item of refunds.rows)await refundCommunicationCharge(String(item.message_id));
  }catch(error){console.error("[Aurelink communications worker]",error instanceof Error?error.message:"unknown error");}
  finally{busy=false;}
