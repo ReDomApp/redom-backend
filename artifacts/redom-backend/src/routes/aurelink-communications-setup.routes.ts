@@ -120,78 +120,109 @@ router.post("/aurelink/communications/domains/:id/tracking",aurelinkAuthMiddlewa
 });
 
 
+
+function normalizeSenderDomain(value:string){
+ const domain=value.trim().toLowerCase().replace(/^https?:\/\//,"").split("/")[0].replace(/\.$/,"");
+ if(domain.length>253||! /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain))throw new Error("A valid public business website domain is required.");
+ return domain;
+}
+function senderAdmin(userId:string){return new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(v=>v.trim()).filter(Boolean)).has(userId);}
+router.get("/aurelink/communications/websites",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+ const rows=await pool.query("SELECT id,domain,website_url,verification_method,status,verified_at,evidence,created_at,updated_at FROM aurelink_verified_websites WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
+ return res.json({success:true,websites:rows.rows});
+});
+router.post("/aurelink/communications/websites",aurelinkAuthMiddleware,async(req,res)=>{
+ try{
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  const websiteUrl=String(req.body.websiteUrl||"").trim(),parsed=new URL(websiteUrl);
+  if(parsed.protocol!=="https:"||parsed.username||parsed.password) return res.status(400).json({success:false,code:"HTTPS_WEBSITE_REQUIRED",message:"Use a public HTTPS company website without embedded credentials."});
+  const domain=normalizeSenderDomain(parsed.hostname),token="aurelink-site-verification="+randomBytes(32).toString("hex"),tokenHash=hash(token);
+  const saved=await pool.query("INSERT INTO aurelink_verified_websites(workspace_id,domain,website_url,verification_method,verification_token_hash,status,evidence) VALUES($1,$2,$3,'dns_txt',$4,'pending',$5::jsonb) ON CONFLICT(workspace_id,domain) DO UPDATE SET website_url=EXCLUDED.website_url,verification_method='dns_txt',verification_token_hash=EXCLUDED.verification_token_hash,status='pending',verified_at=NULL,verified_by=NULL,evidence='{}'::jsonb,updated_at=NOW() RETURNING id,domain,website_url,status,verification_method,created_at",[wid,domain,websiteUrl,tokenHash,JSON.stringify({challengeIssuedAt:new Date().toISOString()})]);
+  return res.status(201).json({success:true,website:saved.rows[0],dnsRecord:{type:"TXT",host:"_aurelink-verification."+domain,value:token},instructions:"Publish the exact TXT record, then call the verify endpoint. Website ownership is not considered verified until Aurelink resolves and matches this challenge."});
+ }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to register website."});}
+});
+router.post("/aurelink/communications/websites/:id/verify",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+ const row=(await pool.query("SELECT * FROM aurelink_verified_websites WHERE id=$1 AND workspace_id=$2",[req.params.id,wid])).rows[0];
+ if(!row)return res.status(404).json({success:false,message:"Website verification request not found."});
+ try{
+  const records=await resolveTxt("_aurelink-verification."+String(row.domain));
+  const challenge=records.flat().find((v:string)=>v.startsWith("aurelink-site-verification="));
+  if(!challenge||hash(challenge)!==String(row.verification_token_hash))return res.status(409).json({success:false,code:"WEBSITE_OWNERSHIP_NOT_PROVEN",message:"The required DNS TXT challenge was not found or did not match. The website remains unverified."});
+  const updated=await pool.query("UPDATE aurelink_verified_websites SET status='verified',verified_at=NOW(),evidence=jsonb_build_object('dnsTxtVerified',true,'verifiedAt',NOW()),updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,domain,website_url,status,verified_at",[row.id,wid]);
+  return res.json({success:true,website:updated.rows[0]});
+ }catch{return res.status(409).json({success:false,code:"WEBSITE_DNS_CHECK_FAILED",message:"Aurelink could not verify the DNS challenge. No sender registration can proceed until ownership is verified."});}
+});
 router.get("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
-  const rows=await pool.query("SELECT id,channel,sender,country_code,provider,status,provider_reference,rejection_reason,request_details,submitted_at,approved_at,created_at,updated_at FROM aurelink_sender_ids WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
-  return res.json({success:true,senders:rows.rows});
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+ const rows=await pool.query("SELECT id,channel,sender,country_code,provider,status,registration_state,security_review_status,security_reviewed_at,last_security_reason,provider_reference,rejection_reason,request_details,submitted_at,approved_at,created_at,updated_at FROM aurelink_sender_ids WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
+ return res.json({success:true,senders:rows.rows});
 });
 router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,res)=>{
-  const channel=req.body.channel==="sms"?"sms":req.body.channel==="email"?"email":null;
-  const sender=String(req.body.sender||"").trim();
-  const provider=String(req.body.provider||"twilio").toLowerCase();
-  const countryCode=String(req.body.countryCode||"").toUpperCase();
-  const requestDetails={
-    senderType:"alphanumeric",
-    businessName:String(req.body.businessName||"").trim().slice(0,160),
-    businessWebsite:String(req.body.businessWebsite||"").trim().slice(0,500),
-    messageUseCase:String(req.body.messageUseCase||"").trim().slice(0,1000),
-    sampleMessage:String(req.body.sampleMessage||"").trim().slice(0,1000),
-    estimatedMonthlyVolume:String(req.body.estimatedMonthlyVolume||"").trim().slice(0,40),
-    registrationDocuments:Array.isArray(req.body.registrationDocuments)?req.body.registrationDocuments.filter((x:any)=>typeof x==="string").slice(0,10):[],
-  };
-  if(!channel||channel!=="sms")return res.status(400).json({success:false,message:"This registration workflow currently accepts SMS sender IDs only."});
-  if(!sender||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender))return res.status(400).json({success:false,message:"Alphanumeric sender IDs must be 3–11 ASCII letters or digits and include at least one letter."});
+ try{
+  const sender=String(req.body.sender||"").trim(),provider=String(req.body.provider||"twilio").toLowerCase(),countryCode=String(req.body.countryCode||"").toUpperCase();
+  const senderType=String(req.body.senderType||"alphanumeric");
+  if(!sender||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender))return res.status(400).json({success:false,message:"Alphanumeric Sender IDs must be 3–11 ASCII letters or digits and include at least one letter."});
   if(!senderProviders.has(provider))return res.status(400).json({success:false,message:"SMS sender registration provider must be twilio or brevo."});
   if(!/^[A-Z]{2}$/.test(countryCode))return res.status(400).json({success:false,message:"A two-letter ISO destination country code is required."});
-  if(countryCode==="US"||countryCode==="CA")return res.status(422).json({success:false,code:"ALPHANUMERIC_SENDER_UNSUPPORTED",message:"Alphanumeric sender IDs are not supported in the United States or Canada. Use an eligible registered phone-number sender instead."});
-  if(req.body.senderType && req.body.senderType!=="alphanumeric")return res.status(400).json({success:false,message:"This endpoint registers alphanumeric sender IDs only. Phone-number, toll-free and short-code registration require separate country-specific workflows."});
-  if(!requestDetails.businessName||!requestDetails.businessWebsite||!requestDetails.messageUseCase||!requestDetails.sampleMessage)return res.status(400).json({success:false,message:"Business name, business website, messaging use case and sample message are required for carrier review."});
-  if(requestDetails.registrationDocuments.some((value:string)=>{try{return new URL(value).protocol!=="https:";}catch{return true;}}))return res.status(400).json({success:false,message:"Registration document references must be HTTPS URLs."});
-  try{
-    const website=new URL(requestDetails.businessWebsite);
-    if(website.protocol!=="https:")throw new Error("Business website must use HTTPS.");
-  }catch{return res.status(400).json({success:false,message:"Provide a valid HTTPS business website."});}
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
-  const saved=await pool.query(
-    "INSERT INTO aurelink_sender_ids(workspace_id,channel,sender,country_code,provider,status,request_details) VALUES($1,'sms',$2,$3,$4,'pending',$5::jsonb) RETURNING id,channel,sender,country_code,provider,status,request_details,created_at",
-    [wid,sender,countryCode,provider,JSON.stringify(requestDetails)]
-  );
-  return res.status(202).json({
-    success:true,sender:saved.rows[0],
-    registrationState:"pending_customer_submission",
-    providerSubmission:"not_submitted",
-    nextStep:provider==="brevo"
-      ?"Open Brevo > Settings > Campaigns > SMS Sender ID, submit the same sender and country with the business details/documents above, then return to Aurelink when Brevo confirms approval."
-      :"Open Twilio Console > Communications > Trust Hub > Registrations > Alphanumeric Sender IDs, submit the same sender and country with the business details/documents above, then return to Aurelink when Twilio confirms approval.",
-    providerRegistrationGuide:provider==="brevo"
-      ?"https://help.brevo.com/hc/en-us/articles/28255350696466-Register-a-Sender-ID-to-send-SMS-messages"
-      :"https://www.twilio.com/docs/trust-hub/registrations/alphanumeric-sender-id",
-    approvalEvidenceRequired:true,
-    note:"Aurelink stores and enforces registration state; provider/carrier approval is not fabricated or automatically inferred.",
-  });
-});
-
-
-router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware,async(req,res)=>{
-  const admins=new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(value=>value.trim()).filter(Boolean));
-  if(!admins.has(req.user!.userId))return res.status(403).json({success:false,message:"Only configured Aurelink communications administrators can review sender registrations."});
-  const status=String(req.body.status||"");
-  const providerReference=String(req.body.providerReference||"").trim();
-  const evidenceUrl=String(req.body.evidenceUrl||"").trim();
-  const rejectionReason=String(req.body.rejectionReason||"").trim();
-  if(!["submitted","approved","rejected","suspended"].includes(status))return res.status(400).json({success:false,message:"Review status must be submitted, approved, rejected or suspended."});
-  if((status==="submitted"||status==="approved")&&!providerReference)return res.status(400).json({success:false,message:"A real provider registration/reference ID is required."});
-  if(status==="approved"){
-    try{const parsed=new URL(evidenceUrl);if(parsed.protocol!=="https:")throw new Error("invalid");}
-    catch{return res.status(400).json({success:false,message:"Approval requires an HTTPS link to the provider/carrier approval evidence."});}
+  if(!["alphanumeric","toll_free"].includes(senderType))return res.status(400).json({success:false,message:"Unsupported sender type. Phone-number and short-code registrations require their dedicated workflows."});
+  if(["US","CA"].includes(countryCode)&&senderType!=="toll_free")return res.status(422).json({success:false,code:"TOLL_FREE_REGISTRATION_REQUIRED",message:"This destination requires a registered toll-free sender workflow; an alphanumeric Sender ID cannot be submitted."});
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  const websiteDomain=normalizeSenderDomain(String(req.body.businessWebsite||""));
+  const website=(await pool.query("SELECT id,website_url FROM aurelink_verified_websites WHERE workspace_id=$1 AND domain=$2 AND status='verified'",[wid,websiteDomain])).rows[0];
+  if(!website)return res.status(422).json({success:false,code:"AURELINK_WEBSITE_NOT_VERIFIED",message:"Register and verify this business website in Aurelink Developer before applying for a Sender ID."});
+  const businessName=String(req.body.businessName||"").trim(),businessAddress=String(req.body.businessAddress||"").trim();
+  const privacyPolicyUrl=String(req.body.privacyPolicyUrl||"").trim(),termsUrl=String(req.body.termsUrl||"").trim();
+  const messageUseCase=String(req.body.messageUseCase||"").trim(),sampleMessage=String(req.body.sampleMessage||"").trim();
+  const smsPurpose=String(req.body.smsPurpose||"").toLowerCase(),monthlyVolume=Number(req.body.monthlyVolume);
+  const contact={name:String(req.body.contactName||"").trim(),email:String(req.body.contactEmail||"").trim().toLowerCase(),phone:String(req.body.contactPhone||"").trim()};
+  const consentEvidenceReference=String(req.body.consentEvidenceReference||"").trim();
+  const documents=Array.isArray(req.body.registrationDocuments)?req.body.registrationDocuments.filter((v:any)=>typeof v==="string").map((v:string)=>v.trim()).slice(0,10):[];
+  const docHashes=Array.isArray(req.body.registrationDocumentSha256)?req.body.registrationDocumentSha256.filter((v:any)=>typeof v==="string").map((v:string)=>v.toLowerCase()).slice(0,10):[];
+  if(!businessName||businessName.length>160||!businessAddress||businessAddress.length>500||!messageUseCase||messageUseCase.length>2000||!sampleMessage||sampleMessage.length>1000)return res.status(400).json({success:false,code:"BUSINESS_DETAILS_INCOMPLETE",message:"Registered legal business name, business address, SMS use case and a real sample message are mandatory."});
+  if(!["promotional","transactional","both"].includes(smsPurpose))return res.status(400).json({success:false,message:"Select promotional, transactional or both as the SMS purpose."});
+  if(!Number.isSafeInteger(monthlyVolume)||monthlyVolume<1||monthlyVolume>100000000)return res.status(400).json({success:false,message:"Provide a realistic positive monthly SMS volume estimate."});
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)||!contact.name||!contact.phone||contact.phone.length>32)return res.status(400).json({success:false,message:"A named business contact with a valid email address and phone number is required."});
+  for(const [label,url] of [["Privacy Policy",privacyPolicyUrl],["Terms and Conditions",termsUrl]]){
+   let parsed:URL;try{parsed=new URL(url);}catch{return res.status(400).json({success:false,message:label+" must be a valid public HTTPS URL."});}
+   if(parsed.protocol!=="https:"||parsed.username||parsed.password)return res.status(400).json({success:false,message:label+" must be a public HTTPS URL."});
   }
-  if(status==="rejected"&&!rejectionReason)return res.status(400).json({success:false,message:"A rejection reason is required."});
-  const result=await pool.query(
-    "UPDATE aurelink_sender_ids SET status=$2,provider_reference=COALESCE(NULLIF($3,''),provider_reference),rejection_reason=CASE WHEN $2='rejected' THEN $4 ELSE NULL END,submitted_at=CASE WHEN $2 IN ('submitted','approved') THEN COALESCE(submitted_at,NOW()) ELSE submitted_at END,approved_at=CASE WHEN $2='approved' THEN NOW() ELSE NULL END,request_details=request_details||$5::jsonb,updated_at=NOW() WHERE id=$1 RETURNING id,workspace_id,channel,sender,country_code,provider,status,provider_reference,rejection_reason,request_details,submitted_at,approved_at,updated_at",
-    [req.params.id,status,providerReference,rejectionReason,JSON.stringify(status==="approved"?{providerApprovalEvidenceUrl:evidenceUrl,approvalRecordedAt:new Date().toISOString()}:{})]
-  );
-  if(!result.rows[0])return res.status(404).json({success:false,message:"Sender registration request not found."});
-  return res.json({success:true,sender:result.rows[0],note:"Approval is recorded only against the provider reference and evidence supplied by the authorized reviewer. Aurelink does not fabricate carrier approval."});
+  if(!consentEvidenceReference||consentEvidenceReference.length>1000)return res.status(400).json({success:false,code:"CONSENT_EVIDENCE_REQUIRED",message:"Provide a retrievable record or secure reference proving how recipients opt in."});
+  if(documents.length===0||documents.length!==docHashes.length||docHashes.some((v:string)=>!/^[a-f0-9]{64}$/.test(v)))return res.status(400).json({success:false,code:"DOCUMENT_EVIDENCE_INCOMPLETE",message:"Provide genuine registration/brand-ownership documents and a SHA-256 checksum for every uploaded document. Unverified links alone are not accepted."});
+  for(const value of documents){try{const u=new URL(value);if(u.protocol!=="https:"||u.username||u.password)throw new Error("invalid");}catch{return res.status(400).json({success:false,message:"Every document must be stored at an HTTPS evidence URL."});}}
+  const requestDetails={senderType,businessName,businessAddress,businessWebsite:String(website.website_url),privacyPolicyUrl,termsUrl,businessContact:contact,messageUseCase,sampleMessage,smsPurpose,monthlyVolume,consentEvidenceReference,registrationDocuments:documents,registrationDocumentSha256:docHashes,attestations:{documentsAreAuthentic:req.body.documentsAreAuthentic===true,authorizedToUseBrand:req.body.authorizedToUseBrand===true,consentObtained:req.body.consentObtained===true,privacyAndTermsReviewed:req.body.privacyAndTermsReviewed===true}};
+  if(Object.values(requestDetails.attestations).some(v=>v!==true))return res.status(422).json({success:false,code:"REQUIRED_ATTESTATIONS_MISSING",message:"All authenticity, brand-authorization, recipient-consent and policy-review attestations must be explicitly confirmed."});
+  const fingerprint=hash(JSON.stringify({sender:sender.toLowerCase(),countryCode,provider,requestDetails}));
+  const saved=await pool.query("INSERT INTO aurelink_sender_ids(workspace_id,channel,sender,country_code,provider,status,request_details,registration_state,security_review_status,website_domain,website_verification_id,submitted_evidence,evidence_fingerprint,consent_evidence_reference,business_address,business_contact,monthly_volume,sms_purpose,sender_type) VALUES($1,'sms',$2,$3,$4,'pending','{}'::jsonb,'security_review','pending',$5,$6,$7::jsonb,$8,$9,$10,$11::jsonb,$12,$13,$14) RETURNING id,channel,sender,country_code,provider,status,registration_state,security_review_status,website_domain,created_at",[wid,sender,countryCode,provider,websiteDomain,website.id,JSON.stringify(requestDetails),fingerprint,consentEvidenceReference,businessAddress,JSON.stringify(contact),monthlyVolume,smsPurpose,senderType]);
+  return res.status(202).json({success:true,sender:saved.rows[0],submissionBlocked:true,registrationState:"security_review",nextStep:"Aurelink security review must pass before provider submission is enabled. Carrier approval is a separate subsequent stage.",securityChecks:["Verified Aurelink Developer website ownership","Complete legal business and contact details","Privacy Policy and Terms URLs","SMS use case and sample message","Monthly volume and purpose","Recipient opt-in evidence","Document checksums and authenticity attestations","Country-specific route review"],important:"Aurelink does not claim that a checksum proves a document is genuine. Human verification and provider/carrier evidence are required; fabricated documents can trigger account restrictions."});
+ }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to create Sender ID application."});}
+});
+router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Only configured Aurelink security administrators can review Sender ID applications."});
+ const status=String(req.body.status||""),securityStatus=String(req.body.securityReviewStatus||"");
+ const providerReference=String(req.body.providerReference||"").trim(),evidenceUrl=String(req.body.evidenceUrl||"").trim(),reason=String(req.body.rejectionReason||req.body.securityReason||"").trim();
+ if(!["security_passed","security_failed","submitted","approved","rejected","suspended"].includes(status))return res.status(400).json({success:false,message:"Unsupported Sender ID review transition."});
+ const found=(await pool.query("SELECT s.*,v.status AS website_status FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE s.id=$1",[req.params.id])).rows[0];
+ if(!found)return res.status(404).json({success:false,message:"Sender registration request not found."});
+ if(status==="security_passed"){
+  if(found.website_status!=="verified"||!found.evidence_fingerprint||!found.consent_evidence_reference||!Array.isArray(found.request_details?.registrationDocuments)||!found.request_details.registrationDocuments.length)return res.status(422).json({success:false,code:"SECURITY_GATE_INCOMPLETE",message:"Website verification, immutable evidence fingerprint, consent evidence and document references must exist before security review can pass."});
+  const updated=await pool.query("UPDATE aurelink_sender_ids SET security_review_status='passed',security_reviewed_at=NOW(),security_reviewed_by=$2,registration_state='ready_for_submission',last_security_reason=NULL,updated_at=NOW() WHERE id=$1 RETURNING id,status,registration_state,security_review_status,security_reviewed_at",[req.params.id,req.user!.userId]);
+  return res.json({success:true,sender:updated.rows[0],providerSubmission:"not_submitted",note:"Security review passed. This does not submit to a carrier or approve the Sender ID."});
+ }
+ if(status==="security_failed"){
+  if(!reason)return res.status(400).json({success:false,message:"A security failure reason is required."});
+  const updated=await pool.query("UPDATE aurelink_sender_ids SET security_review_status='failed',registration_state='rejected',status='rejected',security_reviewed_at=NOW(),security_reviewed_by=$2,last_security_reason=$3,rejection_reason=$3,updated_at=NOW() WHERE id=$1 RETURNING id,status,registration_state,security_review_status,last_security_reason",[req.params.id,req.user!.userId,reason]);
+  return res.json({success:true,sender:updated.rows[0]});
+ }
+ if(found.security_review_status!=="passed"||found.registration_state!=="ready_for_submission")return res.status(423).json({success:false,code:"SECURITY_GATE_NOT_PASSED",message:"Provider submission and approval are blocked until Aurelink security review has passed."});
+ if(status==="submitted"&&!providerReference)return res.status(400).json({success:false,message:"A real provider registration reference is required."});
+ if(status==="approved"){
+  try{const u=new URL(evidenceUrl);if(u.protocol!=="https:"||!providerReference)throw new Error("invalid");}catch{return res.status(400).json({success:false,message:"Approval requires a real provider reference and HTTPS provider/carrier approval evidence."});}
+ }
+ if(status==="rejected"&&!reason)return res.status(400).json({success:false,message:"A rejection reason is required."});
+ const saved=await pool.query("UPDATE aurelink_sender_ids SET status=$2,registration_state=$3,provider_reference=COALESCE(NULLIF($4,''),provider_reference),rejection_reason=CASE WHEN $2='rejected' THEN $5 ELSE NULL END,submitted_at=CASE WHEN $2 IN ('submitted','approved') THEN COALESCE(submitted_at,NOW()) ELSE submitted_at END,approved_at=CASE WHEN $2='approved' THEN NOW() ELSE NULL END,request_details=request_details||$6::jsonb,updated_at=NOW() WHERE id=$1 RETURNING id,workspace_id,channel,sender,country_code,provider,status,registration_state,security_review_status,provider_reference,rejection_reason,submitted_at,approved_at,updated_at",[req.params.id,status,status==="submitted"?"submitted":status==="approved"?"approved":status==="rejected"?"rejected":"suspended",providerReference,reason,JSON.stringify(status==="approved"?{providerApprovalEvidenceUrl:evidenceUrl,approvalRecordedAt:new Date().toISOString()}:{})]);
+ return res.json({success:true,sender:saved.rows[0],note:"Provider approval is recorded only with a real provider reference and evidence. Aurelink security approval and carrier approval remain separate."});
 });
 
 
