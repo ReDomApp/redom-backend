@@ -658,13 +658,16 @@ export async function createAurelinkEmailBillingCheckout(input:{
   const successBase=String(process.env.AURELINK_EMAIL_BILLING_SUCCESS_URL||"").trim();
   const cancelBase=String(process.env.AURELINK_EMAIL_BILLING_CANCEL_URL||"").trim();
   if(!successBase||!cancelBase)throw new Error("Configure AURELINK_EMAIL_BILLING_SUCCESS_URL and AURELINK_EMAIL_BILLING_CANCEL_URL before enabling email checkout.");
+  const successUrl=new URL(successBase),cancelUrl=new URL(cancelBase);
+  const allowedReturn=(url:URL)=>url.protocol==="https:"||(url.protocol==="http:"&&["localhost","127.0.0.1"].includes(url.hostname));
+  if(!allowedReturn(successUrl)||!allowedReturn(cancelUrl))throw new Error("Aurelink Mail Stripe return URLs must use HTTPS (HTTP is permitted only for localhost development).");
   const reference="AURELINK-MAIL-"+crypto.randomUUID().replace(/-/g,"").slice(0,24);
+  successUrl.searchParams.set("reference",reference);successUrl.searchParams.set("session_id","{CHECKOUT_SESSION_ID}");successUrl.searchParams.set("status","success");
+  cancelUrl.searchParams.set("reference",reference);cancelUrl.searchParams.set("status","cancelled");
   await pool.query(
     "INSERT INTO aurelink_email_billing_payments(reference,user_id,workspace_id,purchase_type,plan_option_id,credit_pack_id,email_credits,amount_minor,currency,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'USD','pending')",
     [reference,input.userId,input.workspaceId,input.purchaseType,planOptionId,creditPackId,emailCredits,amountMinor]
   );
-  const successUrl=new URL(successBase);successUrl.searchParams.set("reference",reference);successUrl.searchParams.set("session_id","{CHECKOUT_SESSION_ID}");successUrl.searchParams.set("status","success");
-  const cancelUrl=new URL(cancelBase);cancelUrl.searchParams.set("reference",reference);cancelUrl.searchParams.set("status","cancelled");
   const metadata={provider:"stripe",purpose:"aurelink_email_"+(input.purchaseType==="subscription"?"subscription":"credits"),reference,userId:input.userId,workspaceId:input.workspaceId,planOptionId:planOptionId||"",creditPackId:creditPackId||"",emailCredits:emailCredits||""};
   try{
     const fields:Record<string,string|number|undefined|null>={
