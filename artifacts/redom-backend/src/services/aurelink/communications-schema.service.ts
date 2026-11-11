@@ -106,7 +106,7 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       sender TEXT,
       subject TEXT,
       content_hash CHAR(64) NOT NULL,
-      status VARCHAR(24) NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed')),
+      status VARCHAR(24) NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed','unknown')),
       provider_status TEXT,
       provider_error TEXT,
       segments INTEGER NOT NULL DEFAULT 1 CHECK (segments > 0),
@@ -308,7 +308,8 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
       payload_encrypted TEXT NOT NULL,
       payload_hash CHAR(64) NOT NULL,
-      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed')),
+      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed','manual_review')),
+      submission_state VARCHAR(20) NOT NULL DEFAULT 'not_started' CHECK(submission_state IN ('not_started','in_flight','accepted','rejected','unknown')),
       attempts INTEGER NOT NULL DEFAULT 0,
       next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       locked_at TIMESTAMPTZ,
@@ -317,7 +318,15 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       completed_at TIMESTAMPTZ
     );
+    ALTER TABLE aurelink_communications_jobs ADD COLUMN IF NOT EXISTS submission_state VARCHAR(20) NOT NULL DEFAULT 'not_started';
+    ALTER TABLE aurelink_communications_jobs DROP CONSTRAINT IF EXISTS aurelink_communications_jobs_status_check;
+    ALTER TABLE aurelink_communications_jobs ADD CONSTRAINT aurelink_communications_jobs_status_check CHECK(status IN ('pending','processing','completed','failed','manual_review'));
+    ALTER TABLE aurelink_communications_jobs DROP CONSTRAINT IF EXISTS aurelink_communications_jobs_submission_state_check;
+    ALTER TABLE aurelink_communications_jobs ADD CONSTRAINT aurelink_communications_jobs_submission_state_check CHECK(submission_state IN ('not_started','in_flight','accepted','rejected','unknown'));
+    ALTER TABLE aurelink_messages DROP CONSTRAINT IF EXISTS aurelink_messages_status_check;
+    ALTER TABLE aurelink_messages ADD CONSTRAINT aurelink_messages_status_check CHECK(status IN ('queued','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed','unknown'));
     CREATE INDEX IF NOT EXISTS aurelink_communications_jobs_due_idx ON aurelink_communications_jobs(status,next_attempt_at) WHERE status='pending';
+    CREATE INDEX IF NOT EXISTS aurelink_communications_jobs_manual_review_idx ON aurelink_communications_jobs(updated_at) WHERE status='manual_review';
     CREATE TABLE IF NOT EXISTS aurelink_communications_usage (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
