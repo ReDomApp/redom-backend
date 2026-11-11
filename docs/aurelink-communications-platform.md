@@ -94,6 +94,7 @@ The supported SMS destination registry currently contains 205 unique country/ter
 Customer API:
 
 - `POST /aurelink/communications/senders/evidence` — upload PDF/JPEG/PNG registration and brand-authorization evidence (maximum 10 MB each; 30 files/100 MB per user per 24 hours). The backend validates file signatures, computes SHA-256 over the original bytes and stores the object privately in R2. The response returns an evidence document ID; applications must submit these IDs, not public document URLs or client-supplied hashes.
+- `GET /aurelink/communications/senders/evidence` — list the authenticated user's evidence IDs, file hashes and attachment states.
 - `DELETE /aurelink/communications/senders/evidence/:documentId` — delete only the authenticated user's unattached evidence upload; attached application evidence is immutable to the applicant.
 - `GET /aurelink/communications/sms/countries` returns enabled destinations, ISO country codes, E.164 calling prefixes and international-format examples.
 - SMS send, campaign and verification routes validate that the destination country is enabled and the recipient number is in international E.164 format with the selected country's calling prefix.
