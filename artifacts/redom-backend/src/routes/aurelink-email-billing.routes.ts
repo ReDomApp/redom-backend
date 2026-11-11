@@ -249,7 +249,7 @@ router.get("/aurelink/admin/communications/email/smtp/manual-review",aurelinkAut
   );
   await pool.query(
     `UPDATE aurelink_messages m SET status='unknown',provider_status='smtp_gateway_stale_submission',provider_error='SMTP gateway stopped before a final provider result was recorded.',updated_at=NOW()
-      WHERE m.id IN (SELECT r.message_id FROM aurelink_email_usage_reservations r WHERE r.status='unknown' AND r.metadata->>'transport'='smtp')
+      WHERE m.id IN (SELECT r.message_id FROM aurelink_email_usage_reservations r JOIN aurelink_smtp_messages s ON s.message_key=r.message_id::text WHERE r.status='unknown' AND r.metadata->>'transport'='smtp' AND s.status='pending')
         AND m.status='queued'`
   );
   await pool.query(
