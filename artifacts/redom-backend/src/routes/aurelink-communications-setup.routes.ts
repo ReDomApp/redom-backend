@@ -162,6 +162,9 @@ function decryptSenderToken(value:string){
  decipher.setAuthTag(Buffer.from(tag,"base64url"));
  return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");
 }
+function isBrevoEvidenceUrl(value:string):boolean{
+ try{const parsed=new URL(value);const host=parsed.hostname.toLowerCase();return parsed.protocol==="https:"&&!parsed.username&&!parsed.password&&(host==="brevo.com"||host.endsWith(".brevo.com"))&&value.length<=2048;}catch{return false;}
+}
 function senderAdmin(userId:string){return new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(v=>v.trim()).filter(Boolean)).has(userId);}
 async function verifySenderEvidenceFiles(applicationId:string){
  const rows=(await pool.query("SELECT id,object_key,original_filename,mime_type,byte_size,sha256 FROM aurelink_sender_evidence_documents WHERE sender_application_id=$1 AND status='attached' ORDER BY created_at ASC",[applicationId])).rows;
@@ -499,7 +502,7 @@ router.post("/aurelink/webhooks/brevo/sender-registration",async(req,res)=>{
  if(!token||!eventId||!status)return res.status(400).json({success:false,message:"requestToken, eventId and status are required."});
  if(["completed","complete","successful","success","approved","rejected","declined","failed","denied"].includes(status)){
   const evidenceUrl=String(req.body.evidenceUrl||"");
-  try{const parsed=new URL(evidenceUrl);if(parsed.protocol!=="https:"||parsed.username||parsed.password)throw new Error("invalid");}catch{return res.status(400).json({success:false,code:"BREVO_TERMINAL_EVIDENCE_REQUIRED",message:"Terminal registration outcomes require an HTTPS Brevo evidence URL and provider reference."});}
+  if(!isBrevoEvidenceUrl(evidenceUrl))return res.status(400).json({success:false,code:"BREVO_TERMINAL_EVIDENCE_REQUIRED",message:"Terminal registration outcomes require an HTTPS evidence URL hosted by Brevo."});
  }
  try{
   const result=await applyBrevoSenderRegistrationResult({token,eventId,status,providerReference:req.body.providerReference?String(req.body.providerReference):undefined,reason:req.body.reason?String(req.body.reason):undefined,payload:req.body});
@@ -513,7 +516,7 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/reconcile",au
  if(!token||!status)return res.status(400).json({success:false,message:"The request token and actual Brevo status are required."});
  if(["completed","complete","successful","success","approved","rejected","declined","failed","denied"].includes(status)){
   const evidenceUrl=String(req.body.evidenceUrl||"");
-  try{const parsed=new URL(evidenceUrl);if(parsed.protocol!=="https:"||parsed.username||parsed.password||!req.body.providerReference)throw new Error("invalid");}catch{return res.status(400).json({success:false,code:"BREVO_TERMINAL_EVIDENCE_REQUIRED",message:"Terminal outcomes require a real provider reference and HTTPS evidence from Brevo."});}
+  if(!req.body.providerReference||!isBrevoEvidenceUrl(evidenceUrl))return res.status(400).json({success:false,code:"BREVO_TERMINAL_EVIDENCE_REQUIRED",message:"Terminal outcomes require a real provider reference and an HTTPS evidence URL hosted by Brevo."});
  }
  try{
   const result=await applyBrevoSenderRegistrationResult({token,eventId,status,providerReference:req.body.providerReference?String(req.body.providerReference):undefined,reason:req.body.reason?String(req.body.reason):undefined,payload:{...req.body,source:"aurelink_admin_reconciliation"},actorUserId:req.user!.userId});
