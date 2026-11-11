@@ -22,7 +22,7 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
     `SELECT id,status,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback,
             (billing_period_start<=NOW() AND billing_period_end>NOW()) AS period_active
        FROM aurelink_email_subscriptions
-      WHERE workspace_id=$1 AND status IN ('active','past_due')
+      WHERE workspace_id=$1 AND status IN ('active','past_due','expired','cancelled','suspended')
       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
     [input.workspaceId]
   );
