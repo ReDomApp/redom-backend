@@ -11,15 +11,18 @@ type QueryClient = Pick<PoolClient, "query">;
 export function countSmsSegments(message: string): number {
   const value = String(message ?? "");
   if (!value.length) return 1;
-  const gsmBasic = /^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,\-./0-9:;<=>?¡A-ZÄÖÑÜ§¿a-zäöñüà]*$/;
-  const gsmExtension = new Set(["^", "{", "}", "\\", "[", "]", "~", "|", "€"]);
-  if (gsmBasic.test(value)) {
-    let septets = 0;
-    for (const character of value) septets += gsmExtension.has(character) ? 2 : 1;
-    return septets <= 160 ? 1 : Math.ceil(septets / 153);
+  const gsmBasicCharacter = /^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,\-./0-9:;<=>?¡A-ZÄÖÑÜ§¿a-zäöñüà]$/;
+  const gsmExtension = new Set(["\\f", "^", "{", "}", "\\\\", "[", "]", "~", "|", "€"]);
+  let septets = 0;
+  for (const character of value) {
+    if (gsmBasicCharacter.test(character)) septets += 1;
+    else if (gsmExtension.has(character)) septets += 2;
+    else {
+      const units = value.length;
+      return units <= 70 ? 1 : Math.ceil(units / 67);
+    }
   }
-  const units = value.length;
-  return units <= 70 ? 1 : Math.ceil(units / 67);
+  return septets <= 160 ? 1 : Math.ceil(septets / 153);
 }
 
 
