@@ -141,10 +141,26 @@ async function tick(){
  if(busy)return;busy=true;
  try{
   await revalidateSenderWebsiteOwnership();
+  await pool.query(`WITH cancelled AS (
+    UPDATE aurelink_sender_provider_submissions q
+    SET status='cancelled',request_token_encrypted=NULL,provider_status='cancelled_by_aurelink_website_verification',last_error='Website ownership is not currently verified.',updated_at=NOW()
+    FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id
+    WHERE q.sender_application_id=s.id AND q.status='scheduled' AND q.scheduled_at<=NOW() AND v.status IS DISTINCT FROM 'verified'
+    RETURNING q.sender_application_id,q.workspace_id
+  ), suspended AS (
+    UPDATE aurelink_sender_ids s
+    SET status='suspended',registration_state='suspended',security_review_status='failed',last_security_reason='Website ownership verification was unavailable at scheduled Brevo submission time.',updated_at=NOW()
+    FROM cancelled c WHERE s.id=c.sender_application_id
+    RETURNING s.id,s.workspace_id
+  )
+  INSERT INTO aurelink_sender_security_audit(sender_application_id,workspace_id,action,details)
+  SELECT id,workspace_id,'website_verification_unavailable_before_submission',jsonb_build_object('provider','brevo') FROM suspended`);
   await pool.query(`WITH due AS (
-    SELECT id,sender_application_id FROM aurelink_sender_provider_submissions
-    WHERE status='scheduled' AND scheduled_at<=NOW()
-    ORDER BY scheduled_at FOR UPDATE SKIP LOCKED LIMIT 10
+    SELECT q.id,q.sender_application_id FROM aurelink_sender_provider_submissions q
+    JOIN aurelink_sender_ids s ON s.id=q.sender_application_id
+    JOIN aurelink_verified_websites v ON v.id=s.website_verification_id AND v.status='verified'
+    WHERE q.status='scheduled' AND q.scheduled_at<=NOW()
+    ORDER BY q.scheduled_at FOR UPDATE OF q SKIP LOCKED LIMIT 10
   ), moved AS (
     UPDATE aurelink_sender_provider_submissions q
     SET status='ready_for_operator_submission',updated_at=NOW()
