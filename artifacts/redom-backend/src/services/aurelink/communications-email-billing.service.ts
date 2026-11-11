@@ -6,7 +6,7 @@ type Db = Pick<PoolClient,"query">;
 export async function reserveAurelinkEmailUsage(client:Db,input:{
   userId:string;workspaceId:string;messageId:string;units:number;transport:"api"|"smtp";
   provider:string;category:string;metadata?:Record<string,unknown>;
-}):Promise<{source:"subscription"|"prepaid"|"wallet";units:number;unitPriceMinor:number|null;amountMinor:string|null;walletReference:string|null}> {
+}):Promise<{source:"free"|"subscription"|"prepaid"|"wallet";units:number;unitPriceMinor:number|null;amountMinor:string|null;walletReference:string|null}> {
   if(!Number.isSafeInteger(input.units)||input.units<1)throw new Error("AURELINK_INVALID_EMAIL_UNITS");
   const existing=await client.query("SELECT source,units,unit_price_minor,amount_minor,wallet_reference FROM aurelink_email_usage_reservations WHERE message_id=$1 FOR UPDATE",[input.messageId]);
   if(existing.rows[0])return {source:existing.rows[0].source,units:Number(existing.rows[0].units),unitPriceMinor:existing.rows[0].unit_price_minor===null?null:Number(existing.rows[0].unit_price_minor),amountMinor:existing.rows[0].amount_minor===null?null:String(existing.rows[0].amount_minor),walletReference:existing.rows[0].wallet_reference??null};
