@@ -230,11 +230,21 @@ export function isAurelinkE164ForCountry(phone: string, countryCode: string): bo
 }
 
 const senderIdNoDigits = new Set(["BG","GM","GT","HN","LR","NI","NG","PK","RO","RW"]);
+const senderIdNoSpaces = new Set(["AO","BJ","BG","BF","CM","HR","EC","GM","MM","NA","MK","PE","RO","RU","RS","TZ","TH","UZ"]);
+const senderIdNoSpecialCharacters = new Set(["AT","BY","KE","KW","QA","IT","LU","RU","RW","BA","BR","ML","MR","SC","BG","BF","KH","ME","ZA","CM","MA","SI","CD","MM","SE","CI","NA","HR","NP","TZ","TG","CZ","NI","NE","UG","EG","NG","UA","GT","NO","UZ","HK","PK","PH"]);
+const nanpNumberOnly = new Set(["AS","AI","AG","BS","BB","BM","VG","CA","KY","DM","DO","GD","GU","JM","MS","PR","KN","LC","VC","SX","TT","TC","US","VI"]);
+export function requiresAurelinkBrevoNumberSender(countryCode: string): boolean {
+  return nanpNumberOnly.has(countryCode.trim().toUpperCase());
+}
 export function isAurelinkBrevoSenderFormatValid(sender: string, countryCode: string): boolean {
   const code = countryCode.trim().toUpperCase();
   if (!getAurelinkSmsCountry(code)) return false;
-  if (code === "US" || code === "CA") return /^\+1(?:800|833|844|855|866|877|888)\d{7}$/.test(sender);
-  if (!/^[A-Za-z0-9]{3,11}$/.test(sender) || !/[A-Za-z]/.test(sender)) return false;
-  if (senderIdNoDigits.has(code) && /\d/.test(sender)) return false;
+  if (code === "US" || code === "CA") return /^\\+1(?:800|833|844|855|866|877|888)\\d{7}$/.test(sender);
+  if (requiresAurelinkBrevoNumberSender(code)) return false;
+  if (sender.length < 3 || sender.length > 11 || !/[A-Za-z]/.test(sender) || /[^A-Za-z0-9 .&_-]/.test(sender)) return false;
+  if (senderIdNoDigits.has(code) && /\\d/.test(sender)) return false;
+  if (senderIdNoSpaces.has(code) && /\\s/.test(sender)) return false;
+  if (senderIdNoSpecialCharacters.has(code) && /[^A-Za-z0-9]/.test(sender)) return false;
+  if (code === "GB" && /[^A-Za-z0-9 .&_-]/.test(sender)) return false;
   return true;
 }
