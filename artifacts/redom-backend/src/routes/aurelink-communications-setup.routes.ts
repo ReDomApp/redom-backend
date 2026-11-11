@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { createHash, randomBytes, createCipheriv, createDecipheriv, timingSafeEqual } from "node:crypto";
+import { env } from "../config/env";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { createHash, randomBytes, randomUUID, createCipheriv, createDecipheriv, timingSafeEqual } from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
 import { isAurelinkBrevoSenderFormatValid, requiresAurelinkBrevoNumberSender } from "../services/aurelink/sms-country-registry";
 import { decryptAurelinkDnsSecret, encryptAurelinkDnsSecret, validateCloudflareZoneToken, applyCloudflareDnsRecords } from "../services/aurelink/communications-dns.service";
@@ -10,6 +12,20 @@ import {
   verifyAurelinkProviderDomain, updateAurelinkResendDomainTracking, configureAurelinkBrevoTransactionalWebhook, createAurelinkProviderEmailSender, getAurelinkProviderEmailSender, type AurelinkEmailProvider,
 } from "../services/aurelink/communications-domains.service";
 
+const senderEvidenceR2 = new S3Client({
+ region: env.cloudflare.r2.region || "auto",
+ endpoint: env.cloudflare.r2.endpoint,
+ credentials: { accessKeyId: env.cloudflare.r2.accessKeyId, secretAccessKey: env.cloudflare.r2.secretAccessKey },
+});
+function parseSenderEvidenceDataUri(value:string){
+ const match=/^data:(application\\/pdf|image\\/jpeg|image\\/png);base64,([A-Za-z0-9+/=]+)$/.exec(value);
+ if(!match)throw new Error("Evidence files must be PDF, JPEG or PNG.");
+ const mime=match[1],body=Buffer.from(match[2],"base64");
+ if(!body.length||body.length>10*1024*1024)throw new Error("Each evidence file must be between 1 byte and 10 MB.");
+ const valid=mime==="application/pdf"?body.subarray(0,5).toString("ascii")==="%PDF-":mime==="image/jpeg"?body[0]===0xff&&body[1]===0xd8&&body[2]===0xff:body.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+ if(!valid)throw new Error("The uploaded file content does not match its declared MIME type.");
+ return {mime,body};
+}
 const router = Router();
 const hash = (value:string) => createHash("sha256").update(value).digest("hex");
 const emailProviders = new Set(["resend", "brevo"]);
