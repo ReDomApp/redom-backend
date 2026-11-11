@@ -296,9 +296,30 @@ router.post("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req
   if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))return res.status(400).json({success:false,message:"Enter a valid email address."});
   if(consentStatus==="opted_in"&&!consentSource)return res.status(400).json({success:false,message:"Record the opt-in source when setting consent_status=opted_in."});
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
-  const result=channel==="sms"
-    ?await pool.query("INSERT INTO aurelink_sms_contacts(workspace_id,phone_number,display_name,consent_status,consent_source,consented_at,opted_out_at) VALUES($1,$2,$3,$4,$5,CASE WHEN $4='opted_in' THEN NOW() ELSE NULL END,CASE WHEN $4='opted_out' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,phone_number) DO UPDATE SET display_name=EXCLUDED.display_name,consent_status=EXCLUDED.consent_status,consent_source=EXCLUDED.consent_source,consented_at=CASE WHEN EXCLUDED.consent_status='opted_in' THEN NOW() ELSE aurelink_sms_contacts.consented_at END,opted_out_at=CASE WHEN EXCLUDED.consent_status='opted_out' THEN NOW() WHEN EXCLUDED.consent_status='opted_in' THEN NULL ELSE aurelink_sms_contacts.opted_out_at END,updated_at=NOW() RETURNING id,phone_number AS address,display_name,consent_status,consent_source,consented_at,opted_out_at",[wid,address,displayName,consentStatus,consentSource])
-    :await pool.query("INSERT INTO aurelink_email_contacts(workspace_id,email,display_name,consent_status,consent_source,consented_at,opted_out_at) VALUES($1,LOWER($2),$3,$4,$5,CASE WHEN $4='opted_in' THEN NOW() ELSE NULL END,CASE WHEN $4='opted_out' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,email) DO UPDATE SET display_name=EXCLUDED.display_name,consent_status=EXCLUDED.consent_status,consent_source=EXCLUDED.consent_source,consented_at=CASE WHEN EXCLUDED.consent_status='opted_in' THEN NOW() ELSE aurelink_email_contacts.consented_at END,opted_out_at=CASE WHEN EXCLUDED.consent_status='opted_out' THEN NOW() WHEN EXCLUDED.consent_status='opted_in' THEN NULL ELSE aurelink_email_contacts.opted_out_at END,updated_at=NOW() RETURNING id,email AS address,display_name,consent_status,consent_source,consented_at,opted_out_at",[wid,address,displayName,consentStatus,consentSource]);
+  let result:any;
+  if(channel==="sms"){
+    result=await pool.query("INSERT INTO aurelink_sms_contacts(workspace_id,phone_number,display_name,consent_status,consent_source,consented_at,opted_out_at) VALUES($1,$2,$3,$4,$5,CASE WHEN $4='opted_in' THEN NOW() ELSE NULL END,CASE WHEN $4='opted_out' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,phone_number) DO UPDATE SET display_name=EXCLUDED.display_name,consent_status=EXCLUDED.consent_status,consent_source=EXCLUDED.consent_source,consented_at=CASE WHEN EXCLUDED.consent_status='opted_in' THEN NOW() ELSE aurelink_sms_contacts.consented_at END,opted_out_at=CASE WHEN EXCLUDED.consent_status='opted_out' THEN NOW() WHEN EXCLUDED.consent_status='opted_in' THEN NULL ELSE aurelink_sms_contacts.opted_out_at END,updated_at=NOW() RETURNING id,phone_number AS address,display_name,consent_status,consent_source,consented_at,opted_out_at",[wid,address,displayName,consentStatus,consentSource]);
+  }else{
+    const client=await pool.connect();
+    try{
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",[wid]);
+      const mode=(await client.query("SELECT billing_mode FROM aurelink_email_billing_accounts WHERE workspace_id=$1",[wid])).rows[0]?.billing_mode||"payg";
+      if(mode==="free"){
+        const existing=await client.query("SELECT id FROM aurelink_email_contacts WHERE workspace_id=$1 AND LOWER(email)=LOWER($2) LIMIT 1",[wid,address]);
+        if(!existing.rows[0]){
+          const count=await client.query("SELECT COUNT(*)::bigint AS total FROM aurelink_email_contacts WHERE workspace_id=$1",[wid]);
+          const limit=Number((await client.query("SELECT (features->>'stored_contacts')::bigint AS limit FROM aurelink_email_plan_catalog WHERE plan_code='free' AND active=TRUE")).rows[0]?.limit||100000);
+          if(BigInt(String(count.rows[0]?.total||"0"))>=BigInt(limit)){
+            await client.query("ROLLBACK");
+            return res.status(409).json({success:false,code:"FREE_CONTACT_LIMIT_REACHED",message:"The Free Mail plan supports up to 100,000 stored contacts. Upgrade your plan to add more."});
+          }
+        }
+      }
+      result=await client.query("INSERT INTO aurelink_email_contacts(workspace_id,email,display_name,consent_status,consent_source,consented_at,opted_out_at) VALUES($1,LOWER($2),$3,$4,$5,CASE WHEN $4='opted_in' THEN NOW() ELSE NULL END,CASE WHEN $4='opted_out' THEN NOW() ELSE NULL END) ON CONFLICT(workspace_id,email) DO UPDATE SET display_name=EXCLUDED.display_name,consent_status=EXCLUDED.consent_status,consent_source=EXCLUDED.consent_source,consented_at=CASE WHEN EXCLUDED.consent_status='opted_in' THEN NOW() ELSE aurelink_email_contacts.consented_at END,opted_out_at=CASE WHEN EXCLUDED.consent_status='opted_out' THEN NOW() WHEN EXCLUDED.consent_status='opted_in' THEN NULL ELSE aurelink_email_contacts.opted_out_at END,updated_at=NOW() RETURNING id,email AS address,display_name,consent_status,consent_source,consented_at,opted_out_at",[wid,address,displayName,consentStatus,consentSource]);
+      await client.query("COMMIT");
+    }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
+  }
   return res.status(200).json({success:true,contact:result.rows[0]});
 });
 
