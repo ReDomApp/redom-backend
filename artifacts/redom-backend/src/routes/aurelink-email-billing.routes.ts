@@ -209,8 +209,8 @@ router.post("/aurelink/admin/communications/email/pricing/options/:id/disable",a
 
 router.post("/aurelink/admin/communications/email/pricing/credit-packs",aurelinkAuthMiddleware,async(req,res)=>{
   if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
-  const parsed=z.object({emailCredits:z.number().int().refine(value=>value>0&&value<=1000000000),priceMinor:z.number().int().refine(value=>value>=50&&value<=1000000000)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"Provide a positive email-credit quantity and USD price of at least $0.50 in cents."});
+  const parsed=z.object({emailCredits:z.number().int().refine(value=>[1000,5000,10000,50000,100000,250000].includes(value)),priceMinor:z.number().int().refine(value=>value>=50&&value<=1000000000)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Prepaid packs must be one of 1,000, 5,000, 10,000, 50,000, 100,000 or 250,000 credits, with a USD price of at least $0.50 in cents."});
   const result=await pool.query("INSERT INTO aurelink_email_credit_packs(email_credits,price_minor) VALUES($1,$2) ON CONFLICT(email_credits,price_minor) DO UPDATE SET active=TRUE,updated_at=NOW() RETURNING id,email_credits,price_minor,currency,active",[parsed.data.emailCredits,parsed.data.priceMinor]);
   return res.status(201).json({success:true,creditPack:result.rows[0]});
 });
@@ -224,7 +224,7 @@ router.post("/aurelink/admin/communications/email/pricing/credit-packs/:id/disab
 
 router.post("/aurelink/admin/communications/email/credits/adjust",aurelinkAuthMiddleware,async(req,res)=>{
   if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
-  const parsed=z.object({workspaceId:z.string().uuid(),amountEmails:z.number().int().positive().max(1000000000),direction:z.enum(["credit","debit"]),reason:z.string().min(8).max(500),reference:z.string().min(8).max(120)}).safeParse(req.body);
+  const parsed=z.object({workspaceId:z.string().uuid(),amountEmails:z.number().int().positive().max(250000),direction:z.enum(["credit","debit"]),reason:z.string().min(8).max(500),reference:z.string().min(8).max(120)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"A workspace, positive email quantity, direction, reason and unique reference are required."});
   const client=await pool.connect();
   try{
@@ -236,6 +236,7 @@ router.post("/aurelink/admin/communications/email/credits/adjust",aurelinkAuthMi
     const current=BigInt(String(wallet.balance_emails)),amount=BigInt(parsed.data.amountEmails);
     if(parsed.data.direction==="debit"&&current<amount)throw new Error("INSUFFICIENT_EMAIL_CREDITS");
     const next=parsed.data.direction==="credit"?current+amount:current-amount;
+    if(next>250000n)throw new Error("PREPAID_CREDIT_BALANCE_LIMIT");
     await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=$2,updated_at=NOW() WHERE workspace_id=$1",[workspace.id,next.toString()]);
     await client.query("INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,description,metadata) VALUES($1,$2,'adjustment',$3,$4,$5,$6,$7,$8::jsonb)",[workspace.id,workspace.user_id,parsed.data.direction,amount.toString(),next.toString(),parsed.data.reference,parsed.data.reason,JSON.stringify({adminUserId:req.user!.userId})]);
     await client.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'email_credit_adjustment',$3::jsonb)",[workspace.id,req.user!.userId,JSON.stringify({amountEmails:parsed.data.amountEmails,direction:parsed.data.direction,reason:parsed.data.reason,reference:parsed.data.reference})]);
@@ -243,7 +244,7 @@ router.post("/aurelink/admin/communications/email/credits/adjust",aurelinkAuthMi
     return res.json({success:true,workspaceId:workspace.id,prepaidEmailCredits:next.toString()});
   }catch(error){
     await client.query("ROLLBACK").catch(()=>undefined);
-    return res.status(error instanceof Error&&error.message==="INSUFFICIENT_EMAIL_CREDITS"?409:400).json({success:false,message:error instanceof Error?error.message:"Unable to adjust email credits."});
+    return res.status(error instanceof Error&&["INSUFFICIENT_EMAIL_CREDITS","PREPAID_CREDIT_BALANCE_LIMIT"].includes(error.message)?409:400).json({success:false,message:error instanceof Error?error.message:"Unable to adjust email credits."});
   }finally{client.release();}
 });
 
