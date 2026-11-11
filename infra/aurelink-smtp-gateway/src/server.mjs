@@ -125,7 +125,7 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
       [user.workspaceId]
     );
     const account=(await client.query("SELECT billing_mode FROM aurelink_email_billing_accounts WHERE workspace_id=$1 FOR SHARE",[user.workspaceId])).rows[0];
-    const billingMode=String(account?.billing_mode||"payg");
+    const billingMode=String(account?.billing_mode||"free");
     const subscriptionResult = await client.query(
       `SELECT id,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback
          FROM aurelink_email_subscriptions
