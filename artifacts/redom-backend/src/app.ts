@@ -20,6 +20,10 @@ app.use("/redom-backend/payments/stripe/webhook", express.raw({ type: "applicati
 app.use("/redom-backend/v1/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/v1/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/aurelink/webhooks/resend", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/redom-backend/aurelink/webhooks/resend", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/redom-backend/v1/aurelink/webhooks/resend", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/v1/aurelink/webhooks/resend", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/support/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/ops/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/redom-backend/ops/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
