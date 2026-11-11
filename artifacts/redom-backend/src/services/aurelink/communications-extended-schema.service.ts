@@ -159,6 +159,7 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       verification_method VARCHAR(32) NOT NULL CHECK (verification_method IN ('dns_txt','https_file','admin_attestation')),
       verification_token_hash CHAR(64),
       verification_expires_at TIMESTAMPTZ,
+      last_dns_checked_at TIMESTAMPTZ,
       status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','verified','failed','revoked')),
       verified_at TIMESTAMPTZ,
       verified_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
@@ -170,6 +171,7 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     CREATE INDEX IF NOT EXISTS aurelink_verified_websites_lookup_idx
       ON aurelink_verified_websites(workspace_id,domain,status);
     ALTER TABLE aurelink_verified_websites ADD COLUMN IF NOT EXISTS verification_expires_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_verified_websites ADD COLUMN IF NOT EXISTS last_dns_checked_at TIMESTAMPTZ;
 
     ALTER TABLE aurelink_email_domains
       ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(253),
