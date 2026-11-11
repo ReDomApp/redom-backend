@@ -164,8 +164,8 @@ router.patch("/aurelink/communications/email/billing/prepaid-fallback",aurelinkA
 
 router.post("/aurelink/admin/communications/email/pricing/options",aurelinkAuthMiddleware,async(req,res)=>{
   if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
-  const parsed=z.object({planCode:z.string().min(2).max(32),monthlyEmailAllowance:z.number().int().positive().max(1000000000),monthlyPriceMinor:z.number().int().positive().max(1000000000),effectiveFrom:z.string().datetime().optional()}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"Provide a valid plan code, exact monthly allowance and USD price in cents."});
+  const parsed=z.object({planCode:z.string().min(2).max(32),monthlyEmailAllowance:z.number().int().positive().max(1000000000),monthlyPriceMinor:z.number().int().min(50).max(1000000000),effectiveFrom:z.string().datetime().optional()}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Provide a valid plan code, exact monthly allowance and USD price of at least $0.50 in cents."});
   const plan=(await pool.query("SELECT id,min_monthly_emails,max_monthly_emails,enterprise FROM aurelink_email_plan_catalog WHERE plan_code=$1 AND active=TRUE",[parsed.data.planCode])).rows[0];
   if(!plan)return res.status(404).json({success:false,message:"Email plan not found or inactive."});
   const allowance=BigInt(parsed.data.monthlyEmailAllowance);
@@ -202,8 +202,8 @@ router.post("/aurelink/admin/communications/email/pricing/options/:id/disable",a
 
 router.post("/aurelink/admin/communications/email/pricing/credit-packs",aurelinkAuthMiddleware,async(req,res)=>{
   if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
-  const parsed=z.object({emailCredits:z.number().int().positive().max(1000000000),priceMinor:z.number().int().positive().max(1000000000)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({success:false,message:"Provide a positive email-credit quantity and USD price in cents."});
+  const parsed=z.object({emailCredits:z.number().int().positive().max(1000000000),priceMinor:z.number().int().min(50).max(1000000000)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Provide a positive email-credit quantity and USD price of at least $0.50 in cents."});
   const result=await pool.query("INSERT INTO aurelink_email_credit_packs(email_credits,price_minor) VALUES($1,$2) ON CONFLICT(email_credits,price_minor) DO UPDATE SET active=TRUE,updated_at=NOW() RETURNING id,email_credits,price_minor,currency,active",[parsed.data.emailCredits,parsed.data.priceMinor]);
   return res.status(201).json({success:true,creditPack:result.rows[0]});
 });
