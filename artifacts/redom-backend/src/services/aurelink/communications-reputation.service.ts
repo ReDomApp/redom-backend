@@ -34,7 +34,7 @@ export async function calculateAurelinkReputation():Promise<void>{
       COUNT(*) FILTER(WHERE m.status='deferred')::int AS deferred
     FROM aurelink_messages m
     LEFT JOIN aurelink_email_senders s ON LOWER(s.email)=LOWER(m.sender) AND s.workspace_id=m.workspace_id
-    WHERE m.channel='email' AND m.created_at>=NOW()-INTERVAL '30 days'
+    WHERE m.channel='email' AND m.status IN ('delivered','bounced','failed','rejected','complained','deferred') AND m.created_at>=NOW()-INTERVAL '30 days'
     GROUP BY m.workspace_id,LOWER(s.domain)
   `);
   const activeKeys=new Map<string,Set<string>>();
