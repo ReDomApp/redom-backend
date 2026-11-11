@@ -660,7 +660,7 @@ export async function createAurelinkEmailBillingCheckout(input:{
   if(!successBase||!cancelBase)throw new Error("Configure AURELINK_EMAIL_BILLING_SUCCESS_URL and AURELINK_EMAIL_BILLING_CANCEL_URL before enabling email checkout.");
   const successUrl=new URL(successBase),cancelUrl=new URL(cancelBase);
   const allowedReturn=(url:URL)=>url.protocol==="https:"||(url.protocol==="http:"&&["localhost","127.0.0.1"].includes(url.hostname));
-  if(!allowedReturn(successUrl)||!allowedReturn(cancelUrl))throw new Error("Aurelink Mail Stripe return URLs must use HTTPS (HTTP is permitted only for localhost development).");
+  if(!allowedReturn(successUrl)||!allowedReturn(cancelUrl))throw new Error("Aurelink Mail payment return URLs must use HTTPS (HTTP is permitted only for localhost development).");
   const reference="AURELINK-MAIL-"+crypto.randomUUID().replace(/-/g,"").slice(0,24);
   successUrl.searchParams.set("reference",reference);successUrl.searchParams.set("session_id","{CHECKOUT_SESSION_ID}");successUrl.searchParams.set("status","success");
   cancelUrl.searchParams.set("reference",reference);cancelUrl.searchParams.set("status","cancelled");
@@ -725,7 +725,10 @@ export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession)
       await client.query("INSERT INTO aurelink_email_credit_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[payment.workspace_id,workspace.user_id]);
       const wallet=(await client.query("SELECT balance_emails FROM aurelink_email_credit_wallets WHERE workspace_id=$1 FOR UPDATE",[payment.workspace_id])).rows[0];
       const credits=BigInt(String(payment.email_credits));
-      const next=BigInt(String(wallet.balance_emails))+credits;
+      if(credits<1000n||credits>250000n)throw new Error("Aurelink Mail prepaid pack is outside the permitted 1,000–250,000 credit range.");
+      const currentBalance=BigInt(String(wallet.balance_emails));
+      const next=currentBalance+credits;
+      if(next>250000n)throw new Error("Aurelink Mail prepaid balance cannot exceed 250,000 credits. Use existing credits before purchasing another pack.");
       await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=$2,updated_at=NOW() WHERE workspace_id=$1",[payment.workspace_id,next.toString()]);
       await client.query(
         "INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,payment_reference,description,metadata) VALUES($1,$2,'purchase','credit',$3,$4,$5,$6,'Stripe purchase of Aurelink Mail prepaid email credits',$7::jsonb) ON CONFLICT(reference) DO NOTHING",
