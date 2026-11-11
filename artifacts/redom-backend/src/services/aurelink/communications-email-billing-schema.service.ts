@@ -228,6 +228,55 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
     ALTER TABLE aurelink_email_billing_audit ALTER COLUMN workspace_id DROP NOT NULL;
     CREATE INDEX IF NOT EXISTS aurelink_email_billing_audit_workspace_idx
       ON aurelink_email_billing_audit(workspace_id,created_at DESC);
+    -- Provider-neutral payment metadata. USD remains the catalogue/accounting currency;
+    -- provider_amount_minor/provider_currency store the actual local checkout amount.
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS payment_provider VARCHAR(16) NOT NULL DEFAULT 'stripe';
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS provider_currency CHAR(3) NOT NULL DEFAULT 'USD';
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS provider_amount_minor BIGINT;
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS paypal_order_id VARCHAR(180);
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS paypal_subscription_id VARCHAR(180);
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS paypal_capture_id VARCHAR(180);
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS paystack_reference VARCHAR(180);
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS provider_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_payments_paypal_order_idx ON aurelink_email_billing_payments(paypal_order_id) WHERE paypal_order_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_payments_paypal_subscription_idx ON aurelink_email_billing_payments(paypal_subscription_id) WHERE paypal_subscription_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_payments_paystack_ref_idx ON aurelink_email_billing_payments(paystack_reference) WHERE paystack_reference IS NOT NULL;
+
+    ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS payment_provider VARCHAR(16) NOT NULL DEFAULT 'stripe';
+    ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS paypal_subscription_id VARCHAR(180);
+    ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(180);
+    ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(180);
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_subscriptions_paypal_idx ON aurelink_email_subscriptions(paypal_subscription_id) WHERE paypal_subscription_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS aurelink_email_provider_plans (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider VARCHAR(16) NOT NULL CHECK(provider IN ('paypal','paystack')),
+      plan_option_id UUID NOT NULL REFERENCES aurelink_email_plan_options(id) ON DELETE CASCADE,
+      currency CHAR(3) NOT NULL,
+      provider_product_id VARCHAR(180),
+      provider_plan_id VARCHAR(180) NOT NULL,
+      amount_minor BIGINT NOT NULL CHECK(amount_minor > 0),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(provider,plan_option_id,currency),
+      UNIQUE(provider,provider_plan_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_email_payment_webhook_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider VARCHAR(16) NOT NULL CHECK(provider IN ('paypal','paystack','stripe')),
+      event_id VARCHAR(200) NOT NULL,
+      event_type VARCHAR(160) NOT NULL,
+      payload JSONB NOT NULL,
+      processed_at TIMESTAMPTZ,
+      processing_error TEXT,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(provider,event_id)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_email_payment_webhook_pending_idx
+      ON aurelink_email_payment_webhook_events(provider,received_at) WHERE processed_at IS NULL;
+
     CREATE OR REPLACE FUNCTION aurelink_block_email_billing_ledger_mutation() RETURNS trigger
     LANGUAGE plpgsql AS $$
     BEGIN
