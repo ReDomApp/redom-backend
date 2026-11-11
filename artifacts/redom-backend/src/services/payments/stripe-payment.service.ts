@@ -746,6 +746,18 @@ export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession)
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
 }
 
+export async function cancelAurelinkEmailSubscription(userId:string,workspaceId:string):Promise<{subscriptionId:string;cancelAtPeriodEnd:boolean;periodEnd:Date}>{
+  const row=(await pool.query(
+    "SELECT s.id,s.stripe_subscription_id,s.billing_period_end FROM aurelink_email_subscriptions s WHERE s.workspace_id=$1 AND s.user_id=$2 AND s.status='active' AND s.cancel_at_period_end=FALSE ORDER BY s.created_at DESC LIMIT 1",
+    [workspaceId,userId]
+  )).rows[0];
+  if(!row?.stripe_subscription_id)throw new Error("An active cancellable Aurelink Mail subscription was not found.");
+  const remote=await stripeRequest<StripeSubscription>("post","/subscriptions/"+encodeURIComponent(String(row.stripe_subscription_id)),form({cancel_at_period_end:"true"}));
+  if(remote.status!=="active"&&remote.status!=="trialing")throw new Error("Stripe did not confirm the subscription cancellation schedule.");
+  await pool.query("UPDATE aurelink_email_subscriptions SET cancel_at_period_end=TRUE,cancelled_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='active'",[row.id]);
+  return {subscriptionId:String(row.stripe_subscription_id),cancelAtPeriodEnd:true,periodEnd:new Date(row.billing_period_end)};
+}
+
 export async function verifyAurelinkEmailBillingCheckout(userId:string,reference:string):Promise<{status:string;purchaseType:string;creditsAdded?:string}>{
   const payment=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE reference=$1 AND user_id=$2 LIMIT 1",[reference,userId])).rows[0];
   if(!payment)throw new Error("Aurelink Mail payment reference not found.");
