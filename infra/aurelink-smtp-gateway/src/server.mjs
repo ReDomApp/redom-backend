@@ -233,7 +233,7 @@ async function captureSmtpUsage(user, reservation, info, mailFrom, recipients) {
       await client.query("UPDATE aurelink_email_usage_reservations SET status='captured',updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[reservation.messageId]);
     }
     await client.query("UPDATE aurelink_messages SET status='accepted',provider_message_id=$2,accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[reservation.messageId,String(info.serverMessageId || "") || null]);
-    await client.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[reservation.messageId,String(info.messageId || "") || null]);
+    await client.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[reservation.messageId,String(info.serverMessageId || "") || null]);
     await client.query("INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,provider_message_id,status) VALUES($1,$2,$3,$4,$5,$6::jsonb,'resend',$7,'accepted') ON CONFLICT(workspace_id,client_message_id) WHERE client_message_id IS NOT NULL DO UPDATE SET credential_id=EXCLUDED.credential_id,message_key=EXCLUDED.message_key,provider_message_id=EXCLUDED.provider_message_id,status='accepted',error=NULL,updated_at=NOW()",[user.workspaceId,user.credentialId,reservation.messageId,reservation.clientMessageId,mailFrom,JSON.stringify(recipients),String(info.serverMessageId || "") || null]);
     await client.query("COMMIT");
   } catch (error) {
