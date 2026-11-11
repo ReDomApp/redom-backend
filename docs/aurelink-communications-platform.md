@@ -257,7 +257,7 @@ Mail checkout endpoints:
 Required environment:
 
 - `PAYPAL_ENV=sandbox|live`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`.
-- `PAYSTACK_SECRET_KEY`.
+- `PAYSTACK_SECRET_KEY` and `AURELINK_PAYMENT_ENCRYPTION_KEY` (32 random bytes, base64 or 64-character hex) for AES-256-GCM encryption of Paystack subscription cancellation tokens.
 - `NGN_PER_USD` and `GHS_PER_USD`: finance-approved local major-currency units per USD. Missing rates block Paystack checkout rather than guessing.
 - `AURELINK_EMAIL_BILLING_SUCCESS_URL` and `AURELINK_EMAIL_BILLING_CANCEL_URL`.
 
