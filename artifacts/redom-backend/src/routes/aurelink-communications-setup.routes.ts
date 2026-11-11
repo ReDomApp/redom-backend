@@ -167,7 +167,7 @@ router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,a
  try{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   const parsed=parseSenderEvidenceDataUri(String(req.body.file||""));
-  const sha256=hash(parsed.body.toString("base64"));
+  const sha256=createHash("sha256").update(parsed.body).digest("hex");
   const ext=parsed.mime==="application/pdf"?"pdf":parsed.mime==="image/png"?"png":"jpg";
   const rawName=String(req.body.fileName||"sender-evidence."+ext).split(/[\\/]/).pop()||"sender-evidence."+ext;
   const fileName=rawName.replace(/[^A-Za-z0-9._-]/g,"_").slice(0,180)||"sender-evidence."+ext;
@@ -185,10 +185,10 @@ router.get("/aurelink/admin/communications/senders/:id/evidence/:documentId",aur
   const object=await senderEvidenceR2.send(new GetObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:String(row.object_key)}));
   if(!object.Body)return res.status(404).json({success:false,message:"Stored evidence object is missing."});
   const body=Buffer.from(await object.Body.transformToByteArray());
-  if(body.length!==Number(row.byte_size)||hash(body.toString("base64"))!==String(row.sha256))return res.status(409).json({success:false,code:"EVIDENCE_INTEGRITY_CHECK_FAILED",message:"Stored evidence does not match Aurelink's original upload digest. Security review must fail."});
+  if(body.length!==Number(row.byte_size)||createHash("sha256").update(body).digest("hex")!==String(row.sha256))return res.status(409).json({success:false,code:"EVIDENCE_INTEGRITY_CHECK_FAILED",message:"Stored evidence does not match Aurelink's original upload digest. Security review must fail."});
   res.setHeader("Content-Type",String(row.mime_type));
   res.setHeader("Content-Length",String(body.length));
-  res.setHeader("Content-Disposition",'attachment; filename="'+String(row.original_filename).replace(/["\\\\]/g,"_")+'"');
+  res.setHeader("Content-Disposition",'attachment; filename="'+String(row.original_filename)+'"');
   res.setHeader("Cache-Control","private, no-store");
   res.setHeader("X-Content-Type-Options","nosniff");
   return res.end(body);
