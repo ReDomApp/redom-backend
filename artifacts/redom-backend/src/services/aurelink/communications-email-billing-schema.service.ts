@@ -228,6 +228,10 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
     ALTER TABLE aurelink_email_billing_audit ALTER COLUMN workspace_id DROP NOT NULL;
     CREATE INDEX IF NOT EXISTS aurelink_email_billing_audit_workspace_idx
       ON aurelink_email_billing_audit(workspace_id,created_at DESC);
+    -- Country used for payment routing must be explicitly verified by Aurelink.
+    ALTER TABLE aurelink_users ADD COLUMN IF NOT EXISTS country_code CHAR(2);
+    ALTER TABLE aurelink_users ADD COLUMN IF NOT EXISTS country_verified_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_users ADD COLUMN IF NOT EXISTS country_verification_method VARCHAR(32);
     -- Provider-neutral payment metadata. USD remains the catalogue/accounting currency;
     -- provider_amount_minor/provider_currency store the actual local checkout amount.
     ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS payment_provider VARCHAR(16) NOT NULL DEFAULT 'stripe';
