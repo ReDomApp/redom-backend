@@ -66,6 +66,27 @@ A background worker calculates rolling 30-day email reputation metrics and creat
 
 Roles: owner, admin, developer, analyst and billing. Invitations expire after seven days and can only be accepted by a signed-in Aurelink account whose verified email matches the invitation. The invitation token is returned once to the creating client; that client must deliver the invitation email. Shared-workspace requests send `X-Aurelink-Workspace-Id`. The backend validates active membership and role permissions before processing workspace-scoped communications requests.
 
+## Sender ID registration and security gate
+
+Sender ID applications are fail-closed. A customer must first register a public HTTPS business website in Aurelink Developer and prove domain control using a DNS TXT challenge at `_aurelink-verification.<domain>`. A URL typed into a form is not treated as a verified website.
+
+Before an application can enter provider submission, it must include the registered legal business name, business address, business contact name/email/phone, destination country, Sender ID, SMS purpose, use-case description, actual sample message, estimated monthly volume, Privacy Policy URL, Terms and Conditions URL, recipient opt-in evidence reference, genuine registration/brand-authorization document references and SHA-256 checksums. The applicant must explicitly attest to document authenticity, brand authorization, recipient consent and policy review.
+
+Aurelink security administrators must manually complete the security checklist before clearing an application: legal business identity, brand ownership/authorization, document authenticity, website content, the required Privacy Policy non-sharing statement for SMS opt-in data/consent, Terms and Conditions disclosures (business identity, products, message frequency, rates, support contact and STOP instructions), opt-in evidence, use case/sample message and destination-specific carrier requirements. Only then can the registration move to `ready_for_submission`. A checksum detects later file changes; it does not prove that a document is genuine. Automated AI-document detection is not claimed. Suspicious or unverifiable submissions remain blocked for manual review or rejection.
+
+Provider submission and provider approval are separate transitions. Submission requires a real provider reference; approval requires a real provider reference and HTTPS evidence of provider/carrier approval. SMS sending additionally requires `status=approved`, `registration_state=approved`, a passed Aurelink security review and a verified website association. An admin cannot bypass the security gate through the review endpoint.
+
+Current endpoints:
+
+- `POST /aurelink/communications/websites` — create a DNS ownership challenge.
+- `POST /aurelink/communications/websites/:id/verify` — verify the published TXT challenge.
+- `GET /aurelink/communications/websites` — list verified website records.
+- `POST /aurelink/communications/senders` — create a complete application; it enters security review and is not submitted to a provider.
+- `GET /aurelink/communications/senders` — view applications and approval status.
+- `POST /aurelink/communications/senders/:id/review` — administrator-only security clearance, rejection, provider submission or provider approval.
+
+Toll-free registrations are not interchangeable with alphanumeric Sender IDs. US/Canada alphanumeric requests are rejected, and the toll-free workflow remains explicitly blocked until a dedicated number-based registration workflow is implemented. No toll-free request is falsely represented as submitted.
+
 ## SDKs
 
 - Node.js SDK: `sdk/aurelink-node`
