@@ -12,7 +12,7 @@ export function countSmsSegments(message: string): number {
   const value = String(message ?? "");
   if (!value.length) return 1;
   const gsmBasicCharacter = /^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,\-./0-9:;<=>?¡A-ZÄÖÑÜ§¿a-zäöñüà]$/;
-  const gsmExtension = new Set(["\\f", "^", "{", "}", "\\\\", "[", "]", "~", "|", "€"]);
+  const gsmExtension = new Set(["\f", "^", "{", "}", "\\", "[", "]", "~", "|", "€"]);
   let septets = 0;
   for (const character of value) {
     if (gsmBasicCharacter.test(character)) septets += 1;
