@@ -11,7 +11,10 @@ export class Aurelink {
  communications:{
    overview():Promise<any>;
    analytics(query?:RequestOptions["query"]):Promise<any>;
-   domains:{list():Promise<any>;create(body:{domain:string;provider?:"resend"|"brevo"}):Promise<any>;check(id:string):Promise<any>;verify(id:string):Promise<any>;tracking(id:string,body:{openTracking?:boolean;clickTracking?:boolean}):Promise<any>;applyDns(id:string):Promise<any>;connectCloudflare(body:{domain:string;zoneId:string;apiToken:string}):Promise<any>;cloudflareConnections():Promise<any>};
+   billing:{overview():Promise<any>;usage(query?:RequestOptions["query"]):Promise<any>;statement(month:string):Promise<any>};
+   reputation:{retrieve():Promise<any>;acknowledge(id:string):Promise<any>};
+   team:{members():Promise<any>;invite(body:{email:string;role?:"admin"|"developer"|"analyst"|"billing"}):Promise<any>;acceptInvitation(token:string):Promise<any>;changeRole(id:string,role:"admin"|"developer"|"analyst"|"billing"):Promise<any>;revoke(id:string):Promise<any>};
+   domains:{list():Promise<any>;create(body:{domain:string;provider?:"resend"|"brevo"}):Promise<any>;check(id:string):Promise<any>;suspend(id:string,reason?:string):Promise<any>;resume(id:string):Promise<any>;remove(id:string):Promise<any>;setTrackingDomain(id:string,trackingDomain:string):Promise<any>;verifyTrackingDomain(id:string):Promise<any>;verify(id:string):Promise<any>;tracking(id:string,body:{openTracking?:boolean;clickTracking?:boolean}):Promise<any>;applyDns(id:string):Promise<any>;connectCloudflare(body:{domain:string;zoneId:string;apiToken:string}):Promise<any>;cloudflareConnections():Promise<any>};
    emailSenders:{list():Promise<any>;create(body:{email:string;name:string;provider?:"resend"|"brevo"}):Promise<any>;check(id:string):Promise<any>};
    senders:{list():Promise<any>;request(body:{sender:string;provider:"twilio"|"brevo";countryCode:string;businessName:string;businessWebsite:string;messageUseCase:string;sampleMessage:string;senderType?:"alphanumeric";estimatedMonthlyVolume?:string;registrationDocuments?:string[]}):Promise<any>};
    smtp:{credentials:{list():Promise<any>;create(body:{domainId:string;label?:string}):Promise<any>;rotate(id:string):Promise<any>;revoke(id:string):Promise<any>}};
