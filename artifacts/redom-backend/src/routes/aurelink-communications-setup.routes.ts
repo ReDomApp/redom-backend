@@ -242,7 +242,7 @@ router.post("/aurelink/communications/websites/:id/verify",aurelinkAuthMiddlewar
   const records=await resolveTxt("_aurelink-verification."+String(row.domain));
   const challenge=records.flat().find((v:string)=>v.startsWith("aurelink-site-verification="));
   if(!challenge||hash(challenge)!==String(row.verification_token_hash))return res.status(409).json({success:false,code:"WEBSITE_OWNERSHIP_NOT_PROVEN",message:"The required DNS TXT challenge was not found or did not match. The website remains unverified."});
-  const updated=await pool.query("UPDATE aurelink_verified_websites SET status='verified',verified_at=NOW(),evidence=jsonb_build_object('dnsTxtVerified',true,'verifiedAt',NOW()),updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,domain,website_url,status,verified_at",[row.id,wid]);
+  const updated=await pool.query("UPDATE aurelink_verified_websites SET status='verified',verified_at=NOW(),last_dns_checked_at=NOW(),evidence=jsonb_build_object('dnsTxtVerified',true,'verifiedAt',NOW()),updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,domain,website_url,status,verified_at",[row.id,wid]);
   return res.json({success:true,website:updated.rows[0]});
  }catch{return res.status(409).json({success:false,code:"WEBSITE_DNS_CHECK_FAILED",message:"Aurelink could not verify the DNS challenge. No sender registration can proceed until ownership is verified."});}
 });
@@ -336,10 +336,16 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
  const status=String(req.body.status||""),securityStatus=String(req.body.securityReviewStatus||"");
  const providerReference=String(req.body.providerReference||"").trim(),evidenceUrl=String(req.body.evidenceUrl||"").trim(),reason=String(req.body.rejectionReason||req.body.securityReason||"").trim();
  if(!["security_passed","security_failed","submitted","approved","rejected","suspended"].includes(status))return res.status(400).json({success:false,message:"Unsupported Sender ID review transition."});
- const found=(await pool.query("SELECT s.*,v.status AS website_status FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE s.id=$1",[req.params.id])).rows[0];
+ const found=(await pool.query("SELECT s.*,v.status AS website_status,v.domain AS verified_website_domain,v.verification_token_hash AS website_verification_token_hash FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE s.id=$1",[req.params.id])).rows[0];
  if(!found)return res.status(404).json({success:false,message:"Sender registration request not found."});
  if(status==="security_passed"){
   if(found.registration_state!=="security_review"||found.security_review_status!=="pending")return res.status(409).json({success:false,code:"SECURITY_REVIEW_NOT_PENDING",message:"This Sender ID application is not awaiting Aurelink security review."});
+  let websiteOwnershipValid=false;
+  try{
+   const records=await resolveTxt("_aurelink-verification."+String(found.verified_website_domain||""));
+   const challenge=records.flat().find((value:string)=>value.startsWith("aurelink-site-verification="));
+   websiteOwnershipValid=Boolean(challenge&&hash(challenge)===String(found.website_verification_token_hash||""));
+  }catch{websiteOwnershipValid=false;}
   const checklist=req.body.securityChecklist||{};
   const required=["legalBusinessVerified","brandOwnershipVerified","documentAuthenticityVerified","websiteContentVerified","privacyPolicyStatementVerified","termsContentVerified","consentEvidenceVerified","smsUseCaseVerified","countryRequirementsVerified"];
   if(["US","CA"].includes(String(found.country_code)))required.push("tollFreeNumberEligibilityVerified","businessContactDomainVerified","tollFreeSampleComplianceVerified");
@@ -349,7 +355,7 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
   const submittedDocs=Array.isArray(found.request_details?.registrationDocuments)?found.request_details.registrationDocuments:[];
   const tollFreeEvidenceValid=!["US","CA"].includes(String(found.country_code))||( ["brevo_provided","ported"].includes(String(found.request_details?.tollFreeNumberSource))&&submittedDocs.some((doc:any)=>String(doc.documentId)===String(found.request_details?.tollFreeNumberDocumentId)) );
   const evidenceMetadataMatches=tollFreeEvidenceValid&&submittedDocs.length>0&&submittedDocs.length===evidenceDocs.length&&submittedDocs.every((doc:any)=>evidenceDocs.some((stored:any)=>String(stored.id)===String(doc.documentId)&&String(stored.sha256)===String(doc.sha256)&&Number(stored.byte_size)===Number(doc.byteSize)));
-  if(found.website_status!=="verified"||!found.evidence_fingerprint||!found.consent_evidence_reference||!evidenceMetadataMatches||found.request_details?.attestations?.documentsAreAuthentic!==true||missing.length)return res.status(422).json({success:false,code:"SECURITY_GATE_INCOMPLETE",missingChecks:missing,evidenceDocumentsVerified:evidenceMetadataMatches,message:"Website ownership, legal/brand verification, private original-document integrity and authenticity, policy content, opt-in evidence and destination-specific carrier requirements must all be verified before security approval."});
+  if(found.website_status!=="verified"||!websiteOwnershipValid||!found.evidence_fingerprint||!found.consent_evidence_reference||!evidenceMetadataMatches||found.request_details?.attestations?.documentsAreAuthentic!==true||missing.length)return res.status(422).json({success:false,code:"SECURITY_GATE_INCOMPLETE",missingChecks:missing,evidenceDocumentsVerified:evidenceMetadataMatches,message:"Website ownership, legal/brand verification, private original-document integrity and authenticity, policy content, opt-in evidence and destination-specific carrier requirements must all be verified before security approval."});
   const token="AUR-SID-"+randomBytes(32).toString("base64url"),tokenHash=hash(token);
   let encryptedToken:string;try{encryptedToken=encryptSenderToken(token);}catch{return res.status(503).json({success:false,code:"SENDER_TOKEN_ENCRYPTION_NOT_CONFIGURED",message:"Aurelink communications encryption key is not configured. Provider submission scheduling remains disabled."});}
   const client=await pool.connect();
