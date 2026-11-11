@@ -163,6 +163,37 @@ function decryptSenderToken(value:string){
  return Buffer.concat([decipher.update(Buffer.from(body,"base64url")),decipher.final()]).toString("utf8");
 }
 function senderAdmin(userId:string){return new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(v=>v.trim()).filter(Boolean)).has(userId);}
+router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,async(req,res)=>{
+ try{
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  const parsed=parseSenderEvidenceDataUri(String(req.body.file||""));
+  const sha256=hash(parsed.body.toString("base64"));
+  const ext=parsed.mime==="application/pdf"?"pdf":parsed.mime==="image/png"?"png":"jpg";
+  const rawName=String(req.body.fileName||"sender-evidence."+ext).split(/[\\/]/).pop()||"sender-evidence."+ext;
+  const fileName=rawName.replace(/[^A-Za-z0-9._-]/g,"_").slice(0,180)||"sender-evidence."+ext;
+  const id=randomUUID(),objectKey="aurelink/sender-evidence/"+wid+"/"+req.user!.userId+"/"+id+"."+ext;
+  await senderEvidenceR2.send(new PutObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:objectKey,Body:parsed.body,ContentType:parsed.mime,CacheControl:"private, no-store",Metadata:{sha256,documentid:id,workspaceid:wid}}));
+  const saved=await pool.query("INSERT INTO aurelink_sender_evidence_documents(id,workspace_id,uploaded_by_user_id,object_key,original_filename,mime_type,byte_size,sha256,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'uploaded') RETURNING id,original_filename,mime_type,byte_size,sha256,status,created_at",[id,wid,req.user!.userId,objectKey,fileName,parsed.mime,parsed.body.length,sha256]);
+  return res.status(201).json({success:true,document:saved.rows[0],security:"File bytes were validated and SHA-256 was computed by Aurelink before private storage. The file is not publicly accessible."});
+ }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to securely upload Sender ID evidence."});}
+});
+router.get("/aurelink/admin/communications/senders/:id/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
+ try{
+  const row=(await pool.query("SELECT id,object_key,original_filename,mime_type,byte_size,sha256 FROM aurelink_sender_evidence_documents WHERE id=$1 AND sender_application_id=$2 AND status IN ('attached','verified')",[req.params.documentId,req.params.id])).rows[0];
+  if(!row)return res.status(404).json({success:false,message:"Sender evidence document not found."});
+  const object=await senderEvidenceR2.send(new GetObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:String(row.object_key)}));
+  if(!object.Body)return res.status(404).json({success:false,message:"Stored evidence object is missing."});
+  const body=Buffer.from(await object.Body.transformToByteArray());
+  if(body.length!==Number(row.byte_size)||hash(body.toString("base64"))!==String(row.sha256))return res.status(409).json({success:false,code:"EVIDENCE_INTEGRITY_CHECK_FAILED",message:"Stored evidence does not match Aurelink's original upload digest. Security review must fail."});
+  res.setHeader("Content-Type",String(row.mime_type));
+  res.setHeader("Content-Length",String(body.length));
+  res.setHeader("Content-Disposition",'attachment; filename="'+String(row.original_filename).replace(/["\\\\]/g,"_")+'"');
+  res.setHeader("Cache-Control","private, no-store");
+  res.setHeader("X-Content-Type-Options","nosniff");
+  return res.end(body);
+ }catch(error){return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to retrieve private sender evidence."});}
+});
 router.get("/aurelink/communications/sms/countries",aurelinkAuthMiddleware,async(_req,res)=>{
  const rows=await pool.query("SELECT country_code,country_name,calling_code,international_prefix FROM aurelink_sms_supported_countries WHERE enabled=true ORDER BY country_name ASC");
  return res.json({success:true,count:rows.rows.length,format:"E.164",countries:rows.rows.map(row=>({...row,internationalFormatExample:String(row.calling_code)+"XXXXXXXX"})),excluded:["SG"]});
