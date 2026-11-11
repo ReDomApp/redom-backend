@@ -231,7 +231,7 @@ export function isAurelinkE164ForCountry(phone: string, countryCode: string): bo
 
 const senderIdNoDigits = new Set(["BG","GM","GT","HN","LR","NI","NG","PK","RO","RW"]);
 const senderIdNoSpaces = new Set(["AO","BJ","BG","BF","CM","HR","EC","GM","MM","NA","MK","PE","RO","RU","RS","TZ","TH","UZ"]);
-const senderIdNoSpecialCharacters = new Set(["AT","BY","KE","KW","QA","IT","LU","RU","RW","BA","BR","ML","MR","SC","BG","BF","KH","ME","ZA","CM","MA","SI","CD","MM","SE","CI","NA","HR","NP","TZ","TG","CZ","NI","NE","UG","EG","NG","UA","GT","NO","UZ","HK","PK","PH"]);
+const senderIdNoSpecialCharacters = new Set(["FR","AT","BY","KE","KW","QA","IT","LU","RU","RW","BA","BR","ML","MR","SC","BG","BF","KH","ME","ZA","CM","MA","SI","CD","MM","SE","CI","NA","HR","NP","TZ","TG","CZ","NI","NE","UG","EG","NG","UA","GT","NO","UZ","HK","PK","PH"]);
 const nanpNumberOnly = new Set(["AS","AI","AG","BS","BB","BM","VG","CA","KY","DM","DO","GD","GU","JM","MS","PR","KN","LC","VC","SX","TT","TC","US","VI"]);
 export function requiresAurelinkBrevoNumberSender(countryCode: string): boolean {
   return nanpNumberOnly.has(countryCode.trim().toUpperCase());
