@@ -21,6 +21,7 @@ function parseSenderEvidenceDataUri(value:string){
  const match=/^data:(application\/pdf|image\/jpeg|image\/png);base64,([A-Za-z0-9+/=]+)$/.exec(value);
  if(!match)throw new Error("Evidence files must be PDF, JPEG or PNG.");
  const mime=match[1],body=Buffer.from(match[2],"base64");
+ if(body.toString("base64").replace(/=+$/,"")!==match[2].replace(/=+$/,""))throw new Error("Evidence file base64 encoding is malformed.");
  if(!body.length||body.length>10*1024*1024)throw new Error("Each evidence file must be between 1 byte and 10 MB.");
  const valid=mime==="application/pdf"?body.subarray(0,5).toString("ascii")==="%PDF-":mime==="image/jpeg"?body[0]===0xff&&body[1]===0xd8&&body[2]===0xff:body.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
  if(!valid)throw new Error("The uploaded file content does not match its declared MIME type.");
