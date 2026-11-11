@@ -466,6 +466,7 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
           } finally {
             transport.close();
           }
+          if(rejectedRecipients.length)return callback(null,"Aurelink accepted "+acceptedRecipients.length+" recipient(s); "+rejectedRecipients.length+" were rejected upstream. Check your Aurelink message logs.");
           return callback();
         } catch (error) {
           const message = String(error?.message || "Upstream email delivery failed.").slice(0, 240);
