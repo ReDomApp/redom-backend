@@ -32,8 +32,8 @@ router.post("/aurelink/webhooks/resend", async (req,res) => {
       for(const smtp of smtpRows.rows){
         await pool.query("UPDATE aurelink_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3 IN ('opened','clicked') THEN $3 ELSE status END,provider_status=$4,provider_error=$5,delivered_at=CASE WHEN $3='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,updated_at=NOW() WHERE id=$1",[smtp.message_key,messageId||null,status,String(event.type),event?.data?.bounce?.message||event?.data?.reason||null]);
         await pool.query("UPDATE aurelink_communications_usage SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' ELSE status END,updated_at=NOW() WHERE message_id=$1",[smtp.message_key,messageId||null,status]);
-        if(["bounced","complained","unsubscribed"].includes(status)){
-          const reason=status==="bounced"?"hard_bounce":status==="complained"?"spam_complaint":"unsubscribe";
+        if(["bounced","complained","unsubscribed","rejected"].includes(status)){
+          const reason=status==="bounced"?"hard_bounce":status==="complained"?"spam_complaint":status==="unsubscribed"?"unsubscribe":"provider_suppression";
           const recipients=Array.isArray(event?.data?.to)?event.data.to:[];
           for(const recipient of recipients){const address=String(recipient).replace(/^.*<([^>]+)>.*$/,"$1").trim().toLowerCase();if(address.includes("@"))await pool.query("INSERT INTO aurelink_email_suppressions(workspace_id,email,reason,source_provider) VALUES($1,$2,$3,'resend') ON CONFLICT(workspace_id,email) DO NOTHING",[smtp.workspace_id,address,reason]);}
         }
