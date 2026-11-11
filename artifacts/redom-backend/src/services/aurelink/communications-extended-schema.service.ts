@@ -110,6 +110,16 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     );
     CREATE INDEX IF NOT EXISTS aurelink_sender_security_audit_history_idx
       ON aurelink_sender_security_audit(sender_application_id,created_at DESC);
+    CREATE OR REPLACE FUNCTION aurelink_block_sender_audit_mutation() RETURNS trigger
+    LANGUAGE plpgsql AS $
+    BEGIN
+      RAISE EXCEPTION 'Aurelink Sender ID security audit records are immutable';
+    END;
+    $;
+    DROP TRIGGER IF EXISTS aurelink_sender_security_audit_immutable ON aurelink_sender_security_audit;
+    CREATE TRIGGER aurelink_sender_security_audit_immutable
+      BEFORE UPDATE OR DELETE ON aurelink_sender_security_audit
+      FOR EACH ROW EXECUTE FUNCTION aurelink_block_sender_audit_mutation();
 
 
     CREATE TABLE IF NOT EXISTS aurelink_sms_supported_countries (
