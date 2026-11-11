@@ -293,6 +293,7 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   const smsPurpose=String(req.body.smsPurpose||"").toLowerCase(),monthlyVolume=Number(req.body.monthlyVolume);
   const contact={name:String(req.body.contactName||"").trim(),email:String(req.body.contactEmail||"").trim().toLowerCase(),phone:String(req.body.contactPhone||"").trim()};
   const consentEvidenceDocumentId=String(req.body.consentEvidenceDocumentId||"").trim();
+  const contactEmailDomain=contact.email.split("@").pop()||"";
   const rawDocumentIds=Array.isArray(req.body.registrationDocumentIds)?req.body.registrationDocumentIds:[];
   const documentIds=rawDocumentIds.filter((v:any)=>typeof v==="string"&&/^[0-9a-f-]{36}$/i.test(v));
   if(rawDocumentIds.length<1||rawDocumentIds.length>10||documentIds.length!==rawDocumentIds.length||new Set(documentIds).size!==documentIds.length)return res.status(400).json({success:false,code:"DOCUMENT_UPLOAD_REQUIRED",message:"Upload 1–10 genuine business/brand documents through Aurelink's private evidence upload endpoint and submit their unique document IDs."});
@@ -313,7 +314,7 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
    const samples=[sampleMessage,...(promotionalSample?[promotionalSample]:[]),...(transactionalSample?[transactionalSample]:[])];
    if(samples.some(value=>!value.toLowerCase().includes(brandName)||!/\bSTOP\b/i.test(value)||!/\bHELP\b/i.test(value)))return res.status(422).json({success:false,code:"TOLL_FREE_SAMPLE_COMPLIANCE_REQUIRED",message:"Every US/Canada sample message must contain the business/brand name and clear STOP and HELP instructions."});
   }
-  if(["US","CA"].includes(countryCode)&&!contact.email.endsWith("@"+websiteDomain))return res.status(422).json({success:false,code:"BUSINESS_EMAIL_REQUIRED",message:"US/Canada toll-free registrations require a business email address on the verified company domain."});
+  if(["US","CA"].includes(countryCode)&&contactEmailDomain!==websiteDomain&&!contactEmailDomain.endsWith("."+websiteDomain))return res.status(422).json({success:false,code:"BUSINESS_EMAIL_REQUIRED",message:"US/Canada toll-free registrations require a business email address on the verified company domain."});
   if(!Number.isSafeInteger(monthlyVolume)||monthlyVolume<1||monthlyVolume>100000000)return res.status(400).json({success:false,message:"Provide a realistic positive monthly SMS volume estimate."});
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)||!contact.name||!/^\+[1-9]\d{7,14}$/.test(contact.phone))return res.status(400).json({success:false,message:"A named business contact with a valid email address and phone number is required."});
   for(const [label,url] of [["Privacy Policy",privacyPolicyUrl],["Terms and Conditions",termsUrl]]){
