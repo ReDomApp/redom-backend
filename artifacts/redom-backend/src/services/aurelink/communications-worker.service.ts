@@ -72,13 +72,16 @@ async function processOne(row:any){
   let result:any;
   await pool.query("UPDATE aurelink_communications_jobs SET submission_state='in_flight',updated_at=NOW() WHERE id=$1 AND status='processing'",[row.id]);
   if(payload.channel==="sms"){
+    await pool.query("UPDATE aurelink_messages SET provider=$2,updated_at=NOW() WHERE id=$1",[row.message_id,payload.provider]);
     try{result=await sendAurelinkSms(payload.provider,payload.input);}
     catch(primaryError){
       const fallback=process.env.AURELINK_SMS_FALLBACK_PROVIDER;
       if(!(primaryError instanceof ProviderSubmissionError)||primaryError.outcome!=="rejected"||primaryError.retryable||(fallback!=="brevo"&&fallback!=="twilio")||fallback===payload.provider)throw primaryError;
+      await pool.query("UPDATE aurelink_messages SET provider=$2,updated_at=NOW() WHERE id=$1",[row.message_id,fallback]);
       result=await sendAurelinkSms(fallback,payload.input);
     }
   }else{
+    await pool.query("UPDATE aurelink_messages SET provider=$2,updated_at=NOW() WHERE id=$1",[row.message_id,payload.provider]);
     try{result=await sendAurelinkEmail(payload.provider,payload.input);}
     catch(primaryError){
       const fallback=process.env.AURELINK_EMAIL_FALLBACK_PROVIDER;
@@ -89,6 +92,7 @@ async function processOne(row:any){
       );
       if(!sender.rows[0]?.email)throw new Error("No verified "+fallback+" fallback sender and authenticated domain are configured for this Aurelink workspace.");
       const fallbackInput={...payload.input,sender:String(sender.rows[0].email),senderName:String(sender.rows[0].sender_name||payload.input.senderName||"Aurelink"),replyTo:payload.input.replyTo||payload.input.sender};
+      await pool.query("UPDATE aurelink_messages SET provider=$2,updated_at=NOW() WHERE id=$1",[row.message_id,fallback]);
       result=await sendAurelinkEmail(fallback,fallbackInput);
     }
   }
