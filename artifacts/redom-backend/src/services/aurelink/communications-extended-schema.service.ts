@@ -99,6 +99,18 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     );
     CREATE INDEX IF NOT EXISTS aurelink_sender_provider_events_submission_idx
       ON aurelink_sender_provider_events(submission_id,processed_at DESC);
+    CREATE TABLE IF NOT EXISTS aurelink_sender_security_audit (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      sender_application_id UUID NOT NULL REFERENCES aurelink_sender_ids(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      actor_user_id UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      action VARCHAR(48) NOT NULL,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_security_audit_history_idx
+      ON aurelink_sender_security_audit(sender_application_id,created_at DESC);
+
 
     CREATE TABLE IF NOT EXISTS aurelink_sms_supported_countries (
       country_code CHAR(2) PRIMARY KEY,
