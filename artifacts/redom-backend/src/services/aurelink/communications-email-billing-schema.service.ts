@@ -96,6 +96,8 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_stripe_subscription_idx
       ON aurelink_email_billing_payments(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_pending_subscription_idx
+      ON aurelink_email_billing_payments(workspace_id) WHERE purchase_type='subscription' AND status='pending';
     CREATE INDEX IF NOT EXISTS aurelink_email_billing_payments_workspace_idx
       ON aurelink_email_billing_payments(workspace_id,created_at DESC);
 
@@ -117,6 +119,7 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       payment_reference VARCHAR(120),
       activated_at TIMESTAMPTZ,
       cancelled_at TIMESTAMPTZ,
+      cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CHECK(billing_period_end > billing_period_start),
