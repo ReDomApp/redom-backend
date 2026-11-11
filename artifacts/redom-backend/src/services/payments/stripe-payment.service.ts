@@ -737,6 +737,7 @@ export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession)
         "INSERT INTO aurelink_email_subscriptions(user_id,workspace_id,plan_option_id,status,monthly_email_allowance,used_emails,reserved_emails,billing_period_start,billing_period_end,stripe_customer_id,stripe_subscription_id,payment_reference,activated_at) VALUES($1,$2,$3,'active',$4,0,0,to_timestamp($5),to_timestamp($6),$7,$8,$9,NOW())",
         [payment.user_id,payment.workspace_id,payment.plan_option_id,option.monthly_email_allowance,start,end,stripeObjectId(remote.customer)||stripeObjectId(session.customer),subscriptionId,reference]
       );
+      await client.query("INSERT INTO aurelink_email_billing_accounts(workspace_id,user_id,billing_mode) VALUES($1,$2,'subscription') ON CONFLICT(workspace_id) DO UPDATE SET billing_mode='subscription',updated_at=NOW()",[payment.workspace_id,payment.user_id]);
       await client.query("UPDATE aurelink_email_billing_payments SET stripe_subscription_id=$2 WHERE reference=$1",[reference,subscriptionId]);
     }
     await client.query("UPDATE aurelink_email_billing_payments SET status='paid',stripe_payment_intent_id=$2,paid_at=NOW(),updated_at=NOW() WHERE reference=$1",[reference,paymentIntent]);
