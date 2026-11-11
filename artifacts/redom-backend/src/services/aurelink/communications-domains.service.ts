@@ -123,6 +123,15 @@ export async function createAurelinkProviderDomain(provider: AurelinkEmailProvid
   const details = await request(provider, `/senders/domains/${encodeURIComponent(domain)}`);
   return snapshot(provider, details, String(created?.id || domain));
 }
+export async function deleteAurelinkProviderDomain(provider:AurelinkEmailProvider,providerDomainId:string,domain:string):Promise<void>{
+  if(provider==="resend"){
+    if(!providerDomainId)throw new Error("Resend domain identifier is missing.");
+    await request(provider,`/domains/${encodeURIComponent(providerDomainId)}`,"DELETE");
+    return;
+  }
+  const normalized=normalizeDomain(domain);
+  await request(provider,`/senders/domains/${encodeURIComponent(normalized)}`,"DELETE");
+}
 export async function getAurelinkProviderDomain(provider: AurelinkEmailProvider, providerDomainId: string, domain: string): Promise<AurelinkDomainSnapshot> {
   const value = provider === "resend"
     ? await request(provider, `/domains/${encodeURIComponent(providerDomainId)}`)
