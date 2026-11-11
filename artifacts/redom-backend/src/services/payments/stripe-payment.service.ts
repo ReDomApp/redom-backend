@@ -626,8 +626,8 @@ function stripeObjectId(value:unknown):string|null {
 export async function createAurelinkEmailBillingCheckout(input:{
   userId:string;workspaceId:string;purchaseType:"subscription"|"email_credits";planOptionId?:string;creditPackId?:string;
 }):Promise<{reference:string;checkoutUrl:string;amountMinor:number;currency:"USD";purchaseType:"subscription"|"email_credits"}>{
-  const user=(await pool.query("SELECT email,account_status FROM aurelink_users WHERE id=$1 LIMIT 1",[input.userId])).rows[0];
-  if(!user||user.account_status!=="active"||!String(user.email||"").trim())throw new Error("An active Aurelink account with a verified email is required.");
+  const user=(await pool.query("SELECT email,account_status,email_verified FROM aurelink_users WHERE id=$1 LIMIT 1",[input.userId])).rows[0];
+  if(!user||user.account_status!=="active"||user.email_verified!==true||!String(user.email||"").trim())throw new Error("An active Aurelink account with a verified email is required.");
   const membership=await pool.query(
     "SELECT w.id FROM aurelink_communications_workspaces w LEFT JOIN aurelink_communications_members m ON m.workspace_id=w.id AND m.accepted_user_id=$1 AND m.status='active' WHERE w.id=$2 AND w.status='active' AND (w.user_id=$1 OR m.accepted_user_id=$1) LIMIT 1",
     [input.userId,input.workspaceId]
