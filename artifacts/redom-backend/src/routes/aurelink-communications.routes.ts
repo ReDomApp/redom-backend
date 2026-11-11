@@ -8,6 +8,7 @@ import {
 } from "../services/aurelink/communications-providers.service";
 import { enqueueAurelinkMessage, retryAurelinkMessage } from "../services/aurelink/communications-worker.service";
 import { emitAurelinkWebhookEvent } from "../services/aurelink/developer-platform.service";
+import { isAurelinkE164ForCountry, getAurelinkSmsCountry } from "../services/aurelink/sms-country-registry";
 
 const router = Router();
 
@@ -171,7 +172,7 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
   if(!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported SMS provider."});
   const category=req.body.category==="marketing"?"marketing":req.body.category==="otp"?"otp":req.body.category==="notification"?"notification":"transactional";
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),countryCode=String(req.body.countryCode||"").toUpperCase(),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
-  if(!/^\+?[1-9]\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender)||!/^[A-Z]{2}$/.test(countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,message:"Provide an E.164 recipient, ISO countryCode, approved 3–11 character alphanumeric sender and message content up to 5000 characters."});
+  if(!/^\+[1-9]\d{7,14}$/.test(recipient)||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender)||!getAurelinkSmsCountry(countryCode)||!isAurelinkE164ForCountry(recipient,countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,code:"INVALID_OR_UNSUPPORTED_DESTINATION",message:"Provide a supported Aurelink destination country and an E.164 recipient whose international calling prefix matches that country."});
   try{
     const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
     if(!await approvedSmsSender(wid,sender,provider,countryCode))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"This sender ID is not approved for the selected provider and destination country."});
@@ -366,7 +367,7 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     if(campaign.channel==="sms"&&!SMS_PROVIDERS.has(provider)||campaign.channel==="email"&&!EMAIL_PROVIDERS.has(provider)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"Unsupported campaign provider."});}
     const sender=String(req.body.sender||"");
     const countryCode=String(req.body.countryCode||"").toUpperCase();
-    if(campaign.channel==="sms"&&!/^[A-Z]{2}$/.test(countryCode)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an ISO destination countryCode."});}
+    if(campaign.channel==="sms"&&!getAurelinkSmsCountry(countryCode)){await client.query("ROLLBACK");return res.status(400).json({success:false,code:"SMS_DESTINATION_UNSUPPORTED",message:"SMS campaigns require an Aurelink-supported ISO destination country."});}
     if(campaign.channel==="sms"&&typeof req.body.webUrl!=="string") {await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
     if(!sender){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"An approved sender is required to start a campaign."});}
     if(campaign.channel==="sms"&&!/^[A-Za-z0-9]{3,11}$/.test(sender)||campaign.channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"The campaign sender is invalid for the selected channel."});}
@@ -419,7 +420,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
   if(channel==="sms"&&!/^[A-Za-z0-9]{1,11}$/.test(sender))return res.status(400).json({success:false,message:"SMS sender must be 1–11 alphanumeric characters."});
   if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender))return res.status(400).json({success:false,message:"A valid sender email address is required."});
   const countryCode=String(req.body.countryCode||"").toUpperCase();
-   if(channel==="sms"&&(!/^[A-Z]{2}$/.test(countryCode)||!await approvedSmsSender(wid,sender,provider,countryCode)))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"An approved sender ID for the destination country is required."});
+   if(channel==="sms"&&(!getAurelinkSmsCountry(countryCode)||!isAurelinkE164ForCountry(destination,countryCode)||!await approvedSmsSender(wid,sender,provider,countryCode)))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"An approved sender ID for the destination country is required."});
    if(channel==="email"&&!await verifiedEmailSender(wid,sender,provider))return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify the sender domain with the selected provider before sending verification email."});
   const saved=await pool.query("INSERT INTO aurelink_verification_sessions(workspace_id,channel,purpose,destination,destination_hash,code_hash,verification_salt,provider,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,expires_at",[wid,channel,purpose,destination,hash(destination.toLowerCase()),makeVerificationHash(code,salt),salt,provider,expiresAt]);
   try{
