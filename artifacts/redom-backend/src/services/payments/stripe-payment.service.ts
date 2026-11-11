@@ -911,7 +911,7 @@ async function markStripeFailed(reference:string,message:string,gatewayStatus="f
 
 async function reconcileAurelinkEmailStripeEvent(type:string,object:any):Promise<void>{
   if(type==="invoice.paid"||type==="invoice.payment_failed"){
-    const subscriptionId=stripeObjectId(object?.subscription);
+    const subscriptionId=stripeObjectId(object?.subscription??object?.parent?.subscription_details?.subscription);
     if(!subscriptionId)return;
     if(type==="invoice.payment_failed"){
       await pool.query("UPDATE aurelink_email_subscriptions SET status='past_due',updated_at=NOW() WHERE stripe_subscription_id=$1 AND status='active'",[subscriptionId]);
