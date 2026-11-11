@@ -18,6 +18,8 @@ app.use("/redom-backend/support/email/webhook", express.raw({ type: "application
 app.use("/redom-backend/payments/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/redom-backend/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/redom-backend/aurelink/webhooks/paystack-mail", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/aurelink/webhooks/paystack-mail", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/v1/aurelink/webhooks/paystack-mail", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/redom-backend/v1/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/v1/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
