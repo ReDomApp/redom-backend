@@ -312,7 +312,7 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitte
  try{
   await client.query("BEGIN");
   const row=(await client.query("SELECT * FROM aurelink_sender_provider_submissions WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
-  if(!row||row.status!=="ready_for_operator_submission"||row.request_token_hash!==hash(token)){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_REQUEST_MAPPING_FAILED",message:"The submission is not ready or the Aurelink correlation token does not match."});}
+  if(!row||row.status!=="ready_for_operator_submission"||!row.token_revealed_at||row.request_token_hash!==hash(token)){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_REQUEST_MAPPING_FAILED",message:"The submission is not ready or the Aurelink correlation token does not match."});}
   await client.query("UPDATE aurelink_sender_provider_submissions SET status='submitted',submitted_at=NOW(),provider_reference=$2,provider_status='submitted',attempts=attempts+1,updated_at=NOW() WHERE id=$1",[row.id,providerReference]);
   const saved=await client.query("UPDATE aurelink_sender_ids SET status='submitted',registration_state='brevo_submitted',submitted_at=NOW(),provider_reference=$2,brevo_provider_reference=$2,brevo_submitted_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING id,sender,country_code,status,registration_state,provider_reference,submitted_at",[row.sender_application_id,providerReference]);
   await client.query("COMMIT");
@@ -330,6 +330,7 @@ async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:st
   await client.query("BEGIN");
   const row=(await client.query("SELECT * FROM aurelink_sender_provider_submissions WHERE request_token_hash=$1 FOR UPDATE",[tokenHash])).rows[0];
   if(!row){await client.query("ROLLBACK");return {found:false,duplicate:false};}
+  if(!["submitted","processing"].includes(String(row.status))){await client.query("ROLLBACK");return {found:false,duplicate:false,notSubmitted:true};}
   const event=await client.query("INSERT INTO aurelink_sender_provider_events(provider,provider_event_id,submission_id,event_status,payload) VALUES('brevo',$1,$2,$3,$4::jsonb) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[input.eventId,row.id,status,JSON.stringify(input.payload||{})]);
   if(!event.rows.length){await client.query("COMMIT");return {found:true,duplicate:true,terminal:Boolean(row.token_consumed_at)};}
   if(row.token_consumed_at){await client.query("COMMIT");return {found:true,duplicate:false,terminal:true,ignoredAfterTerminal:true};}
