@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createHash, randomBytes, createCipheriv, createDecipheriv, timingSafeEqual } from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
+import { isAurelinkBrevoSenderFormatValid } from "../services/aurelink/sms-country-registry";
 import { decryptAurelinkDnsSecret, encryptAurelinkDnsSecret, validateCloudflareZoneToken, applyCloudflareDnsRecords } from "../services/aurelink/communications-dns.service";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
@@ -193,8 +194,8 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   if(!supportedCountry)return res.status(422).json({success:false,code:"SMS_DESTINATION_UNSUPPORTED",message:"Aurelink does not currently support SMS delivery or Sender ID registration for this destination."});
   if(senderType!=="alphanumeric"&&senderType!=="toll_free")return res.status(400).json({success:false,message:"Unsupported sender type."});
   if(["US","CA"].includes(countryCode)){
-   if(senderType!=="toll_free"||!/^\+1(?:800|833|844|855|866|877|888)\d{7}$/.test(sender))return res.status(422).json({success:false,code:"TOLL_FREE_NUMBER_REQUIRED",message:"US and Canada require a valid +1 toll-free number registration; alphanumeric Sender IDs are not accepted."});
-  }else if(senderType!=="alphanumeric"||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender))return res.status(400).json({success:false,message:"This destination requires a 3–11 character alphanumeric Sender ID containing at least one letter."});
+   if(senderType!=="toll_free"||!isAurelinkBrevoSenderFormatValid(sender,countryCode))return res.status(422).json({success:false,code:"TOLL_FREE_NUMBER_REQUIRED",message:"US and Canada require a valid +1 toll-free number registration; alphanumeric Sender IDs are not accepted."});
+  }else if(senderType!=="alphanumeric"||!isAurelinkBrevoSenderFormatValid(sender,countryCode))return res.status(400).json({success:false,code:"BREVO_SENDER_FORMAT_INVALID",message:"The Sender ID does not meet Brevo's 3–11 character alphanumeric format or destination-specific character restrictions."});
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   const restriction=(await pool.query("SELECT ends_at FROM aurelink_sender_security_restrictions WHERE user_id=$1 AND workspace_id=$2 AND status='active' AND ends_at>NOW() ORDER BY ends_at DESC LIMIT 1",[req.user!.userId,wid])).rows[0];
   if(restriction)return res.status(423).json({success:false,code:"SENDER_REGISTRATION_RESTRICTED",restrictedUntil:restriction.ends_at,message:"Sender ID registration is temporarily restricted by Aurelink Security."});
