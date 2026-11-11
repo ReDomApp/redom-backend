@@ -80,7 +80,7 @@ router.get("/aurelink/communications/email/billing/overview",aurelinkAuthMiddlew
     pool.query(
       `SELECT s.id,s.status,s.monthly_email_allowance,s.used_emails,s.reserved_emails,
               GREATEST(0,s.monthly_email_allowance-s.used_emails-s.reserved_emails) AS remaining_emails,
-              s.allow_prepaid_fallback,s.billing_period_start,s.billing_period_end,
+              s.allow_prepaid_fallback,s.cancel_at_period_end,s.billing_period_start,s.billing_period_end,
               p.plan_code,p.display_name,o.monthly_price_minor,o.currency
          FROM aurelink_email_subscriptions s
          JOIN aurelink_email_plan_options o ON o.id=s.plan_option_id
