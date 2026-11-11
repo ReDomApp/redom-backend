@@ -460,7 +460,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
     return res.status(202).json({success:true,verificationId:saved.rows[0].id,expiresAt,messageStatus:"queued"});
   }catch(error){
     await pool.query("UPDATE aurelink_verification_sessions SET status='cancelled',updated_at=NOW() WHERE id=$1",[saved.rows[0].id]);
-    if((error as any)?.code==="AURELINK_PRICE_NOT_CONFIGURED")return res.status(503).json({success:false,code:"PRICE_NOT_CONFIGURED",message:"Aurelink has not configured a price for this service, destination and provider route. Contact Aurelink billing before sending."});if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for verification delivery."});
+    if((error as any)?.code==="AURELINK_EMAIL_PLAN_LIMIT_REACHED")return res.status(402).json({success:false,code:"EMAIL_ALLOWANCE_EXHAUSTED",message:error instanceof Error?error.message:"Your Aurelink Mail allowance is exhausted."});if((error as any)?.code==="AURELINK_PRICE_NOT_CONFIGURED")return res.status(503).json({success:false,code:"PRICE_NOT_CONFIGURED",message:"Aurelink has not configured a price for this service, destination and provider route. Contact Aurelink billing before sending."});if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for verification delivery."});
     return res.status(502).json({success:false,message:error instanceof Error?error.message:"Verification delivery could not be queued."});
   }
 });
