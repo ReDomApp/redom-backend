@@ -13,6 +13,11 @@ export class ProviderSubmissionError extends Error {
     super(message);this.name="ProviderSubmissionError";
   }
 }
+export function classifyProviderHttpStatus(status:number):{outcome:"rejected"|"unknown";retryable:boolean}{
+  if(status>=500||status===408||status===425)return {outcome:"unknown",retryable:true};
+  if(status===429)return {outcome:"rejected",retryable:true};
+  return {outcome:"rejected",retryable:false};
+}
 const timeoutMs = 12_000;
 async function jsonRequest(url:string,init:RequestInit):Promise<any>{
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -23,13 +28,14 @@ async function jsonRequest(url:string,init:RequestInit):Promise<any>{
       const detail=error instanceof Error&&error.name==="AbortError"?"Communication provider timed out.":"Communication provider connection failed; acceptance could not be determined.";
       throw new ProviderSubmissionError(detail,"unknown",true);
     }
-    const body=await response.text();
+    let body:string;
+    try{body=await response.text();}
+    catch{throw new ProviderSubmissionError("Provider response could not be read; acceptance is unknown.","unknown",true);}
     let parsed:any;try{parsed=body?JSON.parse(body):{};}catch{parsed={message:body.slice(0,300)};}
     if(!response.ok){
       const detail=typeof parsed?.message==="string"?parsed.message:typeof parsed?.code==="string"?parsed.code:"Provider request rejected.";
-      const retryable=response.status===408||response.status===425||response.status===429||response.status>=500;
-      const outcome: "rejected"|"unknown"=response.status>=500||response.status===408||response.status===425?"unknown":"rejected";
-      throw new ProviderSubmissionError(`Provider HTTP ${response.status}: ${detail.slice(0,300)}`,outcome,retryable);
+      const classification=classifyProviderHttpStatus(response.status);
+      throw new ProviderSubmissionError(`Provider HTTP ${response.status}: ${detail.slice(0,300)}`,classification.outcome,classification.retryable);
     }
     return parsed;
   }finally{clearTimeout(timer);}
@@ -41,7 +47,7 @@ async function sendBrevoSms(input:SendSmsInput):Promise<ProviderSendResult>{
   if(!key)throw new Error("Brevo SMS is not configured.");
   const payload={sender:input.countryCode==="US"||input.countryCode==="CA"?input.sender.replace(/^\+/,""):input.sender,recipient:input.recipient.replace(/^\+/,""),content:input.content,type:input.category==="marketing"?"marketing":"transactional",...(input.tag?{tag:input.tag}:{}),...(input.webUrl?{webUrl:input.webUrl}:{})};
   const result=await jsonRequest("https://api.brevo.com/v3/transactionalSMS/send",{method:"POST",headers:{"api-key":key,"content-type":"application/json",accept:"application/json"},body:JSON.stringify(payload)});
-  if(result.messageId===undefined||result.messageId===null)throw new Error("Brevo accepted no message identifier.");
+  if(result.messageId===undefined||result.messageId===null)throw new ProviderSubmissionError("Brevo returned success without a message identifier; acceptance is unknown.","unknown",false);
   return {provider:"brevo",providerMessageId:String(result.messageId),acceptedAt:new Date().toISOString()};
 }
 async function sendTwilioSms(input:SendSmsInput):Promise<ProviderSendResult>{
@@ -57,7 +63,7 @@ async function sendTwilioSms(input:SendSmsInput):Promise<ProviderSendResult>{
   else throw new Error("A valid Twilio sender or Messaging Service is required.");
   const callbackUrl=process.env.AURELINK_TWILIO_STATUS_CALLBACK_URL;if(callbackUrl)params.set("StatusCallback",callbackUrl);
   const auth=Buffer.from(`${sid}:${token}`).toString("base64"),result=await jsonRequest(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,{method:"POST",headers:{authorization:`Basic ${auth}`,"content-type":"application/x-www-form-urlencoded"},body:params.toString()});
-  if(!result.sid)throw new Error("Twilio accepted no message identifier.");
+  if(!result.sid)throw new ProviderSubmissionError("Twilio returned success without a message identifier; acceptance is unknown.","unknown",false);
   return {provider:"twilio",providerMessageId:String(result.sid),acceptedAt:new Date().toISOString()};
 }
 async function sendResendEmail(input:SendEmailInput):Promise<ProviderSendResult>{
@@ -65,9 +71,11 @@ async function sendResendEmail(input:SendEmailInput):Promise<ProviderSendResult>
   const base={from:input.senderName?`${input.senderName} <${input.sender}>`:input.sender,to:input.recipient,subject:input.subject,...(input.replyTo?{replyTo:input.replyTo}:{}),...(input.tags?.length?{tags:input.tags.map(name=>({name,value:"aurelink"}))}:{})};
   const payload:any=input.html?{...base,html:input.html}:{...base,text:input.text||""};
   if(input.attachments?.length)payload.attachments=input.attachments.map(file=>({filename:file.filename,content:Buffer.from(file.content,"base64"),...(file.contentType?{contentType:file.contentType}:{})}));
-  const result=await new Resend(key).emails.send(payload);
-  if(result.error)throw new Error(`Resend rejected the email: ${result.error.message}`);
-  if(!result.data?.id)throw new Error("Resend accepted no email identifier.");
+  let result:any;
+  try{result=await new Resend(key).emails.send(payload);}
+  catch{throw new ProviderSubmissionError("Resend connection failed; acceptance could not be determined.","unknown",true);}
+  if(result.error)throw new ProviderSubmissionError(`Resend rejected the email: ${result.error.message}`,"rejected",false);
+  if(!result.data?.id)throw new ProviderSubmissionError("Resend returned success without an email identifier; acceptance is unknown.","unknown",false);
   return {provider:"resend",providerMessageId:result.data.id,acceptedAt:new Date().toISOString()};
 }
 async function sendBrevoEmail(input:SendEmailInput):Promise<ProviderSendResult>{
