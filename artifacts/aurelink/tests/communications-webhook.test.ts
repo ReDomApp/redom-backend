@@ -4,6 +4,7 @@ import { createHmac } from "node:crypto";
 import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus } from "../../redom-backend/src/services/aurelink/communications-webhooks.utils.ts";
 import { classifyProviderHttpStatus, ProviderSubmissionError } from "../../redom-backend/src/services/aurelink/communications-providers.service.ts";
 import { createAurelinkResendSmtpKey, revokeAurelinkResendSmtpKey } from "../../redom-backend/src/services/aurelink/communications-smtp.service.ts";
+import { reserveAurelinkEmailUsage } from "../../redom-backend/src/services/aurelink/communications-email-billing.service.ts";
 
 test("Resend Svix signatures verify against the exact raw payload",()=>{
   const raw=Buffer.from(JSON.stringify({type:"email.delivered",data:{email_id:"email_123"}}));
@@ -93,4 +94,35 @@ test("provider response classification never treats ambiguous acceptance as a sa
   const unknown=new ProviderSubmissionError("timeout","unknown",true);
   assert.equal(unknown.outcome,"unknown");
   assert.equal(unknown.retryable,true);
+});
+
+
+test("Mail blocks a past-due subscription unless prepaid fallback was explicitly enabled",async()=>{
+  const statements:string[]=[];
+  const client={query:async(sql:string)=>{
+    statements.push(sql);
+    if(sql.includes("SELECT source,units,unit_price_minor"))return {rows:[]};
+    if(sql.includes("SELECT billing_mode FROM aurelink_email_billing_accounts"))return {rows:[{billing_mode:"subscription"}]};
+    if(sql.includes("SELECT id,status,monthly_email_allowance"))return {rows:[{id:"sub-1",status:"past_due",monthly_email_allowance:"7000",used_emails:"0",reserved_emails:"0",allow_prepaid_fallback:false,period_active:true}]};
+    return {rows:[],rowCount:1};
+  }};
+  await assert.rejects(
+    reserveAurelinkEmailUsage(client as any,{userId:"user-1",workspaceId:"workspace-1",messageId:"00000000-0000-4000-8000-000000000001",units:1,transport:"api",provider:"resend",category:"transactional"}),
+    (error:any)=>error?.code==="AURELINK_EMAIL_PLAN_LIMIT_REACHED"
+  );
+  assert.equal(statements.some(sql=>sql.includes("aurelink_email_credit_wallets")),false);
+});
+
+test("Mail consumes a valid paid subscription allowance before prepaid credits",async()=>{
+  const statements:string[]=[];
+  const client={query:async(sql:string)=>{
+    statements.push(sql);
+    if(sql.includes("SELECT source,units,unit_price_minor"))return {rows:[]};
+    if(sql.includes("SELECT billing_mode FROM aurelink_email_billing_accounts"))return {rows:[{billing_mode:"subscription"}]};
+    if(sql.includes("SELECT id,status,monthly_email_allowance"))return {rows:[{id:"sub-1",status:"active",monthly_email_allowance:"7000",used_emails:"25",reserved_emails:"10",allow_prepaid_fallback:true,period_active:true}]};
+    return {rows:[],rowCount:1};
+  }};
+  const result=await reserveAurelinkEmailUsage(client as any,{userId:"user-1",workspaceId:"workspace-1",messageId:"00000000-0000-4000-8000-000000000002",units:1,transport:"api",provider:"resend",category:"transactional"});
+  assert.equal(result.source,"subscription");
+  assert.equal(statements.some(sql=>sql.includes("aurelink_email_credit_wallets")),false);
 });
