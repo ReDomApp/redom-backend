@@ -113,7 +113,7 @@ const started = await aurelink.communications.campaigns.send(campaign.campaign.i
 
 Campaigns include only contacts with recorded opt-in consent. SMS campaigns additionally require an HTTPS `webUrl` for opt-out/event handling.
 
-The current adapters support Brevo transactional SMS, Twilio Programmable Messaging, Resend Email API and Brevo transactional Email API. Use `aurelink.communications.domains` to create and verify provider domains, inspect DNS and connect Cloudflare for safe record creation. Use `aurelink.communications.senders` to request country-specific SMS sender IDs; a request is not an approval. Use `aurelink.communications.smtp.credentials` to create, list, rotate and revoke Aurelink SMTP credentials. Customers connect to `smtp.aurelink.org` using username `aurelink` and a unique Aurelink-issued password. The gateway authenticates that password and internally resolves the matching domain-restricted Resend key; customers never receive Resend's SMTP credentials. Provider acceptance is not proof of handset or inbox delivery; delivery status requires authenticated provider webhooks.
+The current adapters support Brevo transactional SMS, Twilio Programmable Messaging, Resend Email API and Brevo transactional Email API. Use `aurelink.communications.domains` to create and verify provider domains, inspect DNS and connect Cloudflare for safe record creation. Use `aurelink.communications.senders` to request country-specific SMS sender IDs; a request is not an approval. Use `aurelink.communications.smtp.credentials` to create, list, rotate and revoke Aurelink SMTP credentials. SMTP connection details are mode-dependent. While `AURELINK_SMTP_TEMPORARY_DIRECT_RESEND=true`, customers temporarily connect to `smtp.resend.com` with username `resend` and a domain-scoped Resend sending key shown once as the password. This is the intentional temporary bridge and bypasses Aurelink's own TCP gateway. Once the Aurelink gateway is deployed and verified, turn the flag off and issue new credentials for `smtp.aurelink.org` (username `aurelink`). The gateway then authenticates Aurelink credentials and forwards through its internal provider key. Provider acceptance is not proof of inbox delivery; delivery status requires authenticated provider webhooks.
 
 ## Webhook signature verification
 
@@ -145,3 +145,18 @@ The SDK source is maintained in this repository under `sdk/aurelink-node`. It is
 Default: https://redom-backend.onrender.com/redom-backend/v1
 
 Supply baseUrl when creating the client to target a configured Aurelink API host.
+
+## Billing, reputation and workspace teams
+
+Aurelink communications use a shared usage price catalogue. SMS is metered per SMS segment and destination country; REST email is metered per accepted message; the Aurelink SMTP gateway is metered per accepted recipient message. An active price must be configured before a billable send can be queued. The current implementation uses the prepaid Aurelink wallet and records reservations, captures and refunds in the communications billing ledger.
+
+- `aurelink.communications.billing.overview()` — wallet and recent usage summary.
+- `aurelink.communications.billing.usage({ limit })` — detailed usage rows.
+- `aurelink.communications.billing.statement("YYYY-MM")` — monthly usage statement (not a tax invoice).
+- `aurelink.communications.reputation.retrieve()` — rolling domain scores and alerts.
+- `aurelink.communications.team.invite({ email, role })` — create a seven-day invitation token.
+- `aurelink.communications.team.acceptInvitation(token)` — accept an invitation using the invited verified Aurelink account.
+- `aurelink.communications.domains.suspend(id, reason)`, `resume(id)`, and `remove(id)` — manage sending-domain lifecycle.
+- `aurelink.communications.domains.setTrackingDomain(id, "links.example.com")` and `verifyTrackingDomain(id)` — configure and verify a Resend custom tracking subdomain.
+
+Set `workspaceId` in the client options, or pass the `X-Aurelink-Workspace-Id` request header, when working in a workspace shared with your team. Invitations return a token once; deliver it to the invited email address through your configured email channel.
