@@ -173,6 +173,8 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   if(senderType==="toll_free")return res.status(501).json({success:false,code:"TOLL_FREE_REGISTRATION_WORKFLOW_REQUIRED",message:"Toll-free number registration is a separate number-based workflow and is not yet enabled here. This request has not been submitted."});
   if(["US","CA"].includes(countryCode))return res.status(422).json({success:false,code:"TOLL_FREE_REGISTRATION_REQUIRED",message:"This destination requires a registered toll-free number workflow; an alphanumeric Sender ID cannot be submitted."});
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  const restriction=(await pool.query("SELECT ends_at FROM aurelink_sender_security_restrictions WHERE user_id=$1 AND workspace_id=$2 AND status='active' AND ends_at>NOW() ORDER BY ends_at DESC LIMIT 1",[req.user!.userId,wid])).rows[0];
+  if(restriction)return res.status(423).json({success:false,code:"SENDER_REGISTRATION_RESTRICTED",restrictedUntil:restriction.ends_at,message:"Sender ID registration is temporarily restricted by Aurelink Security."});
   const websiteDomain=normalizeSenderDomain(String(req.body.businessWebsite||""));
   const website=(await pool.query("SELECT id,website_url FROM aurelink_verified_websites WHERE workspace_id=$1 AND domain=$2 AND status='verified'",[wid,websiteDomain])).rows[0];
   if(!website)return res.status(422).json({success:false,code:"AURELINK_WEBSITE_NOT_VERIFIED",message:"Register and verify this business website in Aurelink Developer before applying for a Sender ID."});
@@ -218,9 +220,12 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
   return res.json({success:true,sender:updated.rows[0],providerSubmission:"not_submitted",note:"Security review passed. This does not submit to a carrier or approve the Sender ID."});
  }
  if(status==="security_failed"){
+  const restrictionDays=Number(req.body.restrictionDays);
   if(!reason)return res.status(400).json({success:false,message:"A security failure reason is required."});
-  const updated=await pool.query("UPDATE aurelink_sender_ids SET security_review_status='failed',registration_state='rejected',status='rejected',security_reviewed_at=NOW(),security_reviewed_by=$2,last_security_reason=$3,rejection_reason=$3,updated_at=NOW() WHERE id=$1 RETURNING id,status,registration_state,security_review_status,last_security_reason",[req.params.id,req.user!.userId,reason]);
-  return res.json({success:true,sender:updated.rows[0]});
+  if(!Number.isInteger(restrictionDays)||restrictionDays<1||restrictionDays>365)return res.status(400).json({success:false,message:"Set a security restriction period between 1 and 365 days."});
+  const updated=await pool.query("UPDATE aurelink_sender_ids SET security_review_status='failed',registration_state='rejected',status='rejected',security_reviewed_at=NOW(),security_reviewed_by=$2,last_security_reason=$3,rejection_reason=$3,updated_at=NOW() WHERE id=$1 RETURNING id,workspace_id,status,registration_state,security_review_status,last_security_reason",[req.params.id,req.user!.userId,reason]);
+  const restriction=await pool.query("INSERT INTO aurelink_sender_security_restrictions(user_id,workspace_id,sender_application_id,reason,ends_at,created_by) SELECT w.user_id,$2,$1,$3,NOW()+($4 * INTERVAL '1 day'),$5 FROM aurelink_communications_workspaces w WHERE w.id=$2 RETURNING id,starts_at,ends_at,status",[req.params.id,updated.rows[0].workspace_id,reason,restrictionDays,req.user!.userId]);
+  return res.json({success:true,sender:updated.rows[0],securityRestriction:restriction.rows[0],note:"The workspace owner is temporarily blocked from new Sender ID applications for the configured period."});
  }
  if(found.security_review_status!=="passed"||!["ready_for_submission","submitted"].includes(String(found.registration_state)))return res.status(423).json({success:false,code:"SECURITY_GATE_NOT_PASSED",message:"Provider submission and approval are blocked until Aurelink security review has passed."});
  if(status==="submitted"&&!providerReference)return res.status(400).json({success:false,message:"A real provider registration reference is required."});
