@@ -50,7 +50,7 @@ function scopeFor(req:Request):string{
  const p=req.path.split("/").filter(Boolean);
  if(req.path==="/aurelink/communications/overview"||req.method==="GET"&&p[1]==="communications")return "communications:read";
  if(p[1]==="verify")return "verify:write";
- if(p[1]==="communications"&&(["domains","senders","email-senders","dns","smtp","templates","team"].includes(p[2]||""))&&!(req.method==="GET"))return "communications:manage";
+ if(p[1]==="communications"&&(["domains","senders","email-senders","dns","smtp","templates","team","reputation"].includes(p[2]||""))&&!(req.method==="GET"))return "communications:manage";
  if(p[1]==="communications"&&(["domains","senders","email-senders","smtp"].includes(p[2]||""))&&req.method==="GET")return "communications:read";
  if(p[1]==="communications")return "communications:send";
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
