@@ -145,7 +145,7 @@ async function tick(){
     UPDATE aurelink_sender_provider_submissions q
     SET status='cancelled',request_token_encrypted=NULL,provider_status='cancelled_by_aurelink_website_verification',last_error='Website ownership is not currently verified.',updated_at=NOW()
     FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id
-    WHERE q.sender_application_id=s.id AND q.status='scheduled' AND q.scheduled_at<=NOW() AND v.status IS DISTINCT FROM 'verified'
+    WHERE q.sender_application_id=s.id AND q.status IN ('scheduled','ready_for_operator_submission') AND q.scheduled_at<=NOW() AND v.status IS DISTINCT FROM 'verified'
     RETURNING q.sender_application_id,q.workspace_id
   ), suspended AS (
     UPDATE aurelink_sender_ids s
