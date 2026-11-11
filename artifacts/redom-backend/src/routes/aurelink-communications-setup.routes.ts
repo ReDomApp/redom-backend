@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
 import { decryptAurelinkDnsSecret, encryptAurelinkDnsSecret, validateCloudflareZoneToken, applyCloudflareDnsRecords } from "../services/aurelink/communications-dns.service";
 import { pool } from "../database/db";
@@ -130,6 +130,10 @@ function normalizeSenderDomain(value:string){
  return domain;
 }
 function senderAdmin(userId:string){return new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(v=>v.trim()).filter(Boolean)).has(userId);}
+router.get("/aurelink/communications/sms/countries",aurelinkAuthMiddleware,async(_req,res)=>{
+ const rows=await pool.query("SELECT country_code,country_name,calling_code,international_prefix FROM aurelink_sms_supported_countries WHERE enabled=true ORDER BY country_name ASC");
+ return res.json({success:true,count:rows.rows.length,format:"E.164",countries:rows.rows.map(row=>({...row,internationalFormatExample:String(row.calling_code)+"XXXXXXXX"})),excluded:["SG"]});
+});
 router.get("/aurelink/communications/websites",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
  const rows=await pool.query("SELECT id,domain,website_url,verification_method,status,verified_at,evidence,created_at,updated_at FROM aurelink_verified_websites WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
