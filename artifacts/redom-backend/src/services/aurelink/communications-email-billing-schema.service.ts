@@ -138,10 +138,11 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS aurelink_email_billing_accounts (
       workspace_id UUID PRIMARY KEY REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
       user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
-      billing_mode VARCHAR(20) NOT NULL DEFAULT 'payg' CHECK(billing_mode IN ('free','payg','subscription')),
+      billing_mode VARCHAR(20) NOT NULL DEFAULT 'free' CHECK(billing_mode IN ('free','payg','subscription')),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_email_billing_accounts ALTER COLUMN billing_mode SET DEFAULT 'free';
     CREATE TABLE IF NOT EXISTS aurelink_email_free_daily_usage (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
