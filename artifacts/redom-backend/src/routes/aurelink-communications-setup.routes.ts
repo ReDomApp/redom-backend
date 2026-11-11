@@ -160,8 +160,8 @@ router.post("/aurelink/communications/websites",aurelinkAuthMiddleware,async(req
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   const websiteUrl=String(req.body.websiteUrl||"").trim(),parsed=new URL(websiteUrl);
   if(parsed.protocol!=="https:"||parsed.username||parsed.password) return res.status(400).json({success:false,code:"HTTPS_WEBSITE_REQUIRED",message:"Use a public HTTPS company website without embedded credentials."});
-  const domain=normalizeSenderDomain(parsed.hostname),token="aurelink-site-verification="+randomBytes(32).toString("hex"),tokenHash=hash(token);
-  const saved=await pool.query("INSERT INTO aurelink_verified_websites(workspace_id,domain,website_url,verification_method,verification_token_hash,status,evidence) VALUES($1,$2,$3,'dns_txt',$4,'pending',$5::jsonb) ON CONFLICT(workspace_id,domain) DO UPDATE SET website_url=EXCLUDED.website_url,verification_method='dns_txt',verification_token_hash=EXCLUDED.verification_token_hash,status='pending',verified_at=NULL,verified_by=NULL,evidence='{}'::jsonb,updated_at=NOW() RETURNING id,domain,website_url,status,verification_method,created_at",[wid,domain,websiteUrl,tokenHash,JSON.stringify({challengeIssuedAt:new Date().toISOString()})]);
+  const domain=normalizeSenderDomain(parsed.hostname),token="aurelink-site-verification="+randomBytes(32).toString("hex"),tokenHash=hash(token),expiresAt=new Date(Date.now()+24*60*60*1000);
+  const saved=await pool.query("INSERT INTO aurelink_verified_websites(workspace_id,domain,website_url,verification_method,verification_token_hash,verification_expires_at,status,evidence) VALUES($1,$2,$3,'dns_txt',$4,$5,'pending',$6::jsonb) ON CONFLICT(workspace_id,domain) DO UPDATE SET website_url=EXCLUDED.website_url,verification_method='dns_txt',verification_token_hash=EXCLUDED.verification_token_hash,verification_expires_at=EXCLUDED.verification_expires_at,status='pending',verified_at=NULL,verified_by=NULL,evidence='{}'::jsonb,updated_at=NOW() RETURNING id,domain,website_url,status,verification_method,verification_expires_at,created_at",[wid,domain,websiteUrl,tokenHash,expiresAt,JSON.stringify({challengeIssuedAt:new Date().toISOString()})]);
   return res.status(201).json({success:true,website:saved.rows[0],dnsRecord:{type:"TXT",host:"_aurelink-verification."+domain,value:token},instructions:"Publish the exact TXT record, then call the verify endpoint. Website ownership is not considered verified until Aurelink resolves and matches this challenge."});
  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to register website."});}
 });
@@ -169,6 +169,7 @@ router.post("/aurelink/communications/websites/:id/verify",aurelinkAuthMiddlewar
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
  const row=(await pool.query("SELECT * FROM aurelink_verified_websites WHERE id=$1 AND workspace_id=$2",[req.params.id,wid])).rows[0];
  if(!row)return res.status(404).json({success:false,message:"Website verification request not found."});
+ if(!row.verification_expires_at||new Date(row.verification_expires_at).getTime()<=Date.now())return res.status(410).json({success:false,code:"WEBSITE_CHALLENGE_EXPIRED",message:"The DNS verification challenge has expired. Create a new challenge before applying for a Sender ID."});
  try{
   const records=await resolveTxt("_aurelink-verification."+String(row.domain));
   const challenge=records.flat().find((v:string)=>v.startsWith("aurelink-site-verification="));
