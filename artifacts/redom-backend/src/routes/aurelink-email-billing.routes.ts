@@ -2,7 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
-import { createAurelinkEmailBillingCheckout, verifyAurelinkEmailBillingCheckout, cancelAurelinkEmailSubscription } from "../services/payments/stripe-payment.service";
+import { verifyAurelinkEmailBillingCheckout as verifyLegacyStripeMail, cancelAurelinkEmailSubscription as cancelLegacyStripeMail } from "../services/payments/stripe-payment.service";
+import { createAurelinkMailCheckout, verifyAurelinkMailCheckout, cancelAurelinkMailSubscription, handleAurelinkMailWebhook } from "../services/payments/aurelink-mail-payment.service";
 import { captureAurelinkEmailUsage, refundAurelinkEmailUsage, resizeAurelinkEmailUsageReservation } from "../services/aurelink/communications-email-billing.service";
 
 const router=Router();
@@ -32,6 +33,29 @@ async function canManageBilling(userId:string,wid:string):Promise<boolean>{
   )).rows[0];
   return Boolean(row&&(String(row.user_id)===userId||["owner","admin","billing"].includes(String(row.role||""))));
 }
+
+
+router.post("/aurelink/webhooks/paystack-mail",async(req,res)=>{
+  try{
+    const body=Buffer.isBuffer(req.body)?JSON.parse(req.body.toString("utf8")):req.body;
+    await handleAurelinkMailWebhook("paystack",req.headers as Record<string,string|undefined>,body,Buffer.isBuffer(req.body)?req.body:undefined);
+    return res.sendStatus(200);
+  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Paystack webhook rejected."});}
+});
+router.post("/aurelink/webhooks/paypal-mail",async(req,res)=>{
+  try{
+    await handleAurelinkMailWebhook("paypal",req.headers as Record<string,string|undefined>,req.body);
+    return res.sendStatus(200);
+  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"PayPal webhook rejected."});}
+});
+router.post("/aurelink/admin/accounts/:userId/verify-country",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
+  const parsed=z.object({countryCode:z.string().length(2).transform(v=>v.toUpperCase()),verificationMethod:z.enum(["government_document","business_document","manual_compliance_review"])}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Provide a two-letter country code and an approved verification method."});
+  const updated=await pool.query("UPDATE aurelink_users SET country_code=$2,country_verified_at=NOW(),country_verification_method=$3,updated_at=NOW() WHERE id=$1 RETURNING id,country_code,country_verified_at,country_verification_method",[req.params.userId,parsed.data.countryCode,parsed.data.verificationMethod]);
+  if(!updated.rows[0])return res.status(404).json({success:false,message:"Aurelink account not found."});
+  return res.json({success:true,accountCountry:updated.rows[0]});
+});
 
 router.get("/aurelink/communications/email/billing/plans",aurelinkAuthMiddleware,async(_req,res)=>{
   const plans=await pool.query(
@@ -63,7 +87,7 @@ router.post("/aurelink/communications/email/billing/checkout",aurelinkAuthMiddle
   try{
     const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
     if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
-    const result=await createAurelinkEmailBillingCheckout({
+    const result=await createAurelinkMailCheckout({
       userId:req.user!.userId,workspaceId:wid,purchaseType:parsed.data.purchaseType,
       planOptionId:parsed.data.planOptionId,creditPackId:parsed.data.creditPackId
     });
@@ -78,7 +102,8 @@ router.get("/aurelink/communications/email/billing/verify/:reference",aurelinkAu
   const reference=z.string().min(8).max(120).regex(/^[A-Za-z0-9_-]+$/).safeParse(req.params.reference);
   if(!reference.success)return res.status(400).json({success:false,message:"Invalid Aurelink Mail payment reference."});
   try{
-    const payment=await verifyAurelinkEmailBillingCheckout(req.user!.userId,reference.data);
+    const provider=(await pool.query("SELECT payment_provider FROM aurelink_email_billing_payments WHERE reference=$1 AND user_id=$2",[reference.data,req.user!.userId])).rows[0]?.payment_provider;
+    const payment=provider==="stripe"?await verifyLegacyStripeMail(req.user!.userId,reference.data):await verifyAurelinkMailCheckout(req.user!.userId,reference.data);
     return res.json({success:true,payment});
   }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to verify Aurelink Mail payment."});}
 });
@@ -143,8 +168,9 @@ router.post("/aurelink/communications/email/billing/cancel",aurelinkAuthMiddlewa
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
   try{
-    const result=await cancelAurelinkEmailSubscription(wid);
-    await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'subscription_cancel_scheduled',$3::jsonb)",[wid,req.user!.userId,JSON.stringify({stripeSubscriptionId:result.subscriptionId,periodEnd:result.periodEnd.toISOString()})]);
+    const provider=(await pool.query("SELECT payment_provider FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status IN ('active','past_due') ORDER BY created_at DESC LIMIT 1",[wid])).rows[0]?.payment_provider;
+    const result=provider==="stripe"?await cancelLegacyStripeMail(wid):await cancelAurelinkMailSubscription(wid);
+    await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'subscription_cancel_scheduled',$3::jsonb)",[wid,req.user!.userId,JSON.stringify({subscriptionId:result.subscriptionId,paymentProvider:provider,periodEnd:result.periodEnd.toISOString()})]);
     return res.json({success:true,subscription:result,message:"Your subscription remains active until the end of the paid billing period."});
   }catch(error){return res.status(409).json({success:false,message:error instanceof Error?error.message:"Unable to schedule subscription cancellation."});}
 });
