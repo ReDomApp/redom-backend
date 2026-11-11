@@ -57,7 +57,7 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
     JOIN aurelink_email_plan_catalog p ON p.plan_code=seed.plan_code
     WHERE NOT EXISTS (
       SELECT 1 FROM aurelink_email_plan_options o
-      WHERE o.plan_id=p.id AND o.monthly_email_allowance=seed.allowance AND o.active=TRUE
+      WHERE o.plan_id=p.id AND o.monthly_email_allowance=seed.allowance
     );
 
     CREATE TABLE IF NOT EXISTS aurelink_email_credit_packs (
