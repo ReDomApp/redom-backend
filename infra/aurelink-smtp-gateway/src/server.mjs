@@ -200,7 +200,7 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
 
     await client.query(
       "INSERT INTO aurelink_email_usage_reservations(message_id,user_id,workspace_id,source,subscription_id,units,unit_price_minor,amount_minor,wallet_reference,status,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved',$10::jsonb)",
-      [messageId,user.userId,user.workspaceId,source,source==="subscription"?subscription.id:null,units,unitPriceMinor,amountMinor,reference,JSON.stringify({transport:"smtp",provider:"resend",credentialId:user.credentialId,usageDate})]
+      [messageId,user.userId,user.workspaceId,source,source==="subscription"?subscription.id:null,units,unitPriceMinor,amountMinor,reference,JSON.stringify({transport:"smtp",provider:"resend",credentialId:user.credentialId,usageDate,clientMessageId:String(parsed.messageId||"")})]
     );
     await client.query(
       "INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,'email','resend','transactional',$3,'queued',$4,$5)",
@@ -238,6 +238,8 @@ async function captureSmtpUsage(user, reservation, info, mailFrom, recipients) {
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    const metadata=(await pool.query("SELECT metadata FROM aurelink_email_usage_reservations WHERE message_id=$1",[reservation.messageId]).catch(()=>({rows:[]}))).rows[0]?.metadata||{};
+    await markSmtpUnknown(user,reservation,error?.message || "SMTP billing capture failed after provider acceptance",mailFrom,recipients,String(metadata.clientMessageId||""));
     console.error("SMTP billing capture requires reconciliation:",{messageId:reservation.messageId,error:error?.message || "unknown error"});
   } finally { client.release(); }
 }
