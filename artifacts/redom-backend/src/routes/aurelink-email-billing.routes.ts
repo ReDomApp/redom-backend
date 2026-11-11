@@ -75,7 +75,8 @@ router.get("/aurelink/communications/email/billing/verify/:reference",aurelinkAu
 
 router.get("/aurelink/communications/email/billing/overview",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
-  const [subscription,credits,wallet,usage]=await Promise.all([
+  await pool.query("INSERT INTO aurelink_email_billing_accounts(workspace_id,user_id) SELECT id,user_id FROM aurelink_communications_workspaces WHERE id=$1 ON CONFLICT(workspace_id) DO NOTHING",[wid]);
+  const [subscription,credits,wallet,usage,account,daily]=await Promise.all([
     pool.query(
       `SELECT s.id,s.status,s.monthly_email_allowance,s.used_emails,s.reserved_emails,
               GREATEST(0,s.monthly_email_allowance-s.used_emails-s.reserved_emails) AS remaining_emails,
@@ -95,15 +96,35 @@ router.get("/aurelink/communications/email/billing/overview",aurelinkAuthMiddlew
               COALESCE(SUM(units) FILTER(WHERE status='queued'),0)::bigint AS pending_emails
          FROM aurelink_communications_usage WHERE workspace_id=$1 AND channel='email'
           AND created_at>=date_trunc('month',NOW())`,[wid]
-    )
+    ),
+    pool.query("SELECT billing_mode FROM aurelink_email_billing_accounts WHERE workspace_id=$1",[wid]),
+    pool.query("SELECT used_emails,reserved_emails FROM aurelink_email_free_daily_usage WHERE workspace_id=$1 AND usage_date=CURRENT_DATE",[wid])
   ]);
+  const freeLimit=Number((await pool.query("SELECT daily_limit FROM aurelink_email_plan_catalog WHERE plan_code='free'")).rows[0]?.daily_limit||100);
+  const freeUsed=BigInt(String(daily.rows[0]?.used_emails||"0")),freeReserved=BigInt(String(daily.rows[0]?.reserved_emails||"0"));
   return res.json({
     success:true,workspaceId:wid,currency:"USD",
+    billingMode:String(account.rows[0]?.billing_mode||"payg"),
+    freeDailyAllowance:{limit:freeLimit,used:freeUsed.toString(),reserved:freeReserved.toString(),remaining:(BigInt(freeLimit)-freeUsed-freeReserved>0n?BigInt(freeLimit)-freeUsed-freeReserved:0n).toString()},
     subscription:subscription.rows[0]||null,
     prepaidEmailCredits:String(credits.rows[0]?.balance_emails??"0"),
     payAsYouGoWallet:{balanceMinor:String(wallet.rows[0]?.balance_minor??"0"),currency:String(wallet.rows[0]?.currency??"USD")},
     usage:usage.rows[0]
   });
+});
+
+router.patch("/aurelink/communications/email/billing/mode",aurelinkAuthMiddleware,async(req,res)=>{
+  const parsed=z.object({mode:z.enum(["free","payg"])}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Choose Free or Pay-as-you-go billing mode."});
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  const active=await pool.query("SELECT id FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status IN ('active','past_due','pending_payment') LIMIT 1",[wid]);
+  if(active.rows[0])return res.status(409).json({success:false,code:"ACTIVE_SUBSCRIPTION_EXISTS",message:"Cancel or resolve the current monthly subscription before changing billing mode."});
+  await pool.query(
+    "INSERT INTO aurelink_email_billing_accounts(workspace_id,user_id,billing_mode) SELECT id,user_id,$2 FROM aurelink_communications_workspaces WHERE id=$1 ON CONFLICT(workspace_id) DO UPDATE SET billing_mode=EXCLUDED.billing_mode,updated_at=NOW()",
+    [wid,parsed.data.mode]
+  );
+  await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'billing_mode_changed',$3::jsonb)",[wid,req.user!.userId,JSON.stringify({mode:parsed.data.mode})]);
+  return res.json({success:true,workspaceId:wid,billingMode:parsed.data.mode});
 });
 
 router.patch("/aurelink/communications/email/billing/prepaid-fallback",aurelinkAuthMiddleware,async(req,res)=>{
