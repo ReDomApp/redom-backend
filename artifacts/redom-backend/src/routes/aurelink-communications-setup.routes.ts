@@ -11,7 +11,12 @@ const router = Router();
 const emailProviders = new Set(["resend", "brevo"]);
 const senderProviders = new Set(["twilio", "brevo"]);
 
-async function workspaceId(userId: string, projectId?: string): Promise<string> {
+async function workspaceId(userId: string, projectId?: string, requestedWorkspaceId?: string): Promise<string> {
+  if(requestedWorkspaceId){
+    const member=(await pool.query("SELECT w.id FROM aurelink_communications_workspaces w LEFT JOIN aurelink_communications_members m ON m.workspace_id=w.id AND m.accepted_user_id=$1 AND m.status='active' WHERE w.id=$2 AND w.status='active' AND (w.user_id=$1 OR m.accepted_user_id=$1)",[userId,requestedWorkspaceId])).rows[0];
+    if(!member)throw new Error("Aurelink workspace not found or access denied.");
+    return String(member.id);
+  }
   if (projectId) {
     await pool.query("INSERT INTO aurelink_communications_workspaces(user_id,project_id) VALUES($1,$2) ON CONFLICT DO NOTHING", [userId,projectId]);
     const row = (await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND project_id=$2 AND status='active'", [userId,projectId])).rows[0];
@@ -43,7 +48,7 @@ router.post("/aurelink/communications/providers/brevo/webhook/configure",aurelin
 });
 
 router.get("/aurelink/communications/domains", aurelinkAuthMiddleware, async (req,res) => {
-  const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const rows = await pool.query("SELECT id,domain,provider,provider_domain_id,status,dns_records,last_checked_at,verified_at,created_at,updated_at FROM aurelink_email_domains WHERE workspace_id=$1 ORDER BY created_at DESC", [wid]);
   return res.json({ success:true, domains:rows.rows });
 });
@@ -56,7 +61,7 @@ router.post("/aurelink/communications/domains", aurelinkAuthMiddleware, async (r
     : (process.env.AURELINK_BREVO_SENDING_DOMAIN || "market.wnncompany.com");
   const domain = String(req.body.domain || providerDefaultDomain);
   try {
-    const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+    const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
     const normalized = normalizeDomain(domain);
     const created = await createAurelinkProviderDomain(provider as AurelinkEmailProvider, normalized);
     const result = await pool.query(
@@ -74,7 +79,7 @@ router.post("/aurelink/communications/domains", aurelinkAuthMiddleware, async (r
 });
 
 async function refreshDomain(req:any, res:any, verify:boolean) {
-  const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid = await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const found = await pool.query("SELECT * FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2", [req.params.id,wid]);
   const row = found.rows[0];
   if (!row) return res.status(404).json({success:false,message:"Email domain not found."});
@@ -101,7 +106,7 @@ router.post("/aurelink/communications/domains/:id/check",aurelinkAuthMiddleware,
 router.post("/aurelink/communications/domains/:id/verify",aurelinkAuthMiddleware,async(req,res)=>refreshDomain(req,res,true));
 
 router.post("/aurelink/communications/domains/:id/tracking",aurelinkAuthMiddleware,async(req,res)=>{
- const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
  const row=(await pool.query("SELECT id,domain,provider,provider_domain_id FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2",[req.params.id,wid])).rows[0];
  if(!row)return res.status(404).json({success:false,message:"Email domain not found."});
  if(row.provider!=="resend")return res.status(409).json({success:false,message:"Brevo open/click tracking is controlled by its transactional webhook configuration. Resend domain tracking can be configured here."});
@@ -116,7 +121,7 @@ router.post("/aurelink/communications/domains/:id/tracking",aurelinkAuthMiddlewa
 
 
 router.get("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const rows=await pool.query("SELECT id,channel,sender,country_code,provider,status,provider_reference,rejection_reason,request_details,submitted_at,approved_at,created_at,updated_at FROM aurelink_sender_ids WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
   return res.json({success:true,senders:rows.rows});
 });
@@ -146,7 +151,7 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
     const website=new URL(requestDetails.businessWebsite);
     if(website.protocol!=="https:")throw new Error("Business website must use HTTPS.");
   }catch{return res.status(400).json({success:false,message:"Provide a valid HTTPS business website."});}
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const saved=await pool.query(
     "INSERT INTO aurelink_sender_ids(workspace_id,channel,sender,country_code,provider,status,request_details) VALUES($1,'sms',$2,$3,$4,'pending',$5::jsonb) RETURNING id,channel,sender,country_code,provider,status,request_details,created_at",
     [wid,sender,countryCode,provider,JSON.stringify(requestDetails)]
@@ -193,19 +198,19 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
 router.post("/aurelink/communications/dns/cloudflare/connect",aurelinkAuthMiddleware,async(req,res)=>{
   const domainRaw=String(req.body.domain||""),zoneId=String(req.body.zoneId||""),apiToken=String(req.body.apiToken||"");
   try{
-    const domain=normalizeDomain(domainRaw),zone=await validateCloudflareZoneToken(apiToken,zoneId,domain),wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+    const domain=normalizeDomain(domainRaw),zone=await validateCloudflareZoneToken(apiToken,zoneId,domain),wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
     const encrypted=encryptAurelinkDnsSecret(apiToken);
     const saved=await pool.query("INSERT INTO aurelink_dns_provider_connections(workspace_id,provider,domain,zone_id,secret_encrypted,secret_prefix,status) VALUES($1,'cloudflare',$2,$3,$4,$5,'active') ON CONFLICT(workspace_id,provider,domain) DO UPDATE SET zone_id=EXCLUDED.zone_id,secret_encrypted=EXCLUDED.secret_encrypted,secret_prefix=EXCLUDED.secret_prefix,status='active',updated_at=NOW() RETURNING id,provider,domain,zone_id,status,created_at,updated_at",[wid,domain,zoneId,encrypted,apiToken.slice(0,8)]);
     return res.status(201).json({success:true,connection:saved.rows[0],zoneName:zone.zoneName,requiredTokenPermissions:["Zone:Read","DNS:Edit"],secretStoredEncrypted:true});
   }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to connect Cloudflare DNS."});}
 });
 router.get("/aurelink/communications/dns/cloudflare/connections",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const rows=await pool.query("SELECT id,provider,domain,zone_id,status,secret_prefix,created_at,updated_at FROM aurelink_dns_provider_connections WHERE workspace_id=$1 AND provider='cloudflare' ORDER BY created_at DESC",[wid]);
   return res.json({success:true,connections:rows.rows});
 });
 router.post("/aurelink/communications/domains/:id/apply-dns",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const found=await pool.query("SELECT d.id,d.domain,d.dns_records,c.zone_id,c.secret_encrypted FROM aurelink_email_domains d JOIN aurelink_dns_provider_connections c ON c.workspace_id=d.workspace_id AND c.domain=d.domain AND c.provider='cloudflare' AND c.status='active' WHERE d.id=$1 AND d.workspace_id=$2",[req.params.id,wid]);
   const row=found.rows[0];
   if(!row)return res.status(404).json({success:false,message:"Domain or matching active Cloudflare DNS connection not found. Connect a token scoped to this domain first."});
@@ -219,7 +224,7 @@ router.post("/aurelink/communications/domains/:id/apply-dns",aurelinkAuthMiddlew
 
 
 router.get("/aurelink/communications/email-senders",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const rows=await pool.query("SELECT id,provider,email,domain,sender_name,provider_sender_id,status,provider_details,verified_at,created_at,updated_at FROM aurelink_email_senders WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
   return res.json({success:true,senders:rows.rows});
 });
@@ -230,7 +235,7 @@ router.post("/aurelink/communications/email-senders",aurelinkAuthMiddleware,asyn
   if(!emailProviders.has(provider))return res.status(400).json({success:false,message:"Email sender provider must be resend or brevo."});
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!name)return res.status(400).json({success:false,message:"A valid sender email and display name are required."});
   const domain=email.split("@").pop()!;
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const verifiedDomain=await pool.query("SELECT id FROM aurelink_email_domains WHERE workspace_id=$1 AND domain=$2 AND provider=$3 AND status='verified' LIMIT 1",[wid,domain,provider]);
   if(!verifiedDomain.rows[0])return res.status(409).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify and authenticate this domain with the selected provider before creating a sender identity."});
   try{
@@ -242,7 +247,7 @@ router.post("/aurelink/communications/email-senders",aurelinkAuthMiddleware,asyn
   }catch(error){return res.status(502).json({success:false,message:error instanceof Error?error.message:"Provider sender creation failed."});}
 });
 router.post("/aurelink/communications/email-senders/:id/check",aurelinkAuthMiddleware,async(req,res)=>{
-  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId);
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const found=await pool.query("SELECT * FROM aurelink_email_senders WHERE id=$1 AND workspace_id=$2",[req.params.id,wid]);
   const row=found.rows[0];
   if(!row)return res.status(404).json({success:false,message:"Email sender identity not found."});
