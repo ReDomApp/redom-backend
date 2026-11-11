@@ -342,7 +342,7 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
  if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Only configured Aurelink security administrators can review Sender ID applications."});
  const status=String(req.body.status||""),securityStatus=String(req.body.securityReviewStatus||"");
  const providerReference=String(req.body.providerReference||"").trim(),evidenceUrl=String(req.body.evidenceUrl||"").trim(),reason=String(req.body.rejectionReason||req.body.securityReason||"").trim();
- if(!["security_passed","security_failed","submitted","approved","rejected","suspended"].includes(status))return res.status(400).json({success:false,message:"Unsupported Sender ID review transition."});
+ if(!["security_passed","security_failed"].includes(status))return res.status(400).json({success:false,code:"TOKEN_MAPPED_PROVIDER_STATUS_REQUIRED",message:"This endpoint only handles Aurelink security decisions. Brevo submission and terminal outcomes must use the one-hour token-mapped provider workflow."});
  const found=(await pool.query("SELECT s.*,v.status AS website_status,v.domain AS verified_website_domain,v.verification_token_hash AS website_verification_token_hash FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE s.id=$1",[req.params.id])).rows[0];
  if(!found)return res.status(404).json({success:false,message:"Sender registration request not found."});
  if(status==="security_passed"){
