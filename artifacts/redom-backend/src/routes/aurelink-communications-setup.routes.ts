@@ -147,7 +147,7 @@ function normalizeSenderDomain(value:string){
  return domain;
 }
 function senderTokenKey(){
- const source=process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY||process.env.JWT_ACCESS_SECRET;
+ const source=process.env.AURELINK_COMMUNICATIONS_ENCRYPTION_KEY;
  if(!source||source.length<32)throw new Error("A 32+ character Aurelink communications encryption key is required.");
  return createHash("sha256").update(source).update("|aurelink-sender-registration-token-v1").digest();
 }
@@ -349,7 +349,8 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
   const submittedDocs=Array.isArray(found.request_details?.registrationDocuments)?found.request_details.registrationDocuments:[];
   const evidenceMetadataMatches=submittedDocs.length>0&&submittedDocs.length===evidenceDocs.length&&submittedDocs.every((doc:any)=>evidenceDocs.some((stored:any)=>String(stored.id)===String(doc.documentId)&&String(stored.sha256)===String(doc.sha256)&&Number(stored.byte_size)===Number(doc.byteSize)));
   if(found.website_status!=="verified"||!found.evidence_fingerprint||!found.consent_evidence_reference||!evidenceMetadataMatches||found.request_details?.attestations?.documentsAreAuthentic!==true||missing.length)return res.status(422).json({success:false,code:"SECURITY_GATE_INCOMPLETE",missingChecks:missing,evidenceDocumentsVerified:evidenceMetadataMatches,message:"Website ownership, legal/brand verification, private original-document integrity and authenticity, policy content, opt-in evidence and destination-specific carrier requirements must all be verified before security approval."});
-  const token="AUR-SID-"+randomBytes(32).toString("base64url"),tokenHash=hash(token),encryptedToken=encryptSenderToken(token);
+  const token="AUR-SID-"+randomBytes(32).toString("base64url"),tokenHash=hash(token);
+  let encryptedToken:string;try{encryptedToken=encryptSenderToken(token);}catch{return res.status(503).json({success:false,code:"SENDER_TOKEN_ENCRYPTION_NOT_CONFIGURED",message:"Aurelink communications encryption key is not configured. Provider submission scheduling remains disabled."});}
   const client=await pool.connect();
   try{
    await client.query("BEGIN");
