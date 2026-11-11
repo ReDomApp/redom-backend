@@ -291,7 +291,7 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE aurelink_messages ADD COLUMN IF NOT EXISTS delivery_latency_ms BIGINT");
   await pool.query("ALTER TABLE aurelink_smtp_messages DROP CONSTRAINT IF EXISTS aurelink_smtp_messages_status_check");
-  await pool.query("ALTER TABLE aurelink_smtp_messages ADD CONSTRAINT aurelink_smtp_messages_status_check CHECK(status IN ('accepted','delivered','failed','opened','clicked','unknown'))");
+  await pool.query("ALTER TABLE aurelink_smtp_messages ADD CONSTRAINT aurelink_smtp_messages_status_check CHECK(status IN ('pending','accepted','delivered','failed','opened','clicked','unknown'))");
   await pool.query("ALTER TABLE aurelink_smtp_messages ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE aurelink_smtp_messages ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ");
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS aurelink_smtp_messages_client_id_idx ON aurelink_smtp_messages(workspace_id,client_message_id) WHERE client_message_id IS NOT NULL");
