@@ -130,3 +130,15 @@ Country-specific Sender ID formats and supporting requirements still apply. Aure
 - Java SDK source: `sdk/aurelink-java`
 
 The Java package is source code in this repository and is not yet published to a Maven repository. SDK publication and release automation are separate from adding the source package.
+
+## Provider submission safety, reconciliation and refunds
+
+Provider submission outcomes are classified as either a confirmed rejection or an unknown outcome. HTTP 4xx responses (except timeout-like 408/425) are treated as confirmed rejections; HTTP 429 is a confirmed rate-limit rejection and is retried against the same provider with backoff. HTTP 5xx, request timeouts, connection failures, unreadable responses and successful responses without a provider message ID are treated as unknown because the provider may have accepted the message before the connection failed.
+
+Unknown submissions move to the manual_review job state, unknown message state and retain the wallet reservation. They are not automatically retried, sent through a fallback provider, captured as accepted, or refunded. This prevents duplicate delivery and prevents Aurelink from refunding a customer when the provider may already have accepted the message. A worker restart while a job is in the provider-submission in_flight state also moves it to manual review rather than blindly resending.
+
+Automatic provider fallback is permitted only after an explicit, non-retryable provider rejection. Timeouts, 5xx responses, 408/425, 429, connection failures and incomplete success responses never trigger a second-provider send. Provider acceptance is recorded with its provider message ID; capture repair re-processes accepted/delivered usage whose original wallet reservation remains uncaptured.
+
+Aurelink refunds only after a confirmed terminal submission failure following the configured retry policy. Refunds are idempotent and use the original message charge reference with a distinct refund reference. A delivery bounce after provider acceptance is not automatically refunded because the provider accepted the billable submission. An unknown/manual-review outcome remains financially reserved until an operator reconciles the provider result: confirmed acceptance captures the charge; confirmed non-acceptance/failure triggers the one-time refund. Do not manually mark an unknown outcome failed without checking the provider account first.
+
+The worker schema adds submission_state (not_started, in_flight, accepted, rejected, unknown) and the manual_review job state. Monitor this queue operationally; it must be reconciled before enabling production traffic at scale.
