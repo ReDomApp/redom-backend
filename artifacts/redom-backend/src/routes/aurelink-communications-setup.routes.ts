@@ -360,6 +360,7 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
    await client.query("BEGIN");
    const updated=await client.query("UPDATE aurelink_sender_ids SET security_review_status='failed',registration_state='rejected',status='rejected',security_reviewed_at=NOW(),security_reviewed_by=$2,last_security_reason=$3,rejection_reason=$3,updated_at=NOW() WHERE id=$1 RETURNING id,workspace_id,submitted_by_user_id,status,registration_state,security_review_status,last_security_reason",[req.params.id,req.user!.userId,reason]);
    if(!updated.rows[0]){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Sender registration request not found."});}
+   await client.query("UPDATE aurelink_sender_evidence_documents SET status='rejected',updated_at=NOW() WHERE sender_application_id=$1 AND status='attached'",[req.params.id]);
    const applicantId=updated.rows[0].submitted_by_user_id||((await client.query("SELECT user_id FROM aurelink_communications_workspaces WHERE id=$1",[updated.rows[0].workspace_id])).rows[0]?.user_id);
    if(!applicantId)throw new Error("Unable to identify the original Sender ID applicant for the security restriction.");
    const restriction=await client.query("INSERT INTO aurelink_sender_security_restrictions(user_id,workspace_id,sender_application_id,reason,ends_at,created_by) VALUES($2,$3,$1,$4,NOW()+($5 * INTERVAL '1 day'),$6) RETURNING id,starts_at,ends_at,status",[req.params.id,applicantId,updated.rows[0].workspace_id,reason,restrictionDays,req.user!.userId]);
