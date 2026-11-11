@@ -146,9 +146,6 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
         throw smtpError("The monthly Aurelink Mail allowance is exhausted. Upgrade the package, enable prepaid fallback, or wait for renewal.",452);
       }
     }
-    if (!subscription && billingMode === "subscription") {
-      throw smtpError("Your Aurelink Mail subscription is not active. Renew it or switch the workspace to Pay-as-you-go.",452);
-    }
     if (!subscription && billingMode === "free") {
       const limitResult=await client.query("SELECT daily_limit FROM aurelink_email_plan_catalog WHERE plan_code='free' AND active=TRUE");
       const dailyLimit=Number(limitResult.rows[0]?.daily_limit||100);
@@ -175,8 +172,8 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
           [user.workspaceId,user.userId,units,next.toString(),reference,JSON.stringify({messageId,credentialId:user.credentialId,recipients:units})]
         );
         source = "prepaid";
-      } else if (subscription || billingMode === "free") {
-        throw smtpError("The monthly/daily Aurelink Mail allowance and prepaid email credits are insufficient.",452);
+      } else if (subscription || billingMode === "free" || billingMode === "subscription") {
+        throw smtpError("The monthly/daily Aurelink Mail allowance and prepaid email credits are insufficient. Renew the subscription or switch to Pay-as-you-go.",452);
       }
     }
 
