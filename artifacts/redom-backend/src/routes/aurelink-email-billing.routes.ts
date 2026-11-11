@@ -50,9 +50,9 @@ router.post("/aurelink/webhooks/paypal-mail",async(req,res)=>{
 });
 router.post("/aurelink/admin/accounts/:userId/verify-country",aurelinkAuthMiddleware,async(req,res)=>{
   if(!admins().has(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator access is required."});
-  const parsed=z.object({countryCode:z.string().length(2).transform(v=>v.toUpperCase()),verificationMethod:z.enum(["government_document","business_document","manual_compliance_review"])}).safeParse(req.body);
+  const parsed=z.object({countryCode:z.string().length(2).transform(v=>v.toUpperCase()),verificationMethod:z.enum(["government_document","business_document","manual_compliance_review"]),evidenceReference:z.string().min(6).max(180)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"Provide a two-letter country code and an approved verification method."});
-  const updated=await pool.query("UPDATE aurelink_users SET country_code=$2,country_verified_at=NOW(),country_verification_method=$3,updated_at=NOW() WHERE id=$1 RETURNING id,country_code,country_verified_at,country_verification_method",[req.params.userId,parsed.data.countryCode,parsed.data.verificationMethod]);
+  const updated=await pool.query("UPDATE aurelink_users SET country_code=$2,country_verified_at=NOW(),country_verification_method=$3,country_verification_reference=$4,updated_at=NOW() WHERE id=$1 RETURNING id,country_code,country_verified_at,country_verification_method,country_verification_reference",[req.params.userId,parsed.data.countryCode,parsed.data.verificationMethod,parsed.data.evidenceReference]);
   if(!updated.rows[0])return res.status(404).json({success:false,message:"Aurelink account not found."});
   return res.json({success:true,accountCountry:updated.rows[0]});
 });
