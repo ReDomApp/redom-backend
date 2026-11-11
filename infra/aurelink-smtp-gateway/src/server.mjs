@@ -108,6 +108,12 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
   const units = recipients.length;
   try {
     await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",[user.workspaceId+":"+String(parsed.messageId||"")]);
+    const previous=(await client.query("SELECT status FROM aurelink_smtp_messages WHERE workspace_id=$1 AND client_message_id=$2 FOR UPDATE",[user.workspaceId,String(parsed.messageId||"")])).rows[0];
+    if(previous&&["pending","unknown","accepted","delivered"].includes(String(previous.status))){
+      await client.query("COMMIT");
+      return {duplicate:true,messageId:null,clientMessageId:String(parsed.messageId||"")};
+    }
     const contentHash = createHash("sha256").update(raw).digest("hex");
     await client.query(
       "INSERT INTO aurelink_messages(id,workspace_id,channel,direction,category,provider,recipient,sender,subject,content_hash,status,segments,metadata) VALUES($1,$2,'email','outbound','transactional','resend',$3,$4,$5,$6,'queued',1,$7::jsonb)",
@@ -205,6 +211,10 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
     await client.query(
       "INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,'email','resend','transactional',$3,'queued',$4,$5)",
       [user.workspaceId,messageId,units,unitPriceMinor,reference]
+    );
+    await client.query(
+      "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,status) VALUES($1,$2,$3,$4,$5,$6::jsonb,'resend','pending') ON CONFLICT(workspace_id,client_message_id) WHERE client_message_id IS NOT NULL DO UPDATE SET credential_id=EXCLUDED.credential_id,message_key=EXCLUDED.message_key,envelope_from=EXCLUDED.envelope_from,recipients=EXCLUDED.recipients,status='pending',provider_message_id=NULL,error=NULL,updated_at=NOW()",
+      [user.workspaceId,user.credentialId,messageId,String(parsed.messageId||""),envelopeFrom,JSON.stringify(recipients)]
     );
     await client.query("COMMIT");
     return {messageId,reference,amountMinor,unitPriceMinor,units,source,clientMessageId:String(parsed.messageId||"")};
@@ -416,6 +426,7 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
           if(prior&&["unknown","accepted","delivered"].includes(String(prior.status)))return callback();
 
           const reservation = await reserveSmtpUsage(session.user, raw, parsed, recipients, mailFrom);
+          if(reservation.duplicate)return callback();
           const transport = nodemailer.createTransport({
             host: "smtp.resend.com",
             port: 587,
