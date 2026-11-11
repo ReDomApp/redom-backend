@@ -69,3 +69,14 @@ test("Aurelink revokes the provider-owned Resend SMTP API key",async()=>{
     if(originalKey===undefined)delete process.env.AURELINK_RESEND_API_KEY;else process.env.AURELINK_RESEND_API_KEY=originalKey;
   }
 });
+
+\ntest("SMS segment calculation handles GSM-7, extension characters and Unicode", async () => {
+  const { countSmsSegments } = await import("../../redom-backend/src/services/aurelink/communications-billing.service.ts");
+  assert.equal(countSmsSegments("A".repeat(160)), 1);
+  assert.equal(countSmsSegments("A".repeat(161)), 2);
+  assert.equal(countSmsSegments("^".repeat(80)), 1);
+  assert.equal(countSmsSegments("^".repeat(81)), 2);
+  assert.equal(countSmsSegments("é".repeat(70)), 1);
+  assert.equal(countSmsSegments("é".repeat(71)), 2);
+  assert.equal(countSmsSegments("😀".repeat(36)), 2);
+});
