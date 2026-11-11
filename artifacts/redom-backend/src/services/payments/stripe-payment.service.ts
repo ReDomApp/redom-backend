@@ -644,6 +644,8 @@ export async function createAurelinkEmailBillingCheckout(input:{
     amountMinor=Number(option.monthly_price_minor);planOptionId=String(option.id);productName="Aurelink Mail "+String(option.display_name)+" — "+Number(option.monthly_email_allowance).toLocaleString("en-US")+" emails/month";mode="subscription";
     const active=await pool.query("SELECT id FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status IN ('active','past_due','pending_payment') LIMIT 1",[input.workspaceId]);
     if(active.rows[0])throw new Error("This workspace already has an active or pending monthly email subscription. Change or cancel it before starting another checkout.");
+    const pending=await pool.query("SELECT reference FROM aurelink_email_billing_payments WHERE workspace_id=$1 AND purchase_type='subscription' AND status='pending' LIMIT 1",[input.workspaceId]);
+    if(pending.rows[0])throw new Error("A monthly email checkout is already pending for this workspace. Complete or cancel it before starting another.");
   }else{
     if(!input.creditPackId)throw new Error("Select a prepaid email credit pack.");
     const pack=(await pool.query("SELECT id,email_credits,price_minor FROM aurelink_email_credit_packs WHERE id=$1 AND active=TRUE",[input.creditPackId])).rows[0];
