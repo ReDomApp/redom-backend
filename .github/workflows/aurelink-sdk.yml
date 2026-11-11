@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "sdk/aurelink-node/**"
+      - "sdk/aurelink-java/**"
       - ".github/workflows/aurelink-sdk.yml"
   pull_request:
     paths:
@@ -19,3 +20,9 @@ jobs:
         with:
           node-version: 20
       - run: node --test sdk/aurelink-node/test
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: stCarolas/setup-maven@v5
+      - run: mvn -B -f sdk/aurelink-java/pom.xml -DskipTests package
