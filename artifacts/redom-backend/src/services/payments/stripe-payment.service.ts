@@ -748,10 +748,10 @@ export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession)
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
 }
 
-export async function cancelAurelinkEmailSubscription(userId:string,workspaceId:string):Promise<{subscriptionId:string;cancelAtPeriodEnd:boolean;periodEnd:Date}>{
+export async function cancelAurelinkEmailSubscription(workspaceId:string):Promise<{subscriptionId:string;cancelAtPeriodEnd:boolean;periodEnd:Date}>{
   const row=(await pool.query(
-    "SELECT s.id,s.stripe_subscription_id,s.billing_period_end FROM aurelink_email_subscriptions s WHERE s.workspace_id=$1 AND s.user_id=$2 AND s.status='active' AND s.cancel_at_period_end=FALSE ORDER BY s.created_at DESC LIMIT 1",
-    [workspaceId,userId]
+    "SELECT s.id,s.stripe_subscription_id,s.billing_period_end FROM aurelink_email_subscriptions s WHERE s.workspace_id=$1 AND s.status='active' AND s.cancel_at_period_end=FALSE ORDER BY s.created_at DESC LIMIT 1",
+    [workspaceId]
   )).rows[0];
   if(!row?.stripe_subscription_id)throw new Error("An active cancellable Aurelink Mail subscription was not found.");
   const remote=await stripeRequest<StripeSubscription>("post","/subscriptions/"+encodeURIComponent(String(row.stripe_subscription_id)),form({cancel_at_period_end:"true"}));
