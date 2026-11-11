@@ -344,7 +344,7 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitte
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to record Brevo submission."});}
  finally{client.release();}
 });
-async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:string;status:string;providerReference?:string;reason?:string;payload?:unknown}){
+async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:string;status:string;providerReference?:string;reason?:string;payload?:unknown;actorUserId?:string}){
  const tokenHash=hash(input.token),status=input.status.toLowerCase();
  const terminal=status==="completed"||status==="successful"||status==="success"||status==="approved"||status==="rejected"||status==="declined"||status==="failed"||status==="denied";
  const approved=["completed","successful","success","approved"].includes(status);
@@ -366,7 +366,7 @@ async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:st
   }else{
    await client.query("UPDATE aurelink_sender_provider_submissions SET status='processing',provider_status=$2,provider_reference=COALESCE($3,provider_reference),updated_at=NOW() WHERE id=$1",[row.id,status,input.providerReference||null]);
   }
-  await client.query("INSERT INTO aurelink_sender_security_audit(sender_application_id,workspace_id,action,details) VALUES($1,$2,'provider_status_received',$3::jsonb)",[row.sender_application_id,row.workspace_id,JSON.stringify({provider:"brevo",eventId:input.eventId,status,terminal,providerReference:input.providerReference||null,tokenConsumed:terminal})]);
+  await client.query("INSERT INTO aurelink_sender_security_audit(sender_application_id,workspace_id,actor_user_id,action,details) VALUES($1,$2,$3,'provider_status_received',$4::jsonb)",[row.sender_application_id,row.workspace_id,input.actorUserId||null,JSON.stringify({provider:"brevo",eventId:input.eventId,status,terminal,providerReference:input.providerReference||null,tokenConsumed:terminal})]);
   await client.query("COMMIT");
   return {found:true,duplicate:false,terminal,tokenConsumed:terminal,result:terminal?(approved?"approved":"rejected"):"processing"};
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
@@ -398,7 +398,7 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/reconcile",au
   try{const parsed=new URL(evidenceUrl);if(parsed.protocol!=="https:"||parsed.username||parsed.password||!req.body.providerReference)throw new Error("invalid");}catch{return res.status(400).json({success:false,code:"BREVO_TERMINAL_EVIDENCE_REQUIRED",message:"Terminal outcomes require a real provider reference and HTTPS evidence from Brevo."});}
  }
  try{
-  const result=await applyBrevoSenderRegistrationResult({token,eventId,status,providerReference:req.body.providerReference?String(req.body.providerReference):undefined,reason:req.body.reason?String(req.body.reason):undefined,payload:{...req.body,source:"aurelink_admin_reconciliation"}});
+  const result=await applyBrevoSenderRegistrationResult({token,eventId,status,providerReference:req.body.providerReference?String(req.body.providerReference):undefined,reason:req.body.reason?String(req.body.reason):undefined,payload:{...req.body,source:"aurelink_admin_reconciliation"},actorUserId:req.user!.userId});
   if(!result.found)return res.status(404).json({success:false,code:"SENDER_REQUEST_TOKEN_NOT_FOUND",message:"No Brevo registration is mapped to this token."});
   return res.json({success:true,...result});
  }catch(error){return res.status(409).json({success:false,message:error instanceof Error?error.message:"Unable to reconcile Brevo status."});}
