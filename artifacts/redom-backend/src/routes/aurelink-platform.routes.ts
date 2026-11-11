@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { resolveCname } from "node:dns/promises";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
-import { deleteAurelinkProviderDomain, type AurelinkEmailProvider } from "../services/aurelink/communications-domains.service";
+import { deleteAurelinkProviderDomain, getAurelinkProviderDomain, verifyAurelinkProviderDomain, updateAurelinkResendDomainTracking, type AurelinkEmailProvider } from "../services/aurelink/communications-domains.service";
 import { revokeAurelinkResendSmtpKey } from "../services/aurelink/communications-smtp.service";
 
 const router=Router();
@@ -227,29 +227,45 @@ router.put("/aurelink/communications/domains/:id/tracking-domain",aurelinkAuthMi
  try{
   const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   await requireManager(req.user!.userId,String(ws.id));
-  const domain=String(req.body.trackingDomain||"").trim().toLowerCase().replace(/\.$/,"");
-  if(domain.length>253||!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain))return res.status(400).json({success:false,message:"Provide a valid fully qualified tracking domain."});
-  const row=(await pool.query("SELECT id,domain,status FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2",[req.params.id,ws.id])).rows[0];
+  const trackingDomain=String(req.body.trackingDomain||"").trim().toLowerCase().replace(/\.$/,"");
+  if(trackingDomain.length>253||!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(trackingDomain))return res.status(400).json({success:false,message:"Provide a valid fully qualified tracking domain."});
+  const row=(await pool.query("SELECT id,domain,provider,provider_domain_id,status,tracking_domain FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2",[req.params.id,ws.id])).rows[0];
   if(!row)return res.status(404).json({success:false,message:"Sending domain not found."});
   if(row.status!=="verified")return res.status(409).json({success:false,message:"Verify the sending domain before configuring a custom tracking domain."});
-  const target=String(process.env.AURELINK_TRACKING_CNAME_TARGET||"").trim().toLowerCase().replace(/\.$/,"");
-  if(!target)return res.status(503).json({success:false,message:"AURELINK_TRACKING_CNAME_TARGET is not configured. Tracking-domain routing cannot be activated yet."});
-  await pool.query("UPDATE aurelink_email_domains SET tracking_domain=$3,tracking_settings=COALESCE(tracking_settings,'{}'::jsonb)||$4::jsonb,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,ws.id,domain,JSON.stringify({customDomain:{domain,status:"pending_dns",cnameTarget:target,tlsStatus:"pending"}})]);
-  res.status(202).json({success:true,trackingDomain:{domain,status:"pending_dns",record:{type:"CNAME",host:domain,value:target},tlsStatus:"pending"}});
+  if(row.provider!=="resend")return res.status(409).json({success:false,message:"Custom tracking subdomains are currently supported through the Resend domain API only."});
+  const suffix="."+String(row.domain).toLowerCase();
+  if(!trackingDomain.endsWith(suffix))return res.status(400).json({success:false,message:"The tracking hostname must be a subdomain of the verified sending domain."});
+  const subdomain=trackingDomain.slice(0,-suffix.length);
+  if(!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain))return res.status(400).json({success:false,message:"Use one tracking subdomain label, such as links."});
+  if(row.tracking_domain&&String(row.tracking_domain).toLowerCase()!==trackingDomain)return res.status(409).json({success:false,code:"TRACKING_SUBDOMAIN_ALREADY_CONFIGURED",message:"A custom tracking subdomain is already configured. Resend restricts changes to this setting; use the existing hostname."});
+  await updateAurelinkResendDomainTracking(String(row.provider_domain_id),{trackingSubdomain:subdomain});
+  const remote=await getAurelinkProviderDomain("resend",String(row.provider_domain_id),String(row.domain));
+  const trackingRecord=remote.records.find(record=>record.type==="CNAME"&&((record.purpose||"").toLowerCase().includes("tracking")||record.name.toLowerCase()===subdomain));
+  await pool.query("UPDATE aurelink_email_domains SET tracking_domain=$3,dns_records=$4::jsonb,tracking_settings=COALESCE(tracking_settings,'{}'::jsonb)||$5::jsonb,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,ws.id,trackingDomain,JSON.stringify(remote.records),JSON.stringify({customDomain:{domain:trackingDomain,subdomain,status:"pending_dns",record:trackingRecord||null}})]);
+  res.status(202).json({success:true,trackingDomain:{domain:trackingDomain,subdomain,status:"pending_dns",record:trackingRecord||null},dnsRecords:remote.records});
  }catch(error){return fail(res,error);}
 });
 router.post("/aurelink/communications/domains/:id/tracking-domain/verify",aurelinkAuthMiddleware,async(req,res)=>{
  try{
   const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
-  const row=(await pool.query("SELECT id,tracking_domain,tracking_settings FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2 AND status='verified'",[req.params.id,ws.id])).rows[0];
+  await requireManager(req.user!.userId,String(ws.id));
+  const row=(await pool.query("SELECT id,domain,provider,provider_domain_id,tracking_domain,tracking_settings FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2 AND status='verified'",[req.params.id,ws.id])).rows[0];
   if(!row||!row.tracking_domain)return res.status(404).json({success:false,message:"Verified sending domain or custom tracking domain not found."});
-  const target=String(process.env.AURELINK_TRACKING_CNAME_TARGET||"").trim().toLowerCase().replace(/\.$/,"");
-  if(!target)return res.status(503).json({success:false,message:"AURELINK_TRACKING_CNAME_TARGET is not configured."});
+  if(row.provider!=="resend")return res.status(409).json({success:false,message:"Custom tracking-domain verification is not available for this provider."});
+  const remote=await getAurelinkProviderDomain("resend",String(row.provider_domain_id),String(row.domain));
+  const subdomain=String(row.tracking_domain).slice(0,-("."+String(row.domain)).length);
+  const record=remote.records.find(item=>item.type==="CNAME"&&((item.purpose||"").toLowerCase().includes("tracking")||item.name.toLowerCase()===subdomain));
+  if(!record)return res.status(409).json({success:false,code:"TRACKING_RECORD_NOT_RETURNED",message:"Resend has not returned a tracking CNAME record for this subdomain yet.",dnsRecords:remote.records});
   const observed=(await resolveCname(String(row.tracking_domain))).map(value=>value.replace(/\.$/,"").toLowerCase());
-  if(!observed.includes(target))return res.status(409).json({success:false,code:"TRACKING_CNAME_NOT_VERIFIED",trackingDomain:row.tracking_domain,expected:target,observed});
-  const settings={...(row.tracking_settings||{}),customDomain:{domain:row.tracking_domain,status:"dns_verified",cnameTarget:target,tlsStatus:"pending",dnsVerifiedAt:new Date().toISOString()}};
-  await pool.query("UPDATE aurelink_email_domains SET tracking_settings=$3::jsonb,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,ws.id,JSON.stringify(settings)]);
-  res.json({success:true,trackingDomain:settings.customDomain,notice:"DNS is verified. HTTPS certificate provisioning and activation at the tracking edge must complete before this hostname can serve tracked links."});
+  const expected=String(record.value).replace(/\.$/,"").toLowerCase();
+  if(!observed.includes(expected))return res.status(409).json({success:false,code:"TRACKING_CNAME_NOT_VERIFIED",trackingDomain:row.tracking_domain,record,observed});
+  const verified=await verifyAurelinkProviderDomain("resend",String(row.provider_domain_id),String(row.domain));
+  const isVerified=verified.verified&&verified.authenticated;
+  const customDomain={domain:row.tracking_domain,subdomain,status:isVerified?"verified":"verification_pending",record,verifiedAt:isVerified?new Date().toISOString():null};
+  const settings={...(row.tracking_settings||{}),customDomain};
+  await pool.query("UPDATE aurelink_email_domains SET dns_records=$3::jsonb,tracking_settings=$4::jsonb,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,ws.id,JSON.stringify(verified.records),JSON.stringify(settings)]);
+  if(!isVerified)return res.status(202).json({success:false,trackingDomain:customDomain,provider:{verified:verified.verified,authenticated:verified.authenticated},message:"DNS is present; Resend's asynchronous verification has not completed yet. Check again shortly."});
+  res.json({success:true,trackingDomain:customDomain,provider:{verified:verified.verified,authenticated:verified.authenticated},message:"Resend has verified the custom tracking subdomain and manages its tracking TLS and redirects."});
  }catch(error){return fail(res,error);}
 });
 
