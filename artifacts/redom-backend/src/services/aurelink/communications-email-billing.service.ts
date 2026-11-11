@@ -49,13 +49,13 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
     const limitResult=await client.query("SELECT daily_limit FROM aurelink_email_plan_catalog WHERE plan_code='free' AND active=TRUE");
     const dailyLimit=Number(limitResult.rows[0]?.daily_limit||100);
     await client.query("INSERT INTO aurelink_email_free_daily_usage(workspace_id,usage_date) VALUES($1,CURRENT_DATE) ON CONFLICT(workspace_id,usage_date) DO NOTHING",[input.workspaceId]);
-    const daily=(await client.query("SELECT used_emails,reserved_emails FROM aurelink_email_free_daily_usage WHERE workspace_id=$1 AND usage_date=CURRENT_DATE FOR UPDATE",[input.workspaceId])).rows[0];
+    const daily=(await client.query("SELECT usage_date,used_emails,reserved_emails FROM aurelink_email_free_daily_usage WHERE workspace_id=$1 AND usage_date=CURRENT_DATE FOR UPDATE",[input.workspaceId])).rows[0];
     const remaining=BigInt(dailyLimit)-BigInt(String(daily.used_emails))-BigInt(String(daily.reserved_emails));
     if(remaining>=BigInt(input.units)){
       await client.query("UPDATE aurelink_email_free_daily_usage SET reserved_emails=reserved_emails+$2,updated_at=NOW() WHERE workspace_id=$1 AND usage_date=CURRENT_DATE",[input.workspaceId,input.units]);
       await client.query(
         "INSERT INTO aurelink_email_usage_reservations(message_id,user_id,workspace_id,source,units,status,metadata) VALUES($1,$2,$3,'free',$4,'reserved',$5::jsonb)",
-        [input.messageId,input.userId,input.workspaceId,input.units,JSON.stringify({transport:input.transport,provider:input.provider,category:input.category,usageDate:new Date().toISOString().slice(0,10),dailyLimit})]
+        [input.messageId,input.userId,input.workspaceId,input.units,JSON.stringify({transport:input.transport,provider:input.provider,category:input.category,usageDate:String(daily.usage_date),dailyLimit})]
       );
       return {source:"free",units:input.units,unitPriceMinor:null,amountMinor:null,walletReference:null};
     }
