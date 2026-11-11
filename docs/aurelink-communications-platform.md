@@ -235,3 +235,32 @@ The active prepaid catalogue is limited to 1,000, 5,000, 10,000, 50,000, 100,000
 Prepaid sending is restricted to transactional email and 2,500 accepted/reserved email units per workspace per database day. The daily counter is reserved before upstream submission and captured or released/refunded with the message outcome. Subscription allowances remain the preferred source when the paid period is active. Prepaid can cover a subscription shortfall or standalone low-volume use; it does not grant campaign/high-volume or enterprise capabilities. Credits do not expire.
 
 These are proposed retail prices. Before release, verify per-destination Brevo/Resend cost, payment fees, taxes and FX impact to confirm margin.
+
+## Aurelink Mail subscription and prepaid payment providers
+
+New Mail purchases use provider routing from the verified Aurelink account country. Checkout billing-country fields are not a routing override:
+
+- Verified account country `NG` or `GH`: Paystack.
+- Any other verified account country: PayPal.
+- Missing/unverified account country: checkout is blocked until Aurelink completes country verification.
+- Stripe is retained only to verify/cancel legacy Stripe Mail payments and subscriptions; it is not selected for new purchases.
+
+Mail checkout endpoints:
+
+- `POST /aurelink/communications/email/billing/checkout` — creates a PayPal or Paystack hosted checkout.
+- `GET /aurelink/communications/email/billing/verify/:reference` — server-side provider verification and fulfillment.
+- `POST /aurelink/communications/email/billing/cancel` — cancels a supported PayPal/Paystack recurring subscription.
+- `POST /aurelink/webhooks/paypal-mail` — PayPal signed webhook receiver.
+- `POST /aurelink/webhooks/paystack-mail` — Paystack HMAC-SHA512 webhook receiver.
+- `POST /aurelink/admin/accounts/:userId/verify-country` — administrator-only account-country verification after evidence review.
+
+Required environment:
+
+- `PAYPAL_ENV=sandbox|live`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`.
+- `PAYSTACK_SECRET_KEY`.
+- `NGN_PER_USD` and `GHS_PER_USD`: finance-approved local major-currency units per USD. Missing rates block Paystack checkout rather than guessing.
+- `AURELINK_EMAIL_BILLING_SUCCESS_URL` and `AURELINK_EMAIL_BILLING_CANCEL_URL`.
+
+PayPal creates and caches provider products/plans for recurring Mail options. Paystack creates and caches local-currency recurring plans. Payment fulfillment is performed only after provider verification or a verified webhook, and payment webhook IDs are persisted for deduplication. A provider payment event is not treated as proof solely because a browser returns to Aurelink.
+
+Before production enablement, configure the provider webhook URLs in both dashboards, register the exact webhook IDs/secrets, set finance-approved NGN/GHS rates, and complete a sandbox-to-live end-to-end test for one prepaid purchase and one recurring subscription per provider. The current account-country verification route is an administrator workflow; it must only be used after reviewing acceptable country evidence. No automatic country inference from IP or checkout selection is trusted for routing.
