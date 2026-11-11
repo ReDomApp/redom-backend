@@ -176,7 +176,7 @@ router.post("/aurelink/admin/communications/email/pricing/options",aurelinkAuthM
   try{
     await client.query("BEGIN");
     await client.query(
-      "UPDATE aurelink_email_plan_options SET active=FALSE,effective_until=$3,updated_at=NOW() WHERE plan_id=$1 AND monthly_email_allowance=$2 AND active=TRUE AND effective_from<$3 AND (effective_until IS NULL OR effective_until>$3)",
+      "UPDATE aurelink_email_plan_options SET effective_until=$3,updated_at=NOW() WHERE plan_id=$1 AND monthly_email_allowance=$2 AND active=TRUE AND effective_from<$3 AND (effective_until IS NULL OR effective_until>$3)",
       [plan.id,parsed.data.monthlyEmailAllowance,effectiveFrom]
     );
     const created=await client.query(
