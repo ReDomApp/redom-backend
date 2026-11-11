@@ -166,7 +166,8 @@ export async function verifyAurelinkMailCheckout(userId:string,ref:string){
   if(p.status==="paid") return {status:"paid",purchaseType:p.purchase_type,creditsAdded:p.purchase_type==="email_credits"?String(p.email_credits):undefined};
   if(p.payment_provider==="paypal"){
     if(p.paypal_order_id){
-      const order=await paypal<any>("get","/v2/checkout/orders/"+encodeURIComponent(p.paypal_order_id));
+      let order=await paypal<any>("get","/v2/checkout/orders/"+encodeURIComponent(p.paypal_order_id));
+      if(order.status==="APPROVED") order=await paypal<any>("post","/v2/checkout/orders/"+encodeURIComponent(p.paypal_order_id)+"/capture",{});
       if(order.status==="COMPLETED"){
         const cap=order.purchase_units?.[0]?.payments?.captures?.[0];
         if(!cap||cap.status!=="COMPLETED") throw new Error("PayPal capture is not completed.");
@@ -203,9 +204,9 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
   if(provider==="paystack"){
     const signature=headers["x-paystack-signature"]||"";
     const expected=crypto.createHmac("sha512",required("PAYSTACK_SECRET_KEY")).update(rawBody||Buffer.from(JSON.stringify(body))).digest("hex");
-    if(!signature||!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected))) throw new Error("Invalid Paystack webhook signature.");
+    if(!signature||signature.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected))) throw new Error("Invalid Paystack webhook signature.");
     const eventId=String(body?.data?.id||body?.data?.reference||"")+":"+String(body?.event||"");
-    const inserted=await pool.query("INSERT INTO aurelink_email_payment_webhook_events(provider,event_id,event_type,payload) VALUES('paystack',$1,$2,$3::jsonb) ON CONFLICT(provider,event_id) DO NOTHING RETURNING id",[eventId,String(body?.event||"unknown"),JSON.stringify(body)]);
+    const inserted=await pool.query("INSERT INTO aurelink_email_payment_webhook_events(provider,event_id,event_type,payload) VALUES('paystack',$1,$2,$3::jsonb) ON CONFLICT(provider,event_id) DO UPDATE SET received_at=NOW() WHERE aurelink_email_payment_webhook_events.processed_at IS NULL RETURNING id",[eventId,String(body?.event||"unknown"),JSON.stringify(body)]);
     if(!inserted.rows[0]) return;
     if(body.event==="charge.success"){
       const ref=String(body.data?.reference||"");
