@@ -213,12 +213,18 @@ export const AURELINK_SMS_COUNTRIES = [
 ] as const;
 
 export type AurelinkSmsCountry = typeof AURELINK_SMS_COUNTRIES[number];
-const byCode = new Map<string, AurelinkSmsCountry>(AURELINK_SMS_COUNTRIES.map(country => [country.countryCode, country]));
+const byCode = new Map<string, AurelinkSmsCountry>(AURELINK_SMS_COUNTRIES.map(country => [country.countryCode, country] as const));
 export function getAurelinkSmsCountry(countryCode: string): AurelinkSmsCountry | undefined {
   return byCode.get(countryCode.trim().toUpperCase());
 }
 export function isAurelinkE164ForCountry(phone: string, countryCode: string): boolean {
   const country = getAurelinkSmsCountry(countryCode);
   if (!country || !/^\+[1-9]\d{7,14}$/.test(phone)) return false;
-  return phone.startsWith(country.callingCode);
+  const sharedPlanPrefixes: Record<string, string[]> = {
+    DO: ["+1809", "+1829", "+1849"],
+    PR: ["+1787", "+1939"],
+    JM: ["+1876", "+1658"],
+  };
+  const acceptedPrefixes = sharedPlanPrefixes[country.countryCode] || [country.callingCode];
+  return acceptedPrefixes.some(prefix => phone.startsWith(prefix));
 }
