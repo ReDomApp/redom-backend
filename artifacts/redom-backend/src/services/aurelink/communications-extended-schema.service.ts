@@ -85,6 +85,8 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     );
     CREATE INDEX IF NOT EXISTS aurelink_sender_provider_submissions_due_idx
       ON aurelink_sender_provider_submissions(status,scheduled_at);
+    ALTER TABLE aurelink_sender_provider_submissions ADD COLUMN IF NOT EXISTS token_revealed_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_sender_provider_submissions ALTER COLUMN request_token_encrypted DROP NOT NULL;
     CREATE TABLE IF NOT EXISTS aurelink_sender_provider_events (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       provider VARCHAR(24) NOT NULL CHECK(provider='brevo'),
