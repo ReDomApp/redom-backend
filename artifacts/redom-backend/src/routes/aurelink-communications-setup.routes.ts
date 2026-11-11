@@ -327,9 +327,9 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitte
 });
 async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:string;status:string;providerReference?:string;reason?:string;payload?:unknown}){
  const tokenHash=hash(input.token),status=input.status.toLowerCase();
- const terminal=status==="completed"||status==="successful"||status==="success"||status==="approved"||status==="rejected"||status==="declined"||status==="failed";
+ const terminal=status==="completed"||status==="successful"||status==="success"||status==="approved"||status==="rejected"||status==="declined"||status==="failed"||status==="denied";
  const approved=["completed","successful","success","approved"].includes(status);
- const rejected=["rejected","declined","failed"].includes(status);
+ const rejected=["rejected","declined","failed","denied"].includes(status);
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
