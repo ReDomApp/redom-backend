@@ -1,4 +1,5 @@
 import { pool } from "../../database/db";
+import { AURELINK_SMS_COUNTRIES } from "./sms-country-registry";
 
 /**
  * Additive schema for Aurelink's developer communications platform.
@@ -207,4 +208,12 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     CREATE INDEX IF NOT EXISTS aurelink_communications_reputation_alerts_idx
       ON aurelink_communications_reputation_alerts(workspace_id,status,last_seen_at DESC);
   `);
+  await pool.query(
+    `INSERT INTO aurelink_sms_supported_countries(country_code,country_name,calling_code,international_prefix,enabled)
+     SELECT x.country_code,x.country_name,x.calling_code,x.calling_code,true
+     FROM jsonb_to_recordset($1::jsonb) AS x(country_code text,country_name text,calling_code text)
+     ON CONFLICT(country_code) DO UPDATE SET country_name=EXCLUDED.country_name,calling_code=EXCLUDED.calling_code,international_prefix=EXCLUDED.international_prefix,enabled=true,updated_at=NOW()`,
+    [JSON.stringify(AURELINK_SMS_COUNTRIES.map(country=>({country_code:country.countryCode,country_name:country.countryName,calling_code:country.callingCode})))]
+  );
+  await pool.query("UPDATE aurelink_sms_supported_countries SET enabled=false,updated_at=NOW() WHERE country_code='SG'");
 }
