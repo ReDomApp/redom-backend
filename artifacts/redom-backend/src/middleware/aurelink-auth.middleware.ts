@@ -125,6 +125,27 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="POST")return ok({id,testMode:true,accepted:true},202);
  return ok({testMode:true,received:true});
 }
+async function enforceCommunicationsWorkspaceAccess(req:Request,res:Response,userId:string):Promise<boolean>{
+ const p=req.path.split("/").filter(Boolean);
+ if(p[0]!=="aurelink"||p[1]!=="communications")return true;
+ if(p[2]==="team"&&p[3]==="invitations"&&p[4]==="accept")return true;
+ const workspaceId=String(req.headers["x-aurelink-workspace-id"]||"").trim();
+ if(!workspaceId)return true;
+ const row=(await pool.query("SELECT w.user_id,m.role FROM aurelink_communications_workspaces w LEFT JOIN aurelink_communications_members m ON m.workspace_id=w.id AND m.accepted_user_id=$1 AND m.status='active' WHERE w.id=$2 AND w.status='active' AND (w.user_id=$1 OR m.accepted_user_id=$1)",[userId,workspaceId])).rows[0];
+ if(!row){res.status(403).json({success:false,code:"WORKSPACE_ACCESS_DENIED",message:"You are not an active member of this Aurelink workspace."});return false;}
+ const role=String(row.user_id)===userId?"owner":String(row.role||"");
+ const ownerAdmin=["owner","admin"].includes(role);
+ const teamAdmin=p[2]==="team"&&req.method!=="GET";
+ const domainAdmin=["domains","senders","email-senders","dns","smtp"].includes(p[2]||"")&&req.method!=="GET";
+ const billingAdmin=p[2]==="billing"&&req.method!=="GET";
+ const billingRead=p[2]==="billing";
+ const sendAction=(p[2]==="sms"||p[2]==="email"||p[2]==="campaigns"||p[2]==="contacts")&&req.method!=="GET";
+ if((teamAdmin||domainAdmin||billingAdmin)&&!ownerAdmin){res.status(403).json({success:false,code:"WORKSPACE_ROLE_REQUIRED",message:"Workspace owner or admin role is required for this operation."});return false;}
+ if(billingRead&&!["owner","admin","billing"].includes(role)){res.status(403).json({success:false,code:"WORKSPACE_BILLING_ROLE_REQUIRED",message:"Billing role or workspace administrator permission is required."});return false;}
+ if(sendAction&&!["owner","admin","developer"].includes(role)){res.status(403).json({success:false,code:"WORKSPACE_DEVELOPER_ROLE_REQUIRED",message:"Developer role is required to send communications or manage contacts."});return false;}
+ if(req.method!=="GET"&&["analyst","billing"].includes(role)){res.status(403).json({success:false,code:"WORKSPACE_READ_ONLY_ROLE",message:"This workspace role is read-only for the requested resource."});return false;}
+ return true;
+}
 async function authenticateApiKey(secret:string,req:Request,res:Response,next:NextFunction):Promise<void>{
  const p=req.path.split("/").filter(Boolean);
  if(!apiKeyAllowed(req)){res.status(403).json({success:false,message:"This API key cannot access this route."});return;}
@@ -162,11 +183,12 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
  await pool.query("UPDATE aurelink_api_keys SET last_used_at=NOW() WHERE id=$1",[row.id]);
  (req as any).aurelinkApiKey=key;(req as any).aurelinkProjectId=row.project_id?String(row.project_id):undefined;
  req.user={userId:row.user_id,profileId:row.user_id,sessionId:"api-key:"+row.id};
+ if(!await enforceCommunicationsWorkspaceAccess(req,res,row.user_id))return;
  const originalJson=res.json.bind(res);
  res.json=(body:any)=>{if(key.environment==="test"){const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data,key.environment);}if(idempotency){const saved=idempotency;void pool.query("UPDATE aurelink_api_idempotency SET state='completed',response_status=$3,response_body=$4::jsonb WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,saved.key,res.statusCode,JSON.stringify(body)]).then(()=>originalJson(body)).catch(()=>originalJson(body));return res;}return originalJson(body);};
  if(key.environment==="test"){testResponse(req,res);return;}
  next();
 }
 export async function aurelinkAuthMiddleware(req:Request,res:Response,next:NextFunction):Promise<void>{
- try{const raw=req.headers.authorization;if(!raw?.startsWith("Bearer ")){res.status(401).json({success:false,message:"Aurelink authentication required."});return;}const credential=raw.slice(7).trim();if(credential.startsWith("aul_")){await authenticateApiKey(credential,req,res,next);return;}const payload=jwt.verify(credential,secrets()) as {userId?:string;sessionId?:string;audience?:string};if(payload.audience!=="aurelink"||!payload.userId||!payload.sessionId){res.status(401).json({success:false,message:"Invalid Aurelink session."});return;}const result=await pool.query("SELECT u.id,u.account_status,s.id AS session_id FROM aurelink_users u JOIN aurelink_sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW()",[payload.userId,payload.sessionId]);const row=result.rows[0];if(!row){res.status(401).json({success:false,message:"Aurelink session expired, was revoked, or was inactive for more than 10 minutes."});return;}if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}await pool.query("UPDATE aurelink_sessions SET last_activity_at=NOW(),updated_at=NOW() WHERE id=$1",[row.session_id]);req.user={userId:row.id,profileId:row.id,sessionId:row.session_id};next();}catch{res.status(401).json({success:false,message:"Invalid Aurelink access token."});}
+ try{const raw=req.headers.authorization;if(!raw?.startsWith("Bearer ")){res.status(401).json({success:false,message:"Aurelink authentication required."});return;}const credential=raw.slice(7).trim();if(credential.startsWith("aul_")){await authenticateApiKey(credential,req,res,next);return;}const payload=jwt.verify(credential,secrets()) as {userId?:string;sessionId?:string;audience?:string};if(payload.audience!=="aurelink"||!payload.userId||!payload.sessionId){res.status(401).json({success:false,message:"Invalid Aurelink session."});return;}const result=await pool.query("SELECT u.id,u.account_status,s.id AS session_id FROM aurelink_users u JOIN aurelink_sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW()",[payload.userId,payload.sessionId]);const row=result.rows[0];if(!row){res.status(401).json({success:false,message:"Aurelink session expired, was revoked, or was inactive for more than 10 minutes."});return;}if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}await pool.query("UPDATE aurelink_sessions SET last_activity_at=NOW(),updated_at=NOW() WHERE id=$1",[row.session_id]);req.user={userId:row.id,profileId:row.id,sessionId:row.session_id};if(!await enforceCommunicationsWorkspaceAccess(req,res,String(row.id)))return;next();}catch{res.status(401).json({success:false,message:"Invalid Aurelink access token."});}
 }
