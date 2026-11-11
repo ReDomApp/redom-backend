@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus } from "../../redom-backend/src/services/aurelink/communications-webhooks.utils.ts";
+import { classifyProviderHttpStatus, ProviderSubmissionError } from "../../redom-backend/src/services/aurelink/communications-providers.service.ts";
 import { createAurelinkResendSmtpKey, revokeAurelinkResendSmtpKey } from "../../redom-backend/src/services/aurelink/communications-smtp.service.ts";
 
 test("Resend Svix signatures verify against the exact raw payload",()=>{
@@ -81,4 +82,15 @@ test("SMS segment calculation handles GSM-7, extension characters and Unicode", 
   assert.equal(countSmsSegments("漢".repeat(70)), 1);
   assert.equal(countSmsSegments("漢".repeat(71)), 2);
   assert.equal(countSmsSegments("😀".repeat(36)), 2);
+});
+
+test("provider response classification never treats ambiguous acceptance as a safe retry",()=>{
+  assert.deepEqual(classifyProviderHttpStatus(400),{outcome:"rejected",retryable:false});
+  assert.deepEqual(classifyProviderHttpStatus(429),{outcome:"rejected",retryable:true});
+  assert.deepEqual(classifyProviderHttpStatus(408),{outcome:"unknown",retryable:true});
+  assert.deepEqual(classifyProviderHttpStatus(500),{outcome:"unknown",retryable:true});
+  assert.deepEqual(classifyProviderHttpStatus(503),{outcome:"unknown",retryable:true});
+  const unknown=new ProviderSubmissionError("timeout","unknown",true);
+  assert.equal(unknown.outcome,"unknown");
+  assert.equal(unknown.retryable,true);
 });
