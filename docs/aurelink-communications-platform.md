@@ -89,7 +89,7 @@ Toll-free registrations are not interchangeable with alphanumeric Sender IDs. US
 
 ## Aurelink SMS destination coverage and Brevo Sender ID workflow
 
-The supported SMS destination registry is seeded from `sms-country-registry.ts` into `aurelink_sms_supported_countries`. It includes the product-approved country/territory list supplied by Aurelink operations, with ISO alpha-2 identifiers and E.164 international calling prefixes. Singapore (`SG`) is intentionally disabled and excluded. The registry is authoritative for destination eligibility; the presence of a country does not imply that every sender type is permitted there or that Brevo has approved a Sender ID.
+The supported SMS destination registry currently contains 205 unique country/territory entries and is seeded from `sms-country-registry.ts` into `aurelink_sms_supported_countries`. It includes the product-approved list supplied by Aurelink operations, with ISO alpha-2 identifiers and E.164 international calling prefixes. Singapore (`SG`) is intentionally disabled and excluded. The registry is authoritative for destination eligibility; the presence of a country does not imply that every sender type is permitted there or that Brevo has approved a Sender ID.
 
 Customer API:
 
