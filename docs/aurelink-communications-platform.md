@@ -221,3 +221,8 @@ SMTP accounting is recipient-based. When the provider accepts only part of a mul
 If the gateway stops after reserving usage but before recording a final result, stale pending SMTP reservations are moved into manual review rather than automatically resent or refunded. An unknown outcome remains reserved until an administrator reconciles it.
 
 Resend webhook verification uses the provider's Svix signature headers and the raw request body. Configure `AURELINK_RESEND_WEBHOOK_SECRET` with the Resend webhook signing secret. Events that arrive before the SMTP/API submission row is committed remain unprocessed and return a retryable response; they are not permanently marked handled before message correlation succeeds.
+
+
+### Mail billing enforcement hardening
+
+New Aurelink workspaces default to the published Free billing mode; existing workspaces retain their explicitly stored billing choice. Both the REST billing service and standalone SMTP gateway use the same fail-closed default. A past-due subscription or an active subscription outside its verified Stripe billing period cannot consume the monthly allowance. Sending can continue from prepaid credits only when the customer explicitly enabled prepaid fallback. SMTP reconciliation also preserves the actual upstream provider identity instead of assuming every SMTP message belongs to Resend.
