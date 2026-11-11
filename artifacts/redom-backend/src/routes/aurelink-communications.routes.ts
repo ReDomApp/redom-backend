@@ -553,6 +553,7 @@ router.post("/aurelink/admin/communications/messages/:id/reconcile",aurelinkAuth
       [row.message_id,row.workspace_id,req.user!.userId,outcome,providerMessageId||null,evidence]
     );
     await client.query("COMMIT");
+    await finalizeCampaign(String(row.message_id));
     return res.json({success:true,messageId:row.message_id,outcome,financialAction:outcome==="accepted"?"charge_captured":"charge_refunded"});
   }catch(error){
     await client.query("ROLLBACK").catch(()=>undefined);
