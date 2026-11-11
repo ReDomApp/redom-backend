@@ -108,7 +108,7 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
   const units = recipients.length;
   try {
     await client.query("BEGIN");
-    const priceResult = await client.query("SELECT id,unit_price_minor,currency FROM aurelink_communications_price_catalog WHERE service='smtp_message' AND active=TRUE AND country_code='*' AND (provider='resend' OR provider='*') AND (category='transactional' OR category='*') AND effective_from<=NOW() AND (effective_until IS NULL OR effective_until>NOW()) ORDER BY (provider='resend')::int DESC,(category='transactional')::int DESC,effective_from DESC LIMIT 1");
+    const priceResult = await client.query("SELECT id,unit_price_minor,currency FROM aurelink_communications_price_catalog WHERE service='smtp_message' AND active=TRUE AND country_code='*' AND (provider='resend' OR provider='*') AND (category='transactional' OR category='*') AND (workspace_id=$1 OR workspace_id IS NULL) AND effective_from<=NOW() AND (effective_until IS NULL OR effective_until>NOW()) ORDER BY (provider='resend')::int DESC,(category='transactional')::int DESC,(workspace_id=$1)::int DESC,effective_from DESC LIMIT 1", [user.workspaceId]);
     const price = priceResult.rows[0];
     if (!price || Number(price.unit_price_minor) <= 0 || String(price.currency) !== "USD") throw smtpError("Aurelink SMTP usage pricing is not configured for this workspace.", 451);
     const unitPrice = BigInt(String(price.unit_price_minor));
