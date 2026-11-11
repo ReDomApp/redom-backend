@@ -185,7 +185,7 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
     const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"sms",category,provider,recipient,sender,content,idempotencyKey:key,payload:{channel:"sms",provider:provider as "brevo"|"twilio",category:category as "transactional"|"marketing"|"otp"|"notification",input:{recipient,sender,content,category:category as "transactional"|"marketing"|"otp"|"notification",countryCode,webUrl}}});
     if("conflict" in queued)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
     return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed)});
-  }catch(error){if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue SMS."});}
+  }catch(error){if((error as any)?.code==="AURELINK_PRICE_NOT_CONFIGURED")return res.status(503).json({success:false,code:"PRICE_NOT_CONFIGURED",message:"Aurelink has not configured a price for this service, destination and provider route. Contact Aurelink billing before sending."});if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue SMS."});}
 });
 
 router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(req,res)=>{
@@ -245,7 +245,7 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
     const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"transactional",provider,recipient,sender,subject,content:html||text||"",idempotencyKey:key,payload,scheduledAt});
     if("conflict" in queued)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
     return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed),scheduledAt:scheduledAt?.toISOString()||null});
-  }catch(error){if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
+  }catch(error){if((error as any)?.code==="AURELINK_PRICE_NOT_CONFIGURED")return res.status(503).json({success:false,code:"PRICE_NOT_CONFIGURED",message:"Aurelink has not configured a price for this service, destination and provider route. Contact Aurelink billing before sending."});if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this message."});return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to queue email."});}
 });
 
 router.get("/aurelink/communications/templates",aurelinkAuthMiddleware,async(req,res)=>{
@@ -330,7 +330,7 @@ router.post("/aurelink/communications/messages/:id/retry",aurelinkAuthMiddleware
   }catch(error){
     if(error instanceof Error&&error.message==="MESSAGE_NOT_FOUND")return res.status(404).json({success:false,message:"Message not found."});
     if(error instanceof Error&&error.message==="MESSAGE_NOT_RETRYABLE")return res.status(409).json({success:false,message:"Only failed direct messages can be retried here. Campaign retries use the campaign send endpoint."});
-    if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this retry."});
+    if((error as any)?.code==="AURELINK_PRICE_NOT_CONFIGURED")return res.status(503).json({success:false,code:"PRICE_NOT_CONFIGURED",message:"Aurelink has not configured a price for this service, destination and provider route. Contact Aurelink billing before sending."});if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for this retry."});
     return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to retry message."});
   }
 });
@@ -403,7 +403,7 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     return res.status(202).json({success:true,campaignId:campaign.id,queued,skipped,status:queued?"sending":"completed"});
   }catch(error){
     await client.query("ROLLBACK").catch(()=>undefined);
-    if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient to queue the full campaign."});
+    if((error as any)?.code==="AURELINK_PRICE_NOT_CONFIGURED")return res.status(503).json({success:false,code:"PRICE_NOT_CONFIGURED",message:"Aurelink has not configured a price for this service, destination and provider route. Contact Aurelink billing before sending."});if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient to queue the full campaign."});
     return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to start campaign."});
   }finally{client.release();}
 });
@@ -430,7 +430,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
     return res.status(202).json({success:true,verificationId:saved.rows[0].id,expiresAt,messageStatus:"queued"});
   }catch(error){
     await pool.query("UPDATE aurelink_verification_sessions SET status='cancelled',updated_at=NOW() WHERE id=$1",[saved.rows[0].id]);
-    if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for verification delivery."});
+    if((error as any)?.code==="AURELINK_PRICE_NOT_CONFIGURED")return res.status(503).json({success:false,code:"PRICE_NOT_CONFIGURED",message:"Aurelink has not configured a price for this service, destination and provider route. Contact Aurelink billing before sending."});if(error instanceof Error&&error.message==="INSUFFICIENT_AURELINK_CREDIT")return res.status(402).json({success:false,code:"INSUFFICIENT_CREDIT",message:"Your Aurelink wallet balance is insufficient for verification delivery."});
     return res.status(502).json({success:false,message:error instanceof Error?error.message:"Verification delivery could not be queued."});
   }
 });
