@@ -245,7 +245,7 @@ async function resizeSmtpReservation(user,reservation,acceptedRecipients,rejecte
       await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',$4,$5,$6,'USD',$7,$8::jsonb)",[user.userId,user.workspaceId,reservation.messageId,rejectedUnits,usage.unit_price_minor,refundAmount,refundReference,JSON.stringify({partial:true,rejectedRecipients})]);
       await client.query("UPDATE aurelink_communications_billing_ledger SET units=$2,amount_minor=$3,updated_at=NOW() WHERE message_id=$1 AND entry_type='charge' AND status='reserved'",[reservation.messageId,acceptedUnits,acceptedAmountMinor]);
     }
-    await client.query("UPDATE aurelink_email_usage_reservations SET units=$2,amount_minor=COALESCE($3,amount_minor),metadata=metadata||$4::jsonb,updated_at=NOW() WHERE message_id=$1",[reservation.messageId,acceptedUnits,acceptedAmountMinor,JSON.stringify({acceptedRecipients,rejectedRecipients,partialAcceptance:true})]);
+    await client.query("UPDATE aurelink_email_usage_reservations SET units=$2,amount_minor=COALESCE($3,amount_minor),metadata=metadata||$4::jsonb,updated_at=NOW() WHERE message_id=$1",[reservation.messageId,acceptedUnits,acceptedAmountMinor,JSON.stringify({acceptedRecipients,rejectedRecipients,partialAcceptance:true,partialAcceptanceReconciled:true,acceptedUnits,rejectedUnits})]);
     await client.query("UPDATE aurelink_communications_usage SET units=$2,updated_at=NOW() WHERE message_id=$1",[reservation.messageId,acceptedUnits]);
     await client.query("UPDATE aurelink_messages SET recipient=$2,provider_status='smtp_partial_acceptance',provider_error=$3,updated_at=NOW() WHERE id=$1",[reservation.messageId,JSON.stringify(acceptedRecipients),"Provider rejected "+rejectedUnits+" recipient(s): "+rejectedRecipients.join(", ")]);
     await client.query("COMMIT");
@@ -323,16 +323,16 @@ async function refundSmtpUsage(user, reservation, reason) {
   } finally { client.release(); }
 }
 
-async function markSmtpUnknown(user, reservation, reason, mailFrom, recipients, clientMessageId, providerMessageId = null, providerAccepted = false) {
+async function markSmtpUnknown(user, reservation, reason, mailFrom, recipients, clientMessageId, providerMessageId = null, providerAccepted = false, allocation = null) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("UPDATE aurelink_email_usage_reservations SET status='unknown',updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[reservation.messageId]);
+    await client.query("UPDATE aurelink_email_usage_reservations SET status='unknown',metadata=metadata||$2::jsonb,updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[reservation.messageId,JSON.stringify(allocation||{})]);
     await client.query("UPDATE aurelink_messages SET status='unknown',provider_message_id=COALESCE($3,provider_message_id),provider_status=CASE WHEN $4 THEN 'provider_accepted_billing_reconciliation_required' WHEN $3 IS NULL THEN 'provider_outcome_unknown' ELSE 'provider_accepted_billing_reconciliation_required' END,provider_error=$2,updated_at=NOW() WHERE id=$1",[reservation.messageId,String(reason || "SMTP provider outcome is unknown").slice(0,500),providerMessageId,providerAccepted]);
     await client.query("UPDATE aurelink_communications_usage SET status='queued',updated_at=NOW() WHERE message_id=$1",[reservation.messageId]);
     await client.query(
       "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,provider_message_id,status,error) VALUES($1,$2,$3,$4,$5,$6::jsonb,'resend',$7,'unknown',$8) ON CONFLICT(workspace_id,client_message_id) WHERE client_message_id IS NOT NULL DO UPDATE SET credential_id=EXCLUDED.credential_id,message_key=EXCLUDED.message_key,provider_message_id=COALESCE(EXCLUDED.provider_message_id,aurelink_smtp_messages.provider_message_id),status='unknown',error=EXCLUDED.error,updated_at=NOW()",
-      [user.workspaceId,user.credentialId,reservation.messageId,clientMessageId,mailFrom,JSON.stringify(recipients),providerMessageId,String(reason || "Provider outcome unknown").slice(0,500)]
+      [user.workspaceId,user.credentialId,reservation.messageId,clientMessageId,mailFrom,JSON.stringify(allocation?.acceptedRecipients||recipients),providerMessageId,String(reason || "Provider outcome unknown").slice(0,500)]
     );
     await client.query("COMMIT");
   } catch (error) {
@@ -442,7 +442,7 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
             await captureSmtpUsage(session.user,reservation,providerInfo,mailFrom,acceptedRecipients,rejectedRecipients);
           } catch (providerError) {
             if(providerAccepted){
-              await markSmtpUnknown(session.user,reservation,providerError?.message || "SMTP billing reconciliation failed after provider acceptance",mailFrom,recipients,clientMessageId,String(providerInfo?.serverMessageId||"")||null,true);
+              await markSmtpUnknown(session.user,reservation,providerError?.message || "SMTP billing reconciliation failed after provider acceptance",mailFrom,recipients,clientMessageId,String(providerInfo?.serverMessageId||"")||null,true,acceptedRecipients?.length?{partialAcceptance:true,acceptedRecipients,rejectedRecipients}:null);
             }else{
               const responseCode=Number(providerError?.responseCode||0);
               if(responseCode>=400&&responseCode<600){
