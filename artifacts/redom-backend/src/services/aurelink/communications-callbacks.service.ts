@@ -14,8 +14,8 @@ export async function updateAurelinkMessageStatus(input:{
     [input.provider,input.providerMessageId,input.status,input.providerStatus??null,input.providerError?.slice(0,500)??null,input.deliveredAt??null],
   );
   for(const row of updated.rows){
-    if(String(row.channel)==="email"&&(input.status==="bounced"||input.status==="complained"||input.status==="unsubscribed")){
-      const reason=input.status==="bounced"?"hard_bounce":input.status==="complained"?"spam_complaint":"unsubscribe";
+    if(String(row.channel)==="email"&&(input.status==="bounced"||input.status==="complained"||input.status==="unsubscribed"||input.status==="rejected")){
+      const reason=input.status==="bounced"?"hard_bounce":input.status==="complained"?"spam_complaint":input.status==="unsubscribed"?"unsubscribe":"provider_suppression";
       await pool.query("INSERT INTO aurelink_email_suppressions(workspace_id,email,reason,source_provider) VALUES($1,LOWER($2),$3,$4) ON CONFLICT(workspace_id,email) DO NOTHING",[row.workspace_id,row.recipient,reason,input.provider]);
     }
     await pool.query("UPDATE aurelink_communications_usage SET status=$2,updated_at=NOW() WHERE message_id=$1",[row.id,input.status==="delivered"?"delivered":input.status==="failed"||input.status==="bounced"||input.status==="rejected"?"failed":"accepted"]).catch(()=>undefined);
