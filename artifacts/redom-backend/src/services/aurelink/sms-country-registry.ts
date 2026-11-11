@@ -239,11 +239,11 @@ export function requiresAurelinkBrevoNumberSender(countryCode: string): boolean 
 export function isAurelinkBrevoSenderFormatValid(sender: string, countryCode: string): boolean {
   const code = countryCode.trim().toUpperCase();
   if (!getAurelinkSmsCountry(code)) return false;
-  if (code === "US" || code === "CA") return /^\\+1(?:800|833|844|855|866|877|888)\\d{7}$/.test(sender);
+  if (code === "US" || code === "CA") return /^\+1(?:800|833|844|855|866|877|888)\d{7}$/.test(sender);
   if (requiresAurelinkBrevoNumberSender(code)) return false;
   if (sender.length < 3 || sender.length > 11 || !/[A-Za-z]/.test(sender) || /[^A-Za-z0-9 .&_-]/.test(sender)) return false;
-  if (senderIdNoDigits.has(code) && /\\d/.test(sender)) return false;
-  if (senderIdNoSpaces.has(code) && /\\s/.test(sender)) return false;
+  if (senderIdNoDigits.has(code) && /\d/.test(sender)) return false;
+  if (senderIdNoSpaces.has(code) && /\s/.test(sender)) return false;
   if (senderIdNoSpecialCharacters.has(code) && /[^A-Za-z0-9]/.test(sender)) return false;
   if (code === "GB" && /[^A-Za-z0-9 .&_-]/.test(sender)) return false;
   return true;
