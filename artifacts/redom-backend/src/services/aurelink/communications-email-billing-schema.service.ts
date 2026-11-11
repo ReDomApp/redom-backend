@@ -127,6 +127,26 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_subscriptions_stripe_idx
       ON aurelink_email_subscriptions(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
 
+    CREATE TABLE IF NOT EXISTS aurelink_email_billing_accounts (
+      workspace_id UUID PRIMARY KEY REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      billing_mode VARCHAR(20) NOT NULL DEFAULT 'payg' CHECK(billing_mode IN ('free','payg','subscription')),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_email_free_daily_usage (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      usage_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      used_emails BIGINT NOT NULL DEFAULT 0 CHECK(used_emails >= 0),
+      reserved_emails BIGINT NOT NULL DEFAULT 0 CHECK(reserved_emails >= 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,usage_date)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_email_free_daily_usage_date_idx
+      ON aurelink_email_free_daily_usage(usage_date,workspace_id);
+
     CREATE TABLE IF NOT EXISTS aurelink_email_credit_wallets (
       workspace_id UUID PRIMARY KEY REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
       user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
@@ -156,7 +176,7 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       message_id UUID NOT NULL UNIQUE REFERENCES aurelink_messages(id) ON DELETE CASCADE,
       user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
-      source VARCHAR(16) NOT NULL CHECK(source IN ('subscription','prepaid','wallet')),
+      source VARCHAR(16) NOT NULL CHECK(source IN ('free','subscription','prepaid','wallet')),
       subscription_id UUID REFERENCES aurelink_email_subscriptions(id) ON DELETE RESTRICT,
       units BIGINT NOT NULL CHECK(units > 0),
       unit_price_minor BIGINT,
