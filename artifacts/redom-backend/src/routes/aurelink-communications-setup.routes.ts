@@ -230,7 +230,7 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   if(["US","CA"].includes(countryCode)){
    const brandName=(doingBusinessAs||businessName).toLowerCase();
    const samples=[sampleMessage,...(promotionalSample?[promotionalSample]:[]),...(transactionalSample?[transactionalSample]:[])];
-   if(samples.some(value=>!value.toLowerCase().includes(brandName)||!/\\bSTOP\\b/i.test(value)||!/\\bHELP\\b/i.test(value)))return res.status(422).json({success:false,code:"TOLL_FREE_SAMPLE_COMPLIANCE_REQUIRED",message:"Every US/Canada sample message must contain the business/brand name and clear STOP and HELP instructions."});
+   if(samples.some(value=>!value.toLowerCase().includes(brandName)||!/\bSTOP\b/i.test(value)||!/\bHELP\b/i.test(value)))return res.status(422).json({success:false,code:"TOLL_FREE_SAMPLE_COMPLIANCE_REQUIRED",message:"Every US/Canada sample message must contain the business/brand name and clear STOP and HELP instructions."});
   }
   if(["US","CA"].includes(countryCode)&&!contact.email.endsWith("@"+websiteDomain))return res.status(422).json({success:false,code:"BUSINESS_EMAIL_REQUIRED",message:"US/Canada toll-free registrations require a business email address on the verified company domain."});
   if(!Number.isSafeInteger(monthlyVolume)||monthlyVolume<1||monthlyVolume>100000000)return res.status(400).json({success:false,message:"Provide a realistic positive monthly SMS volume estimate."});
