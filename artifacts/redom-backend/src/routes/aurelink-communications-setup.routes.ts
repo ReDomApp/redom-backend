@@ -469,7 +469,11 @@ async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:st
    if(!input.providerReference){await client.query("ROLLBACK");throw new Error("A terminal Brevo result must include its provider registration reference.");}
    const queueStatus=approved?"completed":"rejected";
    await client.query("UPDATE aurelink_sender_provider_submissions SET status=$2,provider_status=$3,provider_reference=$4,terminal_payload=$5::jsonb,terminal_event_id=$6,token_consumed_at=NOW(),request_token_encrypted=NULL,updated_at=NOW() WHERE id=$1",[row.id,queueStatus,status,input.providerReference,JSON.stringify(input.payload||{}),input.eventId]);
-   await client.query("UPDATE aurelink_sender_ids SET status=$2,registration_state=$3,brevo_terminal_status=$4,brevo_terminal_at=NOW(),brevo_provider_reference=$5,provider_reference=$5,approved_at=CASE WHEN $2='approved' THEN NOW() ELSE NULL END,rejection_reason=CASE WHEN $2='rejected' THEN $6 ELSE NULL END,updated_at=NOW() WHERE id=$1",[row.sender_application_id,approved?"approved":"rejected",approved?"approved":"rejected",status,input.providerReference,input.reason||null]);
+   const websiteStatus=(await client.query("SELECT v.status FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE s.id=$1",[row.sender_application_id])).rows[0]?.status;
+   const ownershipLost=approved&&websiteStatus!=="verified";
+   const finalStatus=ownershipLost?"suspended":approved?"approved":"rejected";
+   const finalState=ownershipLost?"suspended":approved?"approved":"rejected";
+   await client.query("UPDATE aurelink_sender_ids SET status=$2,registration_state=$3,security_review_status=CASE WHEN $4 THEN 'failed' ELSE security_review_status END,last_security_reason=CASE WHEN $4 THEN 'Provider approved this Sender ID, but Aurelink website ownership verification is no longer valid.' ELSE last_security_reason END,brevo_terminal_status=$5,brevo_terminal_at=NOW(),brevo_provider_reference=$6,provider_reference=$6,approved_at=CASE WHEN $7 THEN NOW() ELSE NULL END,rejection_reason=CASE WHEN $2='rejected' THEN $8 ELSE NULL END,updated_at=NOW() WHERE id=$1",[row.sender_application_id,finalStatus,finalState,ownershipLost,status,input.providerReference,approved,input.reason||null]);
   }else{
    await client.query("UPDATE aurelink_sender_provider_submissions SET status='processing',provider_status=$2,provider_reference=COALESCE($3,provider_reference),updated_at=NOW() WHERE id=$1",[row.id,status,input.providerReference||null]);
   }
