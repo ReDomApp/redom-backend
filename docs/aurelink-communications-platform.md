@@ -226,3 +226,12 @@ Resend webhook verification uses the provider's Svix signature headers and the r
 ### Mail billing enforcement hardening
 
 New Aurelink workspaces default to the published Free billing mode; existing workspaces retain their explicitly stored billing choice. Both the REST billing service and standalone SMTP gateway use the same fail-closed default. A past-due subscription or an active subscription outside its verified Stripe billing period cannot consume the monthly allowance. Sending can continue from prepaid credits only when the customer explicitly enabled prepaid fallback. SMTP reconciliation also preserves the actual upstream provider identity instead of assuming every SMTP message belongs to Resend.
+
+
+### Updated individual prepaid Mail catalogue and restrictions
+
+The active prepaid catalogue is limited to 1,000, 5,000, 10,000, 50,000, 100,000 and 250,000 credits at $3.50, $8.00, $13.00, $48.00, $85.00 and $190.00 respectively. Packs above 250,000 are disabled. The cumulative workspace prepaid balance is capped at 250,000 credits.
+
+Prepaid sending is restricted to transactional email and 2,500 accepted/reserved email units per workspace per database day. The daily counter is reserved before upstream submission and captured or released/refunded with the message outcome. Subscription allowances remain the preferred source when the paid period is active. Prepaid can cover a subscription shortfall or standalone low-volume use; it does not grant campaign/high-volume or enterprise capabilities. Credits do not expire.
+
+These are proposed retail prices. Before release, verify per-destination Brevo/Resend cost, payment fees, taxes and FX impact to confirm margin.
