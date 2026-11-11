@@ -273,7 +273,7 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
   if(!admins().has(req.user!.userId))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink administrator access is required."});
   if(!z.string().uuid().safeParse(req.params.id).success)return res.status(400).json({success:false,message:"A valid message ID is required."});
   const parsed=z.object({outcome:z.enum(["accepted","rejected"]),evidenceReference:z.string().min(8).max(500),providerMessageId:z.string().min(1).max(220).optional()}).safeParse(req.body);
-  if(!parsed.success||(parsed.data.outcome==="accepted"&&!parsed.data.providerMessageId))return res.status(400).json({success:false,message:"Provide an accepted/rejected outcome, evidence reference, and provider message ID when accepted."});
+  if(!parsed.success)return res.status(400).json({success:false,message:"Provide an accepted/rejected outcome, evidence reference, and provider message ID when required."});
   const client=await pool.connect();
   try{
     await client.query("BEGIN");
@@ -291,7 +291,8 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
     const rejectedRecipients=Array.isArray(row.metadata?.rejectedRecipients)?row.metadata.rejectedRecipients.map(String):[];
     if(partial&&parsed.data.outcome==="rejected"){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PARTIAL_ACCEPTANCE_REQUIRES_ALLOCATION",message:"Provider evidence already records partial acceptance. Reconcile it as accepted so only accepted recipients are charged."});}
     if(parsed.data.outcome==="accepted"){
-      const providerMessageId=String(parsed.data.providerMessageId);
+      const providerMessageId=String(parsed.data.providerMessageId||row.provider_message_id||"");
+      if(!providerMessageId){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"A provider message ID is required to confirm acceptance."});}
       if(partial){
         if(!acceptedRecipients.length||!rejectedRecipients.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PARTIAL_ALLOCATION_MISSING",message:"The accepted/rejected recipient allocation is incomplete."});}
         await resizeAurelinkEmailUsageReservation(client,String(row.id),acceptedRecipients.length,rejectedRecipients);
