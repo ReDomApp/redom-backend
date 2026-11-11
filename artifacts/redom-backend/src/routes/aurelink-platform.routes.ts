@@ -46,7 +46,7 @@ router.get("/aurelink/communications/billing/overview",aurelinkAuthMiddleware,as
    pool.query("SELECT balance_minor,currency FROM aurelink_wallets WHERE user_id=$1",[ws.user_id]),
    pool.query("SELECT channel,status,COUNT(*)::int AS messages,COALESCE(SUM(units),0)::bigint AS units FROM aurelink_communications_usage WHERE workspace_id=$1 AND created_at>=NOW()-INTERVAL '30 days' GROUP BY channel,status",[ws.id]),
    pool.query("SELECT COALESCE(SUM(amount_minor) FILTER(WHERE entry_type='charge' AND status IN ('reserved','posted')),0)::bigint AS charged_minor,COALESCE(SUM(amount_minor) FILTER(WHERE entry_type='refund'),0)::bigint AS refunded_minor FROM aurelink_communications_billing_ledger WHERE workspace_id=$1 AND created_at>=NOW()-INTERVAL '30 days'",[ws.id]),
-   pool.query("SELECT service,country_code,provider,category,unit_price_minor,currency,effective_from FROM aurelink_communications_price_catalog WHERE active=TRUE AND effective_from<=NOW() AND (effective_until IS NULL OR effective_until>NOW()) ORDER BY service,country_code,provider,category",[ ])
+   pool.query("SELECT service,country_code,provider,category,unit_price_minor,currency,effective_from FROM aurelink_communications_price_catalog WHERE active=TRUE AND (workspace_id=$1 OR workspace_id IS NULL) AND effective_from<=NOW() AND (effective_until IS NULL OR effective_until>NOW()) ORDER BY service,country_code,provider,category",[ws.id])
   ]);
   res.json({success:true,workspaceId:ws.id,currency:"USD",wallet:{balanceMinor:String(wallet.rows[0]?.balance_minor||"0"),currency:wallet.rows[0]?.currency||"USD"},periodDays:30,usage:usage.rows,ledger:ledger.rows[0],activePrices:prices.rows});
  }catch(error){return fail(res,error);}
