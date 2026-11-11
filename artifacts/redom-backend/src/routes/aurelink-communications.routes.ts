@@ -48,7 +48,28 @@ router.post("/aurelink/webhooks/resend", async (req,res) => {
       await updateAurelinkMessageStatus({provider:"resend",providerMessageId:messageId,status,providerStatus:String(event.type),providerError:event?.data?.bounce?.message||event?.data?.reason||event?.data?.suppressed?.message||undefined,deliveredAt:status==="delivered"?new Date(event?.created_at||Date.now()):undefined});
     }
     for(const smtp of smtpMatches.rows){
-      await pool.query("UPDATE aurelink_smtp_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3='opened' THEN 'opened' WHEN $3='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $3='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $3='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$4",[smtp.workspace_id,messageId||null,status,String(smtp.message_key)]);
+      const billingClient=await pool.connect();
+      try{
+        await billingClient.query("BEGIN");
+        const reservation=(await billingClient.query("SELECT status,metadata FROM aurelink_email_usage_reservations WHERE message_id=$1 FOR UPDATE",[smtp.message_key])).rows[0];
+        if(reservation&&["reserved","unknown"].includes(String(reservation.status))){
+          const metadata=reservation.metadata||{};
+          if(metadata.partialAcceptance===true&&metadata.partialAcceptanceReconciled!==true){
+            const acceptedRecipients=Array.isArray(metadata.acceptedRecipients)?metadata.acceptedRecipients.map(String):[];
+            const rejectedRecipients=Array.isArray(metadata.rejectedRecipients)?metadata.rejectedRecipients.map(String):[];
+            if(!acceptedRecipients.length||!rejectedRecipients.length)throw new Error("SMTP partial-acceptance allocation is incomplete.");
+            await resizeAurelinkEmailUsageReservation(billingClient,String(smtp.message_key),acceptedRecipients.length,rejectedRecipients);
+          }
+          await billingClient.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1 AND status='unknown'",[smtp.message_key]);
+          await captureAurelinkEmailUsage(billingClient,String(smtp.message_key));
+        }
+        await billingClient.query("COMMIT");
+      }catch(error){
+        await billingClient.query("ROLLBACK").catch(()=>undefined);
+        billingClient.release();
+        return res.status(503).json({received:false,retry:true,message:"SMTP billing capture is awaiting a successful reconciliation transaction."});
+      }finally{if(!billingClient.released)billingClient.release();}
+      await pool.query("UPDATE aurelink_smtp_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3 IN ('sent','accepted') THEN 'accepted' WHEN $3='opened' THEN 'opened' WHEN $3='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $3='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $3='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$4",[smtp.workspace_id,messageId||null,status,String(smtp.message_key)]);
       await pool.query("UPDATE aurelink_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3 IN ('opened','clicked') THEN $3 ELSE status END,provider_status=$4,provider_error=$5,delivered_at=CASE WHEN $3='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,updated_at=NOW() WHERE id=$1",[smtp.message_key,messageId||null,status,String(event.type),event?.data?.bounce?.message||event?.data?.reason||event?.data?.suppressed?.message||null]);
       await pool.query("UPDATE aurelink_communications_usage SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' ELSE status END,updated_at=NOW() WHERE message_id=$1",[smtp.message_key,messageId||null,status]);
       if(["bounced","complained","unsubscribed","rejected"].includes(status)){
