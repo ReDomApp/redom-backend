@@ -244,7 +244,7 @@ router.get("/aurelink/admin/communications/email/smtp/manual-review",aurelinkAut
   const limit=Math.max(1,Math.min(100,Number.parseInt(String(req.query.limit||"50"),10)||50));
   const result=await pool.query(
     `SELECT m.id AS message_id,m.workspace_id,m.provider,m.recipient,m.sender,m.category,m.status AS message_status,
-            m.provider_error,m.created_at,r.source,r.units,r.status AS billing_status,
+            m.provider_error,m.provider_message_id,m.created_at,r.source,r.units,r.status AS billing_status,
             s.client_message_id,s.envelope_from,s.recipients,s.error AS smtp_error
        FROM aurelink_email_usage_reservations r
        JOIN aurelink_messages m ON m.id=r.message_id
