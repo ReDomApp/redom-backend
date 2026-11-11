@@ -23,7 +23,8 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       ADD COLUMN IF NOT EXISTS monthly_volume BIGINT,
       ADD COLUMN IF NOT EXISTS sms_purpose VARCHAR(24),
       ADD COLUMN IF NOT EXISTS sender_type VARCHAR(32) NOT NULL DEFAULT 'alphanumeric',
-      ADD COLUMN IF NOT EXISTS last_security_reason TEXT;
+      ADD COLUMN IF NOT EXISTS last_security_reason TEXT,
+      ADD COLUMN IF NOT EXISTS submitted_by_user_id UUID REFERENCES aurelink_users(id) ON DELETE SET NULL;
     ALTER TABLE aurelink_sender_ids DROP CONSTRAINT IF EXISTS aurelink_sender_ids_registration_state_check;
     ALTER TABLE aurelink_sender_ids ADD CONSTRAINT aurelink_sender_ids_registration_state_check
       CHECK (registration_state IN ('draft','verification_required','security_review','ready_for_submission','submitted','approved','rejected','suspended'));
