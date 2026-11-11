@@ -215,3 +215,7 @@ Pricing-option, credit-pack and reconciliation administration is restricted to `
 Set `AURELINK_EMAIL_BILLING_SUCCESS_URL` and `AURELINK_EMAIL_BILLING_CANCEL_URL` to the Aurelink application return URLs before enabling Stripe email checkout. Stripe must send signed events to `/payments/stripe/webhook` (or the corresponding `/redom-backend/payments/stripe/webhook` deployment path), including Checkout Session, Invoice and Subscription lifecycle events. The webhook signing secret must be configured through the existing Stripe environment configuration.
 
 These schema and service changes are additive. They do not change SMS billing, SMS provider routing, inbound mail, MX hosting, mailboxes, IMAP or POP3.
+
+SMTP accounting is recipient-based. When the provider accepts only part of a multi-recipient SMTP submission, Aurelink captures usage for accepted recipients and releases/refunds rejected recipients. Each SMTP transaction requires a stable RFC `Message-ID`; Aurelink claims it atomically before upstream submission, so concurrent retries cannot create duplicate sends. Resend delivery webhooks correlate SMTP messages using that client Message-ID and then attach the provider email ID.
+
+If the gateway stops after reserving usage but before recording a final result, stale pending SMTP reservations are moved into manual review rather than automatically resent or refunded. An unknown outcome remains reserved until an administrator reconciles it.
