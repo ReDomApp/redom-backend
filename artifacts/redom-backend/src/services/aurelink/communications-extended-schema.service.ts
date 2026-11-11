@@ -40,8 +40,9 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_communications_price_catalog ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE;
     CREATE INDEX IF NOT EXISTS aurelink_communications_price_lookup_idx
-      ON aurelink_communications_price_catalog(service,country_code,provider,category,active,effective_from DESC);
+      ON aurelink_communications_price_catalog(workspace_id,service,country_code,provider,category,active,effective_from DESC);
 
     CREATE TABLE IF NOT EXISTS aurelink_communications_billing_ledger (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
