@@ -180,7 +180,7 @@ router.post("/aurelink/communications/websites/:id/verify",aurelinkAuthMiddlewar
 });
 router.get("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
- const rows=await pool.query("SELECT id,channel,sender,country_code,provider,status,registration_state,security_review_status,security_reviewed_at,last_security_reason,provider_reference,rejection_reason,request_details,submitted_at,approved_at,created_at,updated_at FROM aurelink_sender_ids WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
+ const rows=await pool.query("SELECT id,channel,sender,country_code,provider,status,registration_state,security_review_status,security_reviewed_at,last_security_reason,provider_reference,rejection_reason,brevo_review_due_at,brevo_submitted_at,brevo_provider_reference,brevo_terminal_status,brevo_terminal_at,request_details,submitted_at,approved_at,created_at,updated_at FROM aurelink_sender_ids WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
  return res.json({success:true,senders:rows.rows});
 });
 router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,res)=>{
