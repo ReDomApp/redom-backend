@@ -95,4 +95,14 @@ router.post("/webhook", async (req, res) => {
   }
 });
 
+router.post("/stripe/webhook",async(req,res)=>{
+  if(!Buffer.isBuffer(req.body))return res.status(400).json({received:false,message:"Expected the raw Stripe webhook body."});
+  try{
+    await handleStripeWebhook(req.body,req.header("stripe-signature")||undefined);
+    return res.status(200).json({received:true});
+  }catch(error){
+    return res.status(400).json({received:false,message:error instanceof Error?error.message:"Stripe webhook rejected."});
+  }
+});
+
 export default router;
