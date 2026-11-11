@@ -891,6 +891,46 @@ async function markStripeFailed(reference:string,message:string,gatewayStatus="f
   return {finalFailure:false,transactionId:null,redomTransactionId:null};
 }
 
+async function reconcileAurelinkEmailStripeEvent(type:string,object:any):Promise<void>{
+  if(type==="invoice.paid"||type==="invoice.payment_failed"){
+    const subscriptionId=stripeObjectId(object?.subscription);
+    if(!subscriptionId)return;
+    if(type==="invoice.payment_failed"){
+      await pool.query("UPDATE aurelink_email_subscriptions SET status='past_due',updated_at=NOW() WHERE stripe_subscription_id=$1 AND status='active'",[subscriptionId]);
+      return;
+    }
+    const period=object?.lines?.data?.[0]?.period||{};
+    const start=Number(period.start??object?.period_start),end=Number(period.end??object?.period_end);
+    if(Number.isFinite(start)&&Number.isFinite(end)&&end>start){
+      await pool.query(
+        "UPDATE aurelink_email_subscriptions SET status='active',used_emails=CASE WHEN billing_period_start<to_timestamp($2) THEN 0 ELSE used_emails END,billing_period_start=to_timestamp($2),billing_period_end=to_timestamp($3),updated_at=NOW() WHERE stripe_subscription_id=$1",
+        [subscriptionId,start,end]
+      );
+    }else{
+      await pool.query("UPDATE aurelink_email_subscriptions SET status='active',updated_at=NOW() WHERE stripe_subscription_id=$1",[subscriptionId]);
+    }
+    return;
+  }
+  if(type==="customer.subscription.deleted"||type==="customer.subscription.updated"){
+    const subscriptionId=String(object?.id||"");
+    if(!subscriptionId)return;
+    const status=type==="customer.subscription.deleted"?"expired":
+      ["active","trialing"].includes(String(object?.status))?"active":
+      ["past_due","unpaid","paused"].includes(String(object?.status))?"past_due":
+      ["canceled","incomplete_expired"].includes(String(object?.status))?"expired":null;
+    if(!status)return;
+    const start=Number(object?.current_period_start),end=Number(object?.current_period_end);
+    if(Number.isFinite(start)&&Number.isFinite(end)&&end>start){
+      await pool.query(
+        "UPDATE aurelink_email_subscriptions SET status=$2,billing_period_start=to_timestamp($3),billing_period_end=to_timestamp($4),updated_at=NOW() WHERE stripe_subscription_id=$1",
+        [subscriptionId,status,start,end]
+      );
+    }else{
+      await pool.query("UPDATE aurelink_email_subscriptions SET status=$2,updated_at=NOW() WHERE stripe_subscription_id=$1",[subscriptionId,status]);
+    }
+  }
+}
+
 export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefined):Promise<void>{
   const supplied=String(signature??"");
   const match=supplied.match(/(?:^|,)\s*t=(\d+)(?:,|$).*?(?:^|,)\s*v1=([a-f0-9]+)(?:,|$)/i);
@@ -919,7 +959,9 @@ export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefi
   try{
     if(["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(type)){
       const purpose=String(object?.metadata?.purpose??"");
-      if(purpose==="stars_trial_setup"){
+      if(purpose==="aurelink_email_subscription"||purpose==="aurelink_email_credits"){
+        await fulfillAurelinkEmailBillingCheckout(object as StripeSession);
+      }else if(purpose==="stars_trial_setup"){
         const reference=String(object?.metadata?.reference??"");
         if(reference) await finalizeStarsTrialSetup(reference);
       }else if(purpose==="redom_saved_card_expo_fallback"){
@@ -940,13 +982,17 @@ export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefi
       if(userId && setupIntentId) await finalizeStripeCardSetup(userId,setupIntentId);
     }else if(type==="checkout.session.async_payment_failed"){
       const reference=String(object?.metadata?.reference??"");
-      if(reference)await markStripeFailed(reference,"Stripe reported that the payment could not be completed.","failed",paymentIntentId(object as StripeSession),object as StripeSession);
+      if(String(object?.metadata?.purpose||"").startsWith("aurelink_email_")&&reference)await pool.query("UPDATE aurelink_email_billing_payments SET status='failed',updated_at=NOW() WHERE reference=$1 AND status='pending'",[reference]);
+      else if(reference)await markStripeFailed(reference,"Stripe reported that the payment could not be completed.","failed",paymentIntentId(object as StripeSession),object as StripeSession);
     }else if(type==="checkout.session.expired"){
       const reference=String(object?.metadata?.reference??"");
       if(reference){
         if(String(object?.metadata?.purpose??"")==="stars_trial_setup") await markStarsTrialSetupAbandoned(reference);
+        else if(String(object?.metadata?.purpose||"").startsWith("aurelink_email_")) await pool.query("UPDATE aurelink_email_billing_payments SET status='cancelled',updated_at=NOW() WHERE reference=$1 AND status='pending'",[reference]);
         else await markStripeAbandoned(reference);
       }
+    }else if(["invoice.paid","invoice.payment_failed","customer.subscription.deleted","customer.subscription.updated"].includes(type)){
+      await reconcileAurelinkEmailStripeEvent(type,object);
     }else if(type==="payment_intent.payment_failed"){
       const reference=String(object?.metadata?.reference??"");
       const message=String(object?.last_payment_error?.message??"Stripe payment failed.");
