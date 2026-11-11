@@ -427,12 +427,12 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
             socketTimeout: 60000,
             tls: { minVersion: "TLSv1.2" },
           });
-          let providerAccepted=false,providerInfo=null;
+          let providerAccepted=false,providerInfo=null,acceptedRecipients=[],rejectedRecipients=[];
           try {
             providerInfo = await transport.sendMail({ envelope: { from: mailFrom, to: recipients }, raw });
             const acceptedSet=new Set((Array.isArray(providerInfo.accepted)?providerInfo.accepted:[]).map(value=>String(typeof value==="string"?value:value?.address||"").toLowerCase()));
-            const acceptedRecipients=recipients.filter(address=>acceptedSet.has(String(address).toLowerCase()));
-            const rejectedRecipients=recipients.filter(address=>!acceptedSet.has(String(address).toLowerCase()));
+            acceptedRecipients=recipients.filter(address=>acceptedSet.has(String(address).toLowerCase()));
+            rejectedRecipients=recipients.filter(address=>!acceptedSet.has(String(address).toLowerCase()));
             if(!acceptedRecipients.length){
               await refundSmtpUsage(session.user,reservation,"Resend did not accept any SMTP recipients.");
               throw smtpError("The upstream provider did not accept any recipients.",550);
