@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AURELINK_SMS_COUNTRIES, getAurelinkSmsCountry, isAurelinkE164ForCountry } from "../../redom-backend/src/services/aurelink/sms-country-registry.ts";
+import { AURELINK_SMS_COUNTRIES, getAurelinkSmsCountry, isAurelinkE164ForCountry, isAurelinkBrevoSenderFormatValid } from "../../redom-backend/src/services/aurelink/sms-country-registry.ts";
 
 test("Aurelink publishes its supported SMS destinations without Singapore",()=>{
   assert.equal(AURELINK_SMS_COUNTRIES.length,205);
@@ -17,4 +17,12 @@ test("Aurelink validates international E.164 prefixes for supported destinations
   assert.equal(isAurelinkE164ForCountry("+2348012345678","GH"),false);
   assert.equal(isAurelinkE164ForCountry("+6591234567","SG"),false);
   assert.equal(isAurelinkE164ForCountry("08012345678","NG"),false);
+});
+
+test("Brevo sender character rules are enforced per destination",()=>{
+  assert.equal(isAurelinkBrevoSenderFormatValid("AURELINK","NG"),true);
+  assert.equal(isAurelinkBrevoSenderFormatValid("AURE2026","NG"),false);
+  assert.equal(isAurelinkBrevoSenderFormatValid("BRAND2","GB"),true);
+  assert.equal(isAurelinkBrevoSenderFormatValid("+18005551234","US"),true);
+  assert.equal(isAurelinkBrevoSenderFormatValid("BRAND","US"),false);
 });
