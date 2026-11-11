@@ -1,7 +1,8 @@
 import type { PoolClient } from "pg";
 import { walletCredit, walletDebit } from "./aurelink-wallet.service";
 
-type QueryClient = Pick<PoolClient, "query">;\n
+type QueryClient = Pick<PoolClient, "query">;
+
 /**
  * Count billable SMS segments using GSM-7 septet rules, including extension
  * characters, or UCS-2 UTF-16 code units when any character is outside GSM-7.
