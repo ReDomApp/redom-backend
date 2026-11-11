@@ -250,6 +250,7 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
  const found=(await pool.query("SELECT s.*,v.status AS website_status FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE s.id=$1",[req.params.id])).rows[0];
  if(!found)return res.status(404).json({success:false,message:"Sender registration request not found."});
  if(status==="security_passed"){
+  if(found.registration_state!=="security_review"||found.security_review_status!=="pending")return res.status(409).json({success:false,code:"SECURITY_REVIEW_NOT_PENDING",message:"This Sender ID application is not awaiting Aurelink security review."});
   const checklist=req.body.securityChecklist||{};
   const required=["legalBusinessVerified","brandOwnershipVerified","documentAuthenticityVerified","websiteContentVerified","privacyPolicyStatementVerified","termsContentVerified","consentEvidenceVerified","smsUseCaseVerified","countryRequirementsVerified"];
   const missing=required.filter((key:string)=>checklist[key]!==true);
@@ -268,6 +269,7 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
  }
  if(status==="security_failed"){
+  if(found.registration_state!=="security_review"||found.security_review_status!=="pending")return res.status(409).json({success:false,code:"SECURITY_REVIEW_NOT_PENDING",message:"Only an application awaiting Aurelink security review can be failed through this transition."});
   const restrictionDays=Number(req.body.restrictionDays);
   if(!reason)return res.status(400).json({success:false,message:"A security failure reason is required."});
   if(!Number.isInteger(restrictionDays)||restrictionDays<1||restrictionDays>365)return res.status(400).json({success:false,message:"Set a security restriction period between 1 and 365 days."});
