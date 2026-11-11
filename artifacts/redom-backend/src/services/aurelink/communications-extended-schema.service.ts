@@ -7,6 +7,48 @@ import { pool } from "../../database/db";
  */
 export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void> {
   await pool.query(`
+    ALTER TABLE aurelink_sender_ids
+      ADD COLUMN IF NOT EXISTS registration_state VARCHAR(32) NOT NULL DEFAULT 'draft',
+      ADD COLUMN IF NOT EXISTS security_review_status VARCHAR(24) NOT NULL DEFAULT 'not_started',
+      ADD COLUMN IF NOT EXISTS security_reviewed_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS security_reviewed_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS website_domain VARCHAR(253),
+      ADD COLUMN IF NOT EXISTS website_verification_id UUID,
+      ADD COLUMN IF NOT EXISTS submitted_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS evidence_fingerprint CHAR(64),
+      ADD COLUMN IF NOT EXISTS consent_evidence_reference TEXT,
+      ADD COLUMN IF NOT EXISTS business_address TEXT,
+      ADD COLUMN IF NOT EXISTS business_contact JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS monthly_volume BIGINT,
+      ADD COLUMN IF NOT EXISTS sms_purpose VARCHAR(24),
+      ADD COLUMN IF NOT EXISTS sender_type VARCHAR(32) NOT NULL DEFAULT 'alphanumeric',
+      ADD COLUMN IF NOT EXISTS last_security_reason TEXT;
+    ALTER TABLE aurelink_sender_ids DROP CONSTRAINT IF EXISTS aurelink_sender_ids_registration_state_check;
+    ALTER TABLE aurelink_sender_ids ADD CONSTRAINT aurelink_sender_ids_registration_state_check
+      CHECK (registration_state IN ('draft','verification_required','security_review','ready_for_submission','submitted','approved','rejected','suspended'));
+    ALTER TABLE aurelink_sender_ids DROP CONSTRAINT IF EXISTS aurelink_sender_ids_security_review_status_check;
+    ALTER TABLE aurelink_sender_ids ADD CONSTRAINT aurelink_sender_ids_security_review_status_check
+      CHECK (security_review_status IN ('not_started','pending','passed','failed','manual_review'));
+    CREATE INDEX IF NOT EXISTS aurelink_sender_ids_security_gate_idx
+      ON aurelink_sender_ids(workspace_id,country_code,registration_state,security_review_status);
+    CREATE TABLE IF NOT EXISTS aurelink_verified_websites (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      domain VARCHAR(253) NOT NULL,
+      website_url TEXT NOT NULL,
+      verification_method VARCHAR(32) NOT NULL CHECK (verification_method IN ('dns_txt','https_file','admin_attestation')),
+      verification_token_hash CHAR(64),
+      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','verified','failed','revoked')),
+      verified_at TIMESTAMPTZ,
+      verified_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,domain)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_verified_websites_lookup_idx
+      ON aurelink_verified_websites(workspace_id,domain,status);
+
     ALTER TABLE aurelink_email_domains
       ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(253),
       ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ,
