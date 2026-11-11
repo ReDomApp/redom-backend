@@ -169,8 +169,9 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   if(!sender||!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender))return res.status(400).json({success:false,message:"Alphanumeric Sender IDs must be 3–11 ASCII letters or digits and include at least one letter."});
   if(!senderProviders.has(provider))return res.status(400).json({success:false,message:"SMS sender registration provider must be twilio or brevo."});
   if(!/^[A-Z]{2}$/.test(countryCode))return res.status(400).json({success:false,message:"A two-letter ISO destination country code is required."});
-  if(!["alphanumeric","toll_free"].includes(senderType))return res.status(400).json({success:false,message:"Unsupported sender type. Phone-number and short-code registrations require their dedicated workflows."});
-  if(["US","CA"].includes(countryCode)&&senderType!=="toll_free")return res.status(422).json({success:false,code:"TOLL_FREE_REGISTRATION_REQUIRED",message:"This destination requires a registered toll-free sender workflow; an alphanumeric Sender ID cannot be submitted."});
+  if(senderType!=="alphanumeric"&&senderType!=="toll_free")return res.status(400).json({success:false,message:"Unsupported sender type."});
+  if(senderType==="toll_free")return res.status(501).json({success:false,code:"TOLL_FREE_REGISTRATION_WORKFLOW_REQUIRED",message:"Toll-free number registration is a separate number-based workflow and is not yet enabled here. This request has not been submitted."});
+  if(["US","CA"].includes(countryCode))return res.status(422).json({success:false,code:"TOLL_FREE_REGISTRATION_REQUIRED",message:"This destination requires a registered toll-free number workflow; an alphanumeric Sender ID cannot be submitted."});
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   const websiteDomain=normalizeSenderDomain(String(req.body.businessWebsite||""));
   const website=(await pool.query("SELECT id,website_url FROM aurelink_verified_websites WHERE workspace_id=$1 AND domain=$2 AND status='verified'",[wid,websiteDomain])).rows[0];
@@ -221,7 +222,7 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
   const updated=await pool.query("UPDATE aurelink_sender_ids SET security_review_status='failed',registration_state='rejected',status='rejected',security_reviewed_at=NOW(),security_reviewed_by=$2,last_security_reason=$3,rejection_reason=$3,updated_at=NOW() WHERE id=$1 RETURNING id,status,registration_state,security_review_status,last_security_reason",[req.params.id,req.user!.userId,reason]);
   return res.json({success:true,sender:updated.rows[0]});
  }
- if(found.security_review_status!=="passed"||found.registration_state!=="ready_for_submission")return res.status(423).json({success:false,code:"SECURITY_GATE_NOT_PASSED",message:"Provider submission and approval are blocked until Aurelink security review has passed."});
+ if(found.security_review_status!=="passed"||!["ready_for_submission","submitted"].includes(String(found.registration_state)))return res.status(423).json({success:false,code:"SECURITY_GATE_NOT_PASSED",message:"Provider submission and approval are blocked until Aurelink security review has passed."});
  if(status==="submitted"&&!providerReference)return res.status(400).json({success:false,message:"A real provider registration reference is required."});
  if(status==="approved"){
   try{const u=new URL(evidenceUrl);if(u.protocol!=="https:"||!providerReference)throw new Error("invalid");}catch{return res.status(400).json({success:false,message:"Approval requires a real provider reference and HTTPS provider/carrier approval evidence."});}
