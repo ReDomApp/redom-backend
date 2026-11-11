@@ -17,6 +17,7 @@ on:
       - "artifacts/redom-backend/**"
       - "infra/aurelink-smtp-gateway/**"
       - "artifacts/aurelink/tests/communications-webhook.test.ts"
+      - "artifacts/aurelink/tests/sms-country-registry.test.ts"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/aurelink-communications.yml"
