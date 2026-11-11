@@ -142,7 +142,7 @@ router.post("/aurelink/communications/email/billing/cancel",aurelinkAuthMiddlewa
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
   try{
-    const result=await cancelAurelinkEmailSubscription(req.user!.userId,wid);
+    const result=await cancelAurelinkEmailSubscription(wid);
     await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'subscription_cancel_scheduled',$3::jsonb)",[wid,req.user!.userId,JSON.stringify({stripeSubscriptionId:result.subscriptionId,periodEnd:result.periodEnd.toISOString()})]);
     return res.json({success:true,subscription:result,message:"Your subscription remains active until the end of the paid billing period."});
   }catch(error){return res.status(409).json({success:false,message:error instanceof Error?error.message:"Unable to schedule subscription cancellation."});}
