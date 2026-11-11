@@ -212,6 +212,7 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
       const ref=String(body.data?.reference||"");
       const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE reference=$1 AND payment_provider='paystack'",[ref])).rows[0];
       if(p) await fulfill(ref,String(body.data.id),"paystack",Number(body.data.amount),String(body.data.currency).toUpperCase(),String(body.data.subscription?.subscription_code||"")||undefined);
+      if(body.data?.subscription?.subscription_code) await pool.query("UPDATE aurelink_email_subscriptions SET paystack_customer_code=$2 WHERE paystack_subscription_code=$1 AND paystack_customer_code IS NULL",[body.data.subscription.subscription_code,body.data.customer?.customer_code||null]);
     }else if(body.event==="invoice.payment_failed"){
       const code=String(body.data?.subscription?.subscription_code||body.data?.subscription_code||"");
       if(code) await pool.query("UPDATE aurelink_email_subscriptions SET status='past_due',updated_at=NOW() WHERE paystack_subscription_code=$1 AND status='active'",[code]);
