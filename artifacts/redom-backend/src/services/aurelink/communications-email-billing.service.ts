@@ -120,7 +120,7 @@ export async function resizeAurelinkEmailUsageReservation(client:Db,messageId:st
     if(!wallet)throw new Error("Aurelink USD wallet is missing.");
     const next=BigInt(String(wallet.balance_minor))+BigInt(refundAmount);
     await client.query("UPDATE aurelink_wallets SET balance_minor=$2,updated_at=NOW() WHERE user_id=$1",[reservation.user_id,next.toString()]);
-    const refundReference=String(reservation.wallet_reference)+"-PARTIAL-R";
+    const refundReference=String((reservation as any).wallet_reference||"AL-COMM-"+messageId)+"-PARTIAL-R";
     await client.query("INSERT INTO aurelink_wallet_ledger(user_id,entry_type,direction,amount_minor,balance_after_minor,currency,reference,description,metadata) VALUES($1,'refund','credit',$2,$3,'USD',$4,'Refund for SMTP recipients rejected by the provider',$5::jsonb)",[reservation.user_id,refundAmount,next.toString(),refundReference,JSON.stringify({messageId,rejectedRecipients})]);
     await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',$4,$5,$6,'USD',$7,$8::jsonb) ON CONFLICT(message_id,entry_type) DO NOTHING",[reservation.user_id,reservation.workspace_id,messageId,rejectedUnits,reservation.unit_price_minor,refundAmount,refundReference,JSON.stringify({partial:true,rejectedRecipients})]);
     await client.query("UPDATE aurelink_communications_billing_ledger SET units=$2,amount_minor=$3,updated_at=NOW() WHERE message_id=$1 AND entry_type='charge' AND status='reserved'",[messageId,acceptedUnits,acceptedAmountMinor]);
