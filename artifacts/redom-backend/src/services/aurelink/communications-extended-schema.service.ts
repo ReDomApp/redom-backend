@@ -66,7 +66,7 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
       provider VARCHAR(24) NOT NULL CHECK(provider='brevo'),
       request_token_hash CHAR(64) NOT NULL UNIQUE,
-      request_token_encrypted TEXT NOT NULL,
+      request_token_encrypted TEXT,
       status VARCHAR(32) NOT NULL DEFAULT 'scheduled'
         CHECK(status IN ('scheduled','ready_for_operator_submission','submitted','processing','completed','rejected','failed','cancelled')),
       scheduled_at TIMESTAMPTZ NOT NULL,
@@ -84,6 +84,18 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     );
     CREATE INDEX IF NOT EXISTS aurelink_sender_provider_submissions_due_idx
       ON aurelink_sender_provider_submissions(status,scheduled_at);
+    CREATE TABLE IF NOT EXISTS aurelink_sender_provider_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider VARCHAR(24) NOT NULL CHECK(provider='brevo'),
+      provider_event_id VARCHAR(180) NOT NULL,
+      submission_id UUID NOT NULL REFERENCES aurelink_sender_provider_submissions(id) ON DELETE CASCADE,
+      event_status VARCHAR(80) NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(provider,provider_event_id)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_provider_events_submission_idx
+      ON aurelink_sender_provider_events(submission_id,processed_at DESC);
 
     CREATE TABLE IF NOT EXISTS aurelink_sms_supported_countries (
       country_code CHAR(2) PRIMARY KEY,
