@@ -83,5 +83,38 @@ public final class AurelinkClient {
     Map<String,Object> body = new LinkedHashMap<>(); body.put("token", token);
     return request("POST", "/aurelink/communications/team/invitations/accept", body, null);
   }
+  public Map<String,Object> suspendDomain(String id, String reason) throws IOException, InterruptedException {
+    Map<String,Object> body = new LinkedHashMap<>(); body.put("reason", reason);
+    return request("POST", "/aurelink/communications/domains/" + id + "/suspend", body, null);
+  }
+  public Map<String,Object> resumeDomain(String id) throws IOException, InterruptedException {
+    return request("POST", "/aurelink/communications/domains/" + id + "/resume", null, null);
+  }
+  public Map<String,Object> deleteDomain(String id) throws IOException, InterruptedException {
+    return request("DELETE", "/aurelink/communications/domains/" + id, null, null);
+  }
+  public Map<String,Object> configureTrackingDomain(String id, String trackingDomain) throws IOException, InterruptedException {
+    Map<String,Object> body = new LinkedHashMap<>(); body.put("trackingDomain", trackingDomain);
+    return request("PUT", "/aurelink/communications/domains/" + id + "/tracking-domain", body, null);
+  }
+  public Map<String,Object> verifyTrackingDomain(String id) throws IOException, InterruptedException {
+    return request("POST", "/aurelink/communications/domains/" + id + "/tracking-domain/verify", null, null);
+  }
+  public Map<String,Object> billingStatement(String month) throws IOException, InterruptedException {
+    return request("GET", "/aurelink/communications/billing/statement?month=" + month, null, null);
+  }
+  public Map<String,Object> teamMembers() throws IOException, InterruptedException {
+    return request("GET", "/aurelink/communications/team/members", null, null);
+  }
+  public Map<String,Object> changeMemberRole(String memberId, String role) throws IOException, InterruptedException {
+    Map<String,Object> body = new LinkedHashMap<>(); body.put("role", role);
+    return request("PATCH", "/aurelink/communications/team/members/" + memberId + "/role", body, null);
+  }
+  public Map<String,Object> revokeMember(String memberId) throws IOException, InterruptedException {
+    return request("DELETE", "/aurelink/communications/team/members/" + memberId, null, null);
+  }
+  public Map<String,Object> acknowledgeReputationAlert(String alertId) throws IOException, InterruptedException {
+    return request("POST", "/aurelink/communications/reputation/alerts/" + alertId + "/acknowledge", null, null);
+  }
   public static String newIdempotencyKey() { return UUID.randomUUID().toString(); }
 }
