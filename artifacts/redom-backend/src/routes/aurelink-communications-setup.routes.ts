@@ -445,6 +445,8 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitte
 async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:string;status:string;providerReference?:string;reason?:string;payload?:unknown;actorUserId?:string}){
  const tokenHash=hash(input.token),status=input.status.toLowerCase();
  const terminal=status==="completed"||status==="complete"||status==="successful"||status==="success"||status==="approved"||status==="rejected"||status==="declined"||status==="failed"||status==="denied";
+ const intermediateStatuses=new Set(["pending","processing","submitted","received","in_review","under_review","queued","in-progress","in_progress"]);
+ if(!terminal&&!intermediateStatuses.has(status))throw new Error("Unsupported Brevo Sender ID registration status.");
  const approved=["completed","complete","successful","success","approved"].includes(status);
  const rejected=["rejected","declined","failed","denied"].includes(status);
  const client=await pool.connect();
