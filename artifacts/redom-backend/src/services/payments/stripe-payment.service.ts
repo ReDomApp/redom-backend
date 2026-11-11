@@ -948,7 +948,7 @@ async function reconcileAurelinkEmailStripeEvent(type:string,object:any,eventCre
       ["canceled","incomplete_expired"].includes(String(object?.status))?"expired":null;
     if(!status)return;
     await pool.query(
-      "UPDATE aurelink_email_subscriptions SET status=$2,cancel_at_period_end=$3,stripe_event_created_at=to_timestamp($4),updated_at=NOW() WHERE stripe_subscription_id=$1 AND (stripe_event_created_at IS NULL OR stripe_event_created_at<=to_timestamp($4))",
+      "UPDATE aurelink_email_subscriptions SET status=$2,cancel_at_period_end=$3,stripe_event_created_at=to_timestamp($4),updated_at=NOW() WHERE stripe_subscription_id=$1 AND (status<>'expired' OR $2='expired') AND (stripe_event_created_at IS NULL OR stripe_event_created_at<=to_timestamp($4))",
       [subscriptionId,status,Boolean(object?.cancel_at_period_end)||type==="customer.subscription.deleted",eventAt]
     );
   }
