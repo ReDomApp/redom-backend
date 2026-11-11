@@ -327,6 +327,18 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
     ALTER TABLE aurelink_messages ADD CONSTRAINT aurelink_messages_status_check CHECK(status IN ('queued','accepted','sent','delivered','deferred','bounced','failed','rejected','complained','unsubscribed','unknown'));
     CREATE INDEX IF NOT EXISTS aurelink_communications_jobs_due_idx ON aurelink_communications_jobs(status,next_attempt_at) WHERE status='pending';
     CREATE INDEX IF NOT EXISTS aurelink_communications_jobs_manual_review_idx ON aurelink_communications_jobs(updated_at) WHERE status='manual_review';
+    CREATE TABLE IF NOT EXISTS aurelink_communications_reconciliation_audit (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      message_id UUID NOT NULL REFERENCES aurelink_messages(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      admin_user_id UUID NOT NULL REFERENCES aurelink_users(id),
+      outcome VARCHAR(16) NOT NULL CHECK(outcome IN ('accepted','rejected')),
+      provider_message_id VARCHAR(220),
+      evidence_reference TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_communications_reconciliation_audit_message_idx ON aurelink_communications_reconciliation_audit(message_id,created_at DESC);
+
     CREATE TABLE IF NOT EXISTS aurelink_communications_usage (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
