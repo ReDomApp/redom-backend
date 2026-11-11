@@ -673,7 +673,7 @@ export async function createAurelinkEmailBillingCheckout(input:{
       "line_items[0][price_data][product_data][name]":productName,
       "line_items[0][price_data][unit_amount]":amountMinor,
       "line_items[0][quantity]":1,
-      success_url:successUrl.toString(),cancel_url:cancelUrl.toString(),
+      success_url:successUrl.toString().replace(/%7BCHECKOUT_SESSION_ID%7D/gi,"{CHECKOUT_SESSION_ID}"),cancel_url:cancelUrl.toString(),
       "metadata[provider]":metadata.provider,"metadata[purpose]":metadata.purpose,"metadata[reference]":reference,
       "metadata[userId]":input.userId,"metadata[workspaceId]":input.workspaceId,
       "metadata[planOptionId]":metadata.planOptionId,"metadata[creditPackId]":metadata.creditPackId,"metadata[emailCredits]":metadata.emailCredits,
