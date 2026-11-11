@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { createHash, randomBytes } from "node:crypto";
+import { resolveTxt } from "node:dns/promises";
 import { decryptAurelinkDnsSecret, encryptAurelinkDnsSecret, validateCloudflareZoneToken, applyCloudflareDnsRecords } from "../services/aurelink/communications-dns.service";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
@@ -8,6 +10,7 @@ import {
 } from "../services/aurelink/communications-domains.service";
 
 const router = Router();
+const hash = (value:string) => createHash("sha256").update(value).digest("hex");
 const emailProviders = new Set(["resend", "brevo"]);
 const senderProviders = new Set(["twilio", "brevo"]);
 
@@ -206,8 +209,11 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
  const found=(await pool.query("SELECT s.*,v.status AS website_status FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE s.id=$1",[req.params.id])).rows[0];
  if(!found)return res.status(404).json({success:false,message:"Sender registration request not found."});
  if(status==="security_passed"){
-  if(found.website_status!=="verified"||!found.evidence_fingerprint||!found.consent_evidence_reference||!Array.isArray(found.request_details?.registrationDocuments)||!found.request_details.registrationDocuments.length)return res.status(422).json({success:false,code:"SECURITY_GATE_INCOMPLETE",message:"Website verification, immutable evidence fingerprint, consent evidence and document references must exist before security review can pass."});
-  const updated=await pool.query("UPDATE aurelink_sender_ids SET security_review_status='passed',security_reviewed_at=NOW(),security_reviewed_by=$2,registration_state='ready_for_submission',last_security_reason=NULL,updated_at=NOW() WHERE id=$1 RETURNING id,status,registration_state,security_review_status,security_reviewed_at",[req.params.id,req.user!.userId]);
+  const checklist=req.body.securityChecklist||{};
+  const required=["legalBusinessVerified","brandOwnershipVerified","documentAuthenticityVerified","websiteContentVerified","privacyPolicyStatementVerified","termsContentVerified","consentEvidenceVerified","smsUseCaseVerified","countryRequirementsVerified"];
+  const missing=required.filter((key:string)=>checklist[key]!==true);
+  if(found.website_status!=="verified"||!found.evidence_fingerprint||!found.consent_evidence_reference||!Array.isArray(found.request_details?.registrationDocuments)||!found.request_details.registrationDocuments.length||found.request_details?.attestations?.documentsAreAuthentic!==true||missing.length)return res.status(422).json({success:false,code:"SECURITY_GATE_INCOMPLETE",missingChecks:missing,message:"Website ownership, legal/brand verification, original-document authenticity, policy content, opt-in evidence and destination-specific carrier requirements must all be manually verified before the security gate can pass."});
+  const updated=await pool.query("UPDATE aurelink_sender_ids SET security_review_status='passed',security_reviewed_at=NOW(),security_reviewed_by=$2,registration_state='ready_for_submission',last_security_reason=NULL,request_details=request_details||jsonb_build_object('securityChecklist',$3::jsonb,'securityChecklistCompletedAt',NOW()),updated_at=NOW() WHERE id=$1 RETURNING id,status,registration_state,security_review_status,security_reviewed_at",[req.params.id,req.user!.userId,JSON.stringify(checklist)]);
   return res.json({success:true,sender:updated.rows[0],providerSubmission:"not_submitted",note:"Security review passed. This does not submit to a carrier or approve the Sender ID."});
  }
  if(status==="security_failed"){
