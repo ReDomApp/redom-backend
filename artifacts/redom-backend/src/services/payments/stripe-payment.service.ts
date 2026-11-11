@@ -1038,6 +1038,10 @@ export async function stripeCallbackRedirect(reference:string,sessionId:string|u
           // Do not finalize here. The app must return immediately and enter
           // Processing payment while the authenticated verification endpoint
           // completes the authoritative trial setup.
+        }else if(String(session.metadata?.purpose||"").startsWith("aurelink_email_")&&String(session.payment_status)==="paid"){
+          await fulfillAurelinkEmailBillingCheckout(session);
+        }else if(String(session.metadata?.purpose||"").startsWith("aurelink_email_")&&status==="cancelled"){
+          await pool.query("UPDATE aurelink_email_billing_payments SET status='cancelled',updated_at=NOW() WHERE reference=$1 AND status='pending'",[reference]);
         }else if(String(session.payment_status)==="paid"){
           const attempt=await pool.query("SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[reference]);
           if(!attempt.rows[0])await markLegacyStripePaid(session);
