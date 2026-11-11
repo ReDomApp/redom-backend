@@ -96,7 +96,8 @@ router.post("/aurelink/admin/communications/email/pricing/options",aurelinkAuthM
     "INSERT INTO aurelink_email_plan_options(plan_id,monthly_email_allowance,monthly_price_minor,effective_from,created_by) VALUES($1,$2,$3,$4,$5) RETURNING id,monthly_email_allowance,monthly_price_minor,currency,effective_from",
     [plan.id,parsed.data.monthlyEmailAllowance,parsed.data.monthlyPriceMinor,effectiveFrom,req.user!.userId]
   );
-  await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,target_id,details) SELECT id,$2,'plan_option_created',$3,$4::jsonb FROM aurelink_communications_workspaces WHERE user_id=$2 AND project_id IS NULL",[String((await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND project_id IS NULL",[req.user!.userId])).rows[0]?.id||"00000000-0000-0000-0000-000000000000"),req.user!.userId,created.rows[0].id,JSON.stringify({planCode:parsed.data.planCode,allowance:parsed.data.monthlyEmailAllowance,priceMinor:parsed.data.monthlyPriceMinor})]).catch(()=>undefined);
+  const auditWorkspace=(await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND project_id IS NULL LIMIT 1",[req.user!.userId])).rows[0];
+  if(auditWorkspace)await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,target_id,details) VALUES($1,$2,'plan_option_created',$3,$4::jsonb)",[auditWorkspace.id,req.user!.userId,created.rows[0].id,JSON.stringify({planCode:parsed.data.planCode,allowance:parsed.data.monthlyEmailAllowance,priceMinor:parsed.data.monthlyPriceMinor})]);
   return res.status(201).json({success:true,option:created.rows[0]});
 });
 
