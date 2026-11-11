@@ -17,6 +17,9 @@ app.use("/whatsapp/webhook", express.raw({ type: "application/json", limit: "2mb
 app.use("/redom-backend/support/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/redom-backend/payments/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/redom-backend/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/redom-backend/v1/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/v1/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/support/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/ops/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/redom-backend/ops/email/webhook", express.raw({ type: "application/json", limit: "2mb" }));
