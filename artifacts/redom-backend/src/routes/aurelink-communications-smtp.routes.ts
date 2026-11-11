@@ -20,10 +20,15 @@ const CUSTOMER_SMTP = {
   provider: "Aurelink SMTP",
 };
 
-async function workspaceId(userId: string, projectId?: string): Promise<string> {
+async function workspaceId(userId: string, projectId?: string, requestedWorkspaceId?: string): Promise<string> {
+  if(requestedWorkspaceId){
+    const member=(await pool.query("SELECT w.id FROM aurelink_communications_workspaces w LEFT JOIN aurelink_communications_members m ON m.workspace_id=w.id AND m.accepted_user_id=$1 AND m.status='active' WHERE w.id=$2 AND w.status='active' AND (w.user_id=$1 OR m.accepted_user_id=$1)",[userId,requestedWorkspaceId])).rows[0];
+    if(!member)throw new Error("Aurelink workspace not found or access denied.");
+    return String(member.id);
+  }
   if (projectId) {
-    await pool.query("INSERT INTO aurelink_communications_workspaces(user_id,project_id) VALUES($1,$2) ON CONFLICT DO NOTHING", [userId, projectId]);
-    const row = (await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND project_id=$2 AND status='active'", [userId, projectId])).rows[0];
+    await pool.query("INSERT INTO aurelink_communications_workspaces(user_id,project_id) VALUES($1,$2) ON CONFLICT DO NOTHING", [userId,projectId]);
+    const row = (await pool.query("SELECT id FROM aurelink_communications_workspaces WHERE user_id=$1 AND project_id=$2 AND status='active'", [userId,projectId])).rows[0];
     if (!row) throw new Error("Aurelink project communications workspace is unavailable.");
     return String(row.id);
   }
@@ -62,7 +67,7 @@ async function saveCredential(input: {
 }
 
 router.get("/aurelink/communications/smtp/credentials", aurelinkAuthMiddleware, async (req, res) => {
-  const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId);
+  const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const rows = await pool.query(
     "SELECT c.id,c.label,c.status,c.created_at,c.updated_at,d.id AS domain_id,d.domain,d.status AS domain_status,c.last_used_at FROM aurelink_smtp_credentials c LEFT JOIN aurelink_email_domains d ON d.id=c.email_domain_id WHERE c.workspace_id=$1 AND c.provider_key_id IS NOT NULL ORDER BY c.created_at DESC",
     [wid],
@@ -71,7 +76,7 @@ router.get("/aurelink/communications/smtp/credentials", aurelinkAuthMiddleware, 
 });
 
 router.post("/aurelink/communications/smtp/credentials", aurelinkAuthMiddleware, async (req, res) => {
-  const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId);
+  const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const domainId = String(req.body.domainId || "").trim();
   const label = String(req.body.label || "SMTP credential").trim().slice(0, 120) || "SMTP credential";
   if (!domainId) return res.status(400).json({ success: false, code: "VERIFIED_RESEND_DOMAIN_REQUIRED", message: "Select an Aurelink sending domain verified with the internal email delivery provider." });
@@ -104,7 +109,7 @@ router.post("/aurelink/communications/smtp/credentials", aurelinkAuthMiddleware,
 });
 
 router.post("/aurelink/communications/smtp/credentials/:id/rotate", aurelinkAuthMiddleware, async (req, res) => {
-  const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId);
+  const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const old = (await pool.query(
     "SELECT c.id,c.label,c.provider_key_id,c.provider_domain_id,c.email_domain_id,d.domain,d.status AS domain_status FROM aurelink_smtp_credentials c JOIN aurelink_email_domains d ON d.id=c.email_domain_id AND d.workspace_id=c.workspace_id WHERE c.id=$1 AND c.workspace_id=$2 AND c.status='active' AND c.provider_key_id IS NOT NULL FOR UPDATE OF c",
     [req.params.id, wid],
@@ -142,7 +147,7 @@ router.post("/aurelink/communications/smtp/credentials/:id/rotate", aurelinkAuth
 });
 
 router.delete("/aurelink/communications/smtp/credentials/:id", aurelinkAuthMiddleware, async (req, res) => {
-  const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId);
+  const wid = await workspaceId(req.user!.userId, (req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
   const row = (await pool.query(
     "SELECT id,provider_key_id FROM aurelink_smtp_credentials WHERE id=$1 AND workspace_id=$2 AND status='active' AND provider_key_id IS NOT NULL",
     [req.params.id, wid],
