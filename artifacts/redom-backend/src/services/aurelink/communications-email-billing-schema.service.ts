@@ -195,13 +195,14 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       ON aurelink_email_usage_reservations(workspace_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS aurelink_email_billing_audit (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      workspace_id UUID REFERENCES aurelink_communications_workspaces(id) ON DELETE SET NULL,
       actor_user_id UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
       action VARCHAR(48) NOT NULL,
       target_id UUID,
       details JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_email_billing_audit ALTER COLUMN workspace_id DROP NOT NULL;
     CREATE INDEX IF NOT EXISTS aurelink_email_billing_audit_workspace_idx
       ON aurelink_email_billing_audit(workspace_id,created_at DESC);
     CREATE OR REPLACE FUNCTION aurelink_block_email_billing_ledger_mutation() RETURNS trigger
