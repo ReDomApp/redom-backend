@@ -285,7 +285,6 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to apply Sender ID security restriction."});}
   finally{client.release();}
  }
- }
  if(found.security_review_status!=="passed"||!["ready_for_submission","submitted"].includes(String(found.registration_state)))return res.status(423).json({success:false,code:"SECURITY_GATE_NOT_PASSED",message:"Provider submission and approval are blocked until Aurelink security review has passed."});
  if(status==="submitted"&&!providerReference)return res.status(400).json({success:false,message:"A real provider registration reference is required."});
  if(status==="approved"){
