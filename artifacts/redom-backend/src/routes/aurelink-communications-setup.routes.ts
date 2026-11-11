@@ -18,7 +18,7 @@ const senderEvidenceR2 = new S3Client({
  credentials: { accessKeyId: env.cloudflare.r2.accessKeyId, secretAccessKey: env.cloudflare.r2.secretAccessKey },
 });
 function parseSenderEvidenceDataUri(value:string){
- const match=/^data:(application\\/pdf|image\\/jpeg|image\\/png);base64,([A-Za-z0-9+/=]+)$/.exec(value);
+ const match=/^data:(application\/pdf|image\/jpeg|image\/png);base64,([A-Za-z0-9+/=]+)$/.exec(value);
  if(!match)throw new Error("Evidence files must be PDF, JPEG or PNG.");
  const mime=match[1],body=Buffer.from(match[2],"base64");
  if(!body.length||body.length>10*1024*1024)throw new Error("Each evidence file must be between 1 byte and 10 MB.");
