@@ -77,7 +77,8 @@ test("SMS segment calculation handles GSM-7, extension characters and Unicode", 
   assert.equal(countSmsSegments("A".repeat(161)), 2);
   assert.equal(countSmsSegments("^".repeat(80)), 1);
   assert.equal(countSmsSegments("^".repeat(81)), 2);
-  assert.equal(countSmsSegments("é".repeat(70)), 1);
-  assert.equal(countSmsSegments("é".repeat(71)), 2);
+  assert.equal(countSmsSegments("é".repeat(71)), 1);
+  assert.equal(countSmsSegments("漢".repeat(70)), 1);
+  assert.equal(countSmsSegments("漢".repeat(71)), 2);
   assert.equal(countSmsSegments("😀".repeat(36)), 2);
 });
