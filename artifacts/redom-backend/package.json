@@ -11,7 +11,8 @@
     "test:fbi-security": "node --experimental-strip-types --test ../fbi-security/tests/fbi-wanted-profile.test.ts",
     "test:aurelink-renewal": "node --test ../aurelink/tests/dedicated-renewal-contract.test.mjs",
     "test:aurelink-pricing": "node --experimental-strip-types --test ../aurelink/tests/pricing.test.mjs",
-    "test:aurelink-communications": "node --experimental-strip-types --test ../aurelink/tests/communications-webhook.test.ts"
+    "test:aurelink-communications": "node --experimental-strip-types --test ../aurelink/tests/communications-webhook.test.ts",
+    "test:aurelink-countries": "node --experimental-strip-types --test ../aurelink/tests/sms-country-registry.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1097.0",
