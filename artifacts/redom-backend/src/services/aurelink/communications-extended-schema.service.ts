@@ -24,6 +24,7 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       ADD COLUMN IF NOT EXISTS sms_purpose VARCHAR(24),
       ADD COLUMN IF NOT EXISTS sender_type VARCHAR(32) NOT NULL DEFAULT 'alphanumeric',
       ADD COLUMN IF NOT EXISTS last_security_reason TEXT;
+    ALTER TABLE aurelink_verified_websites ADD COLUMN IF NOT EXISTS verification_expires_at TIMESTAMPTZ;
     ALTER TABLE aurelink_sender_ids DROP CONSTRAINT IF EXISTS aurelink_sender_ids_registration_state_check;
     ALTER TABLE aurelink_sender_ids ADD CONSTRAINT aurelink_sender_ids_registration_state_check
       CHECK (registration_state IN ('draft','verification_required','security_review','ready_for_submission','submitted','approved','rejected','suspended'));
@@ -113,6 +114,7 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       website_url TEXT NOT NULL,
       verification_method VARCHAR(32) NOT NULL CHECK (verification_method IN ('dns_txt','https_file','admin_attestation')),
       verification_token_hash CHAR(64),
+      verification_expires_at TIMESTAMPTZ,
       status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','verified','failed','revoked')),
       verified_at TIMESTAMPTZ,
       verified_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
