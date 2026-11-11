@@ -8,7 +8,7 @@ import {
 } from "../services/aurelink/communications-providers.service";
 import { enqueueAurelinkMessage, retryAurelinkMessage } from "../services/aurelink/communications-worker.service";
 import { emitAurelinkWebhookEvent } from "../services/aurelink/developer-platform.service";
-import { isAurelinkE164ForCountry, getAurelinkSmsCountry } from "../services/aurelink/sms-country-registry";
+import { isAurelinkE164ForCountry, getAurelinkSmsCountry, isAurelinkBrevoSenderFormatValid } from "../services/aurelink/sms-country-registry";
 
 const router = Router();
 
@@ -172,7 +172,7 @@ router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (
   if(!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported SMS provider."});
   const category=req.body.category==="marketing"?"marketing":req.body.category==="otp"?"otp":req.body.category==="notification"?"notification":"transactional";
   const recipient=String(req.body.recipient||""),sender=String(req.body.sender||""),countryCode=String(req.body.countryCode||"").toUpperCase(),content=String(req.body.content||""),webUrl=typeof req.body.webUrl==="string"?req.body.webUrl:undefined;
-  const senderValid=["US","CA"].includes(countryCode)?/^\+1(?:800|833|844|855|866|877|888)\d{7}$/.test(sender):/^[A-Za-z0-9]{3,11}$/.test(sender)&&/[A-Za-z]/.test(sender);
+  const senderValid=isAurelinkBrevoSenderFormatValid(sender,countryCode);
   if(!/^\+[1-9]\d{7,14}$/.test(recipient)||!senderValid||!getAurelinkSmsCountry(countryCode)||!isAurelinkE164ForCountry(recipient,countryCode)||!content.trim()||content.length>5000)return res.status(400).json({success:false,code:"INVALID_OR_UNSUPPORTED_DESTINATION",message:"Provide a supported Aurelink destination, E.164 recipient and sender format permitted for that country."});
   try{
     const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined);
@@ -371,7 +371,7 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
     if(campaign.channel==="sms"&&!getAurelinkSmsCountry(countryCode)){await client.query("ROLLBACK");return res.status(400).json({success:false,code:"SMS_DESTINATION_UNSUPPORTED",message:"SMS campaigns require an Aurelink-supported ISO destination country."});}
     if(campaign.channel==="sms"&&typeof req.body.webUrl!=="string") {await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
     if(!sender){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"An approved sender is required to start a campaign."});}
-    if(campaign.channel==="sms"&&(["US","CA"].includes(countryCode)?!/^\+1(?:800|833|844|855|866|877|888)\d{7}$/.test(sender):!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender))||campaign.channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"The campaign sender is invalid for the selected channel."});}
+    if(campaign.channel==="sms"&&!isAurelinkBrevoSenderFormatValid(sender,countryCode)||campaign.channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)){await client.query("ROLLBACK");return res.status(400).json({success:false,message:"The campaign sender is invalid for the selected channel."});}
     if(campaign.channel==="sms"){
       if(!await approvedSmsSender(wid,sender,provider,countryCode)){await client.query("ROLLBACK");return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"This sender ID is not approved for the selected provider and destination country."});}
       try{if(new URL(String(req.body.webUrl)).protocol!=="https:")throw new Error("invalid");}catch{await client.query("ROLLBACK");return res.status(400).json({success:false,message:"SMS campaigns require an HTTPS opt-out/event webUrl."});}
@@ -422,7 +422,7 @@ router.post("/aurelink/verify/start",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId, String(req.headers["x-aurelink-workspace-id"]||"") || undefined),code=createOtpCode(),salt=randomUUID(),expiresAt=new Date(Date.now()+5*60*1000),provider=String(channel==="email"?(process.env.AURELINK_DEFAULT_EMAIL_PROVIDER||"resend"):(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo"));
   if(channel==="email"&&!EMAIL_PROVIDERS.has(provider)||channel==="sms"&&!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported verification provider."});
   const sender=String(req.body.sender||""),countryCode=String(req.body.countryCode||"").toUpperCase();
-  if(channel==="sms"&&(["US","CA"].includes(countryCode)?!/^\+1(?:800|833|844|855|866|877|888)\d{7}$/.test(sender):(!/^[A-Za-z0-9]{3,11}$/.test(sender)||!/[A-Za-z]/.test(sender)))return res.status(400).json({success:false,message:"SMS sender must be an approved alphanumeric Sender ID or registered US/Canada toll-free number."});
+  if(channel==="sms"&&!isAurelinkBrevoSenderFormatValid(sender,countryCode))return res.status(400).json({success:false,message:"SMS sender must be an approved alphanumeric Sender ID or registered US/Canada toll-free number."});
   if(channel==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender))return res.status(400).json({success:false,message:"A valid sender email address is required."});
    if(channel==="sms"&&(!getAurelinkSmsCountry(countryCode)||!isAurelinkE164ForCountry(destination,countryCode)||!await approvedSmsSender(wid,sender,provider,countryCode)))return res.status(403).json({success:false,code:"SMS_SENDER_NOT_APPROVED",message:"An approved sender ID for the destination country is required."});
    if(channel==="email"&&!await verifiedEmailSender(wid,sender,provider))return res.status(403).json({success:false,code:"EMAIL_DOMAIN_NOT_VERIFIED",message:"Verify the sender domain with the selected provider before sending verification email."});
