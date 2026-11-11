@@ -189,6 +189,11 @@ router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,a
   return res.status(201).json({success:true,document:saved.rows[0],security:"File bytes were validated and SHA-256 was computed by Aurelink before private storage. The file is not publicly accessible."});
  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to securely upload Sender ID evidence."});}
 });
+router.get("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+ const rows=await pool.query("SELECT id,original_filename,mime_type,byte_size,sha256,status,sender_application_id,created_at,updated_at FROM aurelink_sender_evidence_documents WHERE workspace_id=$1 AND uploaded_by_user_id=$2 ORDER BY created_at DESC LIMIT 100",[wid,req.user!.userId]);
+ return res.json({success:true,documents:rows.rows});
+});
 router.delete("/aurelink/communications/senders/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
  const row=(await pool.query("SELECT id,object_key FROM aurelink_sender_evidence_documents WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[req.params.documentId,wid,req.user!.userId])).rows[0];
