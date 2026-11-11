@@ -25,6 +25,14 @@ async function workspaceId(userId:string,projectId?:string,requested?:string):Pr
   return String(row.rows[0].id);
 }
 
+async function canManageBilling(userId:string,wid:string):Promise<boolean>{
+  const row=(await pool.query(
+    "SELECT w.user_id,m.role FROM aurelink_communications_workspaces w LEFT JOIN aurelink_communications_members m ON m.workspace_id=w.id AND m.accepted_user_id=$1 AND m.status='active' WHERE w.id=$2 AND (w.user_id=$1 OR m.accepted_user_id=$1) LIMIT 1",
+    [userId,wid]
+  )).rows[0];
+  return Boolean(row&&(String(row.user_id)===userId||["owner","admin","billing"].includes(String(row.role||""))));
+}
+
 router.get("/aurelink/communications/email/billing/plans",aurelinkAuthMiddleware,async(_req,res)=>{
   const plans=await pool.query(
     `SELECT p.id,p.plan_code,p.display_name,p.min_monthly_emails,p.max_monthly_emails,p.daily_limit,p.features,p.enterprise,
@@ -54,6 +62,7 @@ router.post("/aurelink/communications/email/billing/checkout",aurelinkAuthMiddle
   if(parsed.data.purchaseType==="email_credits"&&!parsed.data.creditPackId)return res.status(400).json({success:false,message:"Select a prepaid email credit pack."});
   try{
     const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+    if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
     const result=await createAurelinkEmailBillingCheckout({
       userId:req.user!.userId,workspaceId:wid,purchaseType:parsed.data.purchaseType,
       planOptionId:parsed.data.planOptionId,creditPackId:parsed.data.creditPackId
@@ -118,6 +127,7 @@ router.patch("/aurelink/communications/email/billing/mode",aurelinkAuthMiddlewar
   const parsed=z.object({mode:z.enum(["free","payg"])}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"Choose Free or Pay-as-you-go billing mode."});
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
   const active=await pool.query("SELECT id FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status IN ('active','past_due','pending_payment') LIMIT 1",[wid]);
   if(active.rows[0])return res.status(409).json({success:false,code:"ACTIVE_SUBSCRIPTION_EXISTS",message:"Cancel or resolve the current monthly subscription before changing billing mode."});
   await pool.query(
@@ -130,6 +140,7 @@ router.patch("/aurelink/communications/email/billing/mode",aurelinkAuthMiddlewar
 
 router.post("/aurelink/communications/email/billing/cancel",aurelinkAuthMiddleware,async(req,res)=>{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
   try{
     const result=await cancelAurelinkEmailSubscription(req.user!.userId,wid);
     await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'subscription_cancel_scheduled',$3::jsonb)",[wid,req.user!.userId,JSON.stringify({stripeSubscriptionId:result.subscriptionId,periodEnd:result.periodEnd.toISOString()})]);
@@ -141,6 +152,7 @@ router.patch("/aurelink/communications/email/billing/prepaid-fallback",aurelinkA
   const parsed=z.object({enabled:z.boolean()}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"enabled must be a boolean."});
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
   const updated=await pool.query(
     "UPDATE aurelink_email_subscriptions SET allow_prepaid_fallback=$2,updated_at=NOW() WHERE id=(SELECT id FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status='active' ORDER BY created_at DESC LIMIT 1) RETURNING id,allow_prepaid_fallback",
     [wid,parsed.data.enabled]
