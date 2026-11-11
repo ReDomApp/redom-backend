@@ -9,8 +9,13 @@ export interface SendEmailInput { recipient:string; sender:string; senderName?:s
 export interface ProviderSendResult { provider:string; providerMessageId:string; acceptedAt:string; }
 
 export class ProviderSubmissionError extends Error {
-  constructor(message:string,readonly outcome:"rejected"|"unknown",readonly retryable:boolean=false){
-    super(message);this.name="ProviderSubmissionError";
+  readonly outcome:"rejected"|"unknown";
+  readonly retryable:boolean;
+  constructor(message:string,outcome:"rejected"|"unknown",retryable:boolean=false){
+    super(message);
+    this.name="ProviderSubmissionError";
+    this.outcome=outcome;
+    this.retryable=retryable;
   }
 }
 export function classifyProviderHttpStatus(status:number):{outcome:"rejected"|"unknown";retryable:boolean}{
