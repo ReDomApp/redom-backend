@@ -71,8 +71,9 @@ async function refundCommunicationCharge(messageId:string){
  finally{client.release();}
 }
 async function processOne(row:any){
+ let payload:JobPayload|undefined;
  try{
-  const payload=JSON.parse(decrypt(row.payload_encrypted)) as JobPayload;
+  payload=JSON.parse(decrypt(row.payload_encrypted)) as JobPayload;
   let result:any;
   await pool.query("UPDATE aurelink_communications_jobs SET submission_state='in_flight',updated_at=NOW() WHERE id=$1 AND status='processing'",[row.id]);
   if(payload.channel==="sms"){
@@ -115,7 +116,7 @@ async function processOne(row:any){
     await pool.query("UPDATE aurelink_communications_jobs SET status='manual_review',submission_state='unknown',last_error=$2,locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.id,message.slice(0,500)]);
     await pool.query("UPDATE aurelink_messages SET status='unknown',provider_error=$2,updated_at=NOW() WHERE id=$1",[row.message_id,message.slice(0,500)]);
     await pool.query("UPDATE aurelink_communications_usage SET status='queued',updated_at=NOW() WHERE message_id=$1",[row.message_id]);
-    if(payload.channel==="email"){const billingClient=await pool.connect();try{await billingClient.query("BEGIN");await markAurelinkEmailUsageUnknown(billingClient,String(row.message_id));await billingClient.query("COMMIT");}catch(error){await billingClient.query("ROLLBACK").catch(()=>undefined);throw error;}finally{billingClient.release();}}
+    if(payload?.channel==="email"){const billingClient=await pool.connect();try{await billingClient.query("BEGIN");await markAurelinkEmailUsageUnknown(billingClient,String(row.message_id));await billingClient.query("COMMIT");}catch(error){await billingClient.query("ROLLBACK").catch(()=>undefined);throw error;}finally{billingClient.release();}}
     return;
   }
   const definitiveRejection=error instanceof ProviderSubmissionError&&error.outcome==="rejected"&&!error.retryable;
