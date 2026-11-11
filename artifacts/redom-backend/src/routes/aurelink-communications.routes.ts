@@ -38,8 +38,8 @@ router.post("/aurelink/webhooks/resend", async (req,res) => {
     const apiMatches=messageId?await pool.query("SELECT id FROM aurelink_messages WHERE provider='resend' AND provider_message_id=$1 LIMIT 1",[messageId]):{rows:[]};
     const recipient=Array.isArray(event?.data?.to)?String(event.data.to[0]||"").replace(/^.*<([^>]+)>.*$/,"$1").trim().toLowerCase():"";
     const smtpMatches=await pool.query(
-      "SELECT workspace_id,message_key FROM aurelink_smtp_messages WHERE provider='resend' AND (($1<>'' AND client_message_id=$1 AND ($3='' OR recipients @> $4::jsonb)) OR ($2<>'' AND provider_message_id=$2)) LIMIT 100",
-      [clientMessageId,messageId,recipient,JSON.stringify(recipient?[recipient]:[])]
+      "SELECT workspace_id,message_key FROM aurelink_smtp_messages WHERE provider='resend' AND (($1<>'' AND client_message_id=$1 AND ($3='' OR EXISTS(SELECT 1 FROM jsonb_array_elements_text(recipients) AS recipient_value WHERE lower(recipient_value)=lower($3)))) OR ($2<>'' AND provider_message_id=$2)) LIMIT 100",
+      [clientMessageId,messageId,recipient]
     );
     if(!apiMatches.rows.length&&!smtpMatches.rows.length){
       return res.status(503).json({received:false,retry:true,message:"No Aurelink message matches this Resend event yet; retry after the submission record is committed."});
