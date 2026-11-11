@@ -3,10 +3,10 @@ export class AurelinkError extends Error {
   constructor(message,{status=0,code="AURELINK_ERROR",requestId=null,retryAfter=null,rateLimitLimit=null,rateLimitRemaining=null,details=null}={}){super(message);this.name="AurelinkError";this.status=status;this.code=code;this.requestId=requestId;this.retryAfter=retryAfter;this.rateLimitLimit=rateLimitLimit;this.rateLimitRemaining=rateLimitRemaining;this.details=details;}
 }
 export class Aurelink {
-  constructor({apiKey,baseUrl="https://redom-backend.onrender.com/redom-backend/v1",fetch:fetchImpl=globalThis.fetch,timeoutMs=20000}={}){
+  constructor({apiKey,baseUrl="https://redom-backend.onrender.com/redom-backend/v1",fetch:fetchImpl=globalThis.fetch,timeoutMs=20000,workspaceId}={}){
     if(!apiKey||typeof apiKey!=="string")throw new TypeError("Aurelink apiKey is required.");
     if(typeof fetchImpl!=="function")throw new TypeError("Aurelink requires a Fetch-compatible implementation.");
-    this.apiKey=apiKey;this.baseUrl=String(baseUrl).replace(/\/+$/,"");this.fetch=fetchImpl;this.timeoutMs=timeoutMs;
+    this.apiKey=apiKey;this.baseUrl=String(baseUrl).replace(/\/+$/,"");this.fetch=fetchImpl;this.timeoutMs=timeoutMs;this.workspaceId=workspaceId||null;
     this.services={list:(query)=>this.request("GET","/aurelink/catalog/services",{query})};
     this.countries={list:(query)=>this.request("GET","/aurelink/catalog/countries",{query})};
     this.orders={list:(query)=>this.request("GET","/aurelink/orders",{query})};
@@ -113,7 +113,7 @@ export class Aurelink {
   async request(method,path,{query,body,headers={},idempotencyKey,timeoutMs}={}){
     const url=new URL(this.baseUrl+path);
     if(query&&typeof query==="object")for(const [key,value] of Object.entries(query)){if(value!==undefined&&value!==null)url.searchParams.set(key,String(value));}
-    const requestHeaders={Accept:"application/json",Authorization:"Bearer "+this.apiKey,...headers};
+    const requestHeaders={Accept:"application/json",Authorization:"Bearer "+this.apiKey,...(this.workspaceId?{"X-Aurelink-Workspace-Id":this.workspaceId}:{}),...headers};
     if(body!==undefined)requestHeaders["Content-Type"]="application/json";
     if(idempotencyKey)requestHeaders["Idempotency-Key"]=String(idempotencyKey);
     let response;
