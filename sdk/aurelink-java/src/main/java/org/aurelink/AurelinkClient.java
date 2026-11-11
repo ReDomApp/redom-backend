@@ -17,14 +17,17 @@ public final class AurelinkClient {
   private static final String DEFAULT_BASE_URL = "https://redom-backend.onrender.com/redom-backend/v1";
   private final String apiKey;
   private final String baseUrl;
+  private final String workspaceId;
   private final HttpClient http;
   private final ObjectMapper json = new ObjectMapper();
 
-  public AurelinkClient(String apiKey) { this(apiKey, DEFAULT_BASE_URL); }
-  public AurelinkClient(String apiKey, String baseUrl) {
+  public AurelinkClient(String apiKey) { this(apiKey, DEFAULT_BASE_URL, null); }
+  public AurelinkClient(String apiKey, String baseUrl) { this(apiKey, baseUrl, null); }
+  public AurelinkClient(String apiKey, String baseUrl, String workspaceId) {
     if (apiKey == null || apiKey.trim().isEmpty()) throw new IllegalArgumentException("Aurelink API key is required.");
     this.apiKey = apiKey.trim();
     this.baseUrl = (baseUrl == null ? DEFAULT_BASE_URL : baseUrl).replaceAll("/+$", "");
+    this.workspaceId = workspaceId;
     this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build();
   }
 
@@ -34,6 +37,7 @@ public final class AurelinkClient {
       .timeout(Duration.ofSeconds(25))
       .header("Accept", "application/json")
       .header("Authorization", "Bearer " + apiKey);
+    if (workspaceId != null && !workspaceId.trim().isEmpty()) builder.header("X-Aurelink-Workspace-Id", workspaceId.trim());
     if (idempotencyKey != null && !idempotencyKey.isEmpty()) builder.header("Idempotency-Key", idempotencyKey);
     if (body != null) {
       builder.header("Content-Type", "application/json");
