@@ -91,7 +91,7 @@ async function processOne(row:any){
   await pool.query("UPDATE aurelink_communications_usage SET provider=$2,status='accepted',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
   const billingClient=await pool.connect();
   try { await billingClient.query("BEGIN"); await captureAurelinkUsage(billingClient,String(row.message_id)); await billingClient.query("COMMIT"); }
-  catch(error) { await billingClient.query("ROLLBACK").catch(()=>undefined); throw error; }
+  catch(error) { await billingClient.query("ROLLBACK").catch(()=>undefined); console.error("[Aurelink usage capture]",error instanceof Error?error.message:"unknown error"); }
   finally { billingClient.release(); }
   await pool.query("UPDATE aurelink_verification_sessions SET provider_message_id=$2,updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1)",[row.message_id,result.providerMessageId]);
   await finalizeCampaign(row.message_id);
