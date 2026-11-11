@@ -8,16 +8,31 @@ export interface SendSmsInput { recipient:string; sender:string; content:string;
 export interface SendEmailInput { recipient:string; sender:string; senderName?:string; subject:string; html?:string; text?:string; replyTo?:string; tags?:string[]; attachments?:Array<{filename:string;content:string;contentType?:string}>; }
 export interface ProviderSendResult { provider:string; providerMessageId:string; acceptedAt:string; }
 
+export class ProviderSubmissionError extends Error {
+  constructor(message:string,readonly outcome:"rejected"|"unknown",readonly retryable:boolean=false){
+    super(message);this.name="ProviderSubmissionError";
+  }
+}
 const timeoutMs = 12_000;
 async function jsonRequest(url:string,init:RequestInit):Promise<any>{
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-    const response=await fetch(url,{...init,signal:controller.signal}),body=await response.text();
+    let response:Response;
+    try{response=await fetch(url,{...init,signal:controller.signal});}
+    catch(error){
+      const detail=error instanceof Error&&error.name==="AbortError"?"Communication provider timed out.":"Communication provider connection failed; acceptance could not be determined.";
+      throw new ProviderSubmissionError(detail,"unknown",true);
+    }
+    const body=await response.text();
     let parsed:any;try{parsed=body?JSON.parse(body):{};}catch{parsed={message:body.slice(0,300)};}
-    if(!response.ok){const detail=typeof parsed?.message==="string"?parsed.message:typeof parsed?.code==="string"?parsed.code:"Provider request rejected.";throw new Error(`Provider HTTP ${response.status}: ${detail.slice(0,300)}`);}
+    if(!response.ok){
+      const detail=typeof parsed?.message==="string"?parsed.message:typeof parsed?.code==="string"?parsed.code:"Provider request rejected.";
+      const retryable=response.status===408||response.status===425||response.status===429||response.status>=500;
+      const outcome: "rejected"|"unknown"=response.status>=500||response.status===408||response.status===425?"unknown":"rejected";
+      throw new ProviderSubmissionError(`Provider HTTP ${response.status}: ${detail.slice(0,300)}`,outcome,retryable);
+    }
     return parsed;
-  }catch(error){if(error instanceof Error&&error.name==="AbortError")throw new Error("Communication provider timed out.");throw error;}
-  finally{clearTimeout(timer);}
+  }finally{clearTimeout(timer);}
 }
 const sha256=(s:string)=>createHash("sha256").update(s).digest("hex");
 
