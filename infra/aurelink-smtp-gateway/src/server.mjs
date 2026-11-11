@@ -114,16 +114,23 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
       [messageId,user.workspaceId,JSON.stringify(recipients),envelopeFrom,String(parsed.subject || ""),contentHash,JSON.stringify({transport:"smtp",credentialId:user.credentialId,recipientCount:units,clientMessageId:parsed.messageId || null})]
     );
 
+    await client.query(
+      "INSERT INTO aurelink_email_billing_accounts(workspace_id,user_id) SELECT id,user_id FROM aurelink_communications_workspaces WHERE id=$1 ON CONFLICT(workspace_id) DO NOTHING",
+      [user.workspaceId]
+    );
+    const account=(await client.query("SELECT billing_mode FROM aurelink_email_billing_accounts WHERE workspace_id=$1 FOR UPDATE",[user.workspaceId])).rows[0];
+    const billingMode=String(account?.billing_mode||"payg");
     const subscriptionResult = await client.query(
       `SELECT id,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback
          FROM aurelink_email_subscriptions
-        WHERE workspace_id=$1 AND user_id=$2 AND status='active'
+        WHERE workspace_id=$1 AND status='active'
           AND billing_period_start<=NOW() AND billing_period_end>NOW()
         ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
-      [user.workspaceId,user.userId]
+      [user.workspaceId]
     );
     const subscription = subscriptionResult.rows[0];
     let source = null;
+    let usageDate = null;
     if (subscription) {
       const remaining = BigInt(String(subscription.monthly_email_allowance)) - BigInt(String(subscription.used_emails)) - BigInt(String(subscription.reserved_emails));
       if (remaining >= BigInt(units)) {
@@ -131,6 +138,21 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
         source = "subscription";
       } else if (!subscription.allow_prepaid_fallback) {
         throw smtpError("The monthly Aurelink Mail allowance is exhausted. Upgrade the package, enable prepaid fallback, or wait for renewal.",452);
+      }
+    }
+    if (!subscription && billingMode === "subscription") {
+      throw smtpError("Your Aurelink Mail subscription is not active. Renew it or switch the workspace to Pay-as-you-go.",452);
+    }
+    if (!subscription && billingMode === "free") {
+      const limitResult=await client.query("SELECT daily_limit FROM aurelink_email_plan_catalog WHERE plan_code='free' AND active=TRUE");
+      const dailyLimit=Number(limitResult.rows[0]?.daily_limit||100);
+      await client.query("INSERT INTO aurelink_email_free_daily_usage(workspace_id,usage_date) VALUES($1,CURRENT_DATE) ON CONFLICT(workspace_id,usage_date) DO NOTHING",[user.workspaceId]);
+      const daily=(await client.query("SELECT usage_date,used_emails,reserved_emails FROM aurelink_email_free_daily_usage WHERE workspace_id=$1 AND usage_date=CURRENT_DATE FOR UPDATE",[user.workspaceId])).rows[0];
+      const remaining=BigInt(dailyLimit)-BigInt(String(daily.used_emails))-BigInt(String(daily.reserved_emails));
+      if(remaining>=BigInt(units)){
+        await client.query("UPDATE aurelink_email_free_daily_usage SET reserved_emails=reserved_emails+$2,updated_at=NOW() WHERE workspace_id=$1 AND usage_date=CURRENT_DATE",[user.workspaceId,units]);
+        source="free";
+        usageDate=String(daily.usage_date);
       }
     }
 
@@ -147,8 +169,8 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
           [user.workspaceId,user.userId,units,next.toString(),reference,JSON.stringify({messageId,credentialId:user.credentialId,recipients:units})]
         );
         source = "prepaid";
-      } else if (subscription) {
-        throw smtpError("The monthly Aurelink Mail allowance and prepaid email credits are insufficient.",452);
+      } else if (subscription || billingMode === "free") {
+        throw smtpError("The monthly/daily Aurelink Mail allowance and prepaid email credits are insufficient.",452);
       }
     }
 
@@ -178,7 +200,7 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
 
     await client.query(
       "INSERT INTO aurelink_email_usage_reservations(message_id,user_id,workspace_id,source,subscription_id,units,unit_price_minor,amount_minor,wallet_reference,status,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved',$10::jsonb)",
-      [messageId,user.userId,user.workspaceId,source,source==="subscription"?subscription.id:null,units,unitPriceMinor,amountMinor,reference,JSON.stringify({transport:"smtp",provider:"resend",credentialId:user.credentialId})]
+      [messageId,user.userId,user.workspaceId,source,source==="subscription"?subscription.id:null,units,unitPriceMinor,amountMinor,reference,JSON.stringify({transport:"smtp",provider:"resend",credentialId:user.credentialId,usageDate})]
     );
     await client.query(
       "INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,'email','resend','transactional',$3,'queued',$4,$5)",
@@ -202,6 +224,9 @@ async function captureSmtpUsage(user, reservation, info, mailFrom, recipients) {
       if (usage.source === "subscription") {
         const updated = await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails-$2,used_emails=used_emails+$2,updated_at=NOW() WHERE id=$1 AND reserved_emails >= $2",[usage.subscription_id,usage.units]);
         if (!updated.rowCount) throw new Error("Aurelink email subscription reservation mismatch.");
+      } else if (usage.source === "free") {
+        const updated=await client.query("UPDATE aurelink_email_free_daily_usage SET reserved_emails=reserved_emails-$3,used_emails=used_emails+$3,updated_at=NOW() WHERE workspace_id=$1 AND usage_date=$2::date AND reserved_emails >= $3",[usage.workspace_id,usage.metadata?.usageDate,usage.units]);
+        if (!updated.rowCount) throw new Error("Aurelink Free daily reservation mismatch.");
       } else if (usage.source === "wallet") {
         await client.query("UPDATE aurelink_communications_billing_ledger SET status='posted',updated_at=NOW() WHERE message_id=$1 AND entry_type='charge' AND status='reserved'",[reservation.messageId]);
       }
@@ -226,6 +251,9 @@ async function refundSmtpUsage(user, reservation, reason) {
       if (usage.source === "subscription") {
         const updated = await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails-$2,updated_at=NOW() WHERE id=$1 AND reserved_emails >= $2",[usage.subscription_id,usage.units]);
         if (!updated.rowCount) throw new Error("Aurelink email subscription reservation mismatch.");
+      } else if (usage.source === "free") {
+        const updated=await client.query("UPDATE aurelink_email_free_daily_usage SET reserved_emails=reserved_emails-$3,updated_at=NOW() WHERE workspace_id=$1 AND usage_date=$2::date AND reserved_emails >= $3",[usage.workspace_id,usage.metadata?.usageDate,usage.units]);
+        if (!updated.rowCount) throw new Error("Aurelink Free daily reservation mismatch.");
       } else if (usage.source === "prepaid") {
         const wallet = (await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=balance_emails+$2,updated_at=NOW() WHERE workspace_id=$1 RETURNING balance_emails",[user.workspaceId,usage.units])).rows[0];
         if (!wallet) throw new Error("Aurelink prepaid email credit wallet is missing.");
