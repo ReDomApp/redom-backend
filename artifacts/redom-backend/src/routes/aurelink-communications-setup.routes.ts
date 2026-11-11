@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { createHash, randomBytes, createCipheriv, createDecipheriv, timingSafeEqual } from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
-import { isAurelinkBrevoSenderFormatValid } from "../services/aurelink/sms-country-registry";
+import { isAurelinkBrevoSenderFormatValid, requiresAurelinkBrevoNumberSender } from "../services/aurelink/sms-country-registry";
 import { decryptAurelinkDnsSecret, encryptAurelinkDnsSecret, validateCloudflareZoneToken, applyCloudflareDnsRecords } from "../services/aurelink/communications-dns.service";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
@@ -192,6 +192,7 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   if(!/^[A-Z]{2}$/.test(countryCode))return res.status(400).json({success:false,message:"A two-letter ISO destination country code is required."});
   const supportedCountry=(await pool.query("SELECT country_code,country_name,calling_code FROM aurelink_sms_supported_countries WHERE country_code=$1 AND enabled=true",[countryCode])).rows[0];
   if(!supportedCountry)return res.status(422).json({success:false,code:"SMS_DESTINATION_UNSUPPORTED",message:"Aurelink does not currently support SMS delivery or Sender ID registration for this destination."});
+  if(requiresAurelinkBrevoNumberSender(countryCode)&&!["US","CA"].includes(countryCode))return res.status(501).json({success:false,code:"NANP_PROVIDER_NUMBER_WORKFLOW_REQUIRED",message:"This +1 destination requires a Brevo-provided or ported number sender (10DLC, short code or toll-free). The dedicated number-based registration workflow is not enabled yet; this request has not been submitted."});
   if(senderType!=="alphanumeric"&&senderType!=="toll_free")return res.status(400).json({success:false,message:"Unsupported sender type."});
   if(["US","CA"].includes(countryCode)){
    if(senderType!=="toll_free"||!isAurelinkBrevoSenderFormatValid(sender,countryCode))return res.status(422).json({success:false,code:"TOLL_FREE_NUMBER_REQUIRED",message:"US and Canada require a valid +1 toll-free number registration; alphanumeric Sender IDs are not accepted."});
