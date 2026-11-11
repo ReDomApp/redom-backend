@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomInt } from "node:crypto";
 import { Resend } from "resend";
+import { isAurelinkBrevoSenderFormatValid } from "./sms-country-registry";
 
 type SmsProvider = "brevo" | "twilio";
 type EmailProvider = "resend" | "brevo";
@@ -64,8 +65,7 @@ async function sendBrevoEmail(input:SendEmailInput):Promise<ProviderSendResult>{
 /** Provider adapters deliver only; Aurelink owns consent, OTP lifecycle, metering and customer billing. */
 export async function sendAurelinkSms(provider:SmsProvider,input:SendSmsInput):Promise<ProviderSendResult>{
   if(!/^\+?[1-9]\d{7,14}$/.test(input.recipient))throw new Error("Enter a valid E.164 SMS recipient.");
-  const tollFree=["US","CA"].includes(String(input.countryCode||"").toUpperCase());
-  if(tollFree?!/^\+1(?:800|833|844|855|866|877|888)\d{7}$/.test(input.sender):(!/^[A-Za-z0-9]{3,11}$/.test(input.sender)||!/[A-Za-z]/.test(input.sender)))throw new Error("SMS sender must be an approved alphanumeric Sender ID or a registered US/Canada toll-free number.");
+  if(!isAurelinkBrevoSenderFormatValid(input.sender,String(input.countryCode||"")))throw new Error("SMS sender must be approved for the selected Aurelink destination and meet Brevo's country-specific sender format.");
   if(!input.content.trim()||input.content.length>5000)throw new Error("SMS content must contain 1–5000 characters.");
   if(input.category==="marketing"&&!input.webUrl)throw new Error("Marketing SMS requires an opt-out/event URL.");
   return provider==="brevo"?sendBrevoSms(input):sendTwilioSms(input);
