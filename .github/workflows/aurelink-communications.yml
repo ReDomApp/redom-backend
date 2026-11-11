@@ -6,6 +6,7 @@ on:
       - "artifacts/redom-backend/**"
       - "infra/aurelink-smtp-gateway/**"
       - "artifacts/aurelink/tests/communications-webhook.test.ts"
+      - "artifacts/aurelink/tests/sms-country-registry.test.ts"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/aurelink-communications.yml"
@@ -35,6 +36,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @workspace/redom-backend run typecheck
       - run: pnpm --filter @workspace/redom-backend run test:aurelink-communications
+      - run: pnpm --filter @workspace/redom-backend run test:aurelink-countries
 
   smtp-gateway:
     runs-on: ubuntu-latest
