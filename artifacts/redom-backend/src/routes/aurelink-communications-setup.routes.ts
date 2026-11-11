@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createHash, randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
+import { createHash, randomBytes, createCipheriv, createDecipheriv, timingSafeEqual } from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
 import { decryptAurelinkDnsSecret, encryptAurelinkDnsSecret, validateCloudflareZoneToken, applyCloudflareDnsRecords } from "../services/aurelink/communications-dns.service";
 import { pool } from "../database/db";
@@ -282,6 +282,93 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
 });
 
 
+
+router.get("/aurelink/admin/communications/sender-submissions",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
+ const rows=await pool.query("SELECT q.id,q.sender_application_id,q.provider,q.status,q.scheduled_at,q.submitted_at,q.provider_reference,q.provider_status,q.attempts,q.last_error,s.sender,s.country_code,s.request_details,s.registration_state FROM aurelink_sender_provider_submissions q JOIN aurelink_sender_ids s ON s.id=q.sender_application_id WHERE q.status IN ('ready_for_operator_submission','submitted','processing') ORDER BY q.scheduled_at ASC LIMIT 200");
+ return res.json({success:true,submissionMode:"Brevo sender registration currently requires Brevo Console operator submission; no public sender-registration API is documented.",submissions:rows.rows});
+});
+router.post("/aurelink/admin/communications/sender-submissions/:id/reveal-token",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const row=(await client.query("SELECT id,status,request_token_encrypted,token_revealed_at,scheduled_at FROM aurelink_sender_provider_submissions WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
+  if(!row){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Brevo submission request not found."});}
+  if(row.status!=="ready_for_operator_submission"||new Date(row.scheduled_at).getTime()>Date.now()){await client.query("ROLLBACK");return res.status(423).json({success:false,message:"The one-hour review window has not elapsed or this request is no longer ready for submission."});}
+  if(row.token_revealed_at||!row.request_token_encrypted){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"TOKEN_ALREADY_REVEALED",message:"The one-time provider correlation token has already been revealed. Use the existing secure operator record; do not generate a second mapping."});}
+  const token=decryptSenderToken(String(row.request_token_encrypted));
+  await client.query("UPDATE aurelink_sender_provider_submissions SET token_revealed_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);
+  await client.query("COMMIT");
+  return res.json({success:true,requestToken:token,usage:"Include this exact Aurelink reference in the Brevo registration's additional supporting information where the form permits. Keep it with the provider reference for later status reconciliation. This token is revealed once."});
+ }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to reveal provider token."});}
+ finally{client.release();}
+});
+router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitted",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
+ const token=String(req.body.requestToken||""),providerReference=String(req.body.providerReference||"").trim();
+ if(!token||!providerReference)return res.status(400).json({success:false,message:"The one-time Aurelink request token and real Brevo registration reference are required."});
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const row=(await client.query("SELECT * FROM aurelink_sender_provider_submissions WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
+  if(!row||row.status!=="ready_for_operator_submission"||row.request_token_hash!==hash(token)){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_REQUEST_MAPPING_FAILED",message:"The submission is not ready or the Aurelink correlation token does not match."});}
+  await client.query("UPDATE aurelink_sender_provider_submissions SET status='submitted',submitted_at=NOW(),provider_reference=$2,provider_status='submitted',attempts=attempts+1,updated_at=NOW() WHERE id=$1",[row.id,providerReference]);
+  const saved=await client.query("UPDATE aurelink_sender_ids SET status='submitted',registration_state='brevo_submitted',submitted_at=NOW(),provider_reference=$2,brevo_provider_reference=$2,brevo_submitted_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING id,sender,country_code,status,registration_state,provider_reference,submitted_at",[row.sender_application_id,providerReference]);
+  await client.query("COMMIT");
+  return res.json({success:true,sender:saved.rows[0],provider:"brevo",requestMapped:true,tokenConsumed:false,note:"The token remains active until Brevo returns a terminal registration outcome."});
+ }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to record Brevo submission."});}
+ finally{client.release();}
+});
+async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:string;status:string;providerReference?:string;reason?:string;payload?:unknown}){
+ const tokenHash=hash(input.token),status=input.status.toLowerCase();
+ const terminal=status==="completed"||status==="successful"||status==="success"||status==="approved"||status==="rejected"||status==="declined"||status==="failed";
+ const approved=["completed","successful","success","approved"].includes(status);
+ const rejected=["rejected","declined","failed"].includes(status);
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const row=(await client.query("SELECT * FROM aurelink_sender_provider_submissions WHERE request_token_hash=$1 FOR UPDATE",[tokenHash])).rows[0];
+  if(!row){await client.query("ROLLBACK");return {found:false,duplicate:false};}
+  const event=await client.query("INSERT INTO aurelink_sender_provider_events(provider,provider_event_id,submission_id,event_status,payload) VALUES('brevo',$1,$2,$3,$4::jsonb) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[input.eventId,row.id,status,JSON.stringify(input.payload||{})]);
+  if(!event.rows.length){await client.query("COMMIT");return {found:true,duplicate:true,terminal:Boolean(row.token_consumed_at)};}
+  if(row.token_consumed_at){await client.query("COMMIT");return {found:true,duplicate:false,terminal:true,ignoredAfterTerminal:true};}
+  if(terminal){
+   if(!input.providerReference){await client.query("ROLLBACK");throw new Error("A terminal Brevo result must include its provider registration reference.");}
+   const queueStatus=approved?"completed":"rejected";
+   await client.query("UPDATE aurelink_sender_provider_submissions SET status=$2,provider_status=$3,provider_reference=$4,terminal_payload=$5::jsonb,terminal_event_id=$6,token_consumed_at=NOW(),request_token_encrypted=NULL,updated_at=NOW() WHERE id=$1",[row.id,queueStatus,status,input.providerReference,JSON.stringify(input.payload||{}),input.eventId]);
+   await client.query("UPDATE aurelink_sender_ids SET status=$2,registration_state=$3,brevo_terminal_status=$4,brevo_terminal_at=NOW(),brevo_provider_reference=$5,provider_reference=$5,approved_at=CASE WHEN $2='approved' THEN NOW() ELSE NULL END,rejection_reason=CASE WHEN $2='rejected' THEN $6 ELSE NULL END,updated_at=NOW() WHERE id=$1",[row.sender_application_id,approved?"approved":"rejected",approved?"approved":"rejected",status,input.providerReference,input.reason||null]);
+  }else{
+   await client.query("UPDATE aurelink_sender_provider_submissions SET status='processing',provider_status=$2,provider_reference=COALESCE($3,provider_reference),updated_at=NOW() WHERE id=$1",[row.id,status,input.providerReference||null]);
+  }
+  await client.query("COMMIT");
+  return {found:true,duplicate:false,terminal,tokenConsumed:terminal,result:terminal?(approved?"approved":"rejected"):"processing"};
+ }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
+}
+router.post("/aurelink/webhooks/brevo/sender-registration",async(req,res)=>{
+ const secret=process.env.AURELINK_BREVO_SENDER_REGISTRATION_WEBHOOK_SECRET;
+ if(!secret)return res.status(503).json({success:false,message:"Sender registration callback secret is not configured."});
+ const authorization=String(req.headers.authorization||""),supplied=authorization.startsWith("Bearer ")?authorization.slice(7):"";
+ const a=Buffer.from(secret),b=Buffer.from(supplied);
+ if(!supplied||a.length!==b.length||!timingSafeEqual(a,b))return res.status(403).json({success:false,message:"Invalid sender-registration callback authentication."});
+ const token=String(req.body.requestToken||""),eventId=String(req.body.eventId||""),status=String(req.body.status||"");
+ if(!token||!eventId||!status)return res.status(400).json({success:false,message:"requestToken, eventId and status are required."});
+ try{
+  const result=await applyBrevoSenderRegistrationResult({token,eventId,status,providerReference:req.body.providerReference?String(req.body.providerReference):undefined,reason:req.body.reason?String(req.body.reason):undefined,payload:req.body});
+  if(!result.found)return res.status(404).json({success:false,code:"SENDER_REQUEST_TOKEN_NOT_FOUND",message:"No pending Brevo sender registration is mapped to this token."});
+  return res.status(200).json({success:true,...result});
+ }catch(error){return res.status(409).json({success:false,message:error instanceof Error?error.message:"Unable to process Brevo sender registration result."});}
+});
+router.post("/aurelink/admin/communications/sender-submissions/:id/reconcile",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
+ const token=String(req.body.requestToken||""),eventId=String(req.body.eventId||"manual-"+randomBytes(12).toString("hex")),status=String(req.body.status||"");
+ if(!token||!status)return res.status(400).json({success:false,message:"The request token and actual Brevo status are required."});
+ try{
+  const result=await applyBrevoSenderRegistrationResult({token,eventId,status,providerReference:req.body.providerReference?String(req.body.providerReference):undefined,reason:req.body.reason?String(req.body.reason):undefined,payload:{...req.body,source:"aurelink_admin_reconciliation"}});
+  if(!result.found)return res.status(404).json({success:false,code:"SENDER_REQUEST_TOKEN_NOT_FOUND",message:"No Brevo registration is mapped to this token."});
+  return res.json({success:true,...result});
+ }catch(error){return res.status(409).json({success:false,message:error instanceof Error?error.message:"Unable to reconcile Brevo status."});}
+});
 router.post("/aurelink/communications/dns/cloudflare/connect",aurelinkAuthMiddleware,async(req,res)=>{
   const domainRaw=String(req.body.domain||""),zoneId=String(req.body.zoneId||""),apiToken=String(req.body.apiToken||"");
   try{
