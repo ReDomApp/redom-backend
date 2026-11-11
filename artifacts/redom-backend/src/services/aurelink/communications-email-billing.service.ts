@@ -42,9 +42,6 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
     }
   }
 
-  if(!subscription&&billingMode==="subscription"){
-    throw Object.assign(new Error("Your Aurelink Mail subscription is not active. Renew it or switch the workspace to Pay-as-you-go."),{code:"AURELINK_EMAIL_PLAN_LIMIT_REACHED"});
-  }
   if(!subscription&&billingMode==="free"){
     const limitResult=await client.query("SELECT daily_limit FROM aurelink_email_plan_catalog WHERE plan_code='free' AND active=TRUE");
     const dailyLimit=Number(limitResult.rows[0]?.daily_limit||100);
@@ -78,7 +75,7 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
     );
     return {source:"prepaid",units:input.units,unitPriceMinor:null,amountMinor:null,walletReference:reference};
   }
-  if(subscription||billingMode==="free")throw Object.assign(new Error("The monthly/daily Aurelink Mail allowance and prepaid email credits are insufficient."),{code:"AURELINK_EMAIL_PLAN_LIMIT_REACHED"});
+  if(subscription||billingMode==="free"||billingMode==="subscription")throw Object.assign(new Error("The monthly/daily Aurelink Mail allowance and prepaid email credits are insufficient. Renew the subscription or switch to Pay-as-you-go."),{code:"AURELINK_EMAIL_PLAN_LIMIT_REACHED"});
 
   const service=input.transport==="smtp"?"smtp_message":"email_message";
   const charged=await chargeAurelinkUsage(client,{
