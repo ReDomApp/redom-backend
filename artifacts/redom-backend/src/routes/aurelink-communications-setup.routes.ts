@@ -473,6 +473,7 @@ async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:st
   if(!event.rows.length){await client.query("COMMIT");return {found:true,duplicate:true,terminal:false};}
   if(terminal){
    if(!input.providerReference){await client.query("ROLLBACK");throw new Error("A terminal Brevo result must include its provider registration reference.");}
+   if(rejected&&!input.reason){await client.query("ROLLBACK");throw new Error("A rejected Brevo result must include the provider rejection reason.");}
    const queueStatus=approved?"completed":"rejected";
    await client.query("UPDATE aurelink_sender_provider_submissions SET status=$2,provider_status=$3,provider_reference=$4,terminal_payload=$5::jsonb,terminal_event_id=$6,token_consumed_at=NOW(),request_token_encrypted=NULL,updated_at=NOW() WHERE id=$1",[row.id,queueStatus,status,input.providerReference,JSON.stringify(input.payload||{}),input.eventId]);
    const websiteStatus=(await client.query("SELECT v.status FROM aurelink_sender_ids s LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE s.id=$1",[row.sender_application_id])).rows[0]?.status;
