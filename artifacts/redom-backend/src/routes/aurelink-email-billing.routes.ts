@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { createAurelinkEmailBillingCheckout, verifyAurelinkEmailBillingCheckout, cancelAurelinkEmailSubscription } from "../services/payments/stripe-payment.service";
+import { captureAurelinkEmailUsage, refundAurelinkEmailUsage } from "../services/aurelink/communications-email-billing.service";
 
 const router=Router();
 const admins=()=>new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(x=>x.trim()).filter(Boolean));
@@ -223,6 +224,65 @@ router.post("/aurelink/admin/communications/email/credits/adjust",aurelinkAuthMi
   }catch(error){
     await client.query("ROLLBACK").catch(()=>undefined);
     return res.status(error instanceof Error&&error.message==="INSUFFICIENT_EMAIL_CREDITS"?409:400).json({success:false,message:error instanceof Error?error.message:"Unable to adjust email credits."});
+  }finally{client.release();}
+});
+
+router.get("/aurelink/admin/communications/email/smtp/manual-review",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!admins().has(req.user!.userId))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink administrator access is required."});
+  const limit=Math.max(1,Math.min(100,Number.parseInt(String(req.query.limit||"50"),10)||50));
+  const result=await pool.query(
+    `SELECT m.id AS message_id,m.workspace_id,m.provider,m.recipient,m.sender,m.category,m.status AS message_status,
+            m.provider_error,m.created_at,r.source,r.units,r.status AS billing_status,
+            s.client_message_id,s.envelope_from,s.recipients,s.error AS smtp_error
+       FROM aurelink_email_usage_reservations r
+       JOIN aurelink_messages m ON m.id=r.message_id
+       LEFT JOIN aurelink_smtp_messages s ON s.message_key=m.id::text AND s.workspace_id=m.workspace_id
+      WHERE r.status='unknown' AND r.metadata->>'transport'='smtp'
+      ORDER BY r.updated_at ASC LIMIT $1`,[limit]
+  );
+  return res.json({success:true,items:result.rows,count:result.rows.length});
+});
+
+router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAuthMiddleware,async(req,res)=>{
+  if(!admins().has(req.user!.userId))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink administrator access is required."});
+  if(!z.string().uuid().safeParse(req.params.id).success)return res.status(400).json({success:false,message:"A valid message ID is required."});
+  const parsed=z.object({outcome:z.enum(["accepted","rejected"]),evidenceReference:z.string().min(8).max(500),providerMessageId:z.string().min(1).max(220).optional()}).safeParse(req.body);
+  if(!parsed.success||(parsed.data.outcome==="accepted"&&!parsed.data.providerMessageId))return res.status(400).json({success:false,message:"Provide an accepted/rejected outcome, evidence reference, and provider message ID when accepted."});
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const found=await client.query(
+      "SELECT m.id,m.workspace_id,m.provider,m.channel,r.source,r.units,r.status AS billing_status,r.metadata,w.user_id FROM aurelink_messages m JOIN aurelink_email_usage_reservations r ON r.message_id=m.id JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id WHERE m.id=$1 FOR UPDATE OF m,r",
+      [req.params.id]
+    );
+    const row=found.rows[0];
+    if(!row||row.channel!=="email"||row.metadata?.transport!=="smtp"||row.billing_status!=="unknown"){
+      await client.query("ROLLBACK");
+      return res.status(409).json({success:false,code:"NOT_AWAITING_RECONCILIATION",message:"This SMTP message is not awaiting billing reconciliation."});
+    }
+    if(parsed.data.outcome==="accepted"){
+      const providerMessageId=String(parsed.data.providerMessageId);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",["resend:"+providerMessageId]);
+      const duplicate=await client.query("SELECT id FROM aurelink_messages WHERE provider='resend' AND provider_message_id=$1 AND id<>$2 LIMIT 1",[providerMessageId,row.id]);
+      if(duplicate.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_MESSAGE_ID_IN_USE",message:"That Resend message ID is already linked to another Aurelink message."});}
+      await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1",[row.id]);
+      await client.query("UPDATE aurelink_messages SET provider='resend',provider_message_id=$2,status='accepted',provider_status='operator_confirmed_accepted',provider_error=NULL,accepted_at=COALESCE(accepted_at,NOW()),updated_at=NOW() WHERE id=$1",[row.id,providerMessageId]);
+      await client.query("UPDATE aurelink_communications_usage SET provider='resend',status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[row.id,providerMessageId]);
+      await client.query("UPDATE aurelink_smtp_messages SET provider_message_id=$2,status='accepted',error=NULL,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$3",[row.workspace_id,providerMessageId,String(row.id)]);
+      await captureAurelinkEmailUsage(client,String(row.id));
+    }else{
+      await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1",[row.id]);
+      await client.query("UPDATE aurelink_messages SET status='failed',provider_status='operator_confirmed_not_accepted',provider_error='Provider review confirmed that the SMTP submission was not accepted.',updated_at=NOW() WHERE id=$1",[row.id]);
+      await client.query("UPDATE aurelink_communications_usage SET status='failed',updated_at=NOW() WHERE message_id=$1",[row.id]);
+      await client.query("UPDATE aurelink_smtp_messages SET status='failed',error='Provider review confirmed that the SMTP submission was not accepted.',updated_at=NOW() WHERE workspace_id=$1 AND message_key=$2",[row.workspace_id,String(row.id)]);
+      await refundAurelinkEmailUsage(client,String(row.id));
+    }
+    await client.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,target_id,details) VALUES($1,$2,'smtp_usage_reconciled',$3,$4::jsonb)",[row.workspace_id,req.user!.userId,row.id,JSON.stringify({outcome:parsed.data.outcome,evidenceReference:parsed.data.evidenceReference,providerMessageId:parsed.data.providerMessageId||null,source:row.source,units:row.units})]);
+    await client.query("COMMIT");
+    return res.json({success:true,messageId:row.id,outcome:parsed.data.outcome,financialAction:parsed.data.outcome==="accepted"?"usage_captured":"reservation_released_or_refunded"});
+  }catch(error){
+    await client.query("ROLLBACK").catch(()=>undefined);
+    return res.status(500).json({success:false,message:"SMTP billing reconciliation could not be saved."});
   }finally{client.release();}
 });
 
