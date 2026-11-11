@@ -71,8 +71,26 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       UNIQUE(email_credits,price_minor)
     );
     INSERT INTO aurelink_email_credit_packs(email_credits,price_minor)
-    VALUES (1000,150),(10000,1300),(50000,5500),(100000,10000),(250000,22500),(500000,42500)
+    VALUES (1000,350),(5000,800),(10000,1300),(50000,4800),(100000,8500),(250000,19000)
     ON CONFLICT(email_credits,price_minor) DO NOTHING;
+    UPDATE aurelink_email_credit_packs SET price_minor=350,active=TRUE,updated_at=NOW() WHERE email_credits=1000;
+    UPDATE aurelink_email_credit_packs SET price_minor=800,active=TRUE,updated_at=NOW() WHERE email_credits=5000;
+    UPDATE aurelink_email_credit_packs SET price_minor=1300,active=TRUE,updated_at=NOW() WHERE email_credits=10000;
+    UPDATE aurelink_email_credit_packs SET price_minor=4800,active=TRUE,updated_at=NOW() WHERE email_credits=50000;
+    UPDATE aurelink_email_credit_packs SET price_minor=8500,active=TRUE,updated_at=NOW() WHERE email_credits=100000;
+    UPDATE aurelink_email_credit_packs SET price_minor=19000,active=TRUE,updated_at=NOW() WHERE email_credits=250000;
+    UPDATE aurelink_email_credit_packs SET active=FALSE,updated_at=NOW() WHERE email_credits>250000;
+
+    CREATE TABLE IF NOT EXISTS aurelink_email_prepaid_daily_usage (
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      usage_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      used_emails BIGINT NOT NULL DEFAULT 0 CHECK(used_emails >= 0),
+      reserved_emails BIGINT NOT NULL DEFAULT 0 CHECK(reserved_emails >= 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(workspace_id,usage_date),
+      CHECK(used_emails + reserved_emails <= 2500)
+    );
 
     CREATE TABLE IF NOT EXISTS aurelink_email_billing_payments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
