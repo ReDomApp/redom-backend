@@ -352,6 +352,7 @@ async function applyBrevoSenderRegistrationResult(input:{token:string;eventId:st
   }else{
    await client.query("UPDATE aurelink_sender_provider_submissions SET status='processing',provider_status=$2,provider_reference=COALESCE($3,provider_reference),updated_at=NOW() WHERE id=$1",[row.id,status,input.providerReference||null]);
   }
+  await client.query("INSERT INTO aurelink_sender_security_audit(sender_application_id,workspace_id,action,details) VALUES($1,$2,'provider_status_received',$3::jsonb)",[row.sender_application_id,row.workspace_id,JSON.stringify({provider:"brevo",eventId:input.eventId,status,terminal,providerReference:input.providerReference||null,tokenConsumed:terminal})]);
   await client.query("COMMIT");
   return {found:true,duplicate:false,terminal,tokenConsumed:terminal,result:terminal?(approved?"approved":"rejected"):"processing"};
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
