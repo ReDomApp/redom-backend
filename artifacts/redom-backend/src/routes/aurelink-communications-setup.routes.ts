@@ -440,6 +440,22 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/reveal-token"
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to reveal provider token."});}
  finally{client.release();}
 });
+router.post("/aurelink/admin/communications/sender-submissions/:id/rotate-token",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const row=(await client.query("SELECT q.*,v.status AS website_status FROM aurelink_sender_provider_submissions q JOIN aurelink_sender_ids s ON s.id=q.sender_application_id LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE q.id=$1 FOR UPDATE OF q",[req.params.id])).rows[0];
+  if(!row){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Brevo submission request not found."});}
+  if(row.status!=="ready_for_operator_submission"||row.website_status!=="verified"||row.submitted_at||row.provider_reference){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"TOKEN_ROTATION_NOT_ALLOWED",message:"A token can only be rotated before provider submission while the website remains verified."});}
+  let token:string,encrypted:string;
+  try{token="AUR-SID-"+randomBytes(32).toString("base64url");encrypted=encryptSenderToken(token);}catch{await client.query("ROLLBACK");return res.status(503).json({success:false,code:"SENDER_TOKEN_ENCRYPTION_NOT_CONFIGURED",message:"Aurelink communications encryption key is not configured."});}
+  await client.query("UPDATE aurelink_sender_provider_submissions SET request_token_hash=$2,request_token_encrypted=$3,token_revealed_at=NULL,updated_at=NOW() WHERE id=$1",[row.id,hash(token),encrypted]);
+  await client.query("INSERT INTO aurelink_sender_security_audit(sender_application_id,workspace_id,actor_user_id,action,details) VALUES($1,$2,$3,'provider_token_rotated',jsonb_build_object('previousTokenInvalidated',true,'newTokenRevealed',false))",[row.sender_application_id,row.workspace_id,req.user!.userId]);
+  await client.query("COMMIT");
+  return res.json({success:true,tokenRotated:true,nextStep:"Reveal the new token once, then submit this application to Brevo. The previous token is invalid."});
+ }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to rotate the provider correlation token."});}finally{client.release();}
+});
 router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitted",aurelinkAuthMiddleware,async(req,res)=>{
  if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
  const token=String(req.body.requestToken||""),providerReference=String(req.body.providerReference||"").trim();
