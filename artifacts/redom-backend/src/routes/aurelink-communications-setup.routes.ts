@@ -290,6 +290,11 @@ router.post("/aurelink/communications/senders/:id/review",aurelinkAuthMiddleware
 
 
 
+router.get("/aurelink/admin/communications/senders/:id/audit",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
+ const rows=await pool.query("SELECT id,actor_user_id,action,details,created_at FROM aurelink_sender_security_audit WHERE sender_application_id=$1 ORDER BY created_at ASC",[req.params.id]);
+ return res.json({success:true,audit:rows.rows});
+});
 router.get("/aurelink/admin/communications/sender-submissions",aurelinkAuthMiddleware,async(req,res)=>{
  if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
  const rows=await pool.query("SELECT q.id,q.sender_application_id,q.provider,q.status,q.scheduled_at,q.submitted_at,q.provider_reference,q.provider_status,q.attempts,q.last_error,s.sender,s.country_code,s.request_details,s.registration_state FROM aurelink_sender_provider_submissions q JOIN aurelink_sender_ids s ON s.id=q.sender_application_id WHERE q.status IN ('ready_for_operator_submission','submitted','processing') ORDER BY q.scheduled_at ASC LIMIT 200");
