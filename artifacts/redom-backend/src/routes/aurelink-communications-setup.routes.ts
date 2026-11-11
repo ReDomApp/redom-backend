@@ -274,8 +274,9 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   const smsPurpose=String(req.body.smsPurpose||"").toLowerCase(),monthlyVolume=Number(req.body.monthlyVolume);
   const contact={name:String(req.body.contactName||"").trim(),email:String(req.body.contactEmail||"").trim().toLowerCase(),phone:String(req.body.contactPhone||"").trim()};
   const consentEvidenceReference=String(req.body.consentEvidenceReference||"").trim();
-  const documentIds=Array.isArray(req.body.registrationDocumentIds)?req.body.registrationDocumentIds.filter((v:any)=>typeof v==="string"&&/^[0-9a-f-]{36}$/i.test(v)).slice(0,10):[];
-  if(documentIds.length===0||new Set(documentIds).size!==documentIds.length)return res.status(400).json({success:false,code:"DOCUMENT_UPLOAD_REQUIRED",message:"Upload 1–10 genuine business/brand documents through Aurelink's private evidence upload endpoint and submit their unique document IDs."});
+  const rawDocumentIds=Array.isArray(req.body.registrationDocumentIds)?req.body.registrationDocumentIds:[];
+  const documentIds=rawDocumentIds.filter((v:any)=>typeof v==="string"&&/^[0-9a-f-]{36}$/i.test(v));
+  if(rawDocumentIds.length<1||rawDocumentIds.length>10||documentIds.length!==rawDocumentIds.length||new Set(documentIds).size!==documentIds.length)return res.status(400).json({success:false,code:"DOCUMENT_UPLOAD_REQUIRED",message:"Upload 1–10 genuine business/brand documents through Aurelink's private evidence upload endpoint and submit their unique document IDs."});
   const evidenceDocs=(await pool.query("SELECT id,original_filename,mime_type,byte_size,sha256 FROM aurelink_sender_evidence_documents WHERE id=ANY($1::uuid[]) AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[documentIds,wid,req.user!.userId])).rows;
   if(evidenceDocs.length!==documentIds.length)return res.status(422).json({success:false,code:"DOCUMENT_EVIDENCE_NOT_AVAILABLE",message:"One or more evidence uploads are missing, already attached, or belong to another workspace/user."});
   const documentMetadata=evidenceDocs.map((row:any)=>({documentId:String(row.id),fileName:String(row.original_filename),mimeType:String(row.mime_type),byteSize:Number(row.byte_size),sha256:String(row.sha256)}));
