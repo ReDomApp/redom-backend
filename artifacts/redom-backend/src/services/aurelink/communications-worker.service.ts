@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { pool } from "../../database/db";
 import { resolveTxt } from "node:dns/promises";
 import { captureAurelinkUsage, chargeAurelinkUsage, countSmsSegments, refundAurelinkUsage } from "./communications-billing.service";
-import { sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.service";
+import { ProviderSubmissionError, sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.service";
 
 type JobPayload =
   | { channel:"sms"; provider:"brevo"|"twilio"; category:"transactional"|"marketing"|"otp"|"notification"; input:{recipient:string;sender:string;content:string;category:"transactional"|"marketing"|"otp"|"notification";countryCode?:string;tag?:string;webUrl?:string} }
@@ -70,14 +70,19 @@ async function processOne(row:any){
  try{
   const payload=JSON.parse(decrypt(row.payload_encrypted)) as JobPayload;
   let result:any;
+  await pool.query("UPDATE aurelink_communications_jobs SET submission_state='in_flight',updated_at=NOW() WHERE id=$1 AND status='processing'",[row.id]);
   if(payload.channel==="sms"){
     try{result=await sendAurelinkSms(payload.provider,payload.input);}
-    catch(primaryError){const fallback=process.env.AURELINK_SMS_FALLBACK_PROVIDER;if((fallback!=="brevo"&&fallback!=="twilio")||fallback===payload.provider)throw primaryError;result=await sendAurelinkSms(fallback,payload.input);}
+    catch(primaryError){
+      const fallback=process.env.AURELINK_SMS_FALLBACK_PROVIDER;
+      if(!(primaryError instanceof ProviderSubmissionError)||primaryError.outcome!=="rejected"||primaryError.retryable||(fallback!=="brevo"&&fallback!=="twilio")||fallback===payload.provider)throw primaryError;
+      result=await sendAurelinkSms(fallback,payload.input);
+    }
   }else{
     try{result=await sendAurelinkEmail(payload.provider,payload.input);}
     catch(primaryError){
       const fallback=process.env.AURELINK_EMAIL_FALLBACK_PROVIDER;
-      if((fallback!=="resend"&&fallback!=="brevo")||fallback===payload.provider)throw primaryError;
+      if(!(primaryError instanceof ProviderSubmissionError)||primaryError.outcome!=="rejected"||primaryError.retryable||(fallback!=="resend"&&fallback!=="brevo")||fallback===payload.provider)throw primaryError;
       const sender=await pool.query(
         "SELECT s.email,s.sender_name,s.domain FROM aurelink_email_senders s JOIN aurelink_email_domains d ON d.workspace_id=s.workspace_id AND d.provider=s.provider AND LOWER(d.domain)=LOWER(s.domain) AND d.status='verified' WHERE s.workspace_id=$1 AND s.provider=$2 AND s.status='verified' ORDER BY CASE WHEN LOWER(SPLIT_PART(s.email,'@',1))=LOWER(SPLIT_PART($3,'@',1)) THEN 0 ELSE 1 END,s.created_at ASC LIMIT 1",
         [row.workspace_id,fallback,payload.input.sender]
@@ -88,7 +93,7 @@ async function processOne(row:any){
     }
   }
   await pool.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId]);
-  await pool.query("UPDATE aurelink_communications_jobs SET status='completed',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
+  await pool.query("UPDATE aurelink_communications_jobs SET status='completed',submission_state='accepted',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
   await pool.query("UPDATE aurelink_communications_usage SET provider=$2,status='accepted',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
   const billingClient=await pool.connect();
   try { await billingClient.query("BEGIN"); await captureAurelinkUsage(billingClient,String(row.message_id)); await billingClient.query("COMMIT"); }
@@ -97,8 +102,15 @@ async function processOne(row:any){
   await pool.query("UPDATE aurelink_verification_sessions SET provider_message_id=$2,updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1)",[row.message_id,result.providerMessageId]);
   await finalizeCampaign(row.message_id);
  }catch(error){
-  const attempts=Number(row.attempts),failed=attempts>=8,delay=Math.min(3600,30*Math.pow(2,attempts-1)),message=error instanceof Error?error.message:"Provider delivery failed.";
-  await pool.query("UPDATE aurelink_communications_jobs SET status=$2,attempts=$3,next_attempt_at=NOW()+($4 * INTERVAL '1 second'),last_error=$5,updated_at=NOW() WHERE id=$1",[row.id,failed?"failed":"pending",attempts,delay,message.slice(0,500)]);
+  const attempts=Number(row.attempts),message=error instanceof Error?error.message:"Provider submission failed.";
+  if(error instanceof ProviderSubmissionError&&error.outcome==="unknown"){
+    await pool.query("UPDATE aurelink_communications_jobs SET status='manual_review',submission_state='unknown',last_error=$2,locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.id,message.slice(0,500)]);
+    await pool.query("UPDATE aurelink_messages SET status='unknown',provider_error=$2,updated_at=NOW() WHERE id=$1",[row.message_id,message.slice(0,500)]);
+    await pool.query("UPDATE aurelink_communications_usage SET status='queued',updated_at=NOW() WHERE message_id=$1",[row.message_id]);
+    return;
+  }
+  const failed=attempts>=8,delay=Math.min(3600,30*Math.pow(2,attempts-1));
+  await pool.query("UPDATE aurelink_communications_jobs SET status=$2,submission_state='rejected',attempts=$3,next_attempt_at=NOW()+($4 * INTERVAL '1 second'),last_error=$5,updated_at=NOW() WHERE id=$1",[row.id,failed?"failed":"pending",attempts,delay,message.slice(0,500)]);
   await pool.query("UPDATE aurelink_messages SET status=$2,provider_error=$3,updated_at=NOW() WHERE id=$1",[row.message_id,failed?"failed":"queued",message.slice(0,500)]);
   await pool.query("UPDATE aurelink_communications_usage SET status=$2,updated_at=NOW() WHERE message_id=$1",[row.message_id,failed?"failed":"queued"]);
   if(failed){await refundCommunicationCharge(String(row.message_id));await pool.query("UPDATE aurelink_verification_sessions SET status='cancelled',updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1 AND verification_session_id IS NOT NULL)",[row.message_id]);await finalizeCampaign(row.message_id);}
@@ -171,7 +183,10 @@ async function tick(){
   FROM moved WHERE s.id=moved.sender_application_id AND s.registration_state='scheduled_for_brevo'`);
   const batch=await pool.query(`WITH due AS (SELECT id FROM aurelink_communications_jobs WHERE status='pending' AND next_attempt_at<=NOW() ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT 10) UPDATE aurelink_communications_jobs j SET status='processing',attempts=attempts+1,locked_at=NOW(),updated_at=NOW() FROM due WHERE j.id=due.id RETURNING j.*`);
   for(const row of batch.rows)await processOne(row);
-  await pool.query("UPDATE aurelink_communications_jobs SET status='pending',locked_at=NULL,next_attempt_at=NOW()+INTERVAL '30 seconds',updated_at=NOW() WHERE status='processing' AND locked_at<NOW()-INTERVAL '5 minutes'");
+  await pool.query(`UPDATE aurelink_communications_jobs SET status=CASE WHEN submission_state='in_flight' THEN 'manual_review' ELSE 'pending' END,submission_state=CASE WHEN submission_state='in_flight' THEN 'unknown' ELSE submission_state END,locked_at=NULL,next_attempt_at=CASE WHEN submission_state='in_flight' THEN next_attempt_at ELSE NOW()+INTERVAL '30 seconds' END,last_error=CASE WHEN submission_state='in_flight' THEN 'Worker stopped during provider submission; outcome requires reconciliation to prevent duplicate delivery.' ELSE last_error END,updated_at=NOW() WHERE status='processing' AND locked_at<NOW()-INTERVAL '5 minutes'`);
+  await pool.query("UPDATE aurelink_messages m SET status='unknown',provider_error='Worker stopped during provider submission; outcome requires reconciliation.' FROM aurelink_communications_jobs j WHERE j.message_id=m.id AND j.status='manual_review' AND m.status IN ('queued','accepted')");
+  const captures=await pool.query("SELECT message_id FROM aurelink_communications_usage u JOIN aurelink_communications_billing_ledger b ON b.message_id=u.message_id AND b.entry_type='charge' AND b.status='reserved' WHERE u.status IN ('accepted','delivered') ORDER BY u.updated_at LIMIT 50");
+  for(const item of captures.rows){const client=await pool.connect();try{await client.query("BEGIN");await captureAurelinkUsage(client,String(item.message_id));await client.query("COMMIT");}catch(error){await client.query("ROLLBACK").catch(()=>undefined);}finally{client.release();}}
   const refunds=await pool.query("SELECT u.message_id FROM aurelink_communications_usage u JOIN aurelink_communications_jobs j ON j.message_id=u.message_id AND j.status='failed' JOIN aurelink_communications_billing_ledger b ON b.message_id=u.message_id AND b.entry_type='charge' AND b.status IN ('reserved','posted') WHERE u.status='failed' AND NOT EXISTS(SELECT 1 FROM aurelink_communications_billing_ledger r WHERE r.message_id=u.message_id AND r.entry_type='refund') ORDER BY u.updated_at LIMIT 20");
   for(const item of refunds.rows)await refundCommunicationCharge(String(item.message_id));
  }catch(error){console.error("[Aurelink communications worker]",error instanceof Error?error.message:"unknown error");}
