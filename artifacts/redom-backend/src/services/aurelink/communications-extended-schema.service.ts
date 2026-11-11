@@ -31,6 +31,21 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       CHECK (security_review_status IN ('not_started','pending','passed','failed','manual_review'));
     CREATE INDEX IF NOT EXISTS aurelink_sender_ids_security_gate_idx
       ON aurelink_sender_ids(workspace_id,country_code,registration_state,security_review_status);
+    CREATE TABLE IF NOT EXISTS aurelink_sender_security_restrictions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      sender_application_id UUID REFERENCES aurelink_sender_ids(id) ON DELETE SET NULL,
+      reason TEXT NOT NULL,
+      starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ends_at TIMESTAMPTZ NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','expired','revoked')),
+      created_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK(ends_at > starts_at)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_security_restrictions_active_idx
+      ON aurelink_sender_security_restrictions(user_id,workspace_id,status,ends_at);
     CREATE TABLE IF NOT EXISTS aurelink_verified_websites (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
