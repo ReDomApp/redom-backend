@@ -216,7 +216,7 @@ router.get("/aurelink/admin/communications/senders/:id/evidence/:documentId",aur
 });
 router.get("/aurelink/communications/sms/countries",aurelinkAuthMiddleware,async(_req,res)=>{
  const rows=await pool.query("SELECT country_code,country_name,calling_code,international_prefix FROM aurelink_sms_supported_countries WHERE enabled=true ORDER BY country_name ASC");
- return res.json({success:true,count:rows.rows.length,format:"E.164",countries:rows.rows.map(row=>{const callingCodes=getAurelinkSmsCountryPrefixes(String(row.country_code));return {...row,callingCodes,internationalFormatExamples:callingCodes.map(code=>code+"XXXXXXXX")};}),excluded:["SG"]});
+ return res.json({success:true,count:rows.rows.length,format:"E.164",countries:rows.rows.map(row=>{const callingCodes=getAurelinkSmsCountryPrefixes(String(row.country_code));return {...row,callingCodes,internationalFormatTemplates:callingCodes.map(code=>code+"{national_number}")};}),excluded:["SG"]});
 });
 router.get("/aurelink/communications/websites",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
