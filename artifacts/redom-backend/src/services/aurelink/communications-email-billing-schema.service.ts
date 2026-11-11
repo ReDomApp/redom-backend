@@ -250,6 +250,7 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
     ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS paypal_subscription_id VARCHAR(180);
     ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(180);
     ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(180);
+    ALTER TABLE aurelink_email_subscriptions ADD COLUMN IF NOT EXISTS paystack_email_token_encrypted TEXT;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_subscriptions_paypal_idx ON aurelink_email_subscriptions(paypal_subscription_id) WHERE paypal_subscription_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS aurelink_email_provider_plans (
