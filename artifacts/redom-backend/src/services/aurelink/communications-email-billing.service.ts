@@ -92,6 +92,49 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
   return {source:"wallet",units:input.units,unitPriceMinor:charged.unitPriceMinor,amountMinor:charged.amountMinor,walletReference:charged.reference};
 }
 
+export async function resizeAurelinkEmailUsageReservation(client:Db,messageId:string,acceptedUnits:number,rejectedRecipients:string[]):Promise<void>{
+  if(!Number.isSafeInteger(acceptedUnits)||acceptedUnits<1||!Array.isArray(rejectedRecipients)||!rejectedRecipients.length)throw new Error("AURELINK_INVALID_PARTIAL_EMAIL_ALLOCATION");
+  const reservation=(await client.query("SELECT * FROM aurelink_email_usage_reservations WHERE message_id=$1 FOR UPDATE",[messageId])).rows[0];
+  if(!reservation||!["reserved","unknown"].includes(String(reservation.status)))throw new Error("AURELINK_EMAIL_RESERVATION_NOT_RESIZABLE");
+  const rejectedUnits=rejectedRecipients.length;
+  if(Number(reservation.units)!==acceptedUnits+rejectedUnits){
+    if(reservation.metadata?.partialAcceptanceReconciled===true&&Number(reservation.units)===acceptedUnits)return;
+    throw new Error("AURELINK_EMAIL_PARTIAL_ALLOCATION_MISMATCH");
+  }
+  let acceptedAmountMinor:string|null=null;
+  if(reservation.source==="subscription"){
+    const updated=await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails-$2,updated_at=NOW() WHERE id=$1 AND reserved_emails >= $2",[reservation.subscription_id,rejectedUnits]);
+    if(!updated.rowCount)throw new Error("AURELINK_EMAIL_SUBSCRIPTION_RESERVATION_MISMATCH");
+  }else if(reservation.source==="free"){
+    const usageDate=String(reservation.metadata?.usageDate||"");
+    const updated=await client.query("UPDATE aurelink_email_free_daily_usage SET reserved_emails=reserved_emails-$3,updated_at=NOW() WHERE workspace_id=$1 AND usage_date=$2::date AND reserved_emails >= $3",[reservation.workspace_id,usageDate,rejectedUnits]);
+    if(!updated.rowCount)throw new Error("AURELINK_EMAIL_FREE_DAILY_RESERVATION_MISMATCH");
+  }else if(reservation.source==="prepaid"){
+    const wallet=(await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=balance_emails+$2,updated_at=NOW() WHERE workspace_id=$1 RETURNING balance_emails",[reservation.workspace_id,rejectedUnits])).rows[0];
+    if(!wallet)throw new Error("AURELINK_EMAIL_CREDIT_WALLET_MISSING");
+    await client.query(
+      "INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,description,metadata) VALUES($1,$2,'refund','credit',$3,$4,$5,'Refund for SMTP recipients rejected by the provider',$6::jsonb) ON CONFLICT(reference) DO NOTHING",
+      [reservation.workspace_id,reservation.user_id,rejectedUnits,wallet.balance_emails,"AL-EMAIL-REFUND-"+messageId+"-PARTIAL",JSON.stringify({messageId,rejectedRecipients})]
+    );
+  }else if(reservation.source==="wallet"){
+    const refundAmount=(BigInt(String(reservation.unit_price_minor))*BigInt(rejectedUnits)).toString();
+    acceptedAmountMinor=(BigInt(String(reservation.unit_price_minor))*BigInt(acceptedUnits)).toString();
+    const wallet=(await client.query("SELECT balance_minor FROM aurelink_wallets WHERE user_id=$1 FOR UPDATE",[reservation.user_id])).rows[0];
+    if(!wallet)throw new Error("Aurelink USD wallet is missing.");
+    const next=BigInt(String(wallet.balance_minor))+BigInt(refundAmount);
+    await client.query("UPDATE aurelink_wallets SET balance_minor=$2,updated_at=NOW() WHERE user_id=$1",[reservation.user_id,next.toString()]);
+    const refundReference=String(reservation.wallet_reference)+"-PARTIAL-R";
+    await client.query("INSERT INTO aurelink_wallet_ledger(user_id,entry_type,direction,amount_minor,balance_after_minor,currency,reference,description,metadata) VALUES($1,'refund','credit',$2,$3,'USD',$4,'Refund for SMTP recipients rejected by the provider',$5::jsonb)",[reservation.user_id,refundAmount,next.toString(),refundReference,JSON.stringify({messageId,rejectedRecipients})]);
+    await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',$4,$5,$6,'USD',$7,$8::jsonb) ON CONFLICT(message_id,entry_type) DO NOTHING",[reservation.user_id,reservation.workspace_id,messageId,rejectedUnits,reservation.unit_price_minor,refundAmount,refundReference,JSON.stringify({partial:true,rejectedRecipients})]);
+    await client.query("UPDATE aurelink_communications_billing_ledger SET units=$2,amount_minor=$3,updated_at=NOW() WHERE message_id=$1 AND entry_type='charge' AND status='reserved'",[messageId,acceptedUnits,acceptedAmountMinor]);
+  }
+  await client.query(
+    "UPDATE aurelink_email_usage_reservations SET units=$2,amount_minor=COALESCE($3,amount_minor),metadata=metadata||$4::jsonb,updated_at=NOW() WHERE message_id=$1",
+    [messageId,acceptedUnits,acceptedAmountMinor,JSON.stringify({partialAcceptance:true,partialAcceptanceReconciled:true,acceptedUnits,rejectedUnits,rejectedRecipients})]
+  );
+  await client.query("UPDATE aurelink_communications_usage SET units=$2,updated_at=NOW() WHERE message_id=$1",[messageId,acceptedUnits]);
+}
+
 export async function captureAurelinkEmailUsage(client:Db,messageId:string):Promise<void>{
   const result=await client.query("SELECT * FROM aurelink_email_usage_reservations WHERE message_id=$1 FOR UPDATE",[messageId]);
   const reservation=result.rows[0];
