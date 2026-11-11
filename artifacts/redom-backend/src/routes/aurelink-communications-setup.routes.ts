@@ -199,12 +199,17 @@ router.get("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,as
  return res.json({success:true,documents:rows.rows});
 });
 router.delete("/aurelink/communications/senders/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
- const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
- const row=(await pool.query("SELECT id,object_key FROM aurelink_sender_evidence_documents WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[req.params.documentId,wid,req.user!.userId])).rows[0];
- if(!row)return res.status(404).json({success:false,message:"Unattached evidence upload not found. Evidence attached to an application cannot be deleted by the applicant."});
- await senderEvidenceR2.send(new DeleteObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:String(row.object_key)}));
- await pool.query("UPDATE aurelink_sender_evidence_documents SET status='deleted',updated_at=NOW() WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[row.id,wid,req.user!.userId]);
- return res.json({success:true,deleted:true});
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined),client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const row=(await client.query("SELECT id,object_key FROM aurelink_sender_evidence_documents WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL FOR UPDATE",[req.params.documentId,wid,req.user!.userId])).rows[0];
+  if(!row){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Unattached evidence upload not found. Evidence attached to an application cannot be deleted by the applicant."});}
+  await senderEvidenceR2.send(new DeleteObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:String(row.object_key)}));
+  await client.query("UPDATE aurelink_sender_evidence_documents SET status='deleted',updated_at=NOW() WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[row.id,wid,req.user!.userId]);
+  await client.query("COMMIT");
+  return res.json({success:true,deleted:true});
+ }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:error instanceof Error?error.message:"Unable to delete evidence upload."});}
+ finally{client.release();}
 });
 router.get("/aurelink/admin/communications/senders/:id/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
  if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
