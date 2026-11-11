@@ -3,7 +3,7 @@ import { z } from "zod";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { createAurelinkEmailBillingCheckout, verifyAurelinkEmailBillingCheckout, cancelAurelinkEmailSubscription } from "../services/payments/stripe-payment.service";
-import { captureAurelinkEmailUsage, refundAurelinkEmailUsage } from "../services/aurelink/communications-email-billing.service";
+import { captureAurelinkEmailUsage, refundAurelinkEmailUsage, resizeAurelinkEmailUsageReservation } from "../services/aurelink/communications-email-billing.service";
 
 const router=Router();
 const admins=()=>new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(x=>x.trim()).filter(Boolean));
@@ -272,8 +272,18 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
       await client.query("ROLLBACK");
       return res.status(409).json({success:false,code:"NOT_AWAITING_RECONCILIATION",message:"This SMTP message is not awaiting billing reconciliation."});
     }
+    const partial=row.metadata?.partialAcceptance===true;
+    const acceptedRecipients=Array.isArray(row.metadata?.acceptedRecipients)?row.metadata.acceptedRecipients.map(String):[];
+    const rejectedRecipients=Array.isArray(row.metadata?.rejectedRecipients)?row.metadata.rejectedRecipients.map(String):[];
+    if(partial&&parsed.data.outcome==="rejected"){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PARTIAL_ACCEPTANCE_REQUIRES_ALLOCATION",message:"Provider evidence already records partial acceptance. Reconcile it as accepted so only accepted recipients are charged."});}
     if(parsed.data.outcome==="accepted"){
       const providerMessageId=String(parsed.data.providerMessageId);
+      if(partial){
+        if(!acceptedRecipients.length||!rejectedRecipients.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PARTIAL_ALLOCATION_MISSING",message:"The accepted/rejected recipient allocation is incomplete."});}
+        await resizeAurelinkEmailUsageReservation(client,String(row.id),acceptedRecipients.length,rejectedRecipients);
+        await client.query("UPDATE aurelink_messages SET recipient=$2,provider_status='smtp_partial_acceptance',provider_error=$3,updated_at=NOW() WHERE id=$1",[row.id,JSON.stringify(acceptedRecipients),"Provider rejected recipient(s): "+rejectedRecipients.join(", ")]);
+        await client.query("UPDATE aurelink_smtp_messages SET recipients=$2::jsonb,error=$3,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$4",[row.workspace_id,JSON.stringify(acceptedRecipients),"Provider rejected recipient(s): "+rejectedRecipients.join(", "),String(row.id)]);
+      }
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",["resend:"+providerMessageId]);
       const duplicate=await client.query("SELECT id FROM aurelink_messages WHERE provider='resend' AND provider_message_id=$1 AND id<>$2 LIMIT 1",[providerMessageId,row.id]);
       if(duplicate.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_MESSAGE_ID_IN_USE",message:"That Resend message ID is already linked to another Aurelink message."});}
