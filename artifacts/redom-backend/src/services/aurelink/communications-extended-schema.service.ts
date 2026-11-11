@@ -99,6 +99,26 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     );
     CREATE INDEX IF NOT EXISTS aurelink_sender_provider_events_submission_idx
       ON aurelink_sender_provider_events(submission_id,processed_at DESC);
+    CREATE TABLE IF NOT EXISTS aurelink_sender_evidence_documents (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      uploaded_by_user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      sender_application_id UUID REFERENCES aurelink_sender_ids(id) ON DELETE CASCADE,
+      object_key TEXT NOT NULL UNIQUE,
+      original_filename VARCHAR(180) NOT NULL,
+      mime_type VARCHAR(32) NOT NULL CHECK(mime_type IN ('application/pdf','image/jpeg','image/png')),
+      byte_size INTEGER NOT NULL CHECK(byte_size BETWEEN 1 AND 10485760),
+      sha256 CHAR(64) NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'uploaded' CHECK(status IN ('uploaded','attached','verified','rejected')),
+      verified_at TIMESTAMPTZ,
+      verified_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_evidence_workspace_idx
+      ON aurelink_sender_evidence_documents(workspace_id,uploaded_by_user_id,status,created_at DESC);
+    CREATE INDEX IF NOT EXISTS aurelink_sender_evidence_application_idx
+      ON aurelink_sender_evidence_documents(sender_application_id,status);
     CREATE TABLE IF NOT EXISTS aurelink_sender_security_audit (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       sender_application_id UUID NOT NULL REFERENCES aurelink_sender_ids(id) ON DELETE CASCADE,
