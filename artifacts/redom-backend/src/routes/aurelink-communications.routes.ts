@@ -379,6 +379,10 @@ router.post("/aurelink/communications/campaigns/:id/send",aurelinkAuthMiddleware
       ?await client.query("SELECT id,phone_number AS destination FROM aurelink_sms_contacts WHERE workspace_id=$1 AND consent_status='opted_in' AND phone_number IS NOT NULL ORDER BY id",[wid])
       :await client.query("SELECT id,email AS destination FROM aurelink_email_contacts WHERE workspace_id=$1 AND consent_status='opted_in' AND email IS NOT NULL ORDER BY id",[wid]);
     if(!recipients.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,message:"No opted-in contacts are eligible for this campaign."});}
+    if(campaign.channel==="sms"){
+      const invalid=recipients.rows.find((contact:any)=>!isAurelinkE164ForCountry(String(contact.destination),countryCode));
+      if(invalid){await client.query("ROLLBACK");return res.status(422).json({success:false,code:"CAMPAIGN_DESTINATION_COUNTRY_MISMATCH",message:"Every SMS campaign recipient must be a valid E.164 number matching the selected supported destination country."});}
+    }
     await client.query("UPDATE aurelink_campaigns SET status='sending',started_at=NOW(),updated_at=NOW() WHERE id=$1",[campaign.id]);
     await client.query("COMMIT");
     let queued=0,skipped=0;
