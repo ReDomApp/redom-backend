@@ -23,23 +23,42 @@ router.post("/aurelink/webhooks/resend", async (req,res) => {
   let event:any;try{event=JSON.parse(req.body.toString("utf8"));}catch{return res.status(400).json({success:false,message:"Invalid JSON payload."});}
   const status=mapAurelinkResendEvent(String(event?.type||"")),messageId=String(event?.data?.email_id||event?.data?.id||""),clientMessageId=String(event?.data?.message_id||"");
   try {
-    const stored=await pool.query("INSERT INTO aurelink_provider_events(provider,provider_event_id,provider_message_id,event_type,payload,processed_at) VALUES('resend',$1,$2,$3,$4::jsonb,NOW()) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[id,messageId||null,String(event?.type||"unknown"),JSON.stringify(event)]);
-    if(stored.rows.length&&status&&messageId) await updateAurelinkMessageStatus({provider:"resend",providerMessageId:messageId,status,providerStatus:String(event.type),providerError:event?.data?.bounce?.message||event?.data?.reason||undefined,deliveredAt:status==="delivered"?new Date(event?.created_at||Date.now()):undefined});
-    if(stored.rows.length&&status){
-      const smtpRows=clientMessageId
-        ?await pool.query("UPDATE aurelink_smtp_messages SET provider_message_id=COALESCE(provider_message_id,$1),status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $2='opened' THEN 'opened' WHEN $2='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $2='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $2='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE provider='resend' AND client_message_id=$3 RETURNING workspace_id,message_key",[messageId||null,status,clientMessageId])
-        :await pool.query("UPDATE aurelink_smtp_messages SET status=CASE WHEN $2='delivered' THEN 'delivered' WHEN $2 IN ('bounced','complained','failed') THEN 'failed' WHEN $2='opened' THEN 'opened' WHEN $2='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $2='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $2='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE provider='resend' AND provider_message_id=$1 RETURNING workspace_id,message_key",[messageId,status]);
-      for(const smtp of smtpRows.rows){
-        await pool.query("UPDATE aurelink_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3 IN ('opened','clicked') THEN $3 ELSE status END,provider_status=$4,provider_error=$5,delivered_at=CASE WHEN $3='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,updated_at=NOW() WHERE id=$1",[smtp.message_key,messageId||null,status,String(event.type),event?.data?.bounce?.message||event?.data?.reason||null]);
-        await pool.query("UPDATE aurelink_communications_usage SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' ELSE status END,updated_at=NOW() WHERE message_id=$1",[smtp.message_key,messageId||null,status]);
-        if(["bounced","complained","unsubscribed","rejected"].includes(status)){
-          const reason=status==="bounced"?"hard_bounce":status==="complained"?"spam_complaint":status==="unsubscribed"?"unsubscribe":"provider_suppression";
-          const recipients=Array.isArray(event?.data?.to)?event.data.to:[];
-          for(const recipient of recipients){const address=String(recipient).replace(/^.*<([^>]+)>.*$/,"$1").trim().toLowerCase();if(address.includes("@"))await pool.query("INSERT INTO aurelink_email_suppressions(workspace_id,email,reason,source_provider) VALUES($1,$2,$3,'resend') ON CONFLICT(workspace_id,email) DO NOTHING",[smtp.workspace_id,address,reason]);}
-        }
+    const inserted=await pool.query("INSERT INTO aurelink_provider_events(provider,provider_event_id,provider_message_id,event_type,payload,processed_at) VALUES('resend',$1,$2,$3,$4::jsonb,NULL) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[id,messageId||null,String(event?.type||"unknown"),JSON.stringify(event)]);
+    let eventRecordId=inserted.rows[0]?.id;
+    if(!eventRecordId){
+      const existing=(await pool.query("SELECT id,processed_at FROM aurelink_provider_events WHERE provider='resend' AND provider_event_id=$1",[id])).rows[0];
+      if(existing?.processed_at)return res.status(200).json({received:true,duplicate:true});
+      eventRecordId=existing?.id;
+    }
+    if(!eventRecordId)return res.status(503).json({received:false,retry:true,message:"Webhook event could not be claimed for processing."});
+    if(!status){
+      await pool.query("UPDATE aurelink_provider_events SET processed_at=NOW() WHERE id=$1",[eventRecordId]);
+      return res.status(200).json({received:true,updated:false});
+    }
+    const apiMatches=messageId?await pool.query("SELECT id FROM aurelink_messages WHERE provider='resend' AND provider_message_id=$1 LIMIT 1",[messageId]):{rows:[]};
+    const recipient=Array.isArray(event?.data?.to)?String(event.data.to[0]||"").replace(/^.*<([^>]+)>.*$/,"$1").trim().toLowerCase():"";
+    const smtpMatches=await pool.query(
+      "SELECT workspace_id,message_key FROM aurelink_smtp_messages WHERE provider='resend' AND (($1<>'' AND client_message_id=$1 AND ($3='' OR recipients @> $4::jsonb)) OR ($2<>'' AND provider_message_id=$2)) LIMIT 100",
+      [clientMessageId,messageId,recipient,JSON.stringify(recipient?[recipient]:[])]
+    );
+    if(!apiMatches.rows.length&&!smtpMatches.rows.length){
+      return res.status(503).json({received:false,retry:true,message:"No Aurelink message matches this Resend event yet; retry after the submission record is committed."});
+    }
+    if(apiMatches.rows.length&&messageId){
+      await updateAurelinkMessageStatus({provider:"resend",providerMessageId:messageId,status,providerStatus:String(event.type),providerError:event?.data?.bounce?.message||event?.data?.reason||event?.data?.suppressed?.message||undefined,deliveredAt:status==="delivered"?new Date(event?.created_at||Date.now()):undefined});
+    }
+    for(const smtp of smtpMatches.rows){
+      await pool.query("UPDATE aurelink_smtp_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3='opened' THEN 'opened' WHEN $3='clicked' THEN 'clicked' ELSE status END,opened_at=CASE WHEN $3='opened' THEN COALESCE(opened_at,NOW()) ELSE opened_at END,clicked_at=CASE WHEN $3='clicked' THEN COALESCE(clicked_at,NOW()) ELSE clicked_at END,updated_at=NOW() WHERE workspace_id=$1 AND message_key=$4",[smtp.workspace_id,messageId||null,status,String(smtp.message_key)]);
+      await pool.query("UPDATE aurelink_messages SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' WHEN $3 IN ('opened','clicked') THEN $3 ELSE status END,provider_status=$4,provider_error=$5,delivered_at=CASE WHEN $3='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,updated_at=NOW() WHERE id=$1",[smtp.message_key,messageId||null,status,String(event.type),event?.data?.bounce?.message||event?.data?.reason||event?.data?.suppressed?.message||null]);
+      await pool.query("UPDATE aurelink_communications_usage SET provider_message_id=COALESCE(provider_message_id,$2),status=CASE WHEN $3='delivered' THEN 'delivered' WHEN $3 IN ('bounced','complained','failed','unsubscribed','rejected') THEN 'failed' ELSE status END,updated_at=NOW() WHERE message_id=$1",[smtp.message_key,messageId||null,status]);
+      if(["bounced","complained","unsubscribed","rejected"].includes(status)){
+        const reason=status==="bounced"?"hard_bounce":status==="complained"?"spam_complaint":status==="unsubscribed"?"unsubscribe":"provider_suppression";
+        const recipients=Array.isArray(event?.data?.to)?event.data.to:[];
+        for(const item of recipients){const address=String(item).replace(/^.*<([^>]+)>.*$/,"$1").trim().toLowerCase();if(address.includes("@"))await pool.query("INSERT INTO aurelink_email_suppressions(workspace_id,email,reason,source_provider) VALUES($1,$2,$3,'resend') ON CONFLICT(workspace_id,email) DO NOTHING",[smtp.workspace_id,address,reason]);}
       }
     }
-    return res.status(200).json({received:true,updated:Boolean(stored.rows.length&&status&&(messageId||clientMessageId)),duplicate:!stored.rows.length});
+    await pool.query("UPDATE aurelink_provider_events SET processed_at=NOW() WHERE id=$1",[eventRecordId]);
+    return res.status(200).json({received:true,updated:true,duplicate:false});
   }catch{return res.status(500).json({success:false,message:"Unable to persist Resend delivery event."});}
 });
 
