@@ -142,3 +142,12 @@ Automatic provider fallback is permitted only after an explicit, non-retryable p
 Aurelink refunds only after a confirmed terminal submission failure following the configured retry policy. Refunds are idempotent and use the original message charge reference with a distinct refund reference. A delivery bounce after provider acceptance is not automatically refunded because the provider accepted the billable submission. An unknown/manual-review outcome remains financially reserved until an operator reconciles the provider result: confirmed acceptance captures the charge; confirmed non-acceptance/failure triggers the one-time refund. Do not manually mark an unknown outcome failed without checking the provider account first.
 
 The worker schema adds submission_state (not_started, in_flight, accepted, rejected, unknown) and the manual_review job state. Monitor this queue operationally; it must be reconciled before enabling production traffic at scale.
+
+### Ambiguous provider submission reconciliation API
+
+An uncertain provider submission is intentionally held for operator review. The following Aurelink administrator endpoints are available:
+
+- `GET /aurelink/admin/communications/manual-review?limit=50` — lists ambiguous submissions without returning encrypted payloads or message content.
+- `POST /aurelink/admin/communications/messages/:id/reconcile` — resolves one manual-review item. Requires `outcome` (`accepted` or `rejected`) and an `evidenceReference` documenting the provider-console check. For `accepted`, it also requires the actual provider `providerMessageId`.
+
+Both endpoints require a signed-in Aurelink account whose user ID is explicitly listed in `AURELINK_ADMIN_USER_IDS`. The reconciliation operation locks the job and message in one database transaction, rejects already-resolved records, prevents reuse of a provider message ID, writes an immutable administrator audit row, and then either captures the reserved charge (accepted) or issues the idempotent refund (confirmed not accepted). The API never exposes the stored message body or encrypted provider payload in the manual-review listing. The evidence reference should identify the provider console record, ticket or other independently checked evidence; it is an audit pointer, not proof automatically fetched by Aurelink.
