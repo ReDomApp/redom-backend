@@ -217,16 +217,18 @@ const byCode = new Map<string, AurelinkSmsCountry>(AURELINK_SMS_COUNTRIES.map(co
 export function getAurelinkSmsCountry(countryCode: string): AurelinkSmsCountry | undefined {
   return byCode.get(countryCode.trim().toUpperCase());
 }
-export function isAurelinkE164ForCountry(phone: string, countryCode: string): boolean {
+const sharedPlanPrefixes: Record<string, string[]> = {
+  DO: ["+1809", "+1829", "+1849"],
+  PR: ["+1787", "+1939"],
+  JM: ["+1876", "+1658"],
+};
+export function getAurelinkSmsCountryPrefixes(countryCode: string): string[] {
   const country = getAurelinkSmsCountry(countryCode);
-  if (!country || !/^\+[1-9]\d{7,14}$/.test(phone)) return false;
-  const sharedPlanPrefixes: Record<string, string[]> = {
-    DO: ["+1809", "+1829", "+1849"],
-    PR: ["+1787", "+1939"],
-    JM: ["+1876", "+1658"],
-  };
-  const acceptedPrefixes = sharedPlanPrefixes[country.countryCode] || [country.callingCode];
-  return acceptedPrefixes.some(prefix => phone.startsWith(prefix));
+  return country ? (sharedPlanPrefixes[country.countryCode] || [country.callingCode]) : [];
+}
+export function isAurelinkE164ForCountry(phone: string, countryCode: string): boolean {
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) return false;
+  return getAurelinkSmsCountryPrefixes(countryCode).some(prefix => phone.startsWith(prefix));
 }
 
 const senderIdNoDigits = new Set(["BG","GM","GT","HN","LR","NI","NG","PK","RO","RW"]);
