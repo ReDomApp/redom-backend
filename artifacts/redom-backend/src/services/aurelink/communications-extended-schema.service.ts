@@ -174,6 +174,7 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       ON aurelink_verified_websites(workspace_id,domain,status);
     ALTER TABLE aurelink_verified_websites ADD COLUMN IF NOT EXISTS verification_expires_at TIMESTAMPTZ;
     ALTER TABLE aurelink_verified_websites ADD COLUMN IF NOT EXISTS last_dns_checked_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS aurelink_verified_websites_dns_recheck_idx ON aurelink_verified_websites(status,last_dns_checked_at);
 
     ALTER TABLE aurelink_email_domains
       ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(253),
