@@ -269,7 +269,7 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
         } catch (error) {
           const message = String(error?.message || "Upstream email delivery failed.").slice(0, 240);
           console.error("SMTP upstream delivery failed:", { credentialId: session.user?.credentialId, message });
-          return callback(smtpError("Aurelink could not submit this message to its delivery provider. " + message, 451));
+          return callback(smtpError("Aurelink could not submit this message. " + message, Number(error?.responseCode) || 451));
         }
       });
     },
