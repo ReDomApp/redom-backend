@@ -127,10 +127,10 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
     const account=(await client.query("SELECT billing_mode FROM aurelink_email_billing_accounts WHERE workspace_id=$1 FOR SHARE",[user.workspaceId])).rows[0];
     const billingMode=String(account?.billing_mode||"free");
     const subscriptionResult = await client.query(
-      `SELECT id,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback
+      `SELECT id,status,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback,
+              (billing_period_start<=NOW() AND billing_period_end>NOW()) AS period_active
          FROM aurelink_email_subscriptions
-        WHERE workspace_id=$1 AND status='active'
-          AND billing_period_start<=NOW() AND billing_period_end>NOW()
+        WHERE workspace_id=$1 AND status IN ('active','past_due')
         ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
       [user.workspaceId]
     );
@@ -138,12 +138,19 @@ async function reserveSmtpUsage(user, raw, parsed, recipients, envelopeFrom) {
     let source = null;
     let usageDate = null;
     if (subscription) {
-      const remaining = BigInt(String(subscription.monthly_email_allowance)) - BigInt(String(subscription.used_emails)) - BigInt(String(subscription.reserved_emails));
-      if (remaining >= BigInt(units)) {
-        await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails+$2,updated_at=NOW() WHERE id=$1",[subscription.id,units]);
-        source = "subscription";
-      } else if (!subscription.allow_prepaid_fallback) {
-        throw smtpError("The monthly Aurelink Mail allowance is exhausted. Upgrade the package, enable prepaid fallback, or wait for renewal.",452);
+      const periodActive=subscription.status==="active"&&subscription.period_active===true;
+      if(periodActive){
+        const remaining = BigInt(String(subscription.monthly_email_allowance)) - BigInt(String(subscription.used_emails)) - BigInt(String(subscription.reserved_emails));
+        if (remaining >= BigInt(units)) {
+          await client.query("UPDATE aurelink_email_subscriptions SET reserved_emails=reserved_emails+$2,updated_at=NOW() WHERE id=$1",[subscription.id,units]);
+          source = "subscription";
+        }
+      }
+      if(!source&&!subscription.allow_prepaid_fallback){
+        const message=subscription.status==="past_due"||!periodActive
+          ?"The Aurelink Mail subscription is not currently paid and active. Resolve payment or explicitly enable prepaid fallback."
+          :"The monthly Aurelink Mail allowance is exhausted. Upgrade the package, enable prepaid fallback, or wait for renewal.";
+        throw smtpError(message,452);
       }
     }
     if (!subscription && billingMode === "free") {
