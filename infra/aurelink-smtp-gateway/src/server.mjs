@@ -234,7 +234,7 @@ async function captureSmtpUsage(user, reservation, info, mailFrom, recipients) {
     }
     await client.query("UPDATE aurelink_messages SET status='accepted',provider_message_id=$2,accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[reservation.messageId,String(info.messageId || "") || null]);
     await client.query("UPDATE aurelink_communications_usage SET status='accepted',provider_message_id=$2,updated_at=NOW() WHERE message_id=$1",[reservation.messageId,String(info.messageId || "") || null]);
-    await client.query("INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,provider_message_id,status) VALUES($1,$2,$3,$4,$5,$6::jsonb,'resend',$7,'accepted') ON CONFLICT(workspace_id,message_key) DO UPDATE SET provider_message_id=EXCLUDED.provider_message_id,status='accepted',updated_at=NOW()",[user.workspaceId,user.credentialId,reservation.messageId,String(info.messageId || "") || null,mailFrom,JSON.stringify(recipients),String(info.messageId || "") || null]);
+    await client.query("INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,provider_message_id,status) VALUES($1,$2,$3,$4,$5,$6::jsonb,'resend',$7,'accepted') ON CONFLICT(workspace_id,client_message_id) WHERE client_message_id IS NOT NULL DO UPDATE SET credential_id=EXCLUDED.credential_id,message_key=EXCLUDED.message_key,provider_message_id=EXCLUDED.provider_message_id,status='accepted',error=NULL,updated_at=NOW()",[user.workspaceId,user.credentialId,reservation.messageId,String(info.messageId || "") || null,mailFrom,JSON.stringify(recipients),String(info.messageId || "") || null]);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -280,6 +280,24 @@ async function refundSmtpUsage(user, reservation, reason) {
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     console.error("SMTP usage refund requires reconciliation:",{messageId:reservation.messageId,error:error?.message || "unknown error"});
+  } finally { client.release(); }
+}
+
+async function markSmtpUnknown(user, reservation, reason, mailFrom, recipients, clientMessageId) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("UPDATE aurelink_email_usage_reservations SET status='unknown',updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[reservation.messageId]);
+    await client.query("UPDATE aurelink_messages SET status='unknown',provider_error=$2,updated_at=NOW() WHERE id=$1",[reservation.messageId,String(reason || "SMTP provider outcome is unknown").slice(0,500)]);
+    await client.query("UPDATE aurelink_communications_usage SET status='queued',updated_at=NOW() WHERE message_id=$1",[reservation.messageId]);
+    await client.query(
+      "INSERT INTO aurelink_smtp_messages(workspace_id,credential_id,message_key,client_message_id,envelope_from,recipients,provider,provider_message_id,status,error) VALUES($1,$2,$3,$4,$5,$6::jsonb,'resend',NULL,'unknown',$7) ON CONFLICT(workspace_id,client_message_id) WHERE client_message_id IS NOT NULL DO UPDATE SET credential_id=EXCLUDED.credential_id,message_key=EXCLUDED.message_key,status='unknown',error=EXCLUDED.error,updated_at=NOW()",
+      [user.workspaceId,user.credentialId,reservation.messageId,clientMessageId,mailFrom,JSON.stringify(recipients),String(reason || "Provider outcome unknown").slice(0,500)]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    console.error("SMTP unknown outcome could not be recorded:",{messageId:reservation.messageId,error:error?.message || "unknown error"});
   } finally { client.release(); }
 }
 
@@ -352,6 +370,10 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
           }
           const recipients = (session.envelope.rcptTo || []).map((entry) => entry.address).filter(Boolean);
           if (!recipients.length) return callback(smtpError("At least one recipient is required.", 554));
+          const clientMessageId=String(parsed.messageId || "").trim().slice(0,255);
+          if(!clientMessageId)return callback(smtpError("A stable Message-ID header is required for safe Aurelink SMTP billing and retry protection.",554));
+          const prior=(await pool.query("SELECT status FROM aurelink_smtp_messages WHERE workspace_id=$1 AND client_message_id=$2 LIMIT 1",[session.user.workspaceId,clientMessageId])).rows[0];
+          if(prior&&["unknown","accepted","delivered"].includes(String(prior.status)))return callback();
 
           const reservation = await reserveSmtpUsage(session.user, raw, parsed, recipients, mailFrom);
           const transport = nodemailer.createTransport({
@@ -369,7 +391,12 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
             const info = await transport.sendMail({ envelope: { from: mailFrom, to: recipients }, raw });
             await captureSmtpUsage(session.user, reservation, info, mailFrom, recipients);
           } catch (providerError) {
-            await refundSmtpUsage(session.user, reservation, providerError?.message || "Upstream provider rejected SMTP message");
+            const responseCode=Number(providerError?.responseCode||0);
+            if(responseCode>=400&&responseCode<600){
+              await refundSmtpUsage(session.user,reservation,providerError?.message || "Upstream provider rejected SMTP message");
+            }else{
+              await markSmtpUnknown(session.user,reservation,providerError?.message || "SMTP provider outcome is unknown",mailFrom,recipients,clientMessageId);
+            }
             throw providerError;
           } finally {
             transport.close();
