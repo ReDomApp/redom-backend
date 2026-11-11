@@ -420,8 +420,8 @@ function makeSmtpOptions({ secure, requireTLS, key, cert }) {
           }
           const recipients = (session.envelope.rcptTo || []).map((entry) => entry.address).filter(Boolean);
           if (!recipients.length) return callback(smtpError("At least one recipient is required.", 554));
-          const clientMessageId=String(parsed.messageId || "").trim().slice(0,255);
-          if(!clientMessageId)return callback(smtpError("A stable Message-ID header is required for safe Aurelink SMTP billing and retry protection.",554));
+          const clientMessageId=String(parsed.messageId || "").trim();
+          if(!clientMessageId||clientMessageId.length>255)return callback(smtpError("A valid Message-ID header (1–255 characters) is required for safe Aurelink SMTP billing and retry protection.",554));
           const prior=(await pool.query("SELECT status FROM aurelink_smtp_messages WHERE workspace_id=$1 AND client_message_id=$2 LIMIT 1",[session.user.workspaceId,clientMessageId])).rows[0];
           if(prior&&["unknown","accepted","delivered"].includes(String(prior.status)))return callback();
 
