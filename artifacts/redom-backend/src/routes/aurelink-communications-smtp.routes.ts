@@ -91,13 +91,16 @@ router.post("/aurelink/communications/smtp/credentials", aurelinkAuthMiddleware,
   try {
     remote = await createAurelinkResendSmtpKey({ workspaceId: wid, domainId: String(domain.provider_domain_id), label });
     try {
-      const credential = await saveCredential({ workspaceId: wid, label, domain, providerKeyId: remote.providerKeyId, providerToken: remote.token });
+      const savedCredential = await saveCredential({ workspaceId: wid, label, domain, providerKeyId: remote.providerKeyId, providerToken: remote.token });
+      const credential = temporaryDirectResend()
+        ? temporaryResendSmtpCredential({ ...savedCredential, password: remote.token })
+        : savedCredential;
       return res.status(201).json({
         success: true,
         provider: "aurelink",
         credential,
-        smtp: CUSTOMER_SMTP,
-        warning: temporaryDirectResend() ? "Temporary direct Resend password displayed once. Store securely. This credential cannot authenticate to the future Aurelink gateway without reissuance." : "The Aurelink SMTP password is displayed once. Store it securely; it cannot be retrieved later.",
+        smtp: activeSmtp(),
+        warning: temporaryDirectResend() ? "Temporary direct Resend SMTP is active. The domain-scoped Resend sending key is shown once as the SMTP password. Reissue credentials when Aurelink's own SMTP gateway is ready." : "The Aurelink SMTP password is displayed once. Store it securely; it cannot be retrieved later.",
       });
     } catch (databaseError) {
       await revokeAurelinkResendSmtpKey(remote.providerKeyId).catch(() => undefined);
@@ -121,11 +124,14 @@ router.post("/aurelink/communications/smtp/credentials/:id/rotate", aurelinkAuth
   let insertedId: string | undefined;
   try {
     replacement = await createAurelinkResendSmtpKey({ workspaceId: wid, domainId: String(old.provider_domain_id), label: String(old.label || "SMTP credential") });
-    const credential = await saveCredential({
+    const savedCredential = await saveCredential({
       workspaceId: wid, label: String(old.label || "SMTP credential"),
       domain: { id: old.email_domain_id, domain: old.domain, provider_domain_id: old.provider_domain_id },
       providerKeyId: replacement.providerKeyId, providerToken: replacement.token,
     });
+    const credential = temporaryDirectResend()
+      ? temporaryResendSmtpCredential({ ...savedCredential, password: replacement.token })
+      : savedCredential;
     insertedId = String(credential.id);
     try {
       await revokeAurelinkResendSmtpKey(String(old.provider_key_id));
@@ -137,7 +143,7 @@ router.post("/aurelink/communications/smtp/credentials/:id/rotate", aurelinkAuth
     await pool.query("UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE id=$1 AND workspace_id=$2", [old.id, wid]);
     return res.status(201).json({
       success: true, provider: "aurelink", credential,
-      revokedCredentialId: old.id, smtp: CUSTOMER_SMTP,
+      revokedCredentialId: old.id, smtp: activeSmtp(),
       warning: temporaryDirectResend() ? "Temporary direct Resend password displayed once. The previous provider key has been revoked. Reissue when switching to Aurelink SMTP." : "The replacement Aurelink SMTP password is displayed once. The previous credential and its internal provider key have been revoked.",
     });
   } catch (error) {
