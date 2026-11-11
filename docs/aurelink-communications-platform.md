@@ -115,6 +115,7 @@ Administrator endpoints:
 - `GET /aurelink/admin/communications/senders/:id/evidence/:documentId` — administrator-only private evidence retrieval with an integrity check.
 - `GET /aurelink/admin/communications/sender-submissions` — due and in-progress Brevo requests.
 - `POST /aurelink/admin/communications/sender-submissions/:id/reveal-token` — one-time token reveal after the one-hour hold.
+- `POST /aurelink/admin/communications/sender-submissions/:id/rotate-token` — invalidate and replace a lost token only before provider submission; the new token must then be revealed once.
 - `POST /aurelink/admin/communications/sender-submissions/:id/mark-submitted` — map the actual Brevo reference to the request.
 - `POST /aurelink/admin/communications/sender-submissions/:id/reconcile` — record an actual status returned through Brevo's operator workflow.
 - `POST /aurelink/webhooks/brevo/sender-registration` — authenticated callback contract for a supported Brevo callback or an Aurelink-controlled integration relay. It requires `AURELINK_BREVO_SENDER_REGISTRATION_WEBHOOK_SECRET`.
