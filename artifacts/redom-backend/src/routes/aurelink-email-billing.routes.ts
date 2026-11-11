@@ -115,7 +115,7 @@ router.get("/aurelink/communications/email/billing/overview",aurelinkAuthMiddlew
   const freeUsed=BigInt(String(daily.rows[0]?.used_emails||"0")),freeReserved=BigInt(String(daily.rows[0]?.reserved_emails||"0"));
   return res.json({
     success:true,workspaceId:wid,currency:"USD",
-    billingMode:String(account.rows[0]?.billing_mode||"payg"),
+    billingMode:String(account.rows[0]?.billing_mode||"free"),
     freeDailyAllowance:{limit:freeLimit,used:freeUsed.toString(),reserved:freeReserved.toString(),remaining:(BigInt(freeLimit)-freeUsed-freeReserved>0n?BigInt(freeLimit)-freeUsed-freeReserved:0n).toString()},
     subscription:subscription.rows[0]||null,
     prepaidEmailCredits:String(credits.rows[0]?.balance_emails??"0"),
@@ -154,12 +154,19 @@ router.patch("/aurelink/communications/email/billing/prepaid-fallback",aurelinkA
   if(!parsed.success)return res.status(400).json({success:false,message:"enabled must be a boolean."});
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
-  const updated=await pool.query(
-    "UPDATE aurelink_email_subscriptions SET allow_prepaid_fallback=$2,updated_at=NOW() WHERE id=(SELECT id FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status='active' ORDER BY created_at DESC LIMIT 1) RETURNING id,allow_prepaid_fallback",
-    [wid,parsed.data.enabled]
-  );
-  if(!updated.rows[0])return res.status(404).json({success:false,code:"ACTIVE_EMAIL_SUBSCRIPTION_NOT_FOUND",message:"There is no active monthly email subscription for this workspace."});
-  return res.json({success:true,subscription:updated.rows[0]});
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const updated=await client.query(
+      "UPDATE aurelink_email_subscriptions SET allow_prepaid_fallback=$2,updated_at=NOW() WHERE id=(SELECT id FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status='active' ORDER BY created_at DESC LIMIT 1 FOR UPDATE) RETURNING id,allow_prepaid_fallback",
+      [wid,parsed.data.enabled]
+    );
+    if(!updated.rows[0]){await client.query("ROLLBACK");return res.status(404).json({success:false,code:"ACTIVE_EMAIL_SUBSCRIPTION_NOT_FOUND",message:"There is no active monthly email subscription for this workspace."});}
+    await client.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,target_id,details) VALUES($1,$2,'prepaid_fallback_changed',$3,$4::jsonb)",[wid,req.user!.userId,updated.rows[0].id,JSON.stringify({enabled:parsed.data.enabled})]);
+    await client.query("COMMIT");
+    return res.json({success:true,subscription:updated.rows[0]});
+  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Unable to update prepaid fallback."});}
+  finally{client.release();}
 });
 
 router.post("/aurelink/admin/communications/email/pricing/options",aurelinkAuthMiddleware,async(req,res)=>{
