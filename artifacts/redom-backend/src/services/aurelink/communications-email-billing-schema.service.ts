@@ -60,6 +60,45 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       WHERE o.plan_id=p.id AND o.monthly_email_allowance=seed.allowance AND o.active=TRUE
     );
 
+    CREATE TABLE IF NOT EXISTS aurelink_email_credit_packs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email_credits BIGINT NOT NULL CHECK(email_credits > 0),
+      price_minor BIGINT NOT NULL CHECK(price_minor > 0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD' CHECK(currency='USD'),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(email_credits,price_minor)
+    );
+    INSERT INTO aurelink_email_credit_packs(email_credits,price_minor)
+    VALUES (1000,150),(10000,1300),(50000,5500),(100000,10000),(250000,22500),(500000,42500)
+    ON CONFLICT(email_credits,price_minor) DO NOTHING;
+
+    CREATE TABLE IF NOT EXISTS aurelink_email_billing_payments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      reference VARCHAR(120) NOT NULL UNIQUE,
+      user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      purchase_type VARCHAR(20) NOT NULL CHECK(purchase_type IN ('subscription','email_credits')),
+      plan_option_id UUID REFERENCES aurelink_email_plan_options(id) ON DELETE RESTRICT,
+      credit_pack_id UUID REFERENCES aurelink_email_credit_packs(id) ON DELETE RESTRICT,
+      email_credits BIGINT,
+      amount_minor BIGINT NOT NULL CHECK(amount_minor > 0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD' CHECK(currency='USD'),
+      status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','paid','failed','cancelled','refunded')),
+      stripe_checkout_session_id VARCHAR(180) UNIQUE,
+      stripe_subscription_id VARCHAR(180),
+      stripe_payment_intent_id VARCHAR(180),
+      paid_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_stripe_subscription_idx
+      ON aurelink_email_billing_payments(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS aurelink_email_billing_payments_workspace_idx
+      ON aurelink_email_billing_payments(workspace_id,created_at DESC);
+
     CREATE TABLE IF NOT EXISTS aurelink_email_subscriptions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
