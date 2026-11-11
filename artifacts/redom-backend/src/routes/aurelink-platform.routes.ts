@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { createHash, randomBytes } from "node:crypto";
+import { resolveCname } from "node:dns/promises";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
+import { deleteAurelinkProviderDomain, type AurelinkEmailProvider } from "../services/aurelink/communications-domains.service";
+import { revokeAurelinkResendSmtpKey } from "../services/aurelink/communications-smtp.service";
 
 const router=Router();
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
@@ -165,6 +168,87 @@ router.delete("/aurelink/communications/team/members/:id",aurelinkAuthMiddleware
   const result=await pool.query("UPDATE aurelink_communications_members SET status='revoked',invitation_token_hash=NULL,updated_at=NOW() WHERE id=$1 AND workspace_id=$2 AND role<>'owner' AND status<>'revoked' RETURNING id,email,status",[req.params.id,ws.id]);
   if(!result.rows[0])return res.status(404).json({success:false,message:"Workspace member not found."});
   res.json({success:true,member:result.rows[0]});
+ }catch(error){return fail(res,error);}
+});
+
+
+/* Email sending-domain lifecycle and customer-owned tracking-domain DNS verification. */
+router.post("/aurelink/communications/domains/:id/suspend",aurelinkAuthMiddleware,async(req,res)=>{
+ try{
+  const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  await requireManager(req.user!.userId,String(ws.id));
+  const reason=String(req.body.reason||"Suspended by workspace administrator").slice(0,500);
+  const domain=(await pool.query("SELECT id,status FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2",[req.params.id,ws.id])).rows[0];
+  if(!domain)return res.status(404).json({success:false,message:"Sending domain not found."});
+  if(domain.status==="deleted")return res.status(409).json({success:false,message:"Deleted domains cannot be suspended."});
+  await pool.query("UPDATE aurelink_email_domains SET status='suspended',suspended_at=NOW(),suspension_reason=$3,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[req.params.id,ws.id,reason]);
+  const credentials=await pool.query("SELECT id,provider_key_id FROM aurelink_smtp_credentials WHERE email_domain_id=$1 AND workspace_id=$2 AND status='active' AND provider_key_id IS NOT NULL",[req.params.id,ws.id]);
+  const failures:string[]=[];
+  for(const credential of credentials.rows){
+   try{await revokeAurelinkResendSmtpKey(String(credential.provider_key_id));}
+   catch(error){failures.push(String(credential.id)+": "+(error instanceof Error?error.message:"provider revocation failed"));}
+   await pool.query("UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE id=$1",[credential.id]);
+  }
+  res.json({success:true,domainId:req.params.id,status:"suspended",revokedCredentials:credentials.rowCount||0,providerRevocationFailures:failures});
+ }catch(error){return fail(res,error);}
+});
+router.post("/aurelink/communications/domains/:id/resume",aurelinkAuthMiddleware,async(req,res)=>{
+ try{
+  const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  await requireManager(req.user!.userId,String(ws.id));
+  const row=(await pool.query("SELECT id,domain,provider,provider_domain_id,status FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2",[req.params.id,ws.id])).rows[0];
+  if(!row)return res.status(404).json({success:false,message:"Sending domain not found."});
+  if(row.status!=="suspended")return res.status(409).json({success:false,message:"Only suspended domains can be resumed."});
+  const updated=await pool.query("UPDATE aurelink_email_domains SET status='verification_pending',suspended_at=NULL,suspension_reason=NULL,updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,domain,status",[row.id,ws.id]);
+  res.json({success:true,domain:updated.rows[0],nextStep:"Run the domain check and verification workflow before sending. Previously revoked SMTP credentials must be reissued."});
+ }catch(error){return fail(res,error);}
+});
+router.delete("/aurelink/communications/domains/:id",aurelinkAuthMiddleware,async(req,res)=>{
+ try{
+  const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  await requireManager(req.user!.userId,String(ws.id));
+  const row=(await pool.query("SELECT id,domain,provider,provider_domain_id,status FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2",[req.params.id,ws.id])).rows[0];
+  if(!row)return res.status(404).json({success:false,message:"Sending domain not found."});
+  if(row.status==="deleted")return res.json({success:true,domainId:row.id,status:"deleted",alreadyDeleted:true});
+  await pool.query("UPDATE aurelink_email_domains SET status='deleting',deletion_requested_at=NOW(),updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,ws.id]);
+  const credentials=await pool.query("SELECT id,provider_key_id FROM aurelink_smtp_credentials WHERE email_domain_id=$1 AND workspace_id=$2 AND status='active' AND provider_key_id IS NOT NULL",[row.id,ws.id]);
+  for(const credential of credentials.rows){
+   await revokeAurelinkResendSmtpKey(String(credential.provider_key_id));
+   await pool.query("UPDATE aurelink_smtp_credentials SET status='revoked',updated_at=NOW() WHERE id=$1",[credential.id]);
+  }
+  await deleteAurelinkProviderDomain(String(row.provider) as AurelinkEmailProvider,String(row.provider_domain_id||""),String(row.domain));
+  await pool.query("UPDATE aurelink_email_domains SET status='deleted',deleted_at=NOW(),verified_at=NULL,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,ws.id]);
+  await pool.query("UPDATE aurelink_email_senders SET status='disabled',updated_at=NOW() WHERE workspace_id=$1 AND LOWER(domain)=LOWER($2)",[ws.id,row.domain]);
+  res.json({success:true,domainId:row.id,status:"deleted",historicalMessagesRetained:true});
+ }catch(error){return fail(res,error);}
+});
+router.put("/aurelink/communications/domains/:id/tracking-domain",aurelinkAuthMiddleware,async(req,res)=>{
+ try{
+  const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  await requireManager(req.user!.userId,String(ws.id));
+  const domain=String(req.body.trackingDomain||"").trim().toLowerCase().replace(/\\.$/,"");
+  if(domain.length>253||!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(domain))return res.status(400).json({success:false,message:"Provide a valid fully qualified tracking domain."});
+  const row=(await pool.query("SELECT id,domain,status FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2",[req.params.id,ws.id])).rows[0];
+  if(!row)return res.status(404).json({success:false,message:"Sending domain not found."});
+  if(row.status!=="verified")return res.status(409).json({success:false,message:"Verify the sending domain before configuring a custom tracking domain."});
+  const target=String(process.env.AURELINK_TRACKING_CNAME_TARGET||"").trim().toLowerCase().replace(/\\.$/,"");
+  if(!target)return res.status(503).json({success:false,message:"AURELINK_TRACKING_CNAME_TARGET is not configured. Tracking-domain routing cannot be activated yet."});
+  await pool.query("UPDATE aurelink_email_domains SET tracking_domain=$3,tracking_settings=COALESCE(tracking_settings,'{}'::jsonb)||$4::jsonb,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,ws.id,domain,JSON.stringify({customDomain:{domain,status:"pending_dns",cnameTarget:target,tlsStatus:"pending"}})]);
+  res.status(202).json({success:true,trackingDomain:{domain,status:"pending_dns",record:{type:"CNAME",host:domain,value:target},tlsStatus:"pending"}});
+ }catch(error){return fail(res,error);}
+});
+router.post("/aurelink/communications/domains/:id/tracking-domain/verify",aurelinkAuthMiddleware,async(req,res)=>{
+ try{
+  const ws=await getWorkspace(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  const row=(await pool.query("SELECT id,tracking_domain,tracking_settings FROM aurelink_email_domains WHERE id=$1 AND workspace_id=$2 AND status='verified'",[req.params.id,ws.id])).rows[0];
+  if(!row||!row.tracking_domain)return res.status(404).json({success:false,message:"Verified sending domain or custom tracking domain not found."});
+  const target=String(process.env.AURELINK_TRACKING_CNAME_TARGET||"").trim().toLowerCase().replace(/\\.$/,"");
+  if(!target)return res.status(503).json({success:false,message:"AURELINK_TRACKING_CNAME_TARGET is not configured."});
+  const observed=(await resolveCname(String(row.tracking_domain))).map(value=>value.replace(/\\.$/,"").toLowerCase());
+  if(!observed.includes(target))return res.status(409).json({success:false,code:"TRACKING_CNAME_NOT_VERIFIED",trackingDomain:row.tracking_domain,expected:target,observed});
+  const settings={...(row.tracking_settings||{}),customDomain:{domain:row.tracking_domain,status:"dns_verified",cnameTarget:target,tlsStatus:"pending",dnsVerifiedAt:new Date().toISOString()}};
+  await pool.query("UPDATE aurelink_email_domains SET tracking_settings=$3::jsonb,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[row.id,ws.id,JSON.stringify(settings)]);
+  res.json({success:true,trackingDomain:settings.customDomain,notice:"DNS is verified. HTTPS certificate provisioning and activation at the tracking edge must complete before this hostname can serve tracked links."});
  }catch(error){return fail(res,error);}
 });
 
