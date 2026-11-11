@@ -309,7 +309,7 @@ router.post("/aurelink/communications/contacts",aurelinkAuthMiddleware,async(req
         const existing=await client.query("SELECT id FROM aurelink_email_contacts WHERE workspace_id=$1 AND LOWER(email)=LOWER($2) LIMIT 1",[wid,address]);
         if(!existing.rows[0]){
           const count=await client.query("SELECT COUNT(*)::bigint AS total FROM aurelink_email_contacts WHERE workspace_id=$1",[wid]);
-          const limit=Number((await client.query("SELECT (features->>'stored_contacts')::bigint AS limit FROM aurelink_email_plan_catalog WHERE plan_code='free' AND active=TRUE")).rows[0]?.limit||100000);
+          const limit=Number((await client.query("SELECT (features->>'stored_contacts')::bigint AS contact_limit FROM aurelink_email_plan_catalog WHERE plan_code='free' AND active=TRUE")).rows[0]?.contact_limit||100000);
           if(BigInt(String(count.rows[0]?.total||"0"))>=BigInt(limit)){
             await client.query("ROLLBACK");
             return res.status(409).json({success:false,code:"FREE_CONTACT_LIMIT_REACHED",message:"The Free Mail plan supports up to 100,000 stored contacts. Upgrade your plan to add more."});
