@@ -269,7 +269,7 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
     await pool.query("UPDATE aurelink_email_subscriptions SET status='past_due',updated_at=NOW() WHERE paypal_subscription_id=$1 AND status='active'",[resource.id]);
   }else if(body.event_type==="BILLING.SUBSCRIPTION.CANCELLED"||body.event_type==="BILLING.SUBSCRIPTION.SUSPENDED"||body.event_type==="BILLING.SUBSCRIPTION.EXPIRED"){
     const status=body.event_type.endsWith("CANCELLED")?"cancelled":body.event_type.endsWith("SUSPENDED")?"suspended":"expired";
-    await pool.query("UPDATE aurelink_email_subscriptions SET status=$2,updated_at=NOW() WHERE paypal_subscription_id=$1 AND status IN ('active','past_due')",[resource.id,status]);
+    await pool.query("UPDATE aurelink_email_subscriptions SET status=CASE WHEN $2='cancelled' AND billing_period_end>NOW() THEN status ELSE $2 END,cancel_at_period_end=CASE WHEN $2='cancelled' AND billing_period_end>NOW() THEN TRUE ELSE cancel_at_period_end END,updated_at=NOW() WHERE paypal_subscription_id=$1 AND status IN ('active','past_due')",[resource.id,status]);
   }
   await pool.query("UPDATE aurelink_email_payment_webhook_events SET processed_at=NOW() WHERE provider='paypal' AND event_id=$1",[eventId]);
 }
