@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
+import { createAurelinkEmailBillingCheckout, verifyAurelinkEmailBillingCheckout } from "../services/payments/stripe-payment.service";
 
 const router=Router();
 const admins=()=>new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(x=>x.trim()).filter(Boolean));
@@ -34,6 +35,42 @@ router.get("/aurelink/communications/email/billing/plans",aurelinkAuthMiddleware
       WHERE p.active=TRUE GROUP BY p.id ORDER BY p.sort_order,p.min_monthly_emails`
   );
   return res.json({success:true,currency:"USD",plans:plans.rows});
+});
+
+router.get("/aurelink/communications/email/billing/credit-packs",aurelinkAuthMiddleware,async(_req,res)=>{
+  const packs=await pool.query("SELECT id,email_credits,price_minor,currency FROM aurelink_email_credit_packs WHERE active=TRUE ORDER BY email_credits");
+  return res.json({success:true,currency:"USD",creditPacks:packs.rows});
+});
+
+router.post("/aurelink/communications/email/billing/checkout",aurelinkAuthMiddleware,async(req,res)=>{
+  const parsed=z.object({
+    purchaseType:z.enum(["subscription","email_credits"]),
+    planOptionId:z.string().uuid().optional(),
+    creditPackId:z.string().uuid().optional()
+  }).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({success:false,message:"Choose a monthly email plan configuration or prepaid email credit pack."});
+  if(parsed.data.purchaseType==="subscription"&&!parsed.data.planOptionId)return res.status(400).json({success:false,message:"Select an exact monthly email allowance and price."});
+  if(parsed.data.purchaseType==="email_credits"&&!parsed.data.creditPackId)return res.status(400).json({success:false,message:"Select a prepaid email credit pack."});
+  try{
+    const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+    const result=await createAurelinkEmailBillingCheckout({
+      userId:req.user!.userId,workspaceId:wid,purchaseType:parsed.data.purchaseType,
+      planOptionId:parsed.data.planOptionId,creditPackId:parsed.data.creditPackId
+    });
+    return res.status(201).json({success:true,...result});
+  }catch(error){
+    const message=error instanceof Error?error.message:"Unable to create Aurelink Mail checkout.";
+    return res.status(message.includes("already has an active")?409:400).json({success:false,message});
+  }
+});
+
+router.get("/aurelink/communications/email/billing/verify/:reference",aurelinkAuthMiddleware,async(req,res)=>{
+  const reference=z.string().min(8).max(120).regex(/^[A-Za-z0-9_-]+$/).safeParse(req.params.reference);
+  if(!reference.success)return res.status(400).json({success:false,message:"Invalid Aurelink Mail payment reference."});
+  try{
+    const payment=await verifyAurelinkEmailBillingCheckout(req.user!.userId,reference.data);
+    return res.json({success:true,payment});
+  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to verify Aurelink Mail payment."});}
 });
 
 router.get("/aurelink/communications/email/billing/overview",aurelinkAuthMiddleware,async(req,res)=>{
