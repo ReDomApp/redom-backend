@@ -77,7 +77,7 @@ router.get("/aurelink/communications/billing/statement",aurelinkAuthMiddleware,a
 router.get("/aurelink/admin/communications/prices",aurelinkAuthMiddleware,async(req,res)=>{
  if(!isAurelinkAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator permission required."});
  const rows=await pool.query("SELECT * FROM aurelink_communications_price_catalog ORDER BY service,country_code,provider,category,effective_from DESC");
- res.json({success:true,prices:rows.rows});
+ return res.json({success:true,prices:rows.rows});
 });
 router.post("/aurelink/admin/communications/prices",aurelinkAuthMiddleware,async(req,res)=>{
  if(!isAurelinkAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator permission required."});
@@ -85,13 +85,13 @@ router.post("/aurelink/admin/communications/prices",aurelinkAuthMiddleware,async
  if(!["sms_segment","email_message","smtp_message"].includes(service)||!(country==="*"||/^[A-Z]{2}$/.test(country))||!Number.isSafeInteger(price)||price<=0)return res.status(400).json({success:false,message:"Provide a supported service, ISO country code or *, and a positive integer unitPriceMinor."});
  const workspaceId=req.body.workspaceId?String(req.body.workspaceId):null;
  const result=await pool.query("INSERT INTO aurelink_communications_price_catalog(service,country_code,provider,category,unit_price_minor,currency,effective_from,workspace_id) VALUES($1,$2,$3,$4,$5,'USD',COALESCE($6::timestamptz,NOW()),$7) RETURNING *",[service,country,provider,category,price,req.body.effectiveFrom||null,workspaceId]);
- res.status(201).json({success:true,price:result.rows[0]});
+ return res.status(201).json({success:true,price:result.rows[0]});
 });
 router.post("/aurelink/admin/communications/prices/:id/disable",aurelinkAuthMiddleware,async(req,res)=>{
  if(!isAurelinkAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink administrator permission required."});
  const result=await pool.query("UPDATE aurelink_communications_price_catalog SET active=FALSE,updated_at=NOW() WHERE id=$1 RETURNING id,active",[req.params.id]);
  if(!result.rows[0])return res.status(404).json({success:false,message:"Price record not found."});
- res.json({success:true,price:result.rows[0]});
+ return res.json({success:true,price:result.rows[0]});
 });
 
 /* Reputation monitoring and customer-visible alerts. */
