@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
-import { createAurelinkEmailBillingCheckout, verifyAurelinkEmailBillingCheckout } from "../services/payments/stripe-payment.service";
+import { createAurelinkEmailBillingCheckout, verifyAurelinkEmailBillingCheckout, cancelAurelinkEmailSubscription } from "../services/payments/stripe-payment.service";
 
 const router=Router();
 const admins=()=>new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(x=>x.trim()).filter(Boolean));
@@ -125,6 +125,15 @@ router.patch("/aurelink/communications/email/billing/mode",aurelinkAuthMiddlewar
   );
   await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'billing_mode_changed',$3::jsonb)",[wid,req.user!.userId,JSON.stringify({mode:parsed.data.mode})]);
   return res.json({success:true,workspaceId:wid,billingMode:parsed.data.mode});
+});
+
+router.post("/aurelink/communications/email/billing/cancel",aurelinkAuthMiddleware,async(req,res)=>{
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  try{
+    const result=await cancelAurelinkEmailSubscription(req.user!.userId,wid);
+    await pool.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'subscription_cancel_scheduled',$3::jsonb)",[wid,req.user!.userId,JSON.stringify({stripeSubscriptionId:result.subscriptionId,periodEnd:result.periodEnd.toISOString()})]);
+    return res.json({success:true,subscription:result,message:"Your subscription remains active until the end of the paid billing period."});
+  }catch(error){return res.status(409).json({success:false,message:error instanceof Error?error.message:"Unable to schedule subscription cancellation."});}
 });
 
 router.patch("/aurelink/communications/email/billing/prepaid-fallback",aurelinkAuthMiddleware,async(req,res)=>{
