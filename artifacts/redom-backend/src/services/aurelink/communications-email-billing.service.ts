@@ -82,7 +82,7 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
     );
     await client.query(
       "INSERT INTO aurelink_email_usage_reservations(message_id,user_id,workspace_id,source,units,status,metadata) VALUES($1,$2,$3,'prepaid',$4,'reserved',$5::jsonb)",
-      [input.messageId,input.userId,input.workspaceId,input.units,JSON.stringify({transport:input.transport,provider:input.provider,category:input.category})]
+      [input.messageId,input.userId,input.workspaceId,input.units,JSON.stringify({transport:input.transport,provider:input.provider,category:input.category,usageDate:String(daily.usage_date),dailyLimit:2500})]
     );
     return {source:"prepaid",units:input.units,unitPriceMinor:null,amountMinor:null,walletReference:reference};
   }
