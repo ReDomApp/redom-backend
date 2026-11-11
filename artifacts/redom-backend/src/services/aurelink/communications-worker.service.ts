@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { pool } from "../../database/db";
 import { resolveTxt } from "node:dns/promises";
 import { captureAurelinkUsage, chargeAurelinkUsage, countSmsSegments, refundAurelinkUsage } from "./communications-billing.service";
+import { reserveAurelinkEmailUsage, captureAurelinkEmailUsage, refundAurelinkEmailUsage, markAurelinkEmailUsageUnknown } from "./communications-email-billing.service";
 import { ProviderSubmissionError, sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.service";
 
 type JobPayload =
@@ -34,8 +35,10 @@ export async function enqueueAurelinkMessage(input:{
   await client.query("INSERT INTO aurelink_communications_jobs(message_id,workspace_id,payload_encrypted,payload_hash,next_attempt_at) VALUES($1,$2,$3,$4,COALESCE($5,NOW()))",[message.id,input.workspaceId,encrypt(JSON.stringify(input.payload)),payloadHash,input.scheduledAt||null]);
   const smsUnits=input.channel==="sms"?countSmsSegments(input.content):1;
   const countryCode=input.channel==="sms"?(input.payload.channel==="sms"?(input.payload.input.countryCode||"*"):"*"):"*";
-  const billable=await chargeAurelinkUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),service:input.channel==="sms"?"sms_segment":"email_message",units:smsUnits,countryCode,metadata:{channel:input.channel,provider:input.provider,category:input.category}});
-  await client.query("INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8)",[input.workspaceId,message.id,input.channel,input.provider,input.category,smsUnits,billable.unitPriceMinor,billable.reference]);
+  const billable=input.channel==="email"
+   ? await reserveAurelinkEmailUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),units:smsUnits,transport:"api",provider:input.provider,category:input.category})
+   : await chargeAurelinkUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),service:"sms_segment",units:smsUnits,countryCode,metadata:{channel:input.channel,provider:input.provider,category:input.category}});
+  await client.query("INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8)",[input.workspaceId,message.id,input.channel,input.provider,input.category,smsUnits,billable.unitPriceMinor??null,billable.walletReference??billable.reference??null]);
   await client.query("COMMIT");
   return {message,replayed:false as const};
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
@@ -59,9 +62,10 @@ async function refundCommunicationCharge(messageId:string){
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
-  const charge=await client.query("SELECT m.workspace_id,w.user_id FROM aurelink_messages m JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id WHERE m.id=$1 FOR UPDATE OF m",[messageId]);
+  const charge=await client.query("SELECT m.workspace_id,m.channel,w.user_id FROM aurelink_messages m JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id WHERE m.id=$1 FOR UPDATE OF m",[messageId]);
   const row=charge.rows[0];
-  if(row) await refundAurelinkUsage(client,messageId,String(row.user_id),String(row.workspace_id));
+  if(row?.channel==="email") await refundAurelinkEmailUsage(client,messageId);
+  else if(row) await refundAurelinkUsage(client,messageId,String(row.user_id),String(row.workspace_id));
   await client.query("COMMIT");
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);console.error("[Aurelink communications refund]",error instanceof Error?error.message:"unknown error");}
  finally{client.release();}
@@ -100,7 +104,7 @@ async function processOne(row:any){
   await pool.query("UPDATE aurelink_communications_jobs SET status='completed',submission_state='accepted',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
   await pool.query("UPDATE aurelink_communications_usage SET provider=$2,status='accepted',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
   const billingClient=await pool.connect();
-  try { await billingClient.query("BEGIN"); await captureAurelinkUsage(billingClient,String(row.message_id)); await billingClient.query("COMMIT"); }
+  try { await billingClient.query("BEGIN"); if(payload.channel==="email") await captureAurelinkEmailUsage(billingClient,String(row.message_id)); else await captureAurelinkUsage(billingClient,String(row.message_id)); await billingClient.query("COMMIT"); }
   catch(error) { await billingClient.query("ROLLBACK").catch(()=>undefined); console.error("[Aurelink usage capture]",error instanceof Error?error.message:"unknown error"); }
   finally { billingClient.release(); }
   await pool.query("UPDATE aurelink_verification_sessions SET provider_message_id=$2,updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1)",[row.message_id,result.providerMessageId]);
@@ -111,6 +115,7 @@ async function processOne(row:any){
     await pool.query("UPDATE aurelink_communications_jobs SET status='manual_review',submission_state='unknown',last_error=$2,locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.id,message.slice(0,500)]);
     await pool.query("UPDATE aurelink_messages SET status='unknown',provider_error=$2,updated_at=NOW() WHERE id=$1",[row.message_id,message.slice(0,500)]);
     await pool.query("UPDATE aurelink_communications_usage SET status='queued',updated_at=NOW() WHERE message_id=$1",[row.message_id]);
+    if(payload.channel==="email"){const billingClient=await pool.connect();try{await billingClient.query("BEGIN");await markAurelinkEmailUsageUnknown(billingClient,String(row.message_id));await billingClient.query("COMMIT");}catch(error){await billingClient.query("ROLLBACK").catch(()=>undefined);throw error;}finally{billingClient.release();}}
     return;
   }
   const definitiveRejection=error instanceof ProviderSubmissionError&&error.outcome==="rejected"&&!error.retryable;
