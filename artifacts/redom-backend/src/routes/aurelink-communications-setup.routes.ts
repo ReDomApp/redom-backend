@@ -181,7 +181,7 @@ router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,a
   if(Number(quota.files)>=30||Number(quota.bytes)+parsed.body.length>100*1024*1024)return res.status(429).json({success:false,code:"EVIDENCE_UPLOAD_QUOTA_EXCEEDED",message:"Sender evidence uploads are limited to 30 files and 100 MB per user per 24 hours."});
   const sha256=createHash("sha256").update(parsed.body).digest("hex");
   const ext=parsed.mime==="application/pdf"?"pdf":parsed.mime==="image/png"?"png":"jpg";
-  const rawName=String(req.body.fileName||"sender-evidence."+ext).split(/[\\/]/).pop()||"sender-evidence."+ext;
+  const rawName=String(req.body.fileName||"sender-evidence."+ext).replaceAll("\\","/").split("/").pop()||"sender-evidence."+ext;
   const fileName=rawName.replace(/[^A-Za-z0-9._-]/g,"_").slice(0,180)||"sender-evidence."+ext;
   const id=randomUUID(),objectKey="aurelink/sender-evidence/"+wid+"/"+req.user!.userId+"/"+id+"."+ext;
   await senderEvidenceR2.send(new PutObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:objectKey,Body:parsed.body,ContentType:parsed.mime,CacheControl:"private, no-store",Metadata:{sha256,documentid:id,workspaceid:wid}}));
