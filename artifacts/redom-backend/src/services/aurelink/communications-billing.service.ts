@@ -33,7 +33,7 @@ export async function chargeAurelinkUsage(
         (country_code=$2)::int DESC,
         (provider=$3)::int DESC,
         (category=$4)::int DESC,
-        (workspace_id=$5)::int DESC,
+        COALESCE((workspace_id=$5)::int,0) DESC,
         effective_from DESC
       LIMIT 1`,
     [input.service, country, provider, category, input.workspaceId],
