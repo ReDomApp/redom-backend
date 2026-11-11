@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { env } from "../config/env";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { createHash, randomBytes, randomUUID, createCipheriv, createDecipheriv, timingSafeEqual } from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
 import { isAurelinkBrevoSenderFormatValid, requiresAurelinkBrevoNumberSender } from "../services/aurelink/sms-country-registry";
@@ -177,6 +177,8 @@ router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,a
  try{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   const parsed=parseSenderEvidenceDataUri(String(req.body.file||""));
+  const quota=(await pool.query("SELECT COUNT(*)::int AS files,COALESCE(SUM(byte_size),0)::bigint AS bytes FROM aurelink_sender_evidence_documents WHERE uploaded_by_user_id=$1 AND created_at>NOW()-INTERVAL '1 day'",[req.user!.userId])).rows[0];
+  if(Number(quota.files)>=30||Number(quota.bytes)+parsed.body.length>100*1024*1024)return res.status(429).json({success:false,code:"EVIDENCE_UPLOAD_QUOTA_EXCEEDED",message:"Sender evidence uploads are limited to 30 files and 100 MB per user per 24 hours."});
   const sha256=createHash("sha256").update(parsed.body).digest("hex");
   const ext=parsed.mime==="application/pdf"?"pdf":parsed.mime==="image/png"?"png":"jpg";
   const rawName=String(req.body.fileName||"sender-evidence."+ext).split(/[\\/]/).pop()||"sender-evidence."+ext;
@@ -186,6 +188,14 @@ router.post("/aurelink/communications/senders/evidence",aurelinkAuthMiddleware,a
   const saved=await pool.query("INSERT INTO aurelink_sender_evidence_documents(id,workspace_id,uploaded_by_user_id,object_key,original_filename,mime_type,byte_size,sha256,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'uploaded') RETURNING id,original_filename,mime_type,byte_size,sha256,status,created_at",[id,wid,req.user!.userId,objectKey,fileName,parsed.mime,parsed.body.length,sha256]);
   return res.status(201).json({success:true,document:saved.rows[0],security:"File bytes were validated and SHA-256 was computed by Aurelink before private storage. The file is not publicly accessible."});
  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to securely upload Sender ID evidence."});}
+});
+router.delete("/aurelink/communications/senders/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
+ const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+ const row=(await pool.query("SELECT id,object_key FROM aurelink_sender_evidence_documents WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[req.params.documentId,wid,req.user!.userId])).rows[0];
+ if(!row)return res.status(404).json({success:false,message:"Unattached evidence upload not found. Evidence attached to an application cannot be deleted by the applicant."});
+ await senderEvidenceR2.send(new DeleteObjectCommand({Bucket:env.cloudflare.r2.bucketName,Key:String(row.object_key)}));
+ await pool.query("DELETE FROM aurelink_sender_evidence_documents WHERE id=$1 AND workspace_id=$2 AND uploaded_by_user_id=$3 AND status='uploaded' AND sender_application_id IS NULL",[row.id,wid,req.user!.userId]);
+ return res.json({success:true,deleted:true});
 });
 router.get("/aurelink/admin/communications/senders/:id/evidence/:documentId",aurelinkAuthMiddleware,async(req,res)=>{
  if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
