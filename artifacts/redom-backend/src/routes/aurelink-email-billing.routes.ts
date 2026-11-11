@@ -242,6 +242,20 @@ router.post("/aurelink/admin/communications/email/credits/adjust",aurelinkAuthMi
 router.get("/aurelink/admin/communications/email/smtp/manual-review",aurelinkAuthMiddleware,async(req,res)=>{
   if(!admins().has(req.user!.userId))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink administrator access is required."});
   const limit=Math.max(1,Math.min(100,Number.parseInt(String(req.query.limit||"50"),10)||50));
+  await pool.query(
+    `UPDATE aurelink_email_usage_reservations r SET status='unknown',updated_at=NOW()
+      WHERE r.status='reserved' AND r.metadata->>'transport'='smtp' AND r.created_at<NOW()-INTERVAL '2 minutes'
+        AND EXISTS(SELECT 1 FROM aurelink_smtp_messages s WHERE s.message_key=r.message_id::text AND s.status='pending')`
+  );
+  await pool.query(
+    `UPDATE aurelink_messages m SET status='unknown',provider_status='smtp_gateway_stale_submission',provider_error='SMTP gateway stopped before a final provider result was recorded.',updated_at=NOW()
+      WHERE m.id IN (SELECT r.message_id FROM aurelink_email_usage_reservations r WHERE r.status='unknown' AND r.metadata->>'transport'='smtp')
+        AND m.status='queued'`
+  );
+  await pool.query(
+    `UPDATE aurelink_smtp_messages SET status='unknown',error='SMTP gateway stopped before a final provider result was recorded.',updated_at=NOW()
+      WHERE status='pending' AND message_key IN (SELECT r.message_id::text FROM aurelink_email_usage_reservations r WHERE r.status='unknown' AND r.metadata->>'transport'='smtp')`
+  );
   const result=await pool.query(
     `SELECT m.id AS message_id,m.workspace_id,m.provider,m.recipient,m.sender,m.category,m.status AS message_status,
             m.provider_error,m.provider_message_id,m.created_at,r.source,r.units,r.status AS billing_status,
