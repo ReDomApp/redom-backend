@@ -125,7 +125,7 @@ async function revalidateSenderWebsiteOwnership(){
   catch(error){
    const code=String((error as any)?.code||"");
    if(code==="ENODATA"||code==="ENOTFOUND"){await revokeSenderWebsiteOwnership(row,"The Aurelink website ownership TXT challenge is no longer published.");continue;}
-   await pool.query("UPDATE aurelink_verified_websites SET status='verification_pending',last_dns_checked_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);
+   await pool.query("UPDATE aurelink_verified_websites SET status='verification_pending',last_dns_checked_at=NOW()-INTERVAL '23 hours',updated_at=NOW() WHERE id=$1",[row.id]);
    continue;
   }
   const challenge=records.flat().find(value=>value.startsWith("aurelink-site-verification="));
