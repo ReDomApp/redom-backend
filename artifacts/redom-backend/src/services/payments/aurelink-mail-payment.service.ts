@@ -9,6 +9,23 @@ const paypalBase = () => String(process.env.PAYPAL_ENV || "sandbox").toLowerCase
 const required = (name:string) => { const v=String(process.env[name]||"").trim(); if(!v) throw new Error(name+" is required to enable Aurelink Mail payments."); return v; };
 const money = (minor:number,currency:string) => ({value:(minor/100).toFixed(2),currency_code:currency});
 const reference = () => "AURELINK-MAIL-"+crypto.randomUUID().replace(/-/g,"").slice(0,24);
+function paymentEncryptionKey():Buffer{
+  const raw=required("AURELINK_PAYMENT_ENCRYPTION_KEY");
+  const key=/^[a-f0-9]{64}$/i.test(raw)?Buffer.from(raw,"hex"):Buffer.from(raw,"base64");
+  if(key.length!==32) throw new Error("AURELINK_PAYMENT_ENCRYPTION_KEY must decode to exactly 32 bytes.");
+  return key;
+}
+function encryptProviderSecret(value:string):string{
+  const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv("aes-256-gcm",paymentEncryptionKey(),iv);
+  const encrypted=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);
+  return [iv.toString("base64"),cipher.getAuthTag().toString("base64"),encrypted.toString("base64")].join(".");
+}
+function decryptProviderSecret(value:string):string{
+  const [iv,tag,data]=value.split(".");
+  const decipher=crypto.createDecipheriv("aes-256-gcm",paymentEncryptionKey(),Buffer.from(iv,"base64"));
+  decipher.setAuthTag(Buffer.from(tag,"base64"));
+  return Buffer.concat([decipher.update(Buffer.from(data,"base64")),decipher.final()]).toString("utf8");
+}
 
 async function paypalToken():Promise<string>{
   const auth=Buffer.from(required("PAYPAL_CLIENT_ID")+":"+required("PAYPAL_CLIENT_SECRET")).toString("base64");
@@ -194,7 +211,7 @@ export async function cancelAurelinkMailSubscription(workspaceId:string){
   const p=(await pool.query("SELECT s.*,b.payment_provider FROM aurelink_email_subscriptions s LEFT JOIN aurelink_email_billing_payments b ON b.reference=s.payment_reference WHERE s.workspace_id=$1 AND s.status IN ('active','past_due') AND s.cancel_at_period_end=FALSE ORDER BY s.created_at DESC LIMIT 1",[workspaceId])).rows[0];
   if(!p) throw new Error("An active cancellable Aurelink Mail subscription was not found.");
   if(p.payment_provider==="paypal"&&p.paypal_subscription_id) await paypal("post","/v1/billing/subscriptions/"+encodeURIComponent(p.paypal_subscription_id)+"/cancel",{reason:"Customer requested cancellation"});
-  else if(p.payment_provider==="paystack"&&p.paystack_subscription_code&&p.paystack_customer_code) await paystack("post","/subscription/disable",{code:p.paystack_subscription_code,token:p.paystack_customer_code});
+  else if(p.payment_provider==="paystack"&&p.paystack_subscription_code&&p.paystack_email_token_encrypted) await paystack("post","/subscription/disable",{code:p.paystack_subscription_code,token:decryptProviderSecret(String(p.paystack_email_token_encrypted))});
   else throw new Error("This legacy Stripe subscription must be cancelled through its original billing provider.");
   await pool.query("UPDATE aurelink_email_subscriptions SET cancel_at_period_end=TRUE,cancelled_at=NOW(),updated_at=NOW() WHERE id=$1",[p.id]);
   return {subscriptionId:String(p.paypal_subscription_id||p.paystack_subscription_code),cancelAtPeriodEnd:true,periodEnd:new Date(p.billing_period_end)};
@@ -213,7 +230,7 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
       const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE reference=$1 AND payment_provider='paystack'",[ref])).rows[0];
       if(p) await fulfill(ref,String(body.data.id),"paystack",Number(body.data.amount),String(body.data.currency).toUpperCase(),String(body.data.subscription?.subscription_code||"")||undefined);
       else { const code=String(body.data?.subscription?.subscription_code||""); if(code) await pool.query("UPDATE aurelink_email_subscriptions SET status=$2,billing_period_start=NOW(),billing_period_end=NOW()+INTERVAL '1 month',used_emails=0,reserved_emails=0,paystack_customer_code=COALESCE($3,paystack_customer_code),updated_at=NOW() WHERE paystack_subscription_code=$1 AND status IN ($2,'past_due')",[code,"active",body.data?.customer?.customer_code||null]); }
-      if(body.data?.subscription?.subscription_code) await pool.query("UPDATE aurelink_email_subscriptions SET paystack_customer_code=$2 WHERE paystack_subscription_code=$1 AND paystack_customer_code IS NULL",[body.data.subscription.subscription_code,body.data.customer?.customer_code||null]);
+      if(body.data?.subscription?.subscription_code) await pool.query("UPDATE aurelink_email_subscriptions SET paystack_customer_code=COALESCE(paystack_customer_code,$2),paystack_email_token_encrypted=COALESCE(paystack_email_token_encrypted,$3) WHERE paystack_subscription_code=$1",[body.data.subscription.subscription_code,body.data.customer?.customer_code||null,body.data.subscription?.email_token?encryptProviderSecret(String(body.data.subscription.email_token)):null]);
     }else if(body.event==="invoice.payment_failed"){
       const code=String(body.data?.subscription?.subscription_code||body.data?.subscription_code||"");
       if(code) await pool.query("UPDATE aurelink_email_subscriptions SET status='past_due',updated_at=NOW() WHERE paystack_subscription_code=$1 AND status='active'",[code]);
