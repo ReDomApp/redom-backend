@@ -76,6 +76,7 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       terminal_payload JSONB,
       terminal_event_id VARCHAR(180),
       token_consumed_at TIMESTAMPTZ,
+      token_revealed_at TIMESTAMPTZ,
       attempts INTEGER NOT NULL DEFAULT 0,
       last_error TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
