@@ -490,7 +490,7 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/reconcile",au
  if(!senderAdmin(req.user!.userId))return res.status(403).json({success:false,message:"Aurelink communications administrator access required."});
  const token=String(req.body.requestToken||""),eventId=String(req.body.eventId||"manual-"+randomBytes(12).toString("hex")),status=String(req.body.status||"").toLowerCase();
  if(!token||!status)return res.status(400).json({success:false,message:"The request token and actual Brevo status are required."});
- if(["completed","successful","success","approved","rejected","declined","failed","denied"].includes(status)){
+ if(["completed","complete","successful","success","approved","rejected","declined","failed","denied"].includes(status)){
   const evidenceUrl=String(req.body.evidenceUrl||"");
   try{const parsed=new URL(evidenceUrl);if(parsed.protocol!=="https:"||parsed.username||parsed.password||!req.body.providerReference)throw new Error("invalid");}catch{return res.status(400).json({success:false,code:"BREVO_TERMINAL_EVIDENCE_REQUIRED",message:"Terminal outcomes require a real provider reference and HTTPS evidence from Brevo."});}
  }
