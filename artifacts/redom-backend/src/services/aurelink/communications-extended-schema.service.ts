@@ -85,6 +85,8 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
     );
     CREATE INDEX IF NOT EXISTS aurelink_sender_provider_submissions_due_idx
       ON aurelink_sender_provider_submissions(status,scheduled_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sender_provider_submissions_provider_ref_idx
+      ON aurelink_sender_provider_submissions(provider,provider_reference) WHERE provider_reference IS NOT NULL;
     ALTER TABLE aurelink_sender_provider_submissions ADD COLUMN IF NOT EXISTS token_revealed_at TIMESTAMPTZ;
     ALTER TABLE aurelink_sender_provider_submissions ALTER COLUMN request_token_encrypted DROP NOT NULL;
     CREATE TABLE IF NOT EXISTS aurelink_sender_provider_events (
