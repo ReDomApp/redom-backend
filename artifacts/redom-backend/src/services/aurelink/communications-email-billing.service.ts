@@ -14,10 +14,10 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
   const subscriptionResult=await client.query(
     `SELECT id,monthly_email_allowance,used_emails,reserved_emails,allow_prepaid_fallback
        FROM aurelink_email_subscriptions
-      WHERE workspace_id=$1 AND user_id=$2 AND status='active'
+      WHERE workspace_id=$1 AND status='active'
         AND billing_period_start<=NOW() AND billing_period_end>NOW()
       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
-    [input.workspaceId,input.userId]
+    [input.workspaceId]
   );
   const subscription=subscriptionResult.rows[0];
   if(subscription){
