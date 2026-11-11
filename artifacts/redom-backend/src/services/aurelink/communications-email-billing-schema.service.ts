@@ -90,10 +90,12 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       stripe_checkout_session_id VARCHAR(180) UNIQUE,
       stripe_subscription_id VARCHAR(180),
       stripe_payment_intent_id VARCHAR(180),
+      expires_at TIMESTAMPTZ,
       paid_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_stripe_subscription_idx
       ON aurelink_email_billing_payments(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_pending_subscription_idx
