@@ -419,9 +419,9 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/reveal-token"
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
-  const row=(await client.query("SELECT id,status,request_token_encrypted,token_revealed_at,scheduled_at FROM aurelink_sender_provider_submissions WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
+  const row=(await client.query("SELECT q.id,q.status,q.request_token_encrypted,q.token_revealed_at,q.scheduled_at,v.status AS website_status FROM aurelink_sender_provider_submissions q JOIN aurelink_sender_ids s ON s.id=q.sender_application_id LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE q.id=$1 FOR UPDATE OF q",[req.params.id])).rows[0];
   if(!row){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Brevo submission request not found."});}
-  if(row.status!=="ready_for_operator_submission"||new Date(row.scheduled_at).getTime()>Date.now()){await client.query("ROLLBACK");return res.status(423).json({success:false,message:"The one-hour review window has not elapsed or this request is no longer ready for submission."});}
+  if(row.status!=="ready_for_operator_submission"||row.website_status!=="verified"||new Date(row.scheduled_at).getTime()>Date.now()){await client.query("ROLLBACK");return res.status(423).json({success:false,message:"The one-hour review window has not elapsed or this request is no longer ready for submission."});}
   if(row.token_revealed_at||!row.request_token_encrypted){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"TOKEN_ALREADY_REVEALED",message:"The one-time provider correlation token has already been revealed. Use the existing secure operator record; do not generate a second mapping."});}
   const token=decryptSenderToken(String(row.request_token_encrypted));
   await client.query("UPDATE aurelink_sender_provider_submissions SET token_revealed_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);
@@ -439,8 +439,8 @@ router.post("/aurelink/admin/communications/sender-submissions/:id/mark-submitte
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
-  const row=(await client.query("SELECT * FROM aurelink_sender_provider_submissions WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
-  if(!row||row.status!=="ready_for_operator_submission"||!row.token_revealed_at||row.request_token_hash!==hash(token)){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_REQUEST_MAPPING_FAILED",message:"The submission is not ready or the Aurelink correlation token does not match."});}
+  const row=(await client.query("SELECT q.*,v.status AS website_status FROM aurelink_sender_provider_submissions q JOIN aurelink_sender_ids s ON s.id=q.sender_application_id LEFT JOIN aurelink_verified_websites v ON v.id=s.website_verification_id WHERE q.id=$1 FOR UPDATE OF q",[req.params.id])).rows[0];
+  if(!row||row.status!=="ready_for_operator_submission"||row.website_status!=="verified"||!row.token_revealed_at||row.request_token_hash!==hash(token)){await client.query("ROLLBACK");return res.status(409).json({success:false,code:"PROVIDER_REQUEST_MAPPING_FAILED",message:"The submission is not ready or the Aurelink correlation token does not match."});}
   await client.query("UPDATE aurelink_sender_provider_submissions SET status='submitted',submitted_at=NOW(),provider_reference=$2,provider_status='submitted',attempts=attempts+1,updated_at=NOW() WHERE id=$1",[row.id,providerReference]);
   const saved=await client.query("UPDATE aurelink_sender_ids SET status='submitted',registration_state='brevo_submitted',submitted_at=NOW(),provider_reference=$2,brevo_provider_reference=$2,brevo_submitted_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING id,sender,country_code,status,registration_state,provider_reference,submitted_at",[row.sender_application_id,providerReference]);
   await client.query("INSERT INTO aurelink_sender_security_audit(sender_application_id,workspace_id,actor_user_id,action,details) VALUES($1,$2,$3,'provider_submitted',jsonb_build_object('provider','brevo','providerReference',$4))",[row.sender_application_id,row.workspace_id,req.user!.userId,providerReference]);
