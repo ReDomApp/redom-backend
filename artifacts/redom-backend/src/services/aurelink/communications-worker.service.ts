@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { pool } from "../../database/db";
+import { resolveTxt } from "node:dns/promises";
 import { captureAurelinkUsage, chargeAurelinkUsage, countSmsSegments, refundAurelinkUsage } from "./communications-billing.service";
 import { sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.service";
 
@@ -103,9 +104,43 @@ async function processOne(row:any){
   if(failed){await refundCommunicationCharge(String(row.message_id));await pool.query("UPDATE aurelink_verification_sessions SET status='cancelled',updated_at=NOW() WHERE id=(SELECT verification_session_id FROM aurelink_messages WHERE id=$1 AND verification_session_id IS NOT NULL)",[row.message_id]);await finalizeCampaign(row.message_id);}
  }
 }
+async function revokeSenderWebsiteOwnership(row:any,reason:string){
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  await client.query("UPDATE aurelink_verified_websites SET status='failed',verified_at=NULL,last_dns_checked_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='verified'",[row.id]);
+  const apps=await client.query("UPDATE aurelink_sender_ids SET status='suspended',registration_state='suspended',security_review_status='failed',last_security_reason=$2,updated_at=NOW() WHERE website_verification_id=$1 AND status NOT IN ('rejected','suspended') RETURNING id,workspace_id",[row.id,reason]);
+  for(const app of apps.rows){
+   await client.query("UPDATE aurelink_sender_provider_submissions SET status='cancelled',request_token_encrypted=NULL,provider_status='cancelled_by_aurelink_website_security',last_error=$2,updated_at=NOW() WHERE sender_application_id=$1 AND status IN ('scheduled','ready_for_operator_submission')",[app.id,reason]);
+   await client.query("INSERT INTO aurelink_sender_security_audit(sender_application_id,workspace_id,action,details) VALUES($1,$2,'website_ownership_lost',jsonb_build_object('domain',$3,'reason',$4))",[app.id,app.workspace_id,row.domain,reason]);
+  }
+  await client.query("COMMIT");
+ }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
+}
+async function revalidateSenderWebsiteOwnership(){
+ const due=await pool.query("SELECT id,domain,verification_token_hash FROM aurelink_verified_websites WHERE status='verified' AND (last_dns_checked_at IS NULL OR last_dns_checked_at<NOW()-INTERVAL '24 hours') ORDER BY last_dns_checked_at NULLS FIRST LIMIT 20");
+ for(const row of due.rows){
+  let records:string[][];
+  try{records=await resolveTxt("_aurelink-verification."+String(row.domain));}
+  catch(error){
+   const code=String((error as any)?.code||"");
+   if(code==="ENODATA"||code==="ENOTFOUND"){await revokeSenderWebsiteOwnership(row,"The Aurelink website ownership TXT challenge is no longer published.");continue;}
+   await pool.query("UPDATE aurelink_verified_websites SET last_dns_checked_at=NOW()-INTERVAL '23 hours',updated_at=NOW() WHERE id=$1",[row.id]);
+   continue;
+  }
+  const challenge=records.flat().find(value=>value.startsWith("aurelink-site-verification="));
+  const actualHash=challenge?createHash("sha256").update(challenge).digest("hex"):"";
+  if(!challenge||actualHash!==String(row.verification_token_hash)){
+   await revokeSenderWebsiteOwnership(row,"The Aurelink website ownership TXT challenge is missing or no longer matches.");
+   continue;
+  }
+  await pool.query("UPDATE aurelink_verified_websites SET last_dns_checked_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='verified'",[row.id]);
+ }
+}
 async function tick(){
  if(busy)return;busy=true;
  try{
+  await revalidateSenderWebsiteOwnership();
   await pool.query(`WITH due AS (
     SELECT id,sender_application_id FROM aurelink_sender_provider_submissions
     WHERE status='scheduled' AND scheduled_at<=NOW()
