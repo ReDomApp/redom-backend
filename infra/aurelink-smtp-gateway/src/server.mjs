@@ -153,7 +153,7 @@ async function refundSmtpUsage(user, reservation, reason) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const charge = (await client.query("SELECT status,amount_minor,currency,wallet_reference FROM aurelink_communications_billing_ledger WHERE message_id=$1 AND entry_type='charge' FOR UPDATE", [reservation.messageId])).rows[0];
+    const charge = (await client.query("SELECT status,amount_minor,currency,wallet_reference,units,unit_price_minor FROM aurelink_communications_billing_ledger WHERE message_id=$1 AND entry_type='charge' FOR UPDATE", [reservation.messageId])).rows[0];
     if (charge && charge.status !== "refunded") {
       const refundReference = String(charge.wallet_reference) + "-R";
       await client.query("INSERT INTO aurelink_wallets(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING", [user.userId]);
@@ -161,7 +161,7 @@ async function refundSmtpUsage(user, reservation, reason) {
       const nextBalance = BigInt(String(wallet.balance_minor)) + BigInt(String(charge.amount_minor));
       await client.query("UPDATE aurelink_wallets SET balance_minor=$2,updated_at=NOW() WHERE user_id=$1", [user.userId,nextBalance.toString()]);
       await client.query("INSERT INTO aurelink_wallet_ledger(user_id,entry_type,direction,amount_minor,balance_after_minor,currency,reference,description,metadata) VALUES($1,'refund','credit',$2,$3,'USD',$4,'Refund for failed Aurelink SMTP delivery',$5::jsonb) ON CONFLICT(reference) DO NOTHING", [user.userId,String(charge.amount_minor),nextBalance.toString(),refundReference,JSON.stringify({ messageId:reservation.messageId,reason })]);
-      await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',1,1,$4,'USD',$5,$6::jsonb) ON CONFLICT(message_id,entry_type) DO NOTHING", [user.userId,user.workspaceId,reservation.messageId,String(charge.amount_minor),refundReference,JSON.stringify({ reason })]);
+      await client.query("INSERT INTO aurelink_communications_billing_ledger(user_id,workspace_id,message_id,entry_type,status,units,unit_price_minor,amount_minor,currency,wallet_reference,metadata) VALUES($1,$2,$3,'refund','posted',$4,$5,$6,'USD',$7,$8::jsonb) ON CONFLICT(message_id,entry_type) DO NOTHING", [user.userId,user.workspaceId,reservation.messageId,Number(charge.units),Number(charge.unit_price_minor),String(charge.amount_minor),refundReference,JSON.stringify({ reason })]);
       await client.query("UPDATE aurelink_communications_billing_ledger SET status='refunded',updated_at=NOW() WHERE message_id=$1 AND entry_type='charge'", [reservation.messageId]);
     }
     await client.query("UPDATE aurelink_messages SET status='failed',provider_error=$2,updated_at=NOW() WHERE id=$1", [reservation.messageId,String(reason || "SMTP provider rejected message").slice(0,500)]);
