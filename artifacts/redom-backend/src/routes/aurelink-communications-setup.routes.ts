@@ -199,8 +199,10 @@ router.post("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,
   const restriction=(await pool.query("SELECT ends_at FROM aurelink_sender_security_restrictions WHERE user_id=$1 AND workspace_id=$2 AND status='active' AND ends_at>NOW() ORDER BY ends_at DESC LIMIT 1",[req.user!.userId,wid])).rows[0];
   if(restriction)return res.status(423).json({success:false,code:"SENDER_REGISTRATION_RESTRICTED",restrictedUntil:restriction.ends_at,message:"Sender ID registration is temporarily restricted by Aurelink Security."});
   const websiteDomain=normalizeSenderDomain(String(req.body.businessWebsite||""));
-  const website=(await pool.query("SELECT id,website_url FROM aurelink_verified_websites WHERE workspace_id=$1 AND domain=$2 AND status='verified'",[wid,websiteDomain])).rows[0];
+  const website=(await pool.query("SELECT id,website_url FROM aurelink_verified_websites WHERE workspace_id=$1 AND domain=$2 AND status='verified' AND verified_at IS NOT NULL",[wid,websiteDomain])).rows[0];
   if(!website)return res.status(422).json({success:false,code:"AURELINK_WEBSITE_NOT_VERIFIED",message:"Register and verify this business website in Aurelink Developer before applying for a Sender ID."});
+  const duplicate=(await pool.query("SELECT id,status,registration_state FROM aurelink_sender_ids WHERE workspace_id=$1 AND LOWER(sender)=LOWER($2) AND country_code=$3 AND provider='brevo' AND registration_state IN ('security_review','scheduled_for_brevo','brevo_submission_ready','brevo_submitted','approved') LIMIT 1",[wid,sender,countryCode])).rows[0];
+  if(duplicate)return res.status(409).json({success:false,code:"SENDER_APPLICATION_ALREADY_EXISTS",existingApplicationId:duplicate.id,message:"An active or approved Brevo Sender ID application already exists for this sender and destination."});
   const businessName=String(req.body.businessName||"").trim(),businessAddress=String(req.body.businessAddress||"").trim();
   const businessType=String(req.body.businessType||"").trim(),registrationNumber=String(req.body.registrationNumber||"").trim(),registrationNumberType=String(req.body.registrationNumberType||"").trim();
   const companyLocation=String(req.body.companyLocation||"").toLowerCase(),doingBusinessAs=String(req.body.doingBusinessAs||"").trim();
