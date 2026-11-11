@@ -106,6 +106,18 @@ async function processOne(row:any){
 async function tick(){
  if(busy)return;busy=true;
  try{
+  await pool.query(`WITH due AS (
+    SELECT id,sender_application_id FROM aurelink_sender_provider_submissions
+    WHERE status='scheduled' AND scheduled_at<=NOW()
+    ORDER BY scheduled_at FOR UPDATE SKIP LOCKED LIMIT 10
+  ), moved AS (
+    UPDATE aurelink_sender_provider_submissions q
+    SET status='ready_for_operator_submission',updated_at=NOW()
+    FROM due WHERE q.id=due.id
+    RETURNING q.sender_application_id
+  )
+  UPDATE aurelink_sender_ids s SET registration_state='brevo_submission_ready',updated_at=NOW()
+  FROM moved WHERE s.id=moved.sender_application_id AND s.registration_state='scheduled_for_brevo'`);
   const batch=await pool.query(`WITH due AS (SELECT id FROM aurelink_communications_jobs WHERE status='pending' AND next_attempt_at<=NOW() ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT 10) UPDATE aurelink_communications_jobs j SET status='processing',attempts=attempts+1,locked_at=NOW(),updated_at=NOW() FROM due WHERE j.id=due.id RETURNING j.*`);
   for(const row of batch.rows)await processOne(row);
   await pool.query("UPDATE aurelink_communications_jobs SET status='pending',locked_at=NULL,next_attempt_at=NOW()+INTERVAL '30 seconds',updated_at=NOW() WHERE status='processing' AND locked_at<NOW()-INTERVAL '5 minutes'");
