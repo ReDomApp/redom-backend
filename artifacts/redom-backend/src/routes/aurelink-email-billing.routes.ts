@@ -105,7 +105,8 @@ router.get("/aurelink/communications/email/billing/overview",aurelinkAuthMiddlew
               COALESCE(SUM(units) FILTER(WHERE status='captured'),0)::bigint AS accepted_emails,
               COALESCE(SUM(units) FILTER(WHERE status IN ('reserved','unknown')),0)::bigint AS pending_emails
          FROM aurelink_email_usage_reservations WHERE workspace_id=$1
-          AND created_at>=date_trunc('month',NOW())`,[wid]
+          AND created_at>=COALESCE((SELECT billing_period_start FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status IN ('active','past_due') ORDER BY created_at DESC LIMIT 1),date_trunc('month',NOW()))
+          AND created_at<COALESCE((SELECT billing_period_end FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status IN ('active','past_due') ORDER BY created_at DESC LIMIT 1),date_trunc('month',NOW())+INTERVAL '1 month')`,[wid]
     ),
     pool.query("SELECT billing_mode FROM aurelink_email_billing_accounts WHERE workspace_id=$1",[wid]),
     pool.query("SELECT used_emails,reserved_emails FROM aurelink_email_free_daily_usage WHERE workspace_id=$1 AND usage_date=CURRENT_DATE",[wid])
