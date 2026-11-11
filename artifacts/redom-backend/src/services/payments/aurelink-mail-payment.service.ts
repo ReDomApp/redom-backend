@@ -234,8 +234,9 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
   if(!inserted.rows[0]) return;
   const resource=body.resource||{};
   if(body.event_type==="PAYMENT.CAPTURE.COMPLETED"){
-    const ref=String(resource.custom_id||resource.supplementary_data?.related_ids?.order_id||"");
-    const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE reference=$1 AND payment_provider='paypal'",[ref])).rows[0];
+    const orderId=String(resource.supplementary_data?.related_ids?.order_id||"");
+    const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE paypal_order_id=$1 AND payment_provider='paypal'",[orderId])).rows[0];
+    const ref=String(p?.reference||"");
     if(p) await fulfill(ref,String(resource.id),"paypal",Math.round(Number(resource.amount?.value)*100),String(resource.amount?.currency_code||""));
   }else if(body.event_type==="BILLING.SUBSCRIPTION.ACTIVATED"){
     const id=String(resource.id||"");
