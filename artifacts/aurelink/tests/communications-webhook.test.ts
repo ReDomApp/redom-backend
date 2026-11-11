@@ -70,7 +70,8 @@ test("Aurelink revokes the provider-owned Resend SMTP API key",async()=>{
   }
 });
 
-\ntest("SMS segment calculation handles GSM-7, extension characters and Unicode", async () => {
+
+test("SMS segment calculation handles GSM-7, extension characters and Unicode", async () => {
   const { countSmsSegments } = await import("../../redom-backend/src/services/aurelink/communications-billing.service.ts");
   assert.equal(countSmsSegments("A".repeat(160)), 1);
   assert.equal(countSmsSegments("A".repeat(161)), 2);
