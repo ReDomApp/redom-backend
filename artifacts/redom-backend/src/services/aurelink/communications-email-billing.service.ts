@@ -35,7 +35,8 @@ export async function reserveAurelinkEmailUsage(client:Db,input:{
     }
   }
 
-  const credit=await client.query("INSERT INTO aurelink_email_credit_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO UPDATE SET user_id=EXCLUDED.user_id RETURNING balance_emails",[input.workspaceId,input.userId]);
+  await client.query("INSERT INTO aurelink_email_credit_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[input.workspaceId,input.userId]);
+  const credit=await client.query("SELECT balance_emails FROM aurelink_email_credit_wallets WHERE workspace_id=$1 FOR UPDATE",[input.workspaceId]);
   const creditBalance=BigInt(String(credit.rows[0]?.balance_emails??"0"));
   if(creditBalance>=BigInt(input.units)){
     const next=creditBalance-BigInt(input.units);
