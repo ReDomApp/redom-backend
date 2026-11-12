@@ -111,9 +111,9 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
         SELECT o.id, o.payment_reference, o.recipient_email, o.payload, o.attempts, p.amount_minor AS usd_amount_minor
           FROM aurelink_email_credit_confirmation_outbox o
           JOIN aurelink_email_billing_payments p ON p.reference=o.payment_reference
-         WHERE status <> 'sent' AND next_attempt_at <= NOW()
-           AND (status <> 'processing' OR locked_at < NOW() - INTERVAL '5 minutes')
-         ORDER BY created_at
+         WHERE o.status <> 'sent' AND o.next_attempt_at <= NOW()
+           AND (o.status <> 'processing' OR o.locked_at < NOW() - INTERVAL '5 minutes')
+         ORDER BY o.created_at
          LIMIT 1 FOR UPDATE SKIP LOCKED
       `);
       row = claimed.rows[0];
@@ -130,7 +130,8 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
       const from = String(process.env.AURELINK_MAIL_BILLING_FROM || process.env.AURELINK_RECEIPT_FROM || "").trim();
       if (!apiKey || !from) throw new Error("Resend confirmation email configuration is missing.");
       const p = row.payload || {};
-      const esc = (value: unknown) => String(value ?? "Not available").replace(/[&<>"']/g, ch => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[ch]!));
+      const htmlEntities:Record<string,string> = { "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" };
+      const esc = (value: unknown) => String(value ?? "Not available").replace(/[&<>"']/g, ch => htmlEntities[ch]);
       const money = String(p.amount || "Not available");
       const usd = "$" + Number(p.usdAmount ?? (Number(row.usd_amount_minor || 0) / 100)).toFixed(2) + " USD";
       const credits = Number(p.credits || 0).toLocaleString("en-US");
