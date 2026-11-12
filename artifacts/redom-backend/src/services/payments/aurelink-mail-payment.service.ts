@@ -28,12 +28,13 @@ function randomPublicReference(length:number):string {
 const reference = () => randomPublicReference(17);
 const ledgerReference = () => randomPublicReference(15);
 async function uniquePaymentReference():Promise<string>{
-  for(let attempt=0;attempt<10;attempt++){
+  await ensureAurelinkMailSecuritySchema();
+  for(let attempt=0;attempt<20;attempt++){
     const candidate=reference();
-    const exists=await pool.query("SELECT 1 FROM aurelink_email_billing_payments WHERE reference=$1 LIMIT 1",[candidate]);
-    if(!exists.rows[0]) return candidate;
+    const reserved=await pool.query("INSERT INTO aurelink_email_payment_reference_reservations(reference) SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM aurelink_email_billing_payments WHERE reference=$1) ON CONFLICT(reference) DO NOTHING RETURNING reference",[candidate]);
+    if(reserved.rows[0]) return candidate;
   }
-  throw new Error("Unable to allocate a unique Aurelink payment reference. Please retry.");
+  throw new Error("Unable to reserve a unique Aurelink payment reference. Please retry.");
 }
 function paymentEncryptionKey():Buffer{
   const raw=required("AURELINK_PAYMENT_ENCRYPTION_KEY");
@@ -136,6 +137,7 @@ async function createEmailCreditPurchase(input:{userId:string;workspaceId:string
  const from=String(process.env.AURELINK_MAIL_BILLING_FROM||process.env.AURELINK_RECEIPT_FROM||"").trim();if(!from)throw new Error("AURELINK_MAIL_BILLING_FROM or AURELINK_RECEIPT_FROM is required.");const key=required("RESEND_API_KEY");
  const ref=await uniquePaymentReference(),token=crypto.randomBytes(32).toString("base64url"),hash=crypto.createHash("sha256").update(token).digest("hex"),expires=new Date(Date.now()+3600000);
  await pool.query("INSERT INTO aurelink_email_billing_payments(reference,user_id,workspace_id,purchase_type,credit_pack_id,email_credits,amount_minor,currency,payment_provider,provider_currency,provider_amount_minor,status,account_country,account_id,email_checkout_token_hash,email_checkout_expires_at,pricing_country,pricing_currency,fx_rate,fx_source,fx_as_of,fx_expires_at,reference_format_version) VALUES($1,$2,$3,'email_credits',$4,$5,$6,'USD',$7,$8,$9,'pending',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,2)",[ref,input.userId,input.workspaceId,pack.id,String(pack.email_credits),usd,input.provider,currency,amount,input.customer.country,input.customer.accountId,hash,expires,fx.countryCode,fx.currency,fx.rate,fx.source,fx.asOf,fx.expiresAt]);
+ await pool.query("INSERT INTO aurelink_email_payment_reference_events(payment_reference,event_type,provider,details) VALUES($1,'payment_reference_created',$2,$3::jsonb)",[ref,input.provider,JSON.stringify({purchaseType:"email_credits",referenceFormatVersion:2})]);
  const zeroDecimal=["JPY","KRW","VND","CLP","XAF","XOF","XPF"].includes(currency);
  const link=base.replace(/\/$/,"")+"/aurelink/mail/credits/pay/"+token,credits=Number(pack.email_credits).toLocaleString("en-US"),due=(amount/Math.pow(10,zeroDecimal?0:2)).toFixed(zeroDecimal?0:2)+" "+currency,providerName=input.provider==="paystack"?"Paystack":"PayPal";
  const safe=(v:string)=>v.replace(/[&<>"\x27]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\x27":"&#39;"}[c]!));
@@ -181,6 +183,7 @@ export async function createAurelinkMailCheckout(input:{userId:string;workspaceI
   const amount=provider==="paypal"?amountUsd:localAmount(amountUsd,customer.country);
   await pool.query(`INSERT INTO aurelink_email_billing_payments(reference,user_id,workspace_id,purchase_type,plan_option_id,credit_pack_id,email_credits,amount_minor,currency,payment_provider,provider_currency,provider_amount_minor,status,reference_format_version)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,'USD',$9,$10,$11,'pending',2)`,[ref,input.userId,input.workspaceId,input.purchaseType,planOptionId,creditPackId,emailCredits,amountUsd,provider,currency,amount]);
+  await pool.query("INSERT INTO aurelink_email_payment_reference_events(payment_reference,event_type,provider,details) VALUES($1,'payment_reference_created',$2,$3::jsonb)",[ref,provider,JSON.stringify({purchaseType:input.purchaseType,referenceFormatVersion:2})]);
   try{
     let checkoutUrl="",providerId="";
     if(provider==="paypal"){
