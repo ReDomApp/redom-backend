@@ -117,7 +117,7 @@ async function processOne(row:any){
     await pool.query("UPDATE aurelink_communications_jobs SET status='manual_review',submission_state='unknown',last_error=$2,locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.id,detail.slice(0,500)]);
     await pool.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='unknown',provider_status='provider_accepted_billing_reconciliation_required',provider_error=$4,updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId,detail.slice(0,500)]);
     await pool.query("UPDATE aurelink_communications_usage SET provider=$2,status='queued',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
-    if(payload.channel==="email"){const reconcileClient=await pool.connect();try{await reconcileClient.query("BEGIN");await markAurelinkEmailUsageUnknown(reconcileClient,String(row.message_id));await reconcileClient.query("COMMIT");}catch(markError){await reconcileClient.query("ROLLBACK").catch(()=>undefined);throw markError;}finally{reconcileClient.release();}}
+    if(payload.channel==="email"||payload.channel==="sms"){const reconcileClient=await pool.connect();try{await reconcileClient.query("BEGIN");if(payload.channel==="email")await markAurelinkEmailUsageUnknown(reconcileClient,String(row.message_id));else await markAurelinkSmsUsageUnknown(reconcileClient,String(row.message_id));await reconcileClient.query("COMMIT");}catch(markError){await reconcileClient.query("ROLLBACK").catch(()=>undefined);throw markError;}finally{reconcileClient.release();}}
     console.error("[Aurelink usage capture requires manual review]",detail);
     return;
   }finally{billingClient.release();}
