@@ -148,7 +148,10 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
       const newBalance = Number(p.newBalance || 0).toLocaleString("en-US");
       const ledgerReference = String(p.ledgerReference || "Not available");
       const completedAt = String(p.completedAt || "Not available");
-      const accountCountry = String(p.paymentCountry || p.accountCountry || "Not available");
+      const countryValue = String(p.paymentCountry || p.accountCountry || "Not available");
+      const accountCountry = /^[A-Z]{2}$/i.test(countryValue)
+        ? (new Intl.DisplayNames(["en"],{type:"region"}).of(countryValue.toUpperCase()) || countryValue)
+        : countryValue;
       const pricingCountry = String(p.country || accountCountry);
       const paymentRows: Array<[string,string]> = [
         ["Payment provider",provider],["Method",paymentMethod],["Card number",String(p.cardNumber || "Not provided by payment provider")],
