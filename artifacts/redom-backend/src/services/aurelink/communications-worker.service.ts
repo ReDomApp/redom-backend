@@ -3,6 +3,7 @@ import { pool } from "../../database/db";
 import { resolveTxt } from "node:dns/promises";
 import { captureAurelinkUsage, chargeAurelinkUsage, countSmsSegments, refundAurelinkUsage } from "./communications-billing.service";
 import { reserveAurelinkEmailUsage, captureAurelinkEmailUsage, refundAurelinkEmailUsage, markAurelinkEmailUsageUnknown } from "./communications-email-billing.service";
+import { reserveAurelinkSmsUsage, captureAurelinkSmsUsage, refundAurelinkSmsUsage, markAurelinkSmsUsageUnknown } from "./communications-sms-billing.service";
 import { ProviderSubmissionError, sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.service";
 
 type JobPayload =
@@ -37,7 +38,7 @@ export async function enqueueAurelinkMessage(input:{
   const countryCode=input.channel==="sms"?(input.payload.channel==="sms"?(input.payload.input.countryCode||"*"):"*"):"*";
   const billable=input.channel==="email"
    ? await reserveAurelinkEmailUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),units:smsUnits,transport:"api",provider:input.provider,category:input.category})
-   : await chargeAurelinkUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),service:"sms_segment",units:smsUnits,countryCode,metadata:{channel:input.channel,provider:input.provider,category:input.category}});
+   : await reserveAurelinkSmsUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),units:smsUnits,countryCode,provider:input.provider,category:input.category,metadata:{channel:input.channel}});
   await client.query("INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8)",[input.workspaceId,message.id,input.channel,input.provider,input.category,smsUnits,billable.unitPriceMinor??null,("walletReference" in billable ? billable.walletReference : billable.reference)??null]);
   await client.query("COMMIT");
   return {message,replayed:false as const};
@@ -65,7 +66,7 @@ async function refundCommunicationCharge(messageId:string){
   const charge=await client.query("SELECT m.workspace_id,m.channel,w.user_id FROM aurelink_messages m JOIN aurelink_communications_workspaces w ON w.id=m.workspace_id WHERE m.id=$1 FOR UPDATE OF m",[messageId]);
   const row=charge.rows[0];
   if(row?.channel==="email") await refundAurelinkEmailUsage(client,messageId);
-  else if(row) await refundAurelinkUsage(client,messageId,String(row.user_id),String(row.workspace_id));
+  else if(row) await refundAurelinkSmsUsage(client,messageId);
   await client.query("COMMIT");
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);console.error("[Aurelink communications refund]",error instanceof Error?error.message:"unknown error");}
  finally{client.release();}
@@ -105,7 +106,7 @@ async function processOne(row:any){
   try{
     await billingClient.query("BEGIN");
     if(payload.channel==="email")await captureAurelinkEmailUsage(billingClient,String(row.message_id));
-    else await captureAurelinkUsage(billingClient,String(row.message_id));
+    else await captureAurelinkSmsUsage(billingClient,String(row.message_id));
     await billingClient.query("UPDATE aurelink_messages SET provider=$2,provider_message_id=$3,status='accepted',accepted_at=NOW(),updated_at=NOW() WHERE id=$1",[row.message_id,result.provider,result.providerMessageId]);
     await billingClient.query("UPDATE aurelink_communications_jobs SET status='completed',submission_state='accepted',completed_at=NOW(),last_error=NULL,updated_at=NOW() WHERE id=$1",[row.id]);
     await billingClient.query("UPDATE aurelink_communications_usage SET provider=$2,status='accepted',provider_message_id=$3,updated_at=NOW() WHERE message_id=$1",[row.message_id,result.provider,result.providerMessageId]);
@@ -128,7 +129,7 @@ async function processOne(row:any){
     await pool.query("UPDATE aurelink_communications_jobs SET status='manual_review',submission_state='unknown',last_error=$2,locked_at=NULL,updated_at=NOW() WHERE id=$1",[row.id,message.slice(0,500)]);
     await pool.query("UPDATE aurelink_messages SET status='unknown',provider_error=$2,updated_at=NOW() WHERE id=$1",[row.message_id,message.slice(0,500)]);
     await pool.query("UPDATE aurelink_communications_usage SET status='queued',updated_at=NOW() WHERE message_id=$1",[row.message_id]);
-    if(payload?.channel==="email"){const billingClient=await pool.connect();try{await billingClient.query("BEGIN");await markAurelinkEmailUsageUnknown(billingClient,String(row.message_id));await billingClient.query("COMMIT");}catch(error){await billingClient.query("ROLLBACK").catch(()=>undefined);throw error;}finally{billingClient.release();}}
+    if(payload?.channel==="email"||payload?.channel==="sms"){const billingClient=await pool.connect();try{await billingClient.query("BEGIN");if(payload.channel==="email")await markAurelinkEmailUsageUnknown(billingClient,String(row.message_id));else await markAurelinkSmsUsageUnknown(billingClient,String(row.message_id));await billingClient.query("COMMIT");}catch(error){await billingClient.query("ROLLBACK").catch(()=>undefined);throw error;}finally{billingClient.release();}}
     return;
   }
   const definitiveRejection=error instanceof ProviderSubmissionError&&error.outcome==="rejected"&&!error.retryable;
