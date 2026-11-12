@@ -5,6 +5,7 @@ import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { verifyAurelinkEmailBillingCheckout as verifyLegacyStripeMail, cancelAurelinkEmailSubscription as cancelLegacyStripeMail } from "../services/payments/stripe-payment.service";
 import { createAurelinkMailCheckout, verifyAurelinkMailCheckout, cancelAurelinkMailSubscription, handleAurelinkMailWebhook, startAurelinkMailCreditPayment } from "../services/payments/aurelink-mail-payment.service";
 import { captureAurelinkEmailUsage, refundAurelinkEmailUsage, resizeAurelinkEmailUsageReservation } from "../services/aurelink/communications-email-billing.service";
+import { createAurelinkSmsPackageCheckout, startAurelinkSmsPackagePayment, verifyAurelinkSmsPackageCheckout, handleAurelinkSmsPackageWebhook } from "../services/aurelink/communications-sms-payment.service";
 
 const router=Router();
 const admins=()=>new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(x=>x.trim()).filter(Boolean));
@@ -46,6 +47,36 @@ router.post("/aurelink/mail/credits/pay/:token",async(req,res)=>{
   try{const url=await startAurelinkMailCreditPayment(String(req.params.token||""));return res.status(303).set(paymentLinkHeaders).location(url).end();}
   catch(e){return res.status(410).set(paymentLinkHeaders).type("text/plain").send("This payment link is invalid, expired, or already used. Request a new payment email.");}
 });
+
+router.get("/aurelink/sms/packages/pay/:token",async(req,res)=>{
+ const token=String(req.params.token||"");if(!/^[A-Za-z0-9_-]{40,60}$/.test(token))return res.status(410).set(paymentLinkHeaders).type("text/plain").send("This SMS payment link is invalid or expired.");
+ const action="/aurelink/sms/packages/pay/"+encodeURIComponent(token);
+ return res.status(200).set(paymentLinkHeaders).type("html").send("<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Aurelink SMS secure payment</title><body><main><h1>Continue to secure payment</h1><p>This one-time link will be used only when you press the button below. Payment is completed on the payment provider's secure website.</p><form method='post' action='"+action+"'><button type='submit'>Continue to payment</button></form><p>If you did not request this purchase, close this page.</p></main></body></html>");
+});
+router.post("/aurelink/sms/packages/pay/:token",async(req,res)=>{
+ try{const url=await startAurelinkSmsPackagePayment(String(req.params.token||""));return res.status(303).set(paymentLinkHeaders).location(url).end();}
+ catch{return res.status(410).set(paymentLinkHeaders).type("text/plain").send("This SMS payment link is invalid, expired, or already used. Request a new payment email.");}
+});
+router.post("/aurelink/webhooks/paystack-sms",async(req,res)=>{
+ try{const body=Buffer.isBuffer(req.body)?JSON.parse(req.body.toString("utf8")):req.body;await handleAurelinkSmsPackageWebhook("paystack",req.headers as Record<string,string|undefined>,body,Buffer.isBuffer(req.body)?req.body:undefined);return res.sendStatus(200);}
+ catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Paystack SMS webhook rejected."});}
+});
+router.post("/aurelink/webhooks/paypal-sms",async(req,res)=>{
+ try{await handleAurelinkSmsPackageWebhook("paypal",req.headers as Record<string,string|undefined>,req.body);return res.sendStatus(200);}
+ catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"PayPal SMS webhook rejected."});}
+});
+router.post("/aurelink/communications/sms/billing/checkout",aurelinkAuthMiddleware,async(req,res)=>{
+ const parsed=z.object({packageCode:z.string().min(3).max(40),pricingCountryCode:z.string().length(2).transform(v=>v.toUpperCase())}).safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({success:false,message:"Select an SMS package and the pricing country for currency conversion."});
+ try{const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});const result=await createAurelinkSmsPackageCheckout({userId:req.user!.userId,workspaceId:wid,packageCode:parsed.data.packageCode,pricingCountryCode:parsed.data.pricingCountryCode});return res.status(201).json({success:true,...result});}
+ catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to create SMS package payment."});}
+});
+router.get("/aurelink/communications/sms/billing/verify/:reference",aurelinkAuthMiddleware,async(req,res)=>{
+ const ref=z.string().min(8).max(40).regex(/^[A-Za-z0-9_-]+$/).safeParse(req.params.reference);if(!ref.success)return res.status(400).json({success:false,message:"Invalid SMS package payment reference."});
+ try{return res.json({success:true,payment:await verifyAurelinkSmsPackageCheckout(req.user!.userId,ref.data)});}
+ catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to verify SMS package payment."});}
+});
+
 router.post("/aurelink/webhooks/paystack-mail",async(req,res)=>{
   try{
     const body=Buffer.isBuffer(req.body)?JSON.parse(req.body.toString("utf8")):req.body;
