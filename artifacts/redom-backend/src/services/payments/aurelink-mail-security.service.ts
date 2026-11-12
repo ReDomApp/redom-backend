@@ -142,6 +142,7 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
         "FX rate (USD to " + String(p.currency || "") + "): " + String(p.fxRate || "1"),
         "FX source: " + String(p.fxSource || "USD"),
         "FX rate timestamp: " + String(p.fxAsOf || ""),
+        "Rates by ExchangeRate-API: https://www.exchangerate-api.com",
         "Wallet balance before: " + String(p.previousBalance || ""),
         "Credits added: " + String(p.credits || ""),
         "Wallet balance after: " + String(p.newBalance || ""),
@@ -158,7 +159,7 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
           ["Wallet balance before",p.previousBalance],["Credits added",p.credits],
           ["Wallet balance after",p.newBalance],["Ledger reference",p.ledgerReference],
           ["Payment status","SUCCESS"],["Credit fulfillment status","SUCCESS"],["Completed at",p.completedAt]
-        ].map(([k,v])=>"<tr><td>"+String(k)+"</td><td>"+String(v ?? "")+"</td></tr>").join("")+"</table>";
+        ].map(([k,v])=>"<tr><td>"+String(k)+"</td><td>"+String(v ?? "").replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;"}[ch]!))+"</td></tr>").join("")+"</table><p><a href='https://www.exchangerate-api.com'>Rates by ExchangeRate-API</a></p>";
       const sent = await axios.post("https://api.resend.com/emails", {
         from, to: [row.recipient_email], subject: "Aurelink Mail payment confirmed — credits added", text: textBody, html
       }, { headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" }, timeout: 15000 });
