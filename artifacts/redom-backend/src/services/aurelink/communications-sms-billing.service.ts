@@ -13,7 +13,7 @@ export async function reserveAurelinkSmsUsage(client:Db,input:{
  const prior=await client.query("SELECT source,units,unit_price_minor,amount_minor,wallet_reference FROM aurelink_sms_usage_reservations WHERE message_id=$1 FOR UPDATE",[input.messageId]);
  if(prior.rows[0]){const r=prior.rows[0];return {source:r.source,units:Number(r.units),unitPriceMinor:r.unit_price_minor===null?null:Number(r.unit_price_minor),amountMinor:r.amount_minor===null?null:String(r.amount_minor),walletReference:r.wallet_reference??null};}
  await client.query("INSERT INTO aurelink_sms_package_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[input.workspaceId,input.userId]);
- const wallet=(await client.query("SELECT balance_segments,reserved_segments FROM aurelink_sms_package_wallets WHERE workspace_id=$1 AND user_id=$2 FOR UPDATE",[input.workspaceId,input.userId])).rows[0];
+ const wallet=(await client.query("SELECT balance_segments,reserved_segments FROM aurelink_sms_package_wallets WHERE workspace_id=$1 FOR UPDATE",[input.workspaceId,input.userId])).rows[0];
  if(!wallet)throw new Error("AURELINK_SMS_PACKAGE_WALLET_UNAVAILABLE");
  const available=BigInt(String(wallet.balance_segments))-BigInt(String(wallet.reserved_segments));
  if(available>=BigInt(input.units)){
@@ -56,7 +56,7 @@ export async function creditAurelinkSmsPackage(client:Db,input:{
  const pkg=(await client.query("SELECT package_code,sms_segments,price_minor,currency FROM aurelink_sms_package_catalog WHERE package_code=$1 AND active=TRUE FOR SHARE",[input.packageCode])).rows[0];
  if(!pkg||String(pkg.currency)!=="USD")throw new Error("AURELINK_SMS_PACKAGE_NOT_AVAILABLE");
  await client.query("INSERT INTO aurelink_sms_package_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[input.workspaceId,input.userId]);
- const wallet=(await client.query("SELECT balance_segments FROM aurelink_sms_package_wallets WHERE workspace_id=$1 AND user_id=$2 FOR UPDATE",[input.workspaceId,input.userId])).rows[0];
+ const wallet=(await client.query("SELECT balance_segments FROM aurelink_sms_package_wallets WHERE workspace_id=$1 FOR UPDATE",[input.workspaceId,input.userId])).rows[0];
  if(!wallet)throw new Error("AURELINK_SMS_PACKAGE_WALLET_UNAVAILABLE");
  const reference="AL-SMS-PURCHASE-"+paymentReference;
  const prior=(await client.query("SELECT balance_after FROM aurelink_sms_package_ledger WHERE reference=$1",[reference])).rows[0];
