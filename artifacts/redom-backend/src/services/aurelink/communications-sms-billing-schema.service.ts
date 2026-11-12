@@ -116,6 +116,12 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS aurelink_sms_package_payments_user_idx
       ON aurelink_sms_package_payments(user_id,created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_provider_order_uidx
+      ON aurelink_sms_package_payments(payment_provider,provider_order_id) WHERE provider_order_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_provider_txn_uidx
+      ON aurelink_sms_package_payments(payment_provider,provider_transaction_reference) WHERE provider_transaction_reference IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_token_hash_uidx
+      ON aurelink_sms_package_payments(checkout_token_hash) WHERE checkout_token_hash IS NOT NULL;
     CREATE TABLE IF NOT EXISTS aurelink_sms_payment_reference_reservations (
       reference VARCHAR(40) PRIMARY KEY,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
