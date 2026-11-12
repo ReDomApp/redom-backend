@@ -9,7 +9,9 @@ startAurelinkMailCreditConfirmationWorker();
 
 const paypalBase = () => String(process.env.PAYPAL_ENV || "sandbox").toLowerCase() === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
 const required = (name:string) => { const v=String(process.env[name]||"").trim(); if(!v) throw new Error(name+" is required to enable Aurelink Mail payments."); return v; };
-const money = (minor:number,currency:string) => { const zero=["JPY","KRW","VND","CLP","XAF","XOF","XPF"].includes(currency); return {value:(minor/Math.pow(10,zero?0:2)).toFixed(zero?0:2),currency_code:currency}; };
+const zeroDecimalCurrency=(currency:string)=>["JPY","KRW","VND","CLP","XAF","XOF","XPF"].includes(currency);
+const money = (minor:number,currency:string) => ({value:(minor/Math.pow(10,zeroDecimalCurrency(currency)?0:2)).toFixed(zeroDecimalCurrency(currency)?0:2),currency_code:currency});
+const providerAmountToMinor=(value:string|number,currency:string)=>Math.round(Number(value)*Math.pow(10,zeroDecimalCurrency(currency)?0:2));
 const reference = () => "AURELINK-MAIL-"+crypto.randomUUID().replace(/-/g,"").slice(0,24);
 function paymentEncryptionKey():Buffer{
   const raw=required("AURELINK_PAYMENT_ENCRYPTION_KEY");
@@ -234,7 +236,7 @@ export async function verifyAurelinkMailCheckout(userId:string,ref:string){
       if(order.status==="COMPLETED"){
         const cap=order.purchase_units?.[0]?.payments?.captures?.[0];
         if(!cap||cap.status!=="COMPLETED") throw new Error("PayPal capture is not completed.");
-        await fulfill(ref,String(cap.id), "paypal",Math.round(Number(cap.amount.value)*100),String(cap.amount.currency_code));
+        await fulfill(ref,String(cap.id), "paypal",providerAmountToMinor(cap.amount.value,String(cap.amount.currency_code)),String(cap.amount.currency_code));
       }
     } else if(p.paypal_subscription_id){
       const sub=await paypal<any>("get","/v1/billing/subscriptions/"+encodeURIComponent(p.paypal_subscription_id));
@@ -302,7 +304,7 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
     const orderId=String(resource.supplementary_data?.related_ids?.order_id||"");
     const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE paypal_order_id=$1 AND payment_provider='paypal'",[orderId])).rows[0];
     const ref=String(p?.reference||"");
-    if(p) await fulfill(ref,String(resource.id),"paypal",Math.round(Number(resource.amount?.value)*100),String(resource.amount?.currency_code||""));
+    if(p) await fulfill(ref,String(resource.id),"paypal",providerAmountToMinor(resource.amount?.value,String(resource.amount?.currency_code||"")),String(resource.amount?.currency_code||""));
   }else if(body.event_type==="BILLING.SUBSCRIPTION.ACTIVATED"){
     const id=String(resource.id||"");
     const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE paypal_subscription_id=$1 AND payment_provider='paypal'",[id])).rows[0];
