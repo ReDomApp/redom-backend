@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { pool } from "../../database/db";
 import { resolveTxt } from "node:dns/promises";
-import { captureAurelinkUsage, chargeAurelinkUsage, countSmsSegments, refundAurelinkUsage } from "./communications-billing.service";
+import { countSmsSegments } from "./communications-billing.service";
 import { reserveAurelinkEmailUsage, captureAurelinkEmailUsage, refundAurelinkEmailUsage, markAurelinkEmailUsageUnknown } from "./communications-email-billing.service";
 import { reserveAurelinkSmsUsage, captureAurelinkSmsUsage, refundAurelinkSmsUsage, markAurelinkSmsUsageUnknown } from "./communications-sms-billing.service";
 import { ProviderSubmissionError, sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.service";
