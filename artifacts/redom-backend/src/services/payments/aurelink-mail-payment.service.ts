@@ -43,7 +43,7 @@ async function paystack<T>(method:"get"|"post",path:string,data?:unknown):Promis
   return r.data;
 }
 async function customerContext(userId:string,workspaceId:string){
-  const q=await pool.query(`SELECT u.email,u.account_status,u.email_verified,u.country_code,u.country_verified_at,w.id
+  const q=await pool.query(`SELECT u.email,u.account_id,u.account_status,u.email_verified,u.country_code,u.country_verified_at,w.id
     FROM aurelink_users u JOIN aurelink_communications_workspaces w ON w.user_id=u.id OR EXISTS
     (SELECT 1 FROM aurelink_communications_members m WHERE m.workspace_id=w.id AND m.accepted_user_id=u.id AND m.status='active')
     WHERE u.id=$1 AND w.id=$2 AND w.status='active' LIMIT 1`,[userId,workspaceId]);
@@ -51,7 +51,7 @@ async function customerContext(userId:string,workspaceId:string){
   if(!u||u.account_status!=="active"||u.email_verified!==true) throw new Error("An active Aurelink account with a verified email is required.");
   const country=String(u.country_code||"").toUpperCase();
   if(!country||!u.country_verified_at) throw new Error("Verify your account country before purchasing Aurelink Mail. Checkout country selection cannot be used for payment routing.");
-  return {email:String(u.email),country};
+  return {email:String(u.email),accountId:String(u.account_id||userId),country};
 }
 function providerFor(country:string):Provider { return country==="NG"||country==="GH" ? "paystack" : "paypal"; }
 function localCurrency(country:string):"NGN"|"GHS" { return country==="NG"?"NGN":"GHS"; }
@@ -94,8 +94,38 @@ async function createPaystackPlan(payment:PaymentRow,currency:"NGN"|"GHS",amount
   return String(plan.data.plan_code);
 }
 
+async function createEmailCreditPurchase(input:{userId:string;workspaceId:string;customer:{email:string;accountId:string;country:string};creditPackId:string;provider:Provider}){
+ const pack=(await pool.query("SELECT id,email_credits,price_minor FROM aurelink_email_credit_packs WHERE id=$1 AND active=TRUE AND email_credits IN (1000,5000,10000,50000,100000,250000)",[input.creditPackId])).rows[0];
+ if(!pack)throw new Error("Selected prepaid credit pack is unavailable.");
+ const bal=(await pool.query("SELECT balance_emails FROM aurelink_email_credit_wallets WHERE workspace_id=$1",[input.workspaceId])).rows[0];
+ if(BigInt(String(bal?.balance_emails||0))+BigInt(String(pack.email_credits))>250000n)throw new Error("Prepaid balance cannot exceed 250,000 credits.");
+ const usd=Number(pack.price_minor);if(!Number.isSafeInteger(usd)||usd<50)throw new Error("Configured credit-pack price is invalid.");
+ const currency=input.provider==="paypal"?"USD":localCurrency(input.customer.country),amount=input.provider==="paypal"?usd:localAmount(usd,input.customer.country);
+ const ref=reference(),token=crypto.randomBytes(32).toString("base64url"),hash=crypto.createHash("sha256").update(token).digest("hex"),expires=new Date(Date.now()+3600000);
+ await pool.query("INSERT INTO aurelink_email_billing_payments(reference,user_id,workspace_id,purchase_type,credit_pack_id,email_credits,amount_minor,currency,payment_provider,provider_currency,provider_amount_minor,status,account_country,account_id,email_checkout_token_hash,email_checkout_expires_at) VALUES($1,$2,$3,'email_credits',$4,$5,$6,'USD',$7,$8,$9,'pending',$10,$11,$12,$13)",[ref,input.userId,input.workspaceId,pack.id,String(pack.email_credits),usd,input.provider,currency,amount,input.customer.country,input.customer.accountId,hash,expires]);
+ const base=String(process.env.AURELINK_API_URL||process.env.API_BASE_URL||"").trim();if(!base)throw new Error("AURELINK_API_URL is required.");
+ const baseUrl=new URL(base);if(baseUrl.protocol!=="https:"&&!(baseUrl.protocol==="http:"&&["localhost","127.0.0.1"].includes(baseUrl.hostname)))throw new Error("Payment link must use HTTPS.");
+ const link=base.replace(/\/$/,"")+"/aurelink/mail/credits/pay/"+token,credits=Number(pack.email_credits).toLocaleString("en-US"),due=(amount/100).toFixed(2)+" "+currency,providerName=input.provider==="paystack"?"Paystack":"PayPal";
+ const from=String(process.env.AURELINK_MAIL_BILLING_FROM||process.env.AURELINK_RECEIPT_FROM||"").trim(),key=required("RESEND_API_KEY");if(!from)throw new Error("AURELINK_MAIL_BILLING_FROM or AURELINK_RECEIPT_FROM is required.");
+ const html="<h2>Aurelink Mail credit purchase</h2><p>Account ID: <b>"+input.customer.accountId+"</b></p><p>Verified country: <b>"+input.customer.country+"</b></p><p>Package: <b>"+credits+" credits</b></p><p>Amount: <b>"+due+"</b></p><p>Provider: <b>"+providerName+"</b></p><p>Purchase reference: "+ref+"</p><p><a href=\""+link+"\">Continue to secure payment</a></p><p>This link expires in one hour and can be used once. Credits are issued only after Aurelink verifies payment.</p>";
+ const textBody="Aurelink Mail credit purchase\\nAccount ID: "+input.customer.accountId+"\\nVerified country: "+input.customer.country+"\\nPackage: "+credits+" credits\\nAmount: "+due+"\\nProvider: "+providerName+"\\nReference: "+ref+"\\nOne-use link (expires in one hour): "+link;
+ try{const sent=await axios.post("https://api.resend.com/emails",{from,to:[input.customer.email],subject:"Complete your Aurelink Mail credit purchase",html,text:textBody},{headers:{Authorization:"Bearer "+key,"Content-Type":"application/json"},timeout:15000});if(!sent.data?.id)throw new Error("Email provider did not accept the payment email.");await pool.query("UPDATE aurelink_email_billing_payments SET email_sent_at=NOW() WHERE reference=$1",[ref]);}
+ catch(e){await pool.query("UPDATE aurelink_email_billing_payments SET status='failed',email_checkout_token_hash=NULL,updated_at=NOW() WHERE reference=$1 AND status='pending'",[ref]);throw e;}
+ return {reference:ref,status:"awaiting_email_payment",emailSent:true,expiresAt:expires.toISOString(),purchaseType:"email_credits",paymentProvider:input.provider};
+}
+export async function startAurelinkMailCreditPayment(token:string):Promise<string>{
+ if(!/^[A-Za-z0-9_-]{40,60}$/.test(token))throw new Error("Invalid, expired or already-used Aurelink payment link.");
+ const hash=crypto.createHash("sha256").update(token).digest("hex"),client=await pool.connect();let row:PaymentRow;
+ try{await client.query("BEGIN");const q=await client.query("SELECT * FROM aurelink_email_billing_payments WHERE email_checkout_token_hash=$1 AND purchase_type='email_credits' AND status='pending' AND email_checkout_consumed_at IS NULL AND email_checkout_expires_at>NOW() FOR UPDATE",[hash]);row=q.rows[0] as PaymentRow;if(!row)throw new Error("Invalid, expired or already-used Aurelink payment link.");await client.query("UPDATE aurelink_email_billing_payments SET email_checkout_consumed_at=NOW(),updated_at=NOW() WHERE id=$1",[row.id]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
+ try{const ref=String(row.reference),provider=String(row.payment_provider) as Provider,urls=returnUrls(ref);let url="",id="";
+ if(provider==="paypal"){const order=await paypal<any>("post","/v2/checkout/orders",{intent:"CAPTURE",purchase_units:[{reference_id:ref,custom_id:ref,description:"Aurelink Mail "+row.email_credits+" prepaid credits",amount:money(Number(row.provider_amount_minor),"USD")}],payment_source:{paypal:{experience_context:{return_url:urls.success,cancel_url:urls.cancel,user_action:"PAY_NOW"}}}});id=String(order.id||"");url=String(order.links?.find((x:any)=>x.rel==="payer-action"||x.rel==="approve")?.href||"");if(!id)throw new Error("PayPal did not return an order ID.");await pool.query("UPDATE aurelink_email_billing_payments SET paypal_order_id=$2 WHERE reference=$1",[ref,id]);}
+ else{const init=await paystack<any>("post","/transaction/initialize",{email:String(row.email||""),amount:Number(row.provider_amount_minor),currency:String(row.provider_currency),reference:ref,callback_url:urls.success,metadata:{purpose:"aurelink_mail_email_credits",reference:ref,userId:String(row.user_id),workspaceId:String(row.workspace_id),emailCredits:String(row.email_credits),accountId:String(row.account_id),accountCountry:String(row.account_country)}});url=String(init.data?.authorization_url||"");id=String(init.data?.reference||"");if(id!==ref)throw new Error("Unexpected Paystack reference.");await pool.query("UPDATE aurelink_email_billing_payments SET paystack_reference=$2 WHERE reference=$1",[ref,id]);}
+ const u=new URL(url),allowed=provider==="paypal"?["www.paypal.com","www.sandbox.paypal.com","paypal.com","sandbox.paypal.com"]:["checkout.paystack.com"];if(!url||u.protocol!=="https:"||!allowed.includes(u.hostname))throw new Error("Untrusted provider checkout URL.");return url;
+ }catch(e){await pool.query("UPDATE aurelink_email_billing_payments SET status='failed',updated_at=NOW() WHERE reference=$1 AND status='pending'",[row.reference]);throw e;}
+}
 export async function createAurelinkMailCheckout(input:{userId:string;workspaceId:string;purchaseType:"subscription"|"email_credits";planOptionId?:string;creditPackId?:string}){
   const customer=await customerContext(input.userId,input.workspaceId),provider=providerFor(customer.country);
+  if(input.purchaseType==="email_credits"){if(!input.creditPackId)throw new Error("Select a prepaid email credit pack.");return createEmailCreditPurchase({userId:input.userId,workspaceId:input.workspaceId,customer,creditPackId:input.creditPackId,provider});}
   let amountUsd=0,planOptionId:string|null=null,creditPackId:string|null=null,emailCredits:string|null=null;
   if(input.purchaseType==="subscription"){
     if(!input.planOptionId) throw new Error("Select a monthly email plan.");
