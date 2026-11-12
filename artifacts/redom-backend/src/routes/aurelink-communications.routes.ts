@@ -2,6 +2,7 @@ import { Router } from "express";
 import { createHash, randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 import { pool } from "../database/db";
 import { captureAurelinkUsage, refundAurelinkUsage } from "../services/aurelink/communications-billing.service";
+import { captureAurelinkSmsUsage, refundAurelinkSmsUsage, restoreAurelinkSmsUsageForReconciliation } from "../services/aurelink/communications-sms-billing.service";
 import { captureAurelinkEmailUsage, refundAurelinkEmailUsage, resizeAurelinkEmailUsageReservation } from "../services/aurelink/communications-email-billing.service";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioStatus, updateAurelinkMessageStatus } from "../services/aurelink/communications-callbacks.service";
@@ -587,7 +588,8 @@ router.post("/aurelink/admin/communications/messages/:id/reconcile",aurelinkAuth
         await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1 AND status='unknown'",[row.message_id]);
         await captureAurelinkEmailUsage(client,String(row.message_id));
       }else{
-        await captureAurelinkUsage(client,String(row.message_id));
+        await restoreAurelinkSmsUsageForReconciliation(client,String(row.message_id));
+        await captureAurelinkSmsUsage(client,String(row.message_id));
       }
     }else{
       await client.query("UPDATE aurelink_messages SET status='failed',provider_status='operator_confirmed_not_accepted',provider_error='Provider console review confirmed that the submission was not accepted.',updated_at=NOW() WHERE id=$1",[row.message_id]);
@@ -597,7 +599,8 @@ router.post("/aurelink/admin/communications/messages/:id/reconcile",aurelinkAuth
         await client.query("UPDATE aurelink_email_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1 AND status='unknown'",[row.message_id]);
         await refundAurelinkEmailUsage(client,String(row.message_id));
       }else{
-        await refundAurelinkUsage(client,String(row.message_id),String(row.user_id),String(row.workspace_id));
+        await restoreAurelinkSmsUsageForReconciliation(client,String(row.message_id));
+        await refundAurelinkSmsUsage(client,String(row.message_id));
       }
     }
     await client.query(
