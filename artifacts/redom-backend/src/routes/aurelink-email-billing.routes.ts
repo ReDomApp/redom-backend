@@ -35,7 +35,17 @@ async function canManageBilling(userId:string,wid:string):Promise<boolean>{
 }
 
 
-router.get("/aurelink/mail/credits/pay/:token",async(req,res)=>{try{const url=await startAurelinkMailCreditPayment(String(req.params.token||""));return res.redirect(303,url);}catch(e){return res.status(410).type("text/plain").send(e instanceof Error?e.message:"Payment link unavailable.");}});
+const paymentLinkHeaders={"Cache-Control":"no-store, no-cache, must-revalidate, private","Pragma":"no-cache","Referrer-Policy":"no-referrer","X-Robots-Tag":"noindex, nofollow, noarchive","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"};
+router.get("/aurelink/mail/credits/pay/:token",async(req,res)=>{
+  const token=String(req.params.token||"");
+  if(!/^[A-Za-z0-9_-]{40,60}$/.test(token))return res.status(410).set(paymentLinkHeaders).type("text/plain").send("This payment link is invalid or expired.");
+  const action="/aurelink/mail/credits/pay/"+encodeURIComponent(token);
+  return res.status(200).set(paymentLinkHeaders).type("html").send("<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Aurelink Mail secure payment</title><body><main><h1>Continue to secure payment</h1><p>This one-time link will be used only when you press the button below. Payment is completed on the payment provider's secure website.</p><form method='post' action='"+action+"'><button type='submit'>Continue to payment</button></form><p>If you did not request this purchase, close this page.</p></main></body></html>");
+});
+router.post("/aurelink/mail/credits/pay/:token",async(req,res)=>{
+  try{const url=await startAurelinkMailCreditPayment(String(req.params.token||""));return res.status(303).set(paymentLinkHeaders).location(url).end();}
+  catch(e){return res.status(410).set(paymentLinkHeaders).type("text/plain").send("This payment link is invalid, expired, or already used. Request a new payment email.");}
+});
 router.post("/aurelink/webhooks/paystack-mail",async(req,res)=>{
   try{
     const body=Buffer.isBuffer(req.body)?JSON.parse(req.body.toString("utf8")):req.body;
@@ -80,17 +90,19 @@ router.post("/aurelink/communications/email/billing/checkout",aurelinkAuthMiddle
   const parsed=z.object({
     purchaseType:z.enum(["subscription","email_credits"]),
     planOptionId:z.string().uuid().optional(),
-    creditPackId:z.string().uuid().optional()
+    creditPackId:z.string().uuid().optional(),
+    pricingCountryCode:z.string().length(2).transform(v=>v.toUpperCase()).optional()
   }).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({success:false,message:"Choose a monthly email plan configuration or prepaid email credit pack."});
   if(parsed.data.purchaseType==="subscription"&&!parsed.data.planOptionId)return res.status(400).json({success:false,message:"Select an exact monthly email allowance and price."});
   if(parsed.data.purchaseType==="email_credits"&&!parsed.data.creditPackId)return res.status(400).json({success:false,message:"Select a prepaid email credit pack."});
+  if(parsed.data.purchaseType==="email_credits"&&!parsed.data.pricingCountryCode)return res.status(400).json({success:false,message:"Select the pricing country used for live currency conversion."});
   try{
     const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
     if(!await canManageBilling(req.user!.userId,wid))return res.status(403).json({success:false,code:"BILLING_PERMISSION_REQUIRED",message:"Workspace owner, administrator or billing permission is required."});
     const result=await createAurelinkMailCheckout({
       userId:req.user!.userId,workspaceId:wid,purchaseType:parsed.data.purchaseType,
-      planOptionId:parsed.data.planOptionId,creditPackId:parsed.data.creditPackId
+      planOptionId:parsed.data.planOptionId,creditPackId:parsed.data.creditPackId,pricingCountryCode:parsed.data.pricingCountryCode
     });
     return res.status(201).json({success:true,...result});
   }catch(error){
