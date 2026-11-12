@@ -108,8 +108,9 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
     try {
       await client.query("BEGIN");
       const claimed = await client.query(`
-        SELECT id, payment_reference, recipient_email, payload, attempts
-          FROM aurelink_email_credit_confirmation_outbox
+        SELECT o.id, o.payment_reference, o.recipient_email, o.payload, o.attempts, p.amount_minor AS usd_amount_minor
+          FROM aurelink_email_credit_confirmation_outbox o
+          JOIN aurelink_email_billing_payments p ON p.reference=o.payment_reference
          WHERE status <> 'sent' AND next_attempt_at <= NOW()
            AND (status <> 'processing' OR locked_at < NOW() - INTERVAL '5 minutes')
          ORDER BY created_at
@@ -131,7 +132,7 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
       const p = row.payload || {};
       const esc = (value: unknown) => String(value ?? "Not available").replace(/[&<>"']/g, ch => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[ch]!));
       const money = String(p.amount || "Not available");
-      const usd = "$" + Number(p.usdAmount || 0).toFixed(2) + " USD";
+      const usd = "$" + Number(p.usdAmount ?? (Number(row.usd_amount_minor || 0) / 100)).toFixed(2) + " USD";
       const credits = Number(p.credits || 0).toLocaleString("en-US");
       const accountId = String(p.accountId || "Not available");
       const packageName = String(p.packageName || ("Aurelink Mail Prepaid Email Credit Package · " + String(p.packageSize || credits)));
@@ -146,11 +147,11 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
       const newBalance = Number(p.newBalance || 0).toLocaleString("en-US");
       const ledgerReference = String(p.ledgerReference || "Not available");
       const completedAt = String(p.completedAt || "Not available");
-      const accountCountry = String(p.accountCountry || "Not available");
+      const accountCountry = String(p.paymentCountry || p.accountCountry || "Not available");
       const pricingCountry = String(p.country || accountCountry);
       const paymentRows: Array<[string,string]> = [
-        ["Payment provider",provider],["Method",paymentMethod],["Card number","Not provided by payment provider"],
-        ["Country",accountCountry],["Card type","Not provided by payment provider"],
+        ["Payment provider",provider],["Method",paymentMethod],["Card number",String(p.cardNumber || "Not provided by payment provider")],
+        ["Country",accountCountry],["Card type",String(p.cardType || "Not provided by payment provider")],
         ["Package purchased",packageName],["Credits purchased",credits],
         ["Amount paid",money],["USD equivalent",usd],
         ["Exchange rate used","1 USD = "+fxRate+" "+currency],
