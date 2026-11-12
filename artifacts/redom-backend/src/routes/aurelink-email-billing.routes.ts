@@ -3,7 +3,7 @@ import { z } from "zod";
 import { pool } from "../database/db";
 import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { verifyAurelinkEmailBillingCheckout as verifyLegacyStripeMail, cancelAurelinkEmailSubscription as cancelLegacyStripeMail } from "../services/payments/stripe-payment.service";
-import { createAurelinkMailCheckout, verifyAurelinkMailCheckout, cancelAurelinkMailSubscription, handleAurelinkMailWebhook } from "../services/payments/aurelink-mail-payment.service";
+import { createAurelinkMailCheckout, verifyAurelinkMailCheckout, cancelAurelinkMailSubscription, handleAurelinkMailWebhook, startAurelinkMailCreditPayment } from "../services/payments/aurelink-mail-payment.service";
 import { captureAurelinkEmailUsage, refundAurelinkEmailUsage, resizeAurelinkEmailUsageReservation } from "../services/aurelink/communications-email-billing.service";
 
 const router=Router();
@@ -35,6 +35,7 @@ async function canManageBilling(userId:string,wid:string):Promise<boolean>{
 }
 
 
+router.get("/aurelink/mail/credits/pay/:token",async(req,res)=>{try{const url=await startAurelinkMailCreditPayment(String(req.params.token||""));return res.redirect(303,url);}catch(e){return res.status(410).type("text/plain").send(e instanceof Error?e.message:"Payment link unavailable.");}});
 router.post("/aurelink/webhooks/paystack-mail",async(req,res)=>{
   try{
     const body=Buffer.isBuffer(req.body)?JSON.parse(req.body.toString("utf8")):req.body;
