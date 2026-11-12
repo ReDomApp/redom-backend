@@ -184,7 +184,7 @@ export async function createAurelinkMailCheckout(input:{userId:string;workspaceI
   }catch(e){await pool.query("UPDATE aurelink_email_billing_payments SET status='failed',updated_at=NOW() WHERE reference=$1 AND status='pending'",[ref]);throw e;}
 }
 
-async function fulfill(referenceValue:string,providerRef:string,provider:string,providerAmount:number,providerCurrency:string,subscriptionId?:string){
+async function fulfill(referenceValue:string,providerRef:string,provider:string,providerAmount:number,providerCurrency:string,subscriptionId?:string,providerDetails?:Record<string,any>){
   await ensureAurelinkMailSecuritySchema();
   const client=await pool.connect();
   try{
@@ -212,7 +212,11 @@ async function fulfill(referenceValue:string,providerRef:string,provider:string,
         country:String(p.pricing_country||p.account_country||""),currency:String(p.provider_currency||"USD"),
         fxRate:String(p.fx_rate||"1"),fxSource:String(p.fx_source||"USD catalogue"),
         fxAsOf:p.fx_as_of?new Date(p.fx_as_of).toISOString():"",
-        provider,providerTransactionReference:String(providerRef),paymentMethod:provider==="paystack"?"Paystack checkout":"PayPal checkout",
+        provider,providerTransactionReference:String(providerRef),
+        paymentMethod:(()=>{const channel=String(providerDetails?.channel||"").toLowerCase();const brand=String(providerDetails?.authorization?.brand||providerDetails?.authorization?.card_type||providerDetails?.paymentSource?.card?.brand||"");return channel==="card"?(brand?brand+" Card":"Card"):provider==="paypal"?"PayPal checkout":channel?channel.replace(/_/g," "):"Paystack checkout";})(),
+        cardNumber:(()=>{const last4=String(providerDetails?.authorization?.last4||providerDetails?.authorization?.last_digits||providerDetails?.paymentSource?.card?.last_digits||"");return /^\\d{4}$/.test(last4)?"XXXXXXXXXXXX"+last4:"Not provided by payment provider";})(),
+        cardType:String(providerDetails?.authorization?.card_type||providerDetails?.paymentSource?.card?.type||"Not provided by payment provider"),
+        paymentCountry:String(providerDetails?.authorization?.country_code||providerDetails?.paymentSource?.card?.country_code||p.account_country||""),
         packageName:"Aurelink Mail Prepaid Email Credit Package · "+packageSize,
         packageSize,credits:credits.toString(),usdAmount,
         amount:(Number(p.provider_amount_minor)/Math.pow(10,zeroDecimal?0:2)).toFixed(zeroDecimal?0:2)+" "+String(p.provider_currency||"USD"),
@@ -250,7 +254,7 @@ export async function verifyAurelinkMailCheckout(userId:string,ref:string){
       if(order.status==="COMPLETED"){
         const cap=order.purchase_units?.[0]?.payments?.captures?.[0];
         if(!cap||cap.status!=="COMPLETED") throw new Error("PayPal capture is not completed.");
-        await fulfill(ref,String(cap.id), "paypal",providerAmountToMinor(cap.amount.value,String(cap.amount.currency_code)),String(cap.amount.currency_code));
+        await fulfill(ref,String(cap.id), "paypal",providerAmountToMinor(cap.amount.value,String(cap.amount.currency_code)),String(cap.amount.currency_code),undefined,{paymentSource:cap.payment_source||order.payment_source||{},payer:order.payer||{}});
       }
     } else if(p.paypal_subscription_id){
       const sub=await paypal<any>("get","/v1/billing/subscriptions/"+encodeURIComponent(p.paypal_subscription_id));
@@ -263,7 +267,7 @@ export async function verifyAurelinkMailCheckout(userId:string,ref:string){
   }else if(p.payment_provider==="paystack"&&p.paystack_reference){
     const v=await paystack<any>("get","/transaction/verify/"+encodeURIComponent(p.paystack_reference));
     const d=v.data;
-    if(d.status==="success") await fulfill(ref,String(d.id),"paystack",Number(d.amount),String(d.currency).toUpperCase(),String(d.subscription?.subscription_code||"")||undefined);
+    if(d.status==="success") await fulfill(ref,String(d.id),"paystack",Number(d.amount),String(d.currency).toUpperCase(),String(d.subscription?.subscription_code||"")||undefined,{channel:String(d.channel||""),authorization:d.authorization||{},customer:d.customer||{}});
   }
   const refreshed=(await pool.query("SELECT status,purchase_type,email_credits FROM aurelink_email_billing_payments WHERE reference=$1",[ref])).rows[0];
   return {status:String(refreshed.status),purchaseType:String(refreshed.purchase_type),creditsAdded:refreshed.status==="paid"&&refreshed.purchase_type==="email_credits"?String(refreshed.email_credits):undefined};
@@ -291,7 +295,7 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
     if(body.event==="charge.success"){
       const ref=String(body.data?.reference||"");
       const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE reference=$1 AND payment_provider='paystack'",[ref])).rows[0];
-      if(p) await fulfill(ref,String(body.data.id),"paystack",Number(body.data.amount),String(body.data.currency).toUpperCase(),String(body.data.subscription?.subscription_code||"")||undefined);
+      if(p) await fulfill(ref,String(body.data.id),"paystack",Number(body.data.amount),String(body.data.currency).toUpperCase(),String(body.data.subscription?.subscription_code||"")||undefined,{channel:String(body.data.channel||""),authorization:body.data.authorization||{},customer:body.data.customer||{}});
       else { const code=String(body.data?.subscription?.subscription_code||""); if(code) await pool.query("UPDATE aurelink_email_subscriptions SET status=$2,billing_period_start=NOW(),billing_period_end=NOW()+INTERVAL '1 month',used_emails=0,paystack_customer_code=COALESCE($3,paystack_customer_code),updated_at=NOW() WHERE paystack_subscription_code=$1 AND status IN ($2,'past_due')",[code,"active",body.data?.customer?.customer_code||null]); }
       if(body.data?.subscription?.subscription_code) await pool.query("UPDATE aurelink_email_subscriptions SET paystack_customer_code=COALESCE(paystack_customer_code,$2),paystack_email_token_encrypted=COALESCE(paystack_email_token_encrypted,$3) WHERE paystack_subscription_code=$1",[body.data.subscription.subscription_code,body.data.customer?.customer_code||null,body.data.subscription?.email_token?encryptProviderSecret(String(body.data.subscription.email_token)):null]);
     }else if(body.event==="invoice.payment_failed"){
