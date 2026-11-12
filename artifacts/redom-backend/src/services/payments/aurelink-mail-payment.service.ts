@@ -26,7 +26,7 @@ function randomPublicReference(length:number):string {
   return output;
 }
 const reference = () => randomPublicReference(17);
-const ledgerReference = () => randomPublicReference(15);
+const generateLedgerReference = () => randomPublicReference(15);
 async function uniquePaymentReference():Promise<string>{
   await ensureAurelinkMailSecuritySchema();
   for(let attempt=0;attempt<20;attempt++){
@@ -226,11 +226,16 @@ async function fulfill(referenceValue:string,providerRef:string,provider:string,
       const wallet=(await client.query("SELECT balance_emails FROM aurelink_email_credit_wallets WHERE workspace_id=$1 FOR UPDATE",[p.workspace_id])).rows[0];
       const previous=BigInt(String(wallet.balance_emails)),credits=BigInt(String(p.email_credits)),next=previous+credits;
       if(credits<1000n||credits>250000n||next>250000n) throw new Error("Prepaid credit balance would exceed the permitted 250,000-credit limit.");
-      const ledgerRef=ledgerReference();
       const priorLedger=await client.query("SELECT reference FROM aurelink_email_credit_ledger WHERE payment_reference=$1 AND entry_type='purchase' AND direction='credit' LIMIT 1",[referenceValue]);
       if(priorLedger.rows[0]) throw new Error("A credit-ledger entry already exists for this payment while the payment is not marked paid. Manual reconciliation is required.");
-      const ledgerInsert=await client.query("INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,payment_reference,description,metadata,reference_format_version) VALUES($1,$2,'purchase','credit',$3,$4,$5,$6,'Purchase of Aurelink Mail prepaid email credits',$7::jsonb,2) RETURNING reference",[p.workspace_id,p.user_id,credits.toString(),next.toString(),ledgerRef,referenceValue,JSON.stringify({provider,providerReference:providerRef,purchaseReference:referenceValue})]);
-      if(!ledgerInsert.rows[0]) throw new Error("Credit-ledger allocation could not be recorded. Payment fulfillment was rolled back.");
+      let ledgerRef="";
+      let ledgerInsert:any;
+      for(let attempt=0;attempt<10;attempt++){
+        ledgerRef=generateLedgerReference();
+        ledgerInsert=await client.query("INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,payment_reference,description,metadata,reference_format_version) VALUES($1,$2,'purchase','credit',$3,$4,$5,$6,'Purchase of Aurelink Mail prepaid email credits',$7::jsonb,2) ON CONFLICT(reference) DO NOTHING RETURNING reference",[p.workspace_id,p.user_id,credits.toString(),next.toString(),ledgerRef,referenceValue,JSON.stringify({provider,providerReference:providerRef,purchaseReference:referenceValue})]);
+        if(ledgerInsert.rows[0]) break;
+      }
+      if(!ledgerInsert?.rows[0]) throw new Error("Unable to reserve a unique credit-ledger reference. Payment fulfillment was rolled back.");
       await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=$2,updated_at=NOW() WHERE workspace_id=$1",[p.workspace_id,next.toString()]);
       await client.query("UPDATE aurelink_email_billing_payments SET credit_ledger_reference=$2,reference_format_version=2 WHERE reference=$1",[referenceValue,ledgerRef]);
       await client.query("INSERT INTO aurelink_email_payment_reference_events(payment_reference,event_type,provider,provider_transaction_reference,details) VALUES($1,'credit_ledger_allocated',$2,$3,$4::jsonb)",[referenceValue,provider,providerRef,JSON.stringify({ledgerReference:ledgerRef,credits:credits.toString(),previousBalance:previous.toString(),newBalance:next.toString()})]);
