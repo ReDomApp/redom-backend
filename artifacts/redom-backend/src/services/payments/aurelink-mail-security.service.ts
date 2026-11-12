@@ -114,7 +114,7 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
          WHERE o.status <> 'sent' AND o.next_attempt_at <= NOW()
            AND (o.status <> 'processing' OR o.locked_at < NOW() - INTERVAL '5 minutes')
          ORDER BY o.created_at
-         LIMIT 1 FOR UPDATE SKIP LOCKED
+         LIMIT 1 FOR UPDATE OF o SKIP LOCKED
       `);
       row = claimed.rows[0];
       if (!row) { await client.query("COMMIT"); break; }
