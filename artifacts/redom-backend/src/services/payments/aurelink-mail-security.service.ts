@@ -129,40 +129,68 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
       const from = String(process.env.AURELINK_MAIL_BILLING_FROM || process.env.AURELINK_RECEIPT_FROM || "").trim();
       if (!apiKey || !from) throw new Error("Resend confirmation email configuration is missing.");
       const p = row.payload || {};
-      const money = String(p.amount || "");
+      const esc = (value: unknown) => String(value ?? "Not available").replace(/[&<>"']/g, ch => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[ch]!));
+      const money = String(p.amount || "Not available");
+      const usd = "$" + Number(p.usdAmount || 0).toFixed(2) + " USD";
+      const credits = Number(p.credits || 0).toLocaleString("en-US");
+      const accountId = String(p.accountId || "Not available");
+      const packageName = String(p.packageName || ("Aurelink Mail Prepaid Email Credit Package · " + String(p.packageSize || credits)));
+      const provider = String(p.provider || "Not available");
+      const paymentMethod = String(p.paymentMethod || "Not provided by payment provider");
+      const providerReference = String(p.providerTransactionReference || row.payment_reference);
+      const currency = String(p.currency || "USD");
+      const fxRate = String(p.fxRate || "1");
+      const fxSource = String(p.fxSource || "USD catalogue");
+      const fxAsOf = String(p.fxAsOf || "Not available");
+      const previousBalance = Number(p.previousBalance || 0).toLocaleString("en-US");
+      const newBalance = Number(p.newBalance || 0).toLocaleString("en-US");
+      const ledgerReference = String(p.ledgerReference || "Not available");
+      const completedAt = String(p.completedAt || "Not available");
+      const accountCountry = String(p.accountCountry || "Not available");
+      const pricingCountry = String(p.country || accountCountry);
+      const paymentRows: Array<[string,string]> = [
+        ["Payment provider",provider],["Method",paymentMethod],["Card number","Not provided by payment provider"],
+        ["Country",accountCountry],["Card type","Not provided by payment provider"],
+        ["Package purchased",packageName],["Credits purchased",credits],
+        ["Amount paid",money],["USD equivalent",usd],
+        ["Exchange rate used","1 USD = "+fxRate+" "+currency],
+        ["Payment status",String(p.paymentStatus || "SUCCESSFUL")]
+      ];
+      const currencyRows: Array<[string,string]> = [
+        ["Original payment",money],["Applied exchange rate","1 USD = "+fxRate+" "+currency],
+        ["Converted amount",usd],["Pricing country",pricingCountry],
+        ["Rate source",fxSource],["Rate timestamp",fxAsOf]
+      ];
+      const balanceRows: Array<[string,string]> = [
+        ["Previous balance",previousBalance],["Credits purchased","+"+credits],["New balance",newBalance]
+      ];
+      const ledgerRows: Array<[string,string]> = [
+        ["Credit ledger reference",ledgerReference],["Allocation source","Verified payment"],
+        ["Allocation amount",credits+" credits"],["Transaction integrity",String(p.transactionIntegrity || "VERIFIED")],
+        ["Provider transaction reference",providerReference],["Purchase reference",String(row.payment_reference)]
+      ];
+      const table = (rows:Array<[string,string]>) => "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;border:1px solid #DADDE1'>" +
+        rows.map(([k,v])=>"<tr><td style='padding:11px 14px;border-bottom:1px solid #DADDE1;color:#65676B'>"+esc(k)+"</td><td style='padding:11px 14px;border-bottom:1px solid #DADDE1;text-align:right;font-weight:600'>"+esc(v)+"</td></tr>").join("")+"</table>";
+      const html = "<!doctype html><html><body style='margin:0;background:#F0F2F5;color:#1C1E21;font-family:Arial,Helvetica,sans-serif'><table role='presentation' width='100%' cellpadding='0' cellspacing='0'><tr><td align='center' style='padding:24px 10px'><table role='presentation' width='100%' style='max-width:660px;background:#fff;border:1px solid #DADDE1;border-collapse:collapse'><tr><td style='padding:24px 28px;border-bottom:1px solid #DADDE1;text-align:center;color:#1877F2;font-size:23px;font-weight:700'>Aurelink</td></tr><tr><td style='padding:28px'><div style='font-size:12px;color:#65676B;font-weight:700;letter-spacing:1px'>PAYMENTS &amp; BILLING</div><h1 style='font-size:25px;margin:10px 0'>Payment Successful</h1><p style='font-size:16px;line-height:1.6'>Your credits have been added successfully.</p><p style='font-size:13px;color:#1877F2;font-weight:700'>Payment verified · Credit allocation confirmed</p><div style='margin:22px 0;padding:18px;background:#F0F2F5'><div style='font-size:11px;color:#65676B;font-weight:700'>PACKAGE PURCHASED</div><div style='font-size:24px;font-weight:700;margin-top:8px'>"+esc(credits)+" Credits</div><div style='font-size:18px;margin-top:5px'>"+esc(usd)+"</div><div style='font-size:13px;color:#65676B;margin-top:5px'>"+esc(packageName)+"</div><div style='font-size:12px;color:#65676B;margin-top:8px'>Account ID "+esc(accountId)+"</div></div><p>Hello,</p><p style='line-height:1.6'>Your payment has been successfully verified and processed. Aurelink has received confirmation from the payment provider and successfully credited your account. Here is your official transaction receipt.</p><h2 style='font-size:16px;margin:26px 0 10px'>ACCOUNT INFORMATION</h2>"+table(paymentRows)+"<h2 style='font-size:16px;margin:26px 0 10px'>CURRENCY CONVERSION</h2>"+table(currencyRows)+"<p style='font-size:12px;color:#65676B;line-height:1.5'>The exchange rate shown is the rate locked and recorded for this transaction, not a live FX quotation. USD equivalent reflects the original USD catalogue price.</p><h2 style='font-size:16px;margin:26px 0 10px'>CREDIT BALANCE SUMMARY</h2>"+table(balanceRows)+"<div style='padding:18px 0'><div style='font-size:12px;color:#65676B'>NEW AVAILABLE BALANCE</div><div style='font-size:28px;font-weight:700;margin-top:5px'>"+esc(newBalance)+" Credits</div><p style='font-size:13px;color:#65676B'>Your wallet balance has been updated successfully.</p></div><h2 style='font-size:16px;margin:26px 0 10px'>CREDIT LEDGER INFORMATION</h2>"+table(ledgerRows)+"<h2 style='font-size:16px;margin:26px 0 10px'>FINAL TRANSACTION STATUS</h2><p style='line-height:1.8'>Payment successfully verified<br>Payment provider confirmation received<br>Currency conversion completed<br>Credit ledger entry committed<br>Account balance updated</p><p><strong>Payment: SUCCESSFUL</strong><br><strong>Credit Allocation: SUCCESSFUL</strong></p><p>Both operations have been confirmed.</p><p>Thank you for choosing Aurelink.<br>Aurelink Billing &amp; Payments Team</p><p style='font-size:11px;color:#65676B'>Automated transaction confirmation. Please do not reply to this email.</p></td></tr><tr><td style='padding:18px 28px;border-top:1px solid #DADDE1;text-align:center;font-size:11px;color:#65676B'>© 2026 Aurelink. All rights reserved. Official Payment Receipt<br>Completed: "+esc(completedAt)+"</td></tr></table></td></tr></table></body></html>";
       const textBody = [
-        "Aurelink Mail payment successful",
-        "Your payment has been verified and the purchased credits have been added to your Aurelink wallet.",
-        "Aurelink Account ID: " + String(p.accountId || ""),
-        "Verified account country: " + String(p.accountCountry || ""),
-        "Pricing country: " + String(p.country || ""),
-        "Purchase reference: " + String(row.payment_reference),
-        "Provider transaction reference: " + String(p.providerTransactionReference || ""),
-        "Provider: " + String(p.provider || ""),
-        "Package: " + String(p.credits || "") + " email credits",
-        "Amount paid: " + money,
-        "Pricing country: " + String(p.country || ""),
-        "FX rate (USD to " + String(p.currency || "") + "): " + String(p.fxRate || "1"),
-        "FX source: " + String(p.fxSource || "USD"),
-        "FX rate timestamp: " + String(p.fxAsOf || ""),
-        "Rates by ExchangeRate-API: https://www.exchangerate-api.com",
-        "Wallet balance before: " + String(p.previousBalance || ""),
-        "Credits added: " + String(p.credits || ""),
-        "Wallet balance after: " + String(p.newBalance || ""),
-        "Ledger reference: " + String(p.ledgerReference || ""),
-        "Payment status: SUCCESS",
-        "Credit fulfillment status: SUCCESS",
-        "Completed at: " + String(p.completedAt || "")
+        "Payments & Billing","Payment Successful","Your credits have been added successfully.",
+        "Payment verified · Credit allocation confirmed","","PACKAGE PURCHASED",
+        "Account ID: "+accountId,credits+" Credits",usd,packageName,
+        "","Hello,","Your payment has been successfully verified and processed. Aurelink has received confirmation from the payment provider and successfully credited your account.",
+        "Here is your official transaction receipt.","","ACCOUNT INFORMATION",
+        ...paymentRows.map(([k,v])=>k+": "+v),"","CURRENCY CONVERSION",
+        ...currencyRows.map(([k,v])=>k+": "+v),
+        "The exchange rate shown is the rate locked and recorded for this transaction, not a live FX quotation.",
+        "","CREDIT BALANCE SUMMARY",...balanceRows.map(([k,v])=>k+": "+v),
+        "","NEW AVAILABLE BALANCE",newBalance+" Credits","Your wallet balance has been updated successfully.",
+        "","CREDIT LEDGER INFORMATION",...ledgerRows.map(([k,v])=>k+": "+v),
+        "","FINAL TRANSACTION STATUS","Payment successfully verified","Payment provider confirmation received",
+        "Currency conversion completed","Credit ledger entry committed","Account balance updated",
+        "Payment: SUCCESSFUL","Credit Allocation: SUCCESSFUL","Both operations have been confirmed.",
+        "","Thank you for choosing Aurelink.","Aurelink Billing & Payments Team",
+        "Automated transaction confirmation. Please do not reply to this email.",
+        "© 2026 Aurelink. All rights reserved. Official Payment Receipt"
       ].join("\n");
-      const html = "<h2>Aurelink Mail payment successful</h2><p>Your payment has been verified and the purchased credits have been added to your Aurelink wallet.</p>" +
-        "<table>" + [
-          ["Aurelink Account ID",p.accountId],["Verified account country",p.accountCountry],["Pricing country",p.country],["Purchase reference",row.payment_reference],["Provider transaction reference",p.providerTransactionReference],["Provider",p.provider],
-          ["Package",String(p.credits || "")+" credits"],["Amount paid",money],["Pricing country",p.country],
-          ["FX rate",p.fxRate],["FX source",p.fxSource],["FX timestamp",p.fxAsOf],
-          ["Wallet balance before",p.previousBalance],["Credits added",p.credits],
-          ["Wallet balance after",p.newBalance],["Ledger reference",p.ledgerReference],
-          ["Payment status","SUCCESS"],["Credit fulfillment status","SUCCESS"],["Completed at",p.completedAt]
-        ].map(([k,v])=>"<tr><td>"+String(k)+"</td><td>"+String(v ?? "").replace(/[&<>"]/g,ch=>ch==="&"?"&amp;":ch==="<"?"&lt;":ch===">"?"&gt;":"&quot;")+"</td></tr>").join("")+"</table><p><a href='https://www.exchangerate-api.com'>Rates by ExchangeRate-API</a></p>";
       const sent = await axios.post("https://api.resend.com/emails", {
         from, to: [row.recipient_email], subject: "Aurelink Mail payment confirmed — credits added", text: textBody, html
       }, { headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json", "Idempotency-Key": "aurelink-mail-credit-confirmation/" + String(row.payment_reference) }, timeout: 15000 });
