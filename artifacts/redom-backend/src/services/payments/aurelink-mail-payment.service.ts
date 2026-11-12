@@ -204,7 +204,8 @@ async function fulfill(referenceValue:string,providerRef:string,provider:string,
       await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=$2,updated_at=NOW() WHERE workspace_id=$1",[p.workspace_id,next.toString()]);
       await client.query("INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,payment_reference,description,metadata) VALUES($1,$2,'purchase','credit',$3,$4,$5,$6,'Purchase of Aurelink Mail prepaid email credits',$7::jsonb) ON CONFLICT(reference) DO NOTHING",[p.workspace_id,p.user_id,credits.toString(),next.toString(),"AL-EMAIL-CREDIT-PURCHASE-"+referenceValue,referenceValue,JSON.stringify({provider,providerReference:providerRef})]);
       const ledgerReference="AL-EMAIL-CREDIT-PURCHASE-"+referenceValue;
-      const zeroDecimal=["JPY","KRW","VND","CLP","XAF","XOF","XPF"].includes(String(p.provider_currency));
+      let providerMinorUnit=2;
+      try{providerMinorUnit=new Intl.NumberFormat("en",{style:"currency",currency:String(p.provider_currency||"USD")}).resolvedOptions().maximumFractionDigits;}catch{providerMinorUnit=2;}
       const usdAmount=(Number(p.amount_minor)/100).toFixed(2);
       const packageSize=credits===1000n?"1K":credits===5000n?"5K":credits===10000n?"10K":credits===50000n?"50K":credits===100000n?"100K":"250K";
       const fxPayload={
@@ -219,7 +220,7 @@ async function fulfill(referenceValue:string,providerRef:string,provider:string,
         paymentCountry:String(providerDetails?.authorization?.country_code||providerDetails?.paymentSource?.card?.country_code||p.account_country||""),
         packageName:"Aurelink Credit Package · "+packageSize,
         packageSize,credits:credits.toString(),usdAmount,
-        amount:(Number(p.provider_amount_minor)/Math.pow(10,zeroDecimal?0:2)).toFixed(zeroDecimal?0:2)+" "+String(p.provider_currency||"USD"),
+        amount:(Number(p.provider_amount_minor)/Math.pow(10,providerMinorUnit)).toFixed(providerMinorUnit)+" "+String(p.provider_currency||"USD"),
         previousBalance:previous.toString(),newBalance:next.toString(),ledgerReference,
         paymentStatus:"SUCCESSFUL",creditAllocationStatus:"SUCCESSFUL",transactionIntegrity:"VERIFIED",
         completedAt:new Date().toISOString()
