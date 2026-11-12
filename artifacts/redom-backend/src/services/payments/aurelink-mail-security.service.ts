@@ -113,7 +113,7 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
          WHERE status <> 'sent' AND next_attempt_at <= NOW()
            AND (status <> 'processing' OR locked_at < NOW() - INTERVAL '5 minutes')
          ORDER BY created_at
-         FOR UPDATE SKIP LOCKED LIMIT 1
+         LIMIT 1 FOR UPDATE SKIP LOCKED
       `);
       row = claimed.rows[0];
       if (!row) { await client.query("COMMIT"); break; }
@@ -159,10 +159,10 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
           ["Wallet balance before",p.previousBalance],["Credits added",p.credits],
           ["Wallet balance after",p.newBalance],["Ledger reference",p.ledgerReference],
           ["Payment status","SUCCESS"],["Credit fulfillment status","SUCCESS"],["Completed at",p.completedAt]
-        ].map(([k,v])=>"<tr><td>"+String(k)+"</td><td>"+String(v ?? "").replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;"}[ch]!))+"</td></tr>").join("")+"</table><p><a href='https://www.exchangerate-api.com'>Rates by ExchangeRate-API</a></p>";
+        ].map(([k,v])=>"<tr><td>"+String(k)+"</td><td>"+String(v ?? "").replace(/[&<>"]/g,ch=>ch==="&"?"&amp;":ch==="<"?"&lt;":ch===">"?"&gt;":"&quot;")+"</td></tr>").join("")+"</table><p><a href='https://www.exchangerate-api.com'>Rates by ExchangeRate-API</a></p>";
       const sent = await axios.post("https://api.resend.com/emails", {
         from, to: [row.recipient_email], subject: "Aurelink Mail payment confirmed — credits added", text: textBody, html
-      }, { headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" }, timeout: 15000 });
+      }, { headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json", "Idempotency-Key": "aurelink-mail-credit-confirmation/" + String(row.payment_reference) }, timeout: 15000 });
       if (!sent.data?.id) throw new Error("Resend did not confirm acceptance of the credit receipt.");
       await pool.query("UPDATE aurelink_email_credit_confirmation_outbox SET status='sent',delivered_at=NOW(),locked_at=NULL,last_error=NULL,updated_at=NOW() WHERE id=$1", [row.id]);
     } catch (error) {
