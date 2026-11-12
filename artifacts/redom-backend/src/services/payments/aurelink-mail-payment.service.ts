@@ -219,6 +219,7 @@ async function fulfill(referenceValue:string,providerRef:string,provider:string,
     await client.query("UPDATE aurelink_email_billing_payments SET status='paid',paid_at=NOW(),provider_metadata=provider_metadata||$2::jsonb,updated_at=NOW() WHERE reference=$1",[referenceValue,JSON.stringify({providerReference:providerRef})]);
     await client.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'email_billing_payment_fulfilled',$3::jsonb)",[p.workspace_id,p.user_id,JSON.stringify({reference:referenceValue,provider,purchaseType:p.purchase_type})]);
     await client.query("COMMIT");
+    void processAurelinkMailCreditConfirmationOutbox(10).catch(()=>undefined);
   }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
 }
 
