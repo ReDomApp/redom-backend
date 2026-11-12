@@ -209,6 +209,21 @@ export async function createAurelinkMailCheckout(input:{userId:string;workspaceI
   }catch(e){await pool.query("UPDATE aurelink_email_billing_payments SET status='failed',updated_at=NOW() WHERE reference=$1 AND status='pending'",[ref]);throw e;}
 }
 
+async function recordProviderPaymentEvent(provider:Provider,eventId:string,eventType:string,candidates:unknown[],details:Record<string,any>={}):Promise<void>{
+  const ids=Array.from(new Set(candidates.map(value=>String(value||"").trim()).filter(Boolean)));
+  if(!eventId||ids.length===0) return;
+  const match=await pool.query(
+    "SELECT reference,provider_transaction_reference FROM aurelink_email_billing_payments WHERE payment_provider=$1 AND (reference=ANY($2::text[]) OR paypal_order_id=ANY($2::text[]) OR paypal_subscription_id=ANY($2::text[]) OR paystack_reference=ANY($2::text[]) OR provider_transaction_reference=ANY($2::text[])) LIMIT 1",
+    [provider,ids]
+  );
+  const payment=match.rows[0];
+  if(!payment) return;
+  await pool.query(
+    "INSERT INTO aurelink_email_payment_reference_events(payment_reference,event_type,provider,provider_event_id,provider_transaction_reference,details) VALUES($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT(provider,provider_event_id) DO NOTHING",
+    [payment.reference,eventType,provider,eventId,payment.provider_transaction_reference||null,JSON.stringify({...details,matchedIdentifiers:ids})]
+  );
+}
+
 async function fulfill(referenceValue:string,providerRef:string,provider:string,providerAmount:number,providerCurrency:string,subscriptionId?:string,providerDetails?:Record<string,any>){
   await ensureAurelinkMailSecuritySchema();
   const client=await pool.connect();
@@ -335,6 +350,11 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
     const eventId=String(body?.data?.id||body?.data?.reference||"")+":"+String(body?.event||"");
     const inserted=await pool.query("INSERT INTO aurelink_email_payment_webhook_events(provider,event_id,event_type,payload) VALUES('paystack',$1,$2,$3::jsonb) ON CONFLICT(provider,event_id) DO UPDATE SET received_at=NOW() WHERE aurelink_email_payment_webhook_events.processed_at IS NULL RETURNING id",[eventId,String(body?.event||"unknown"),JSON.stringify(body)]);
     if(!inserted.rows[0]) return;
+    const paystackData=body?.data||{};
+    await recordProviderPaymentEvent("paystack",eventId,String(body?.event||"unknown"),[
+      paystackData.reference,paystackData.transaction?.reference,paystackData.metadata?.reference,
+      paystackData.id,paystackData.transaction?.id
+    ],{providerStatus:paystackData.status||paystackData.gateway_response||null});
     if(body.event==="charge.success"){
       const ref=String(body.data?.reference||"");
       const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE reference=$1 AND payment_provider='paystack'",[ref])).rows[0];
@@ -361,6 +381,12 @@ export async function handleAurelinkMailWebhook(provider:"paypal"|"paystack",hea
   const inserted=await pool.query("INSERT INTO aurelink_email_payment_webhook_events(provider,event_id,event_type,payload) VALUES('paypal',$1,$2,$3::jsonb) ON CONFLICT(provider,event_id) DO UPDATE SET received_at=NOW() WHERE aurelink_email_payment_webhook_events.processed_at IS NULL RETURNING id",[eventId,String(body?.event_type||"unknown"),JSON.stringify(body)]);
   if(!inserted.rows[0]) return;
   const resource=body.resource||{};
+  await recordProviderPaymentEvent("paypal",eventId,String(body?.event_type||"unknown"),[
+    resource.custom_id,resource.reference_id,resource.supplementary_data?.related_ids?.order_id,
+    resource.supplementary_data?.related_ids?.capture_id,resource.id,resource.billing_agreement_id,
+    resource.disputed_transactions?.[0]?.seller_transaction_id,
+    resource.disputed_transactions?.[0]?.buyer_transaction_id
+  ],{resourceStatus:resource.status||null,resourceId:resource.id||null});
   if(body.event_type==="PAYMENT.CAPTURE.COMPLETED"){
     const orderId=String(resource.supplementary_data?.related_ids?.order_id||"");
     const p=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE paypal_order_id=$1 AND payment_provider='paypal'",[orderId])).rows[0];
