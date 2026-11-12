@@ -38,6 +38,10 @@ export async function ensureAurelinkMailSecuritySchema(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_payment_provider_transaction_uq
       ON aurelink_email_billing_payments(payment_provider, provider_transaction_reference)
       WHERE provider_transaction_reference IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS aurelink_email_payment_reference_reservations (
+      reference TEXT PRIMARY KEY,
+      reserved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS aurelink_email_payment_reference_events (
       id BIGSERIAL PRIMARY KEY,
       payment_reference TEXT NOT NULL REFERENCES aurelink_email_billing_payments(reference),
