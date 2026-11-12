@@ -23,7 +23,6 @@ async function customer(userId:string,workspaceId:string){
 }
 async function uniqueReference(){await ensureAurelinkSmsBillingSchema();for(let i=0;i<20;i++){const ref=crypto.randomBytes(13).toString("hex").toUpperCase();const r=await pool.query("INSERT INTO aurelink_sms_payment_reference_reservations(reference) VALUES($1) ON CONFLICT DO NOTHING RETURNING reference",[ref]);if(r.rows[0])return ref;}throw new Error("Unable to reserve a unique SMS payment reference.");}
 function returnUrl(ref:string){const raw=String(process.env.AURELINK_EMAIL_BILLING_SUCCESS_URL||"").trim();if(!raw)throw new Error("AURELINK_EMAIL_BILLING_SUCCESS_URL must be configured.");const u=new URL(raw);if(u.protocol!=="https:"&&!(u.protocol==="http:"&&["localhost","127.0.0.1"].includes(u.hostname)))throw new Error("Payment return URL must use HTTPS.");u.searchParams.set("reference",ref);u.searchParams.set("status","success");return u.toString();}
-function key(){const raw=required("AURELINK_PAYMENT_ENCRYPTION_KEY");const b=/^[a-f0-9]{64}$/i.test(raw)?Buffer.from(raw,"hex"):Buffer.from(raw,"base64");if(b.length!==32)throw new Error("AURELINK_PAYMENT_ENCRYPTION_KEY must decode to 32 bytes.");return b;}
 function safe(v:string){return v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]!));}
 
 export async function createAurelinkSmsPackageCheckout(input:{userId:string;workspaceId:string;packageCode:string;pricingCountryCode:string}){
