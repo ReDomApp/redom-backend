@@ -1,0 +1,48 @@
+import type { PoolClient } from "pg";
+import { chargeAurelinkUsage, captureAurelinkUsage, refundAurelinkUsage } from "./communications-billing.service";
+
+type Db = Pick<PoolClient,"query">;
+type Reservation = { source:"package"|"wallet"; units:number; unitPriceMinor:number|null; amountMinor:string|null; walletReference:string|null };
+
+/** SMS has exactly two funding sources: prepaid SMS segments, then the Aurelink USD wallet. */
+export async function reserveAurelinkSmsUsage(client:Db,input:{
+ userId:string;workspaceId:string;messageId:string;units:number;countryCode?:string;
+ provider:string;category:string;metadata?:Record<string,unknown>;
+}):Promise<Reservation>{
+ if(!Number.isSafeInteger(input.units)||input.units<1)throw new Error("AURELINK_INVALID_SMS_UNITS");
+ const prior=await client.query("SELECT source,units,unit_price_minor,amount_minor,wallet_reference FROM aurelink_sms_usage_reservations WHERE message_id=$1 FOR UPDATE",[input.messageId]);
+ if(prior.rows[0]){const r=prior.rows[0];return {source:r.source,units:Number(r.units),unitPriceMinor:r.unit_price_minor===null?null:Number(r.unit_price_minor),amountMinor:r.amount_minor===null?null:String(r.amount_minor),walletReference:r.wallet_reference??null};}
+ await client.query("INSERT INTO aurelink_sms_package_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[input.workspaceId,input.userId]);
+ const wallet=(await client.query("SELECT balance_segments,reserved_segments FROM aurelink_sms_package_wallets WHERE workspace_id=$1 AND user_id=$2 FOR UPDATE",[input.workspaceId,input.userId])).rows[0];
+ if(!wallet)throw new Error("AURELINK_SMS_PACKAGE_WALLET_UNAVAILABLE");
+ const available=BigInt(String(wallet.balance_segments))-BigInt(String(wallet.reserved_segments));
+ if(available>=BigInt(input.units)){
+  await client.query("UPDATE aurelink_sms_package_wallets SET reserved_segments=reserved_segments+$2,updated_at=NOW() WHERE workspace_id=$1",[input.workspaceId,input.units]);
+  await client.query("INSERT INTO aurelink_sms_usage_reservations(message_id,workspace_id,user_id,source,units,status,metadata) VALUES($1,$2,$3,'package',$4,'reserved',$5::jsonb)",[input.messageId,input.workspaceId,input.userId,input.units,JSON.stringify({provider:input.provider,category:input.category,countryCode:input.countryCode||"*",...input.metadata})]);
+  return {source:"package",units:input.units,unitPriceMinor:null,amountMinor:null,walletReference:"AL-SMS-PACKAGE-"+input.messageId};
+ }
+ const charged=await chargeAurelinkUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:input.messageId,service:"sms_segment",units:input.units,countryCode:input.countryCode||"*",metadata:{channel:"sms",provider:input.provider,category:input.category,billingSource:"wallet",...input.metadata}});
+ await client.query("INSERT INTO aurelink_sms_usage_reservations(message_id,workspace_id,user_id,source,units,unit_price_minor,amount_minor,wallet_reference,status,metadata) VALUES($1,$2,$3,'wallet',$4,$5,$6,$7,'reserved',$8::jsonb)",[input.messageId,input.workspaceId,input.userId,input.units,charged.unitPriceMinor,charged.amountMinor,charged.reference,JSON.stringify({provider:input.provider,category:input.category,countryCode:input.countryCode||"*",priceId:charged.priceId})]);
+ return {source:"wallet",units:input.units,unitPriceMinor:charged.unitPriceMinor,amountMinor:charged.amountMinor,walletReference:charged.reference};
+}
+export async function captureAurelinkSmsUsage(client:Db,messageId:string):Promise<void>{
+ const result=await client.query("SELECT * FROM aurelink_sms_usage_reservations WHERE message_id=$1 FOR UPDATE",[messageId]);const r=result.rows[0];
+ if(!r||r.status==="captured"||r.status==="refunded")return;if(r.status==="unknown")throw new Error("AURELINK_SMS_USAGE_REQUIRES_RECONCILIATION");
+ if(r.source==="package"){
+  const updated=await client.query("UPDATE aurelink_sms_package_wallets SET reserved_segments=reserved_segments-$2,balance_segments=balance_segments-$2,updated_at=NOW() WHERE workspace_id=$1 AND reserved_segments >= $2 AND balance_segments >= $2 RETURNING balance_segments",[r.workspace_id,r.units]);
+  if(!updated.rows[0])throw new Error("AURELINK_SMS_PACKAGE_RESERVATION_MISMATCH");
+  await client.query("INSERT INTO aurelink_sms_package_ledger(workspace_id,user_id,entry_type,direction,amount_segments,balance_after,reference,description,metadata) VALUES($1,$2,'usage','debit',$3,$4,$5,'Aurelink SMS package usage',$6::jsonb)",[r.workspace_id,r.user_id,r.units,updated.rows[0].balance_segments,"AL-SMS-USE-"+messageId,JSON.stringify({messageId,units:r.units})]);
+ }else await captureAurelinkUsage(client,messageId);
+ await client.query("UPDATE aurelink_sms_usage_reservations SET status='captured',updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[messageId]);
+}
+export async function refundAurelinkSmsUsage(client:Db,messageId:string):Promise<void>{
+ const result=await client.query("SELECT * FROM aurelink_sms_usage_reservations WHERE message_id=$1 FOR UPDATE",[messageId]);const r=result.rows[0];
+ if(!r||r.status==="refunded")return;if(r.status==="captured")throw new Error("AURELINK_SMS_USAGE_ALREADY_CAPTURED");if(r.status==="unknown")throw new Error("AURELINK_SMS_USAGE_REQUIRES_RECONCILIATION");
+ if(r.source==="package"){
+  const updated=await client.query("UPDATE aurelink_sms_package_wallets SET reserved_segments=reserved_segments-$2,updated_at=NOW() WHERE workspace_id=$1 AND reserved_segments >= $2 RETURNING balance_segments",[r.workspace_id,r.units]);
+  if(!updated.rows[0])throw new Error("AURELINK_SMS_PACKAGE_RESERVATION_MISMATCH");
+ }else await refundAurelinkUsage(client,messageId,String(r.user_id),String(r.workspace_id));
+ await client.query("UPDATE aurelink_sms_usage_reservations SET status='refunded',updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[messageId]);
+}
+export async function markAurelinkSmsUsageUnknown(client:Db,messageId:string):Promise<void>{await client.query("UPDATE aurelink_sms_usage_reservations SET status='unknown',updated_at=NOW() WHERE message_id=$1 AND status='reserved'",[messageId]);}
+export async function restoreAurelinkSmsUsageForReconciliation(client:Db,messageId:string):Promise<void>{await client.query("UPDATE aurelink_sms_usage_reservations SET status='reserved',updated_at=NOW() WHERE message_id=$1 AND status='unknown'",[messageId]);}
