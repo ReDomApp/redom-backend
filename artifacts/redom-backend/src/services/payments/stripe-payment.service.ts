@@ -6,6 +6,7 @@ import { sendPaymentEmailForReference } from "./payment.service";
 import { finalizeStarsTrialSetup, markStarsTrialSetupAbandoned } from "./stripe-stars-trial.service";
 import { getStripeCardMethodForUser, finalizeStripeCardSetup, finalizeStripeCardSetupCheckout } from "./stripe-saved-payment.service";
 import { walletCredit } from "../aurelink/aurelink-wallet.service";
+import { ensureAurelinkMailSecuritySchema, processAurelinkMailCreditConfirmationOutbox } from "./aurelink-mail-security.service";
 
 const API = "https://api.stripe.com/v1";
 const APP_CALLBACK = "redom://payment/callback";
@@ -708,6 +709,7 @@ export async function createAurelinkEmailBillingCheckout(input:{
 }
 
 export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession):Promise<void>{
+  await ensureAurelinkMailSecuritySchema();
   const reference=String(session.metadata?.reference||"");
   if(!reference||!String(session.metadata?.purpose||"").startsWith("aurelink_email_"))return;
   const client=await pool.connect();
@@ -734,6 +736,45 @@ export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession)
         "INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,payment_reference,description,metadata) VALUES($1,$2,'purchase','credit',$3,$4,$5,$6,'Stripe purchase of Aurelink Mail prepaid email credits',$7::jsonb) ON CONFLICT(reference) DO NOTHING",
         [payment.workspace_id,payment.user_id,credits.toString(),next.toString(),"AL-EMAIL-CREDIT-PURCHASE-"+reference,reference,JSON.stringify({stripePaymentIntent:paymentIntent,checkoutSessionId:session.id})]
       );
+      const account=(await client.query("SELECT email,account_id,country_code FROM aurelink_users WHERE id=$1 LIMIT 1",[payment.user_id])).rows[0];
+      if(!account?.email)throw new Error("Aurelink Mail receipt recipient email is unavailable.");
+      const packSize=credits===1000n?"1K":credits===5000n?"5K":credits===10000n?"10K":credits===50000n?"50K":credits===100000n?"100K":"250K";
+      const providerCurrency=String(payment.provider_currency||payment.currency||"USD").trim().toUpperCase();
+      let minorUnit=2;
+      try{minorUnit=new Intl.NumberFormat("en",{style:"currency",currency:providerCurrency}).resolvedOptions().maximumFractionDigits;}catch{minorUnit=2;}
+      const providerAmount=String(payment.provider_amount_minor??payment.amount_minor);
+      const accountCountry=String(payment.account_country||account.country_code||"");
+      const fxPayload={
+        accountId:String(payment.account_id||account.account_id||payment.user_id),
+        accountCountry,
+        country:String(payment.pricing_country||accountCountry),
+        currency:providerCurrency,
+        fxRate:String(payment.fx_rate||"1"),
+        fxSource:String(payment.fx_source||"USD catalogue"),
+        fxAsOf:payment.fx_as_of?new Date(payment.fx_as_of).toISOString():"",
+        provider:"stripe",
+        providerTransactionReference:String(paymentIntent||session.id),
+        paymentMethod:Array.isArray(session.payment_method_types)&&session.payment_method_types.length?session.payment_method_types.join(", "):"Stripe checkout",
+        cardNumber:"Not provided by payment provider",
+        cardType:"Not provided by payment provider",
+        paymentCountry:accountCountry,
+        packageName:"Aurelink Credit Package · "+packSize,
+        packageSize:packSize,
+        credits:credits.toString(),
+        usdAmount:(Number(payment.amount_minor)/100).toFixed(2),
+        amount:(Number(providerAmount)/Math.pow(10,minorUnit)).toFixed(minorUnit)+" "+providerCurrency,
+        previousBalance:current.toString(),
+        newBalance:next.toString(),
+        ledgerReference:"AL-EMAIL-CREDIT-PURCHASE-"+reference,
+        paymentStatus:"SUCCESSFUL",
+        creditAllocationStatus:"SUCCESSFUL",
+        transactionIntegrity:"VERIFIED",
+        completedAt:new Date().toISOString()
+      };
+      await client.query(
+        "INSERT INTO aurelink_email_credit_confirmation_outbox(payment_reference,recipient_email,payload) VALUES($1,$2,$3::jsonb) ON CONFLICT(payment_reference) DO NOTHING",
+        [reference,String(account.email),JSON.stringify(fxPayload)]
+      );
     }else{
       const subscriptionId=stripeObjectId(session.subscription);
       if(!subscriptionId)throw new Error("Stripe did not return the subscription ID for Aurelink Mail.");
@@ -753,6 +794,7 @@ export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession)
     await client.query("UPDATE aurelink_email_billing_payments SET status='paid',stripe_payment_intent_id=$2,paid_at=NOW(),updated_at=NOW() WHERE reference=$1",[reference,paymentIntent]);
     await client.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'email_billing_payment_fulfilled',$3::jsonb)",[payment.workspace_id,payment.user_id,JSON.stringify({reference,purchaseType:payment.purchase_type,amountMinor:payment.amount_minor})]);
     await client.query("COMMIT");
+    if(payment.purchase_type==="email_credits")void processAurelinkMailCreditConfirmationOutbox(10).catch(()=>undefined);
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
 }
 
