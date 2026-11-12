@@ -137,5 +137,20 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       details JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS aurelink_sms_purchase_receipt_outbox (
+      payment_reference VARCHAR(40) PRIMARY KEY REFERENCES aurelink_sms_package_payments(reference),
+      recipient_email VARCHAR(320) NOT NULL,
+      payload JSONB NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      locked_at TIMESTAMPTZ,
+      sent_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sms_receipt_outbox_due_idx
+      ON aurelink_sms_purchase_receipt_outbox(next_attempt_at) WHERE sent_at IS NULL;
   `);
 }
