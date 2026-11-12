@@ -82,5 +82,60 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     CREATE TRIGGER aurelink_sms_package_ledger_immutable
       BEFORE UPDATE OR DELETE ON aurelink_sms_package_ledger
       FOR EACH ROW EXECUTE FUNCTION aurelink_block_sms_package_ledger_mutation();
+
+    CREATE TABLE IF NOT EXISTS aurelink_sms_package_payments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      reference VARCHAR(40) NOT NULL UNIQUE,
+      user_id UUID NOT NULL REFERENCES aurelink_users(id),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id),
+      package_code VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_catalog(package_code),
+      sms_segments BIGINT NOT NULL CHECK(sms_segments>0),
+      amount_minor BIGINT NOT NULL CHECK(amount_minor>0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD' CHECK(currency='USD'),
+      payment_provider VARCHAR(12) NOT NULL CHECK(payment_provider IN ('paypal','paystack')),
+      provider_currency CHAR(3) NOT NULL,
+      provider_amount_minor BIGINT NOT NULL CHECK(provider_amount_minor>0),
+      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid','failed','expired')),
+      provider_order_id VARCHAR(120),
+      provider_transaction_reference VARCHAR(180),
+      checkout_token_hash CHAR(64),
+      checkout_token_expires_at TIMESTAMPTZ,
+      checkout_token_consumed_at TIMESTAMPTZ,
+      email_sent_at TIMESTAMPTZ,
+      paid_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      account_country CHAR(2) NOT NULL,
+      account_id VARCHAR(80) NOT NULL,
+      pricing_country CHAR(2) NOT NULL,
+      fx_rate NUMERIC(24,10),
+      fx_source VARCHAR(80),
+      fx_as_of TIMESTAMPTZ,
+      provider_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sms_package_payments_user_idx
+      ON aurelink_sms_package_payments(user_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_reference_reservations (
+      reference VARCHAR(40) PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_webhook_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider VARCHAR(12) NOT NULL CHECK(provider IN ('paypal','paystack')),
+      event_id VARCHAR(180) NOT NULL,
+      event_type VARCHAR(120) NOT NULL,
+      payload JSONB NOT NULL,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at TIMESTAMPTZ,
+      UNIQUE(provider,event_id)
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_audit (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
+      action VARCHAR(48) NOT NULL,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 }
