@@ -108,6 +108,13 @@ export async function ensureAurelinkEmailBillingSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS account_country CHAR(2);
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS account_id VARCHAR(120);
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS email_checkout_token_hash CHAR(64);
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS email_checkout_expires_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS email_checkout_consumed_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_email_billing_payments ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_email_token_hash_idx ON aurelink_email_billing_payments(email_checkout_token_hash) WHERE email_checkout_token_hash IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_stripe_subscription_idx
       ON aurelink_email_billing_payments(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_email_billing_pending_subscription_idx
