@@ -264,3 +264,20 @@ Required environment:
 PayPal creates and caches provider products/plans for recurring Mail options. Paystack creates and caches local-currency recurring plans. Payment fulfillment is performed only after provider verification or a verified webhook, and payment webhook IDs are persisted for deduplication. A provider payment event is not treated as proof solely because a browser returns to Aurelink.
 
 Before production enablement, configure the provider webhook URLs in both dashboards, register the exact webhook IDs/secrets, set finance-approved NGN/GHS rates, and complete a sandbox-to-live end-to-end test for one prepaid purchase and one recurring subscription per provider. The current account-country verification route is an administrator workflow; it must only be used after reviewing acceptable country evidence. No automatic country inference from IP or checkout selection is trusted for routing.
+
+
+## Aurelink Mail prepaid credit email checkout
+
+Prepaid email-credit purchases use a separate email-authorized checkout flow; they do not return a provider checkout URL to the authenticated application. Aurelink records the Aurelink user/workspace, account ID, verified account country, exact credit pack, USD catalogue amount, provider amount/currency and provider selected from the verified account country. NG/GH route to Paystack; all other verified countries route to PayPal.
+
+Aurelink generates a cryptographically random 256-bit URL token, stores only its SHA-256 hash, and emails a payment link using Resend. The link expires after one hour and can initialize a provider checkout once. Opening it atomically consumes the token before creating the PayPal order or Paystack transaction. The provider checkout URL is accepted only over HTTPS from the provider's approved checkout hosts. The package, amount, currency, country and destination Aurelink account are never accepted from the browser.
+
+The one-hour expiry applies to starting checkout, not payment reconciliation. Once a provider checkout has been created, a valid provider webhook may settle the purchase after the email token expires. Aurelink verifies the provider signature, exact stored amount/currency/reference and purchase status before atomically crediting the wallet and writing its immutable ledger entry. Pending, failed, rejected or unverified payments never issue credits. Duplicate webhook deliveries are deduplicated; unprocessed events can be retried.
+
+Customer flow:
+1. An authenticated workspace billing manager selects a prepaid credit pack.
+2. Aurelink emails the verified account address an itemized purchase containing account ID, verified country, exact package, amount, currency, provider, purchase reference and one-hour link.
+3. The customer opens the link and completes payment on PayPal or Paystack.
+4. The provider sends its server-to-server event to Aurelink; Aurelink verifies and reconciles it before crediting the exact linked workspace.
+
+Configuration required: `AURELINK_API_URL` (HTTPS public API base, including any backend mount prefix), `RESEND_API_KEY`, and `AURELINK_MAIL_BILLING_FROM` (or existing `AURELINK_RECEIPT_FROM`). Existing PayPal/Paystack credentials, approved NGN/GHS FX rates, and provider webhook configuration remain required. No raw token is stored. The token hash and expiry/consumption timestamps are retained on the payment record for audit.
