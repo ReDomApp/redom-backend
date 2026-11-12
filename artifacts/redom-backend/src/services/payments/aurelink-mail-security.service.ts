@@ -134,7 +134,10 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
         "Aurelink Mail payment successful",
         "Your payment has been verified and the purchased credits have been added to your Aurelink wallet.",
         "Aurelink Account ID: " + String(p.accountId || ""),
+        "Verified account country: " + String(p.accountCountry || ""),
+        "Pricing country: " + String(p.country || ""),
         "Purchase reference: " + String(row.payment_reference),
+        "Provider transaction reference: " + String(p.providerTransactionReference || ""),
         "Provider: " + String(p.provider || ""),
         "Package: " + String(p.credits || "") + " email credits",
         "Amount paid: " + money,
@@ -153,7 +156,7 @@ export async function processAurelinkMailCreditConfirmationOutbox(batchSize = 10
       ].join("\n");
       const html = "<h2>Aurelink Mail payment successful</h2><p>Your payment has been verified and the purchased credits have been added to your Aurelink wallet.</p>" +
         "<table>" + [
-          ["Aurelink Account ID",p.accountId],["Purchase reference",row.payment_reference],["Provider",p.provider],
+          ["Aurelink Account ID",p.accountId],["Verified account country",p.accountCountry],["Pricing country",p.country],["Purchase reference",row.payment_reference],["Provider transaction reference",p.providerTransactionReference],["Provider",p.provider],
           ["Package",String(p.credits || "")+" credits"],["Amount paid",money],["Pricing country",p.country],
           ["FX rate",p.fxRate],["FX source",p.fxSource],["FX timestamp",p.fxAsOf],
           ["Wallet balance before",p.previousBalance],["Credits added",p.credits],
