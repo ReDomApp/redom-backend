@@ -616,4 +616,19 @@ router.post("/aurelink/admin/communications/messages/:id/reconcile",aurelinkAuth
   }finally{client.release();}
 });
 
+
+/** SMS funding is intentionally independent of Aurelink Mail prepaid credits. */
+router.get("/aurelink/communications/sms/billing",aurelinkAuthMiddleware,async(req,res)=>{
+ try{
+  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
+  const [packages,balance,history]=await Promise.all([
+   pool.query("SELECT package_code,sms_segments,price_minor,currency FROM aurelink_sms_package_catalog WHERE active=TRUE ORDER BY sms_segments ASC"),
+   pool.query("SELECT balance_segments,reserved_segments FROM aurelink_sms_package_wallets WHERE workspace_id=$1 AND user_id=$2",[wid,req.user!.userId]),
+   pool.query("SELECT entry_type,direction,amount_segments,balance_after,reference,description,created_at FROM aurelink_sms_package_ledger WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 20",[wid])
+  ]);
+  const wallet=balance.rows[0]||{balance_segments:"0",reserved_segments:"0"};
+  return res.json({success:true,currency:"USD",billingSources:["sms_package","aurelink_usd_wallet"],packageBalance:{segments:String(wallet.balance_segments),reservedSegments:String(wallet.reserved_segments),availableSegments:(BigInt(String(wallet.balance_segments))-BigInt(String(wallet.reserved_segments))).toString()},packages:packages.rows.map((p:any)=>({code:p.package_code,segments:String(p.sms_segments),priceMinor:String(p.price_minor),currency:p.currency})),recentPackageLedger:history.rows});
+ }catch(error){return res.status(500).json({success:false,message:"SMS billing information is temporarily unavailable."});}
+});
+
 export default router;
