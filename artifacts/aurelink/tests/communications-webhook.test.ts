@@ -154,7 +154,7 @@ test("SMS purchase and credit ledger references use independent uppercase alphan
   assert.equal(isAurelinkSmsPublicReference(purchaseReference),false);
   assert.equal(isAurelinkSmsPublicReference(creditLedgerReference),false);
   const validPurchase="5O190127TN364715T9A";
-  const validLedger="50190127S7M0T1T9B";
+  const validLedger="50190127S7M0T1T9B3C";
   assert.equal(validPurchase.length,19);
   assert.equal(validLedger.length,19);
   assert.equal(isAurelinkSmsPublicReference(validPurchase),true);
