@@ -285,22 +285,24 @@ The shared Brevo transactional webhook is provisioned by an Aurelink communicati
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| GET | `/aurelink/communications/smtp/credentials` | List Aurelink SMTP credential metadata (passwords are never returned) |
-| POST | `/aurelink/communications/smtp/credentials` | Issue a unique Aurelink SMTP password mapped internally to a domain-restricted Resend key; password shown once |
-| POST | `/aurelink/communications/smtp/credentials/:id/rotate` | Issue a replacement Aurelink password and replace/revoke its internal Resend key |
-| DELETE | `/aurelink/communications/smtp/credentials/:id` | Revoke the Aurelink credential and its internal Resend key |
+| GET | `/aurelink/communications/smtp/credentials` | List Aurelink-managed SMTP credential metadata (secrets are never returned) |
+| POST | `/aurelink/communications/smtp/credentials` | Issue a domain-scoped Resend SMTP credential; the SMTP password is displayed once |
+| POST | `/aurelink/communications/smtp/credentials/:id/rotate` | Issue a replacement Resend SMTP key and revoke the previous key |
+| DELETE | `/aurelink/communications/smtp/credentials/:id` | Revoke the customer credential's associated Resend key |
 
-Customer-facing SMTP settings are always Aurelink's own endpoint:
+**Active customer SMTP transport — temporary direct Resend**
+
+Until Aurelink's own SMTP gateway is deployed and verified, customers connect directly to Resend using credentials issued and managed by Aurelink:
 
 | Setting | Value |
 | --- | --- |
-| Host | `smtp.aurelink.org` |
+| Host | `smtp.resend.com` |
 | Port | `465` |
 | Encryption | SSL/TLS |
 | Alternate port | `587` with STARTTLS |
-| Username | `aurelink` |
-| Password | Unique Aurelink-issued password (not the Resend API key) |
-| Provider | Aurelink SMTP |
+| Username | `resend` |
+| Password | Domain-scoped Resend sending-only key (shown once) |
+| Provider | Resend (temporary direct SMTP) |
 
 Create credentials by sending the Aurelink domain record ID (the ID returned by `POST /aurelink/communications/domains`) as `domainId`:
 
@@ -311,9 +313,9 @@ Create credentials by sending the Aurelink domain record ID (the ID returned by 
 }
 ```
 
-Aurelink checks that the domain belongs to the authenticated project and is verified. It creates a Resend API key with `permission: sending_access` and the provider's `domain_id`, then independently generates a unique customer-facing Aurelink password. Aurelink stores a bcrypt hash of the customer password, a unique lookup prefix, the provider key ID, and the Resend key encrypted at rest with AES-256-GCM. The full Aurelink password is displayed once. The SMTP gateway authenticates that password, resolves its account/domain association, and uses the corresponding Resend key internally. Customers never receive Resend's SMTP hostname, username, or API key. Rotation replaces both credentials; revocation disables the Aurelink password and revokes the corresponding provider key.
+Aurelink verifies that the domain belongs to the authenticated workspace/project and is verified with Resend. It creates a Resend API key with `permission: sending_access` and the provider's `domain_id`. The scoped token is returned once as the customer's SMTP password; the account-level Resend API key is never exposed. Aurelink stores the provider key ID and encrypted key material for rotation and revocation. The customer connects to Resend directly; this temporary path does not pass through the not-yet-deployed Aurelink TCP gateway and therefore does not receive that gateway's per-message wallet metering.
 
-The customer's DNS records are still generated and verified by the selected provider's domain API. The sending domain must be verified before Aurelink can issue SMTP credentials. The gateway checks that the domain remains verified and only accepts envelope/header From addresses belonging to that domain. Resend remains an internal delivery provider; Brevo is a separate provider integration and is not substituted into the Resend SMTP session.
+The standalone Aurelink SMTP gateway package is prepared for the later cutover. Do not switch customers to `smtp.aurelink.org` until that gateway is deployed, publicly reachable, TLS-verified, billing-metering-verified and acceptance-tested. The cutover is controlled by `AURELINK_SMTP_TEMPORARY_DIRECT_RESEND=false`; the default is active direct Resend mode. Reissue credentials for the Aurelink-owned gateway at cutover. Preserve customer-facing Resend support and its provider integration; preparing Aurelink's own gateway is not authorization to remove Resend from the product.
 
 ### Campaigns
 
