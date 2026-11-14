@@ -2,7 +2,7 @@ import axios from "axios";
 import crypto from "node:crypto";
 import { pool } from "../../database/db";
 import { quoteAurelinkMailUsd } from "../payments/aurelink-mail-security.service";
-import { ensureAurelinkSmsBillingSchema, isAurelinkSmsPublicReference } from "./communications-sms-billing-schema.service";
+import { ensureAurelinkSmsBillingSchema } from "./communications-sms-billing-schema.service";
 import { creditAurelinkSmsPackage } from "./communications-sms-billing.service";
 
 type Provider="paypal"|"paystack";
