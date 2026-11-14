@@ -115,8 +115,8 @@ export default function AurelinkWorkspace({onLogout,pathname="/dashboard",onNavi
  const [user,setUser]=useState<Row>({});
  useEffect(()=>{try{setUser(JSON.parse(localStorage.getItem("aurelink.user")||"{}"));}catch{setUser({});}},[]);
  useEffect(()=>{const sync=()=>setPage(pageFromPath(window.location.pathname));window.addEventListener("popstate",sync);return()=>window.removeEventListener("popstate",sync);},[]);
- const go=(next:Page)=>{setPage(next);setDrawerOpen(false);const path=pathFromPage(next);if(window.location.pathname!==path){window.history.pushState({}, "", path);onNavigate?.(path);}};
- const goPath=(path:string)=>{const next=pageFromPath(path);setPage(next);setDrawerOpen(false);onNavigate?.(path);};
+ const go=(next:Page)=>{setPage(next);setDrawerOpen(false);const path=pathFromPage(next);if(window.location.pathname!==path){if(onNavigate)onNavigate(path);else window.history.pushState({}, "", path);}};
+ const goPath=(path:string)=>{const next=pageFromPath(path);setPage(next);setDrawerOpen(false);if(onNavigate)onNavigate(path);else window.history.pushState({}, "", path);};
  const pageLabel=groups.flatMap(g=>g.items).find(x=>x.id===page)?.label||"Overview";
  const renderPage=()=>{
   switch(page){
