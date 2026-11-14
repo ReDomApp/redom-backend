@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomInt } from "node:crypto";
 import { Resend } from "resend";
-import { isAurelinkBrevoSenderFormatValid } from "./sms-country-registry";
+import { isAurelinkBrevoSenderFormatValid } from "./sms-country-registry.ts";
 
 type SmsProvider = "brevo" | "twilio";
 type EmailProvider = "resend" | "brevo";
