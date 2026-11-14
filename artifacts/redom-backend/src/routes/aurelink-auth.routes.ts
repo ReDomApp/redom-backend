@@ -120,7 +120,7 @@ router.post("/aurelink/auth/session-security/action",async(req,res)=>{
 });
 router.get("/aurelink/auth/login-history",aurelinkAuthMiddleware,async(req,res)=>{try{const limit=Math.min(100,Math.max(1,Number(req.query.limit)||30));const result=await pool.query("SELECT h.id,h.event_type,h.success,h.ip_address,h.country,h.region,h.city,h.device_name,h.device_type,h.platform,h.browser,h.user_agent,h.failure_reason,h.created_at FROM aurelink_login_history h WHERE h.user_id=$1 ORDER BY h.created_at DESC LIMIT $2",[req.user!.userId,limit]);return res.json({success:true,events:result.rows});}catch{return res.status(500).json({success:false,message:"Could not load login history."});}});
 router.get("/aurelink/auth/me",aurelinkAuthMiddleware,async(req,res)=>{
-  const r=await pool.query("SELECT id,account_id,email,first_name,last_name,email_verified,phone_number,phone_verified,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
+  const r=await pool.query("SELECT id,account_id,email,first_name,last_name,email_verified,phone_number,phone_verified,country_code,country_verified_at,account_status,created_at,last_login_at FROM aurelink_users WHERE id=$1",[req.user!.userId]);
   if(!r.rows[0])return res.status(404).json({success:false,message:"Account not found."});
   const [security,profileChanges]=await Promise.all([
     pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[req.user!.userId]),
