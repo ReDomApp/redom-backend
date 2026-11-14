@@ -117,7 +117,7 @@ export async function verifyAurelinkSmsPackageCheckout(userId:string,ref:string)
 }
 
 export async function processAurelinkSmsPurchaseReceiptOutbox(batchSize=10):Promise<void>{
- await ensureAurelinkSmsBillingSchema();const limit=Math.max(1,Math.min(25,Math.floor(batchSize)));
+ const limit=Math.max(1,Math.min(25,Math.floor(batchSize)));
  for(let i=0;i<limit;i++){
   const client=await pool.connect();let row:any;
   try{await client.query("BEGIN");const q=await client.query(`SELECT id,payment_reference,recipient_email,payload,attempts FROM aurelink_sms_purchase_receipt_outbox WHERE sent_at IS NULL AND next_attempt_at<=NOW() AND (locked_at IS NULL OR locked_at<NOW()-INTERVAL '5 minutes') ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED`);row=q.rows[0];if(!row){await client.query("COMMIT");break;}await client.query("UPDATE aurelink_sms_purchase_receipt_outbox SET locked_at=NOW(),attempts=attempts+1,updated_at=NOW() WHERE id=$1",[row.id]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
