@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prebuild": "pnpm run typecheck"
+    "prebuild": "npm run typecheck"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.4",
