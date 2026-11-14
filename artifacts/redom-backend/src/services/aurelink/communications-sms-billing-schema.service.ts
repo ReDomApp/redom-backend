@@ -238,6 +238,7 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       processing_error TEXT,
       UNIQUE(provider,event_id)
     );
+    ALTER TABLE aurelink_sms_payment_webhook_events ADD COLUMN IF NOT EXISTS processing_error TEXT;
     CREATE TABLE IF NOT EXISTS aurelink_sms_payment_audit (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
