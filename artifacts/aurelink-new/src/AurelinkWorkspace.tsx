@@ -61,21 +61,32 @@ function DeveloperPage(){
  async function rotateHook(x:Row){if(!confirm("Rotate this webhook signing secret? The current secret will stop working."))return;try{const r=await post("/aurelink/developer/webhooks/"+x.id+"/rotate-secret",{});setSecret(r.secret||r.signingSecret||"");setSecretTitle("Webhook signing secret — shown once");setSecretKind("webhook");setNotice("Webhook secret rotated. Copy the new secret now.");}catch(e){setNotice(e instanceof Error?e.message:"Secret rotation failed.");}}
  async function viewDeliveries(x:Row){try{const r=await get("/aurelink/developer/webhooks/"+x.id+"/deliveries?limit=50");setSelected(x);setDeliveries(r.deliveries||[]);}catch(e){setNotice(e instanceof Error?e.message:"Unable to load webhook deliveries.");}}
  async function retryDelivery(x:Row){if(!selected)return;try{await post("/aurelink/developer/webhooks/"+selected.id+"/deliveries/"+x.id+"/retry",{});setNotice("Webhook delivery retry queued.");void viewDeliveries(selected);}catch(e){setNotice(e instanceof Error?e.message:"Delivery retry failed.");}}
- const projectRows:ReactNode[][]=projects.map(x=>[
-  <b>{text(x.name)}</b>,<Badge value={x.status}/>,count(x.api_key_count),date(x.created_at),
-  <Button kind="secondary" onClick={()=>void updateProject(x)}>Edit project</Button>
- ]);
- const keyRows:ReactNode[][]=keys.map(x=>[
-  <b>{text(x.label)}</b>,<Badge value={x.environment}/>,text(x.project_name||"Account-level"),
-  text(Array.isArray(x.scopes)?x.scopes.join(", "):"—"),count(x.rate_limit_per_minute)+"/min",
-  date(x.created_at),date(x.last_used_at),
-  <Badge value={x.revoked_at?"revoked":x.expires_at&&new Date(x.expires_at).getTime()<Date.now()?"expired":"active"}/>,
-  <div className="aw-actions">
-   <Button kind="ghost" onClick={()=>void editKey(x)} disabled={Boolean(x.revoked_at)}>Edit</Button>
-   <Button kind="secondary" onClick={()=>void rotateKey(x)} disabled={Boolean(x.revoked_at)}>Rotate</Button>
-   <Button kind="danger" onClick={()=>void revokeKey(x)} disabled={Boolean(x.revoked_at)}>Revoke</Button>
-  </div>
- ]);
+ const projectRows:ReactNode[][]=projects.map((x):ReactNode[]=>{
+  return [
+   (<b key={String(x.id)}>{text(x.name)}</b>),
+   (<Badge key="status" value={x.status}/>),
+   count(x.api_key_count),
+   date(x.created_at),
+   (<Button key="edit" kind="secondary" onClick={()=>void updateProject(x)}>Edit project</Button>)
+  ];
+ });
+ const keyRows:ReactNode[][]=keys.map((x):ReactNode[]=>{
+  return [
+   (<b key={String(x.id)}>{text(x.label)}</b>),
+   (<Badge key="environment" value={x.environment}/>),
+   text(x.project_name||"Account-level"),
+   text(Array.isArray(x.scopes)?x.scopes.join(", "):"—"),
+   count(x.rate_limit_per_minute)+"/min",
+   date(x.created_at),
+   date(x.last_used_at),
+   (<Badge key="status" value={x.revoked_at?"revoked":x.expires_at&&new Date(x.expires_at).getTime()<Date.now()?"expired":"active"}/>),
+   (<div key="actions" className="aw-actions">
+    <Button kind="ghost" onClick={()=>void editKey(x)} disabled={Boolean(x.revoked_at)}>Edit</Button>
+    <Button kind="secondary" onClick={()=>void rotateKey(x)} disabled={Boolean(x.revoked_at)}>Rotate</Button>
+    <Button kind="danger" onClick={()=>void revokeKey(x)} disabled={Boolean(x.revoked_at)}>Revoke</Button>
+   </div>)
+  ];
+ });
  return <><Heading eyebrow="DEVELOPER PLATFORM" title="Developer tools" desc="Manage projects and API credentials, inspect request usage, and configure signed webhooks."/>
  <div className="aw-stats"><Stat label="API requests" value={count(o?.usage?.requests)} detail="Last 30 days" icon="activity"/><Stat label="API errors" value={count(o?.usage?.errors)} detail="HTTP 4xx / 5xx" icon="shield"/><Stat label="Average latency" value={count(o?.usage?.avg_latency)+" ms"} detail="Last 30 days" icon="activity"/><Stat label="Enabled webhooks" value={count(o?.webhooks?.enabled)} detail="Configured endpoints" icon="code"/></div>
  <Panel title="Developer projects" subtitle="Group API credentials by application or integration."><form className="aw-form" onSubmit={createProject}><Field label="Project name" name="name" placeholder="Production application" required/><Field label="Description" name="description" placeholder="What this integration does"/><div className="aw-form-actions"><Button type="submit">Create project</Button></div></form>{loading?<Load/>:<Table headers={["Project","Status","API keys","Created","Actions"]} rows={projectRows} empty="No developer projects created."/></Panel>
