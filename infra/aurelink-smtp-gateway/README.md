@@ -1,8 +1,8 @@
 # Aurelink SMTP Gateway
 
-This service owns the customer-facing SMTP endpoint `smtp.aurelink.org`. It authenticates Aurelink-issued credentials, resolves the account's encrypted Resend sending key from the shared Aurelink PostgreSQL database, and submits each message to Resend over authenticated TLS.
+**Future cutover target — not the active customer SMTP transport yet.** Until this service is deployed, publicly reachable, TLS-verified and billing-metering-verified, customers connect directly to Resend at `smtp.resend.com` using Aurelink-issued domain-scoped Resend keys. Do not route customers to `smtp.aurelink.org` before that acceptance gate. After cutover, this gateway can own `smtp.aurelink.org` and submit to Resend internally. Preserve the customer-facing Resend provider integration.
 
-## Customer SMTP settings
+## Customer SMTP settings after Aurelink gateway cutover
 
 - Host: `smtp.aurelink.org`
 - Port 465: implicit SSL/TLS
