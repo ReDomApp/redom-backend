@@ -1,19 +1,5 @@
 import { pool } from "../../database/db";
 
-/** The canonical, fixed USD SMS package catalogue. Prices are integer cents. */
-export const AURELINK_SMS_PACKAGE_CATALOG = [
-  { code: "sms_100", name: "Individual", segments: 100, priceMinor: 410, enterprise: false },
-  { code: "sms_1k", name: "Starter", segments: 1_000, priceMinor: 4_100, enterprise: false },
-  { code: "sms_5k", name: "Standard", segments: 5_000, priceMinor: 20_500, enterprise: false },
-  { code: "sms_10k", name: "Plus", segments: 10_000, priceMinor: 41_000, enterprise: false },
-  { code: "sms_30k", name: "Pro", segments: 30_000, priceMinor: 123_000, enterprise: false },
-  { code: "sms_50k", name: "Individual Max", segments: 50_000, priceMinor: 205_000, enterprise: false },
-  { code: "sms_100k", name: "Business", segments: 100_000, priceMinor: 410_000, enterprise: false },
-  { code: "sms_300k", name: "Business Pro", segments: 300_000, priceMinor: 1_230_000, enterprise: false },
-  { code: "sms_500k", name: "Business Max", segments: 500_000, priceMinor: 2_050_000, enterprise: false },
-  { code: "sms_1m", name: "Enterprise", segments: 1_000_000, priceMinor: 4_100_000, enterprise: true },
-] as const;
-
 export const isAurelinkSmsPublicReference = (value: string): boolean => /^[A-Z0-9]{18,19}$/.test(value);
 
 /** Isolated SMS prepaid inventory and billing reservations. Never references Mail credits. */
@@ -22,8 +8,6 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS aurelink_sms_package_catalog (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       package_code VARCHAR(40) NOT NULL UNIQUE,
-      display_name VARCHAR(80),
-      is_enterprise BOOLEAN NOT NULL DEFAULT FALSE,
       sms_segments BIGINT NOT NULL CHECK(sms_segments > 0),
       price_minor BIGINT NOT NULL CHECK(price_minor > 0),
       currency CHAR(3) NOT NULL DEFAULT 'USD' CHECK(currency='USD'),
@@ -31,8 +15,14 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    ALTER TABLE aurelink_sms_package_catalog ADD COLUMN IF NOT EXISTS display_name VARCHAR(80);
-    ALTER TABLE aurelink_sms_package_catalog ADD COLUMN IF NOT EXISTS is_enterprise BOOLEAN NOT NULL DEFAULT FALSE;
+    INSERT INTO aurelink_sms_package_catalog(package_code,sms_segments,price_minor)
+    VALUES
+      ('sms_100',100,410),('sms_1k',1000,4100),('sms_5k',5000,20500),
+      ('sms_10k',10000,41000),('sms_30k',30000,123000),
+      ('sms_50k',50000,205000),('sms_100k',100000,410000),
+      ('sms_300k',300000,1230000),('sms_500k',500000,2050000),
+      ('sms_1m',1000000,4100000)
+    ON CONFLICT(package_code) DO NOTHING;
 
     CREATE TABLE IF NOT EXISTS aurelink_sms_package_wallets (
       workspace_id UUID PRIMARY KEY REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
@@ -290,17 +280,4 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       ON aurelink_sms_purchase_receipt_outbox(next_attempt_at) WHERE sent_at IS NULL;
   `);
 
-  // Backfill the new display fields before making them mandatory on upgraded databases.
-  await pool.query("UPDATE aurelink_sms_package_catalog SET display_name=package_code WHERE display_name IS NULL");
-  await pool.query("ALTER TABLE aurelink_sms_package_catalog ALTER COLUMN display_name SET NOT NULL");
-
-  // Enforce the reviewed retail catalogue on existing installations too; stale prices must not survive.
-  const values = AURELINK_SMS_PACKAGE_CATALOG.map((p) =>
-    "('" + p.code + "','" + p.name + "'," + p.enterprise + "," + p.segments + "," + p.priceMinor + ",'USD')"
-  ).join(",");
-  await pool.query(
-    "INSERT INTO aurelink_sms_package_catalog (package_code,display_name,is_enterprise,sms_segments,price_minor,currency) VALUES " +
-    values +
-    " ON CONFLICT(package_code) DO UPDATE SET display_name=EXCLUDED.display_name,is_enterprise=EXCLUDED.is_enterprise,sms_segments=EXCLUDED.sms_segments,price_minor=EXCLUDED.price_minor,currency='USD',active=TRUE,updated_at=NOW()"
-  );
 }
