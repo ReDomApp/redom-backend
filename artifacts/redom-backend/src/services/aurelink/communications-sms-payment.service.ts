@@ -53,7 +53,7 @@ export async function createAurelinkSmsPackageCheckout(input:{userId:string;work
  const html="<h2>Aurelink SMS package purchase</h2><p>Account ID: <b>"+safe(c.accountId)+"</b></p><p>Verified country: <b>"+safe(c.country)+"</b></p><p>Package: <b>"+credits+" SMS segments</b></p><p>Amount due: <b>"+safe(due)+"</b></p><p>Pricing country: <b>"+safe(fx.countryCode)+"</b></p><p>Exchange rate: <b>"+safe(String(fx.rate))+"</b> ("+safe(fx.source)+")</p><p>Provider: <b>"+provider+"</b></p><p>Purchase Reference: "+ref+"</p><p><a href=\""+link+"\">Continue to secure payment</a></p><p>This one-time link expires in one hour. Your SMS package balance is credited only after Aurelink verifies settlement.</p>";
  const textBody=["Aurelink SMS package purchase","Account ID: "+c.accountId,"Verified country: "+c.country,"Package: "+credits+" SMS segments","Amount due: "+due,"Pricing country: "+fx.countryCode,"FX rate: "+fx.rate+" ("+fx.source+")","Provider: "+provider,"Purchase Reference: "+ref,"One-time payment link (expires in one hour): "+link].join("\n");
  try{const sent=await axios.post("https://api.resend.com/emails",{from,to:[c.email],subject:"Complete your Aurelink SMS package purchase",html,text:textBody},{headers:{Authorization:"Bearer "+resend,"Content-Type":"application/json","Idempotency-Key":"aurelink-sms-package/"+ref},timeout:15000});if(!sent.data?.id)throw new Error("Email provider did not accept the SMS payment email.");await pool.query("UPDATE aurelink_sms_package_payments SET email_sent_at=NOW() WHERE reference=$1",[ref]);}
- catch(e){await pool.query("UPDATE aurelink_sms_package_payments SET status='failed',checkout_token_hash=NULL,updated_at=NOW() WHERE reference=$1 AND status='pending'",[ref]);throw e;}
+ catch(e){await pool.query("UPDATE aurelink_sms_package_payments SET status='failed',provider_payment_status='failed',checkout_token_hash=NULL,updated_at=NOW() WHERE reference=$1 AND status='pending'",[ref]);throw e;}
  return {reference:ref,status:"awaiting_email_payment",emailSent:true,expiresAt:expires.toISOString(),packageCode:String(pkg.package_code),smsSegments:String(pkg.sms_segments),paymentProvider:provider};
 }
 
@@ -68,7 +68,7 @@ export async function startAurelinkSmsPackagePayment(token:string):Promise<strin
   const u=new URL(url),allowed=provider==="paypal"?["www.paypal.com","www.sandbox.paypal.com","paypal.com","sandbox.paypal.com"]:["checkout.paystack.com"];if(u.protocol!=="https:"||!allowed.includes(u.hostname))throw new Error("Untrusted provider checkout URL.");
   await pool.query("INSERT INTO aurelink_sms_payment_audit(payment_reference,action,details) VALUES($1,'provider_checkout_created',$2::jsonb)",[ref,JSON.stringify({provider,providerOrderId:providerId})]);
   await paymentEvent(pool,{reference:ref,eventType:"provider_checkout_created",provider,providerOrderId:providerId,details:{checkoutHost:new URL(url).hostname}});return url;
- }catch(e){await pool.query("UPDATE aurelink_sms_package_payments SET status='failed',updated_at=NOW() WHERE reference=$1 AND status='pending'",[p.reference]);throw e;}
+ }catch(e){await pool.query("UPDATE aurelink_sms_package_payments SET status='failed',provider_payment_status='failed',updated_at=NOW() WHERE reference=$1 AND status='pending'",[p.reference]);throw e;}
 }
 
 async function fulfillSms(ref:string,providerRef:string,provider:Provider,paidAmount:number,paidCurrency:string){
