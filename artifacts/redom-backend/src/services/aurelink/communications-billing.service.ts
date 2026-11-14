@@ -1,9 +1,9 @@
 import type { PoolClient } from "pg";
-import { walletCredit, walletDebit } from "./aurelink-wallet.service";
+import { walletCredit, walletDebit } from "./aurelink-wallet.service.js";
 
 type QueryClient = Pick<PoolClient, "query">;
 
-export { countSmsSegments } from "./sms-segmentation.service";
+export { countSmsSegments } from "./sms-segmentation.service.js";
 
 export async function chargeAurelinkUsage(
   client: QueryClient,
