@@ -261,7 +261,8 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
   const cc=parseAddressList(req.body.cc),bcc=parseAddressList(req.body.bcc);
   const emailAddressPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if([...cc,...bcc].some(address=>!emailAddressPattern.test(address)))return res.status(400).json({success:false,message:"CC and BCC entries must be valid email addresses (maximum 20 each)."});
-  const tags=(Array.isArray(req.body.tags)?req.body.tags:typeof req.body.tags==="string"?req.body.tags.split(","):[]).map((value:any)=>String(value).trim()).filter((value:string)=>/^[A-Za-z0-9_-]{1,50}$/.test(value)).slice(0,10);\n  const attachments:Array<{filename:string;content:string;contentType?:string}>=[];
+  const tags=(Array.isArray(req.body.tags)?req.body.tags:typeof req.body.tags==="string"?req.body.tags.split(","):[]).map((value:any)=>String(value).trim()).filter((value:string)=>/^[A-Za-z0-9_-]{1,50}$/.test(value)).slice(0,10);
+  const attachments:Array<{filename:string;content:string;contentType?:string}>=[];
   if(Array.isArray(req.body.attachments)){
     if(req.body.attachments.length>10)return res.status(400).json({success:false,message:"A maximum of 10 email attachments is allowed."});
     let total=0;
