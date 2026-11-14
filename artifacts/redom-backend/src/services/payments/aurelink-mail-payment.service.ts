@@ -189,16 +189,10 @@ export async function createAurelinkMailCheckout(input:{userId:string;workspaceI
   try{
     let checkoutUrl="",providerId="";
     if(provider==="paypal"){
-      if(input.purchaseType==="email_credits"){
-        const order=await paypal<any>("post","/v2/checkout/orders",{intent:"CAPTURE",purchase_units:[{reference_id:ref,custom_id:ref,description:"Aurelink Mail prepaid email credits",amount:money(amount,currency)}],payment_source:{paypal:{experience_context:{return_url:urls.success,cancel_url:urls.cancel,user_action:"PAY_NOW"}}}});
-        providerId=String(order.id);checkoutUrl=String(order.links?.find((x:any)=>x.rel==="payer-action"||x.rel==="approve")?.href||"");
-        await pool.query("UPDATE aurelink_email_billing_payments SET paypal_order_id=$2,provider_metadata=$3::jsonb,expires_at=NOW()+INTERVAL '3 hours' WHERE reference=$1",[ref,providerId,JSON.stringify({orderStatus:order.status})]);
-      }else{
-        const planId=await createPayPalPlan({plan_option_id:planOptionId});
-        const sub=await paypal<any>("post","/v1/billing/subscriptions",{plan_id:planId,custom_id:ref,application_context:{brand_name:"Aurelink",user_action:"SUBSCRIBE_NOW",return_url:urls.success,cancel_url:urls.cancel}});
-        providerId=String(sub.id);checkoutUrl=String(sub.links?.find((x:any)=>x.rel==="approve")?.href||"");
-        await pool.query("UPDATE aurelink_email_billing_payments SET paypal_subscription_id=$2,provider_metadata=$3::jsonb,expires_at=NOW()+INTERVAL '24 hours' WHERE reference=$1",[ref,providerId,JSON.stringify({planId})]);
-      }
+      const planId=await createPayPalPlan({plan_option_id:planOptionId});
+      const sub=await paypal<any>("post","/v1/billing/subscriptions",{plan_id:planId,custom_id:ref,application_context:{brand_name:"Aurelink",user_action:"SUBSCRIBE_NOW",return_url:urls.success,cancel_url:urls.cancel}});
+      providerId=String(sub.id);checkoutUrl=String(sub.links?.find((x:any)=>x.rel==="approve")?.href||"");
+      await pool.query("UPDATE aurelink_email_billing_payments SET paypal_subscription_id=$2,provider_metadata=$3::jsonb,expires_at=NOW()+INTERVAL '24 hours' WHERE reference=$1",[ref,providerId,JSON.stringify({planId})]);
     }else{
       const data:any={email:customer.email,amount,currency,reference:ref,callback_url:urls.success,metadata:{provider:"paystack",purpose:"aurelink_mail_"+input.purchaseType,reference:ref,userId:input.userId,workspaceId:input.workspaceId,purchaseType:input.purchaseType}};
       if(input.purchaseType==="subscription") data.plan=await createPaystackPlan({plan_option_id:planOptionId},currency as any,amount);
