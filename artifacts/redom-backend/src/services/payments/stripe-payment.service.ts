@@ -741,7 +741,7 @@ export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession)
       const packSize=credits===1000n?"1K":credits===5000n?"5K":credits===10000n?"10K":credits===50000n?"50K":credits===100000n?"100K":"250K";
       const providerCurrency=String(payment.provider_currency||payment.currency||"USD").trim().toUpperCase();
       let minorUnit=2;
-      try{minorUnit=new Intl.NumberFormat("en",{style:"currency",currency:providerCurrency}).resolvedOptions().maximumFractionDigits;}catch{minorUnit=2;}
+      try{minorUnit=new Intl.NumberFormat("en",{style:"currency",currency:providerCurrency}).resolvedOptions().maximumFractionDigits??2;}catch{minorUnit=2;}
       const providerAmount=String(payment.provider_amount_minor??payment.amount_minor);
       const accountCountry=String(payment.account_country||account.country_code||"");
       const fxPayload={
@@ -763,7 +763,7 @@ export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession)
         credits:credits.toString(),
         usdAmount:(Number(payment.amount_minor)/100).toFixed(2),
         amount:(Number(providerAmount)/Math.pow(10,minorUnit)).toFixed(minorUnit)+" "+providerCurrency,
-        previousBalance:current.toString(),
+        previousBalance:currentBalance.toString(),
         newBalance:next.toString(),
         ledgerReference:"AL-EMAIL-CREDIT-PURCHASE-"+reference,
         paymentStatus:"SUCCESSFUL",
