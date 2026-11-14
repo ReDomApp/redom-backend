@@ -137,15 +137,17 @@ async function recordSmsRefund(input:{reference:string;provider:Provider;refundI
  if(!ins.rows[0])return;
  const [totals,payment,allocated]=await Promise.all([
   pool.query("SELECT COALESCE(SUM(amount_minor) FILTER(WHERE status='succeeded'),0)::text AS refunded,COUNT(*) FILTER(WHERE status='pending')::text AS pending FROM aurelink_sms_payment_refunds WHERE payment_reference=$1",[input.reference]),
-  pool.query("SELECT provider_amount_minor,credit_allocation_status FROM aurelink_sms_package_payments WHERE reference=$1",[input.reference]),
+  pool.query("SELECT provider_amount_minor,provider_payment_status,credit_allocation_status FROM aurelink_sms_package_payments WHERE reference=$1",[input.reference]),
   pool.query("SELECT reference,amount_segments FROM aurelink_sms_package_ledger WHERE payment_reference=$1 AND entry_type='purchase' AND direction='credit' LIMIT 1",[input.reference])
  ]);
  const refunded=BigInt(String(totals.rows[0]?.refunded||"0")),pending=Number(totals.rows[0]?.pending||0),paid=BigInt(String(payment.rows[0]?.provider_amount_minor||"0"));
  const next=refunded>=paid?"refunded":refunded>0n?"partially_refunded":pending>0?"refund_pending":"paid";
  const currentAllocation=String(payment.rows[0]?.credit_allocation_status||"pending");
+ const currentProviderStatus=String(payment.rows[0]?.provider_payment_status||"verified");
+ const nextProviderStatus=next==="refunded"?"refunded":(["paid","partially_refunded","refund_pending"].includes(next)&&currentProviderStatus==="refunded")?"verified":currentProviderStatus;
  const hasLedger=Boolean(allocated.rows[0]);
- const allocationStatus=currentAllocation==="reversed"?"reversed":(refunded>0n||pending>0)?(hasLedger?"reversal_required":"review_required"):(hasLedger?"allocated":"pending");
- await pool.query("UPDATE aurelink_sms_package_payments SET refunded_amount_minor=$2,status=$3,provider_payment_status=CASE WHEN $3='refunded' THEN 'refunded' WHEN $3 IN ('paid','partially_refunded','refund_pending') AND provider_payment_status='refunded' THEN 'verified' ELSE provider_payment_status END,credit_allocation_status=$4,updated_at=NOW(),last_provider_event_at=NOW() WHERE reference=$1 AND status IN ('paid','refund_pending','partially_refunded','refunded')",[input.reference,refunded.toString(),next,allocationStatus]);
+ const allocationStatus=currentAllocation==="reversed"?"reversed":(["disputed","reversed"].includes(nextProviderStatus)?(hasLedger?"review_required":currentAllocation):(refunded>0n||pending>0)?(hasLedger?"reversal_required":"review_required"):(hasLedger?"allocated":"pending"));
+ await pool.query("UPDATE aurelink_sms_package_payments SET refunded_amount_minor=$2,status=$3,provider_payment_status=$4,credit_allocation_status=$5,updated_at=NOW(),last_provider_event_at=NOW() WHERE reference=$1 AND status IN ('paid','refund_pending','partially_refunded','refunded')",[input.reference,refunded.toString(),next,nextProviderStatus,allocationStatus]);
  await pool.query("INSERT INTO aurelink_sms_payment_audit(payment_reference,action,details) VALUES($1,'provider_refund_recorded',$2::jsonb)",[input.reference,JSON.stringify({provider:input.provider,refundId:input.refundId,amountMinor:input.amountMinor,currency:input.currency,status:input.status,refundedTotal:refunded.toString(),pendingRefundCount:pending,creditAllocationStatus:allocationStatus})]);
  await paymentEvent(pool,{reference:input.reference,eventType:"provider_refund_"+input.status,provider:input.provider,providerEventId:input.eventId,details:{refundId:input.refundId,amountMinor:input.amountMinor,currency:input.currency,refundedTotal:refunded.toString(),pendingRefundCount:pending}});
  if((refunded>0n||pending>0)&&hasLedger)await pool.query("INSERT INTO aurelink_sms_payment_audit(payment_reference,action,details) VALUES($1,'sms_credit_reversal_review_required',$2::jsonb)",[input.reference,JSON.stringify({creditLedgerReference:allocated.rows[0].reference,allocatedSegments:String(allocated.rows[0].amount_segments),reason:"Provider refund is pending or confirmed; reconcile remaining prepaid SMS segments through an append-only ledger adjustment."})]);
