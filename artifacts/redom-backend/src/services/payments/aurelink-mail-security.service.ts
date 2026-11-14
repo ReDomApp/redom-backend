@@ -126,7 +126,7 @@ export async function quoteAurelinkMailUsd(
   if (!Number.isFinite(rate) || rate <= 0) throw new Error("No live USD exchange rate is available for " + currency + ". Checkout has been stopped.");
   let minorUnit = 2;
   try {
-    minorUnit = new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits;
+    minorUnit = new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
   } catch { throw new Error("Unsupported ISO currency for selected country."); }
   if (!Number.isInteger(minorUnit) || minorUnit < 0 || minorUnit > 4) throw new Error("Unsupported currency precision.");
   const amountMinor = Math.round((usdMinor / 100) * rate * Math.pow(10, minorUnit));
