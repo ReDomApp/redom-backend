@@ -58,6 +58,9 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS aurelink_sms_package_ledger_workspace_idx
       ON aurelink_sms_package_ledger(workspace_id,created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_package_ledger_single_reversal_uidx
+      ON aurelink_sms_package_ledger((metadata->>'reversalOfReference'))
+      WHERE metadata ? 'reversalOfReference' AND metadata->>'reversalOfReference' IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS aurelink_sms_usage_reservations (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
