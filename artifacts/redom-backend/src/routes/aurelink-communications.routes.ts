@@ -257,6 +257,11 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
     const value=variables[key]??"";
     return escape?value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"):value;
   });
+  const parseAddressList=(value:unknown):string[] => (Array.isArray(value)?value:typeof value==="string"?value.split(","):[]).map(item=>String(item).trim().toLowerCase()).filter(Boolean).slice(0,20);
+  const cc=parseAddressList(req.body.cc),bcc=parseAddressList(req.body.bcc);
+  const emailAddressPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if([...cc,...bcc].some(address=>!emailAddressPattern.test(address)))return res.status(400).json({success:false,message:"CC and BCC entries must be valid email addresses (maximum 20 each)."});
+  const tags=(Array.isArray(req.body.tags)?req.body.tags:typeof req.body.tags==="string"?req.body.tags.split(","):[]).map((value:any)=>String(value).trim()).filter((value:string)=>/^[A-Za-z0-9_-]{1,50}$/.test(value)).slice(0,10);
   const attachments:Array<{filename:string;content:string;contentType?:string}>=[];
   if(Array.isArray(req.body.attachments)){
     if(req.body.attachments.length>10)return res.status(400).json({success:false,message:"A maximum of 10 email attachments is allowed."});
@@ -298,7 +303,7 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
     if(suppression)return res.status(403).json({success:false,code:"EMAIL_SUPPRESSED",message:"This recipient is suppressed for this workspace."});
     const key=String(req.headers["idempotency-key"]||"").trim();
     if(!key||key.length>128)return res.status(400).json({success:false,code:"IDEMPOTENCY_KEY_REQUIRED",message:"Send a unique Idempotency-Key header (maximum 128 characters)."});
-    const payload={channel:"email" as const,provider:provider as "resend"|"brevo",category:"transactional" as const,scheduledAt:scheduledAt?.toISOString(),input:{recipient,sender,senderName,subject,html,text,replyTo:typeof req.body.replyTo==="string"?req.body.replyTo:undefined,attachments}};
+    const payload={channel:"email" as const,provider:provider as "resend"|"brevo",category:"transactional" as const,scheduledAt:scheduledAt?.toISOString(),input:{recipient,sender,senderName,subject,html,text,replyTo:typeof req.body.replyTo==="string"?req.body.replyTo:undefined,cc,bcc,tags,attachments}};
     const queued=await enqueueAurelinkMessage({userId:req.user!.userId,workspaceId:wid,channel:"email",category:"transactional",provider,recipient,sender,subject,content:html||text||"",idempotencyKey:key,payload,scheduledAt});
     if("conflict" in queued)return res.status(409).json({success:false,code:"IDEMPOTENCY_CONFLICT",message:"This Idempotency-Key was already used with a different request."});
     return res.status(202).json({success:true,message:queued.message,replayed:Boolean(queued.replayed),scheduledAt:scheduledAt?.toISOString()||null});
