@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-11-07T14:13:17.950Z",
-  "commit": "26f08469436311db8b7a8a30a21371c2302eca5e",
+  "generatedAt": "2026-11-14T11:10:43.962Z",
+  "commit": "383bfc318cd5b7715cbe9ea0ab64526e65b8a830",
   "branch": "main",
   "totals": {
-    "files": 1105,
-    "sourceFiles": 781,
+    "files": 1106,
+    "sourceFiles": 782,
     "products": 15,
-    "routes": 446,
+    "routes": 447,
     "screens": 130,
     "schemas": 95,
     "packages": 13
@@ -113,9 +113,9 @@
     {
       "id": "redom-backend",
       "name": "Redom Backend",
-      "files": 435,
-      "sourceFiles": 340,
-      "routes": 445,
+      "files": 436,
+      "sourceFiles": 341,
+      "routes": 446,
       "screens": 1,
       "schemas": 94,
       "paths": [
@@ -743,217 +743,223 @@
       "method": "GET",
       "path": "/aurelink/wallet",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 313
+      "line": 314
     },
     {
       "method": "GET",
       "path": "/aurelink/wallet/ledger",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 319
+      "line": 320
     },
     {
       "method": "POST",
       "path": "/aurelink/wallet/topup",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 324
+      "line": 325
     },
     {
       "method": "GET",
       "path": "/aurelink/status",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 330
+      "line": 331
     },
     {
       "method": "GET",
       "path": "/aurelink/provider/balance",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 344
+      "line": 345
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/sms-api/packages",
+      "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
+      "line": 351
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/services",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 350
+      "line": 356
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/countries",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 356
+      "line": 362
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/pools",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 360
+      "line": 366
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/pricing",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 364
+      "line": 370
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/stock",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 376
+      "line": 382
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/suggested-countries",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 384
+      "line": 390
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/success-rate",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 391
+      "line": 397
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/valid-pools",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 399
+      "line": 405
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/rentals",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 407
+      "line": 413
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/rentals/:rentalId/services",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 417
+      "line": 423
     },
     {
       "method": "GET",
       "path": "/aurelink/catalog/rentals/:rentalId/pricing",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 423
+      "line": 429
     },
     {
       "method": "POST",
       "path": "/aurelink/quotes",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 432
+      "line": 438
     },
     {
       "method": "POST",
       "path": "/aurelink/checkout",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 466
+      "line": 472
     },
     {
       "method": "POST",
       "path": "/aurelink/activations",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 478
+      "line": 484
     },
     {
       "method": "GET",
       "path": "/aurelink/activations/:orderId/status",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 574
+      "line": 580
     },
     {
       "method": "GET",
       "path": "/aurelink/activations/:orderId/messages",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 587
+      "line": 593
     },
     {
       "method": "POST",
       "path": "/aurelink/activations/:orderId/resend",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 604
+      "line": 610
     },
     {
       "method": "POST",
       "path": "/aurelink/activations/:orderId/cancel",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 613
+      "line": 619
     },
     {
       "method": "GET",
       "path": "/aurelink/orders",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 630
+      "line": 636
     },
     {
       "method": "POST",
       "path": "/aurelink/rental-quotes",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 641
+      "line": 647
     },
     {
       "method": "POST",
       "path": "/aurelink/rentals",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 669
+      "line": 675
     },
     {
       "method": "GET",
       "path": "/aurelink/rentals/:rentalId/messages",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 754
+      "line": 760
     },
     {
       "method": "GET",
       "path": "/aurelink/rentals/:rentalId/status",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 772
+      "line": 778
     },
     {
       "method": "POST",
       "path": "/aurelink/rentals/:rentalId/renew",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 790
+      "line": 796
     },
     {
       "method": "POST",
       "path": "/aurelink/rentals/:rentalId/cancel",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 828
+      "line": 834
     },
     {
       "method": "POST",
       "path": "/aurelink/carrier-lookup",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 863
+      "line": 869
     },
     {
       "method": "GET",
       "path": "/aurelink/esim/plans",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 871
+      "line": 877
     },
     {
       "method": "GET",
       "path": "/aurelink/esim/pricing",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 877
+      "line": 883
     },
     {
       "method": "GET",
       "path": "/aurelink/esim/profile",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 881
+      "line": 887
     },
     {
       "method": "GET",
       "path": "/aurelink/esim/topup-plans",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 887
+      "line": 893
     },
     {
       "method": "POST",
       "path": "/aurelink/esim/purchase",
       "source": "artifacts/redom-backend/src/routes/aurelink.routes.ts",
-      "line": 894
+      "line": 900
     },
     {
       "method": "GET",
@@ -4865,6 +4871,10 @@
     {
       "name": "aurelink-receipts.service.ts",
       "source": "artifacts/redom-backend/src/services/aurelink/aurelink-receipts.service.ts"
+    },
+    {
+      "name": "aurelink-sms-api-packages.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/aurelink-sms-api-packages.service.ts"
     },
     {
       "name": "aurelink-wallet.service.ts",
