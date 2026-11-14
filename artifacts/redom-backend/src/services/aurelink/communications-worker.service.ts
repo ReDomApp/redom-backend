@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { pool } from "../../database/db";
 import { resolveTxt } from "node:dns/promises";
-import { countSmsSegments } from "./communications-billing.service";
+import { countSmsSegments, captureAurelinkUsage } from "./communications-billing.service";
 import { reserveAurelinkEmailUsage, captureAurelinkEmailUsage, refundAurelinkEmailUsage, markAurelinkEmailUsageUnknown } from "./communications-email-billing.service";
 import { reserveAurelinkSmsUsage, captureAurelinkSmsUsage, refundAurelinkSmsUsage, markAurelinkSmsUsageUnknown } from "./communications-sms-billing.service";
 import { ProviderSubmissionError, sendAurelinkEmail, sendAurelinkSms } from "./communications-providers.service";
@@ -39,7 +39,7 @@ export async function enqueueAurelinkMessage(input:{
   const billable=input.channel==="email"
    ? await reserveAurelinkEmailUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),units:smsUnits,transport:"api",provider:input.provider,category:input.category})
    : await reserveAurelinkSmsUsage(client,{userId:input.userId,workspaceId:input.workspaceId,messageId:String(message.id),units:smsUnits,countryCode,provider:input.provider,category:input.category,metadata:{channel:input.channel}});
-  await client.query("INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8)",[input.workspaceId,message.id,input.channel,input.provider,input.category,smsUnits,billable.unitPriceMinor??null,("walletReference" in billable ? billable.walletReference : billable.reference)??null]);
+  await client.query("INSERT INTO aurelink_communications_usage(workspace_id,message_id,channel,provider,category,units,status,unit_price_minor,wallet_debit_reference) VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8)",[input.workspaceId,message.id,input.channel,input.provider,input.category,smsUnits,billable.unitPriceMinor??null,billable.walletReference??null]);
   await client.query("COMMIT");
   return {message,replayed:false as const};
  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
