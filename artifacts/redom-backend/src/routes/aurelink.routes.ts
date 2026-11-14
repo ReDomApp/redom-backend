@@ -10,6 +10,7 @@ import { createAurelinkWalletTopupCheckout } from "../services/payments/payment.
 import { walletCredit, walletDebit } from "../services/aurelink/aurelink-wallet.service";
 import { verifyAurelinkNumber, veriphoneLineAssessment } from "../services/aurelink/veriphone.client";
 import { aurelinkPriceBreakdown, aurelinkRentalPriceBreakdown, type AurelinkNumberProduct } from "../services/aurelink/aurelink-pricing.service";
+import { getAurelinkSmsApiPackageCatalog } from "../services/aurelink/aurelink-sms-api-packages.service";
 
 const router = Router();
 const USD_MINOR = 100;
@@ -345,6 +346,11 @@ router.get("/aurelink/provider/balance", aurelinkAuthMiddleware, async (req, res
   if (!adminAllowed(req)) return res.status(403).json({ success: false, message: "Administrator access required." });
   try { return res.json({ success: true, balance: await smsPoolClient.balance() }); }
   catch (error) { return providerFailure(res, error); }
+});
+
+router.get("/aurelink/sms-api/packages", aurelinkAuthMiddleware, async (_req, res) => {
+  // Catalog-only stage: no checkout, wallet mutation, or credit allocation occurs here.
+  return res.json({ success: true, catalog: getAurelinkSmsApiPackageCatalog() });
 });
 
 router.get("/aurelink/catalog/services", aurelinkAuthMiddleware, async (_req, res) => {
