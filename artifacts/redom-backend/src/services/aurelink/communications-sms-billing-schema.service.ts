@@ -178,6 +178,8 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     `('${p.code}','${p.name}',${p.enterprise},${p.segments},${p.priceMinor},'USD')`
   ).join(",");
   await pool.query(`
+    UPDATE aurelink_sms_package_catalog SET display_name=package_code WHERE display_name IS NULL;
+    ALTER TABLE aurelink_sms_package_catalog ALTER COLUMN display_name SET NOT NULL;
     INSERT INTO aurelink_sms_package_catalog
       (package_code,display_name,is_enterprise,sms_segments,price_minor,currency)
     VALUES ${values}
