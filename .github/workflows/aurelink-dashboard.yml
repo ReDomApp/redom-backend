@@ -1,0 +1,38 @@
+name: Aurelink customer dashboard checks
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/aurelink-communications-platform
+    paths:
+      - "artifacts/aurelink-public/public/**"
+      - "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts"
+      - "artifacts/redom-backend/src/services/aurelink/communications-*.service.ts"
+      - ".github/workflows/aurelink-dashboard.yml"
+  push:
+    branches:
+      - feat/aurelink-customer-dashboard-ui
+    paths:
+      - "artifacts/aurelink-public/public/**"
+      - "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts"
+      - "artifacts/redom-backend/src/services/aurelink/communications-*.service.ts"
+      - ".github/workflows/aurelink-dashboard.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check dashboard JavaScript syntax
+        run: node --check artifacts/aurelink-public/public/dashboard.js
+      - name: Check dashboard entry point and assets
+        run: |
+          test -s artifacts/aurelink-public/public/dashboard.html
+          test -s artifacts/aurelink-public/public/dashboard.css
+          test -s artifacts/aurelink-public/public/dashboard.js
+          grep -q 'dashboard.css' artifacts/aurelink-public/public/dashboard.html
+          grep -q 'dashboard.js' artifacts/aurelink-public/public/dashboard.html
