@@ -2,13 +2,12 @@ import axios from "axios";
 import crypto from "node:crypto";
 import { pool } from "../../database/db";
 import { quoteAurelinkMailUsd } from "../payments/aurelink-mail-security.service";
-import { ensureAurelinkSmsBillingSchema } from "./communications-sms-billing-schema.service";
+import { ensureAurelinkSmsBillingSchema, isAurelinkSmsPublicReference } from "./communications-sms-billing-schema.service";
 import { creditAurelinkSmsPackage } from "./communications-sms-billing.service";
 
 type Provider="paypal"|"paystack";
 type DbClient={query:(sql:string,params?:unknown[])=>Promise<any>};
 const REFERENCE_ALPHABET="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-export const isAurelinkSmsPublicReference=(value:string):boolean=>/^[A-Z0-9]{18,19}$/.test(value);
 function randomPublicReference(length=19):string{let out="";while(out.length<length){for(const byte of crypto.randomBytes(Math.max(16,Math.ceil((length-out.length)*1.5)))){if(byte>=252)continue;out+=REFERENCE_ALPHABET[byte%36];if(out.length===length)break;}}return out;}
 const required=(name:string)=>{const v=String(process.env[name]||"").trim();if(!v)throw new Error(name+" is required for SMS package payments.");return v;};
 const paypalBase=()=>String(process.env.PAYPAL_ENV||"sandbox").toLowerCase()==="live"?"https://api-m.paypal.com":"https://api-m.sandbox.paypal.com";
