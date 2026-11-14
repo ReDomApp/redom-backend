@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-11-14T11:10:43.962Z",
-  "commit": "383bfc318cd5b7715cbe9ea0ab64526e65b8a830",
+  "generatedAt": "2026-11-14T22:01:50.696Z",
+  "commit": "9f442fde355667082eae4082471edb9edbe1ca2d",
   "branch": "main",
   "totals": {
-    "files": 1106,
-    "sourceFiles": 782,
+    "files": 1107,
+    "sourceFiles": 783,
     "products": 15,
     "routes": 447,
     "screens": 130,
@@ -66,14 +66,15 @@
     {
       "id": "aurelink-public",
       "name": "Aurelink Public",
-      "files": 3,
-      "sourceFiles": 0,
+      "files": 4,
+      "sourceFiles": 1,
       "routes": 0,
       "screens": 0,
       "schemas": 0,
       "paths": [
         "artifacts/aurelink-public/README.md",
         "artifacts/aurelink-public/public/aurelink-account-preview.svg",
+        "artifacts/aurelink-public/public/dashboard.js",
         "artifacts/aurelink-public/public/index.html"
       ]
     },
@@ -3991,6 +3992,10 @@
     {
       "name": "vite.config.ts",
       "source": "artifacts/aurelink-admin/vite.config.ts"
+    },
+    {
+      "name": "dashboard.js",
+      "source": "artifacts/aurelink-public/public/dashboard.js"
     },
     {
       "name": "dedicated-renewal-contract.test.mjs",
