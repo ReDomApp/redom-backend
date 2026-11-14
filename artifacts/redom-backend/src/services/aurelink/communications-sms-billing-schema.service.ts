@@ -183,8 +183,9 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     -- Rows without a purchase ledger are held for manual review, never auto-credited.
     UPDATE aurelink_sms_package_payments p
       SET provider_payment_status=CASE WHEN p.status IN ('failed','expired') THEN 'failed' ELSE 'verified' END,
-          payment_verified_at=COALESCE(p.payment_verified_at,p.paid_at,p.created_at),
+          payment_verified_at=CASE WHEN p.status IN ('failed','expired') THEN NULL ELSE COALESCE(p.payment_verified_at,p.paid_at,p.created_at) END,
           credit_allocation_status=CASE
+            WHEN p.status IN ('failed','expired') THEN 'pending'
             WHEN EXISTS(SELECT 1 FROM aurelink_sms_package_ledger l WHERE l.payment_reference=p.reference AND l.entry_type='purchase' AND l.direction='credit') THEN 'allocated'
             ELSE 'review_required'
           END,
