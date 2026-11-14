@@ -8,8 +8,8 @@ import { createAurelinkResendSmtpKey, revokeAurelinkResendSmtpKey } from "../ser
 import { TEMPORARY_RESEND_SMTP, temporaryResendSmtpCredential } from "../services/aurelink/communications-smtp-temporary-resend";
 
 const router = Router();
-// Direct provider SMTP credentials bypass Aurelink usage reservations. Keep this legacy escape hatch disabled; all customer SMTP traffic must traverse the Aurelink-owned gateway.
-const temporaryDirectResend = () => false;
+// Resend is the active customer SMTP transport until Aurelink's own gateway is deployed and verified. Keep direct mode enabled by default; set the flag to exactly "false" only for the verified cutover.
+const temporaryDirectResend = () => process.env.AURELINK_SMTP_TEMPORARY_DIRECT_RESEND !== "false";
 const activeSmtp = () => temporaryDirectResend() ? TEMPORARY_RESEND_SMTP : CUSTOMER_SMTP;
 const CUSTOMER_SMTP = {
   host: "smtp.aurelink.org",
