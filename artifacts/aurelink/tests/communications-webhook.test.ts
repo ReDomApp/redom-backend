@@ -5,7 +5,7 @@ import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioS
 import { classifyProviderHttpStatus, ProviderSubmissionError } from "../../redom-backend/src/services/aurelink/communications-providers.service.ts";
 import { createAurelinkResendSmtpKey, revokeAurelinkResendSmtpKey } from "../../redom-backend/src/services/aurelink/communications-smtp.service.ts";
 import { reserveAurelinkEmailUsage } from "../../redom-backend/src/services/aurelink/communications-email-billing.service.ts";
-import { isAurelinkSmsPublicReference } from "../../redom-backend/src/services/aurelink/communications-sms-billing-schema.service.ts";
+import { isAurelinkSmsPublicReference } from "../../redom-backend/src/services/aurelink/sms-reference.util.ts";
 
 test("Resend Svix signatures verify against the exact raw payload",()=>{
   const raw=Buffer.from(JSON.stringify({type:"email.delivered",data:{email_id:"email_123"}}));
