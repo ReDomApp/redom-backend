@@ -53,7 +53,7 @@ export async function creditAurelinkSmsPackage(client:Db,input:{
  userId:string;workspaceId:string;packageCode:string;paymentReference:string;ledgerReference:string;
 }):Promise<{credited:boolean;segments:string;balance:string;ledgerReference:string}>{
  const paymentReference=input.paymentReference.trim();
- if(!/^[A-Z0-9]{18,19}$/.test(paymentReference))throw new Error("AURELINK_SMS_INVALID_PAYMENT_REFERENCE");
+ if(paymentReference.length<8||paymentReference.length>40)throw new Error("AURELINK_SMS_INVALID_PAYMENT_REFERENCE");
  const pkg=(await client.query("SELECT package_code,sms_segments,price_minor,currency FROM aurelink_sms_package_catalog WHERE package_code=$1 AND active=TRUE FOR SHARE",[input.packageCode])).rows[0];
  if(!pkg||String(pkg.currency)!=="USD")throw new Error("AURELINK_SMS_PACKAGE_NOT_AVAILABLE");
  await client.query("INSERT INTO aurelink_sms_package_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[input.workspaceId,input.userId]);
