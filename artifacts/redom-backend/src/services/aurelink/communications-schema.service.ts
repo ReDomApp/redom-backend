@@ -1,4 +1,5 @@
 import { pool } from "../../database/db";
+import { ensureAurelinkSmsBillingSchema } from "./communications-sms-billing-schema.service";
 
 /**
  * Additive schema bootstrap for Aurelink's communications products.
@@ -359,4 +360,5 @@ export async function ensureAurelinkCommunicationsSchema(): Promise<void> {
     ALTER TABLE aurelink_communications_usage ADD COLUMN IF NOT EXISTS wallet_debit_reference VARCHAR(160);
     CREATE INDEX IF NOT EXISTS aurelink_communications_usage_workspace_idx ON aurelink_communications_usage(workspace_id,created_at DESC);
   `);
+  await ensureAurelinkSmsBillingSchema();
 }
