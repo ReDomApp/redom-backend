@@ -162,10 +162,6 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     ALTER TABLE aurelink_sms_package_payments DROP CONSTRAINT IF EXISTS aurelink_sms_package_payments_status_check;
     ALTER TABLE aurelink_sms_package_payments ADD CONSTRAINT aurelink_sms_package_payments_status_check
       CHECK(status IN ('pending','paid','failed','expired','refund_pending','partially_refunded','refunded','reversed','disputed'));
-    DO $$ BEGIN
-      ALTER TABLE aurelink_sms_package_payments ADD CONSTRAINT aurelink_sms_purchase_reference_format_check
-        CHECK(reference ~ '^[A-Z0-9]{18,19}$') NOT VALID;
-    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     CREATE INDEX IF NOT EXISTS aurelink_sms_package_payments_user_idx
       ON aurelink_sms_package_payments(user_id,created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_provider_order_uidx
