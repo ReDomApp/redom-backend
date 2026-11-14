@@ -253,7 +253,7 @@ async function fulfill(referenceValue:string,providerRef:string,provider:string,
       await client.query("INSERT INTO aurelink_email_payment_reference_events(payment_reference,event_type,provider,provider_transaction_reference,details) VALUES($1,'credit_ledger_allocated',$2,$3,$4::jsonb)",[referenceValue,provider,providerRef,JSON.stringify({ledgerReference:ledgerRef,credits:credits.toString(),previousBalance:previous.toString(),newBalance:next.toString()})]);
       const ledgerReference=ledgerRef;
       let providerMinorUnit=2;
-      try{providerMinorUnit=new Intl.NumberFormat("en",{style:"currency",currency:String(p.provider_currency||"USD")}).resolvedOptions().maximumFractionDigits;}catch{providerMinorUnit=2;}
+      try{providerMinorUnit=new Intl.NumberFormat("en",{style:"currency",currency:String(p.provider_currency||"USD")}).resolvedOptions().maximumFractionDigits??2;}catch{providerMinorUnit=2;}
       const usdAmount=(Number(p.amount_minor)/100).toFixed(2);
       const packageSize=credits===1000n?"1K":credits===5000n?"5K":credits===10000n?"10K":credits===50000n?"50K":credits===100000n?"100K":"250K";
       const fxPayload={
