@@ -122,6 +122,10 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       provider_transaction_reference VARCHAR(180),
       credit_ledger_reference VARCHAR(19),
       reference_format_version SMALLINT NOT NULL DEFAULT 2,
+      provider_payment_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(provider_payment_status IN ('pending','verified','failed','refunded','reversed','disputed')),
+      credit_allocation_status VARCHAR(24) NOT NULL DEFAULT 'pending' CHECK(credit_allocation_status IN ('pending','allocated','reversal_required','reversed','review_required')),
+      payment_verified_at TIMESTAMPTZ,
+      credit_allocated_at TIMESTAMPTZ,
       refunded_amount_minor BIGINT NOT NULL DEFAULT 0 CHECK(refunded_amount_minor>=0),
       dispute_status VARCHAR(80),
       last_provider_event_at TIMESTAMPTZ,
@@ -144,6 +148,10 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     );
     ALTER TABLE aurelink_sms_package_payments ALTER COLUMN status TYPE VARCHAR(20);
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS credit_ledger_reference VARCHAR(19);
+    ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS provider_payment_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(provider_payment_status IN ('pending','verified','failed','refunded','reversed','disputed'));
+    ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS credit_allocation_status VARCHAR(24) NOT NULL DEFAULT 'pending' CHECK(credit_allocation_status IN ('pending','allocated','reversal_required','reversed','review_required'));
+    ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS payment_verified_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS credit_allocated_at TIMESTAMPTZ;
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS reference_format_version SMALLINT NOT NULL DEFAULT 1;
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS refunded_amount_minor BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS dispute_status VARCHAR(80);
