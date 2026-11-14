@@ -5,7 +5,8 @@
  * Aurelink Mail credits and the legacy Aurelink number-purchase wallet.
  * Prices are stored as integer USD cents to avoid floating-point arithmetic.
  */
-export const AURELINK_SMS_API_UNIT_PRICE_USD_CENTS = 4.1;
+const UNIT_PRICE_CENTS_NUMERATOR = 41;
+const UNIT_PRICE_CENTS_DENOMINATOR = 10;
 
 export type AurelinkSmsApiPackage = Readonly<{
   key: string;
@@ -36,7 +37,11 @@ function usd(cents: number): string {
 
 export const AURELINK_SMS_API_PACKAGES: readonly AurelinkSmsApiPackage[] =
   Object.freeze(PACKAGE_DEFINITIONS.map(([key, name, smsQuantity]) => {
-    const priceUsdCents = Math.round(smsQuantity * AURELINK_SMS_API_UNIT_PRICE_USD_CENTS);
+    const priceNumerator = smsQuantity * UNIT_PRICE_CENTS_NUMERATOR;
+    if (priceNumerator % UNIT_PRICE_CENTS_DENOMINATOR !== 0) {
+      throw new Error(`SMS package ${key} does not resolve to a whole USD cent.`);
+    }
+    const priceUsdCents = priceNumerator / UNIT_PRICE_CENTS_DENOMINATOR;
     return Object.freeze({
       key,
       name,
@@ -53,7 +58,7 @@ export function getAurelinkSmsApiPackageCatalog() {
     product: "sms_api" as const,
     currency: "USD" as const,
     unitPriceUsd: "0.041" as const,
-    unitPriceUsdCents: AURELINK_SMS_API_UNIT_PRICE_USD_CENTS,
+    unitPriceUsdCents: "4.1" as const,
     billingModel: "per_billable_sms" as const,
     funding: "sms_api_packages_only" as const,
     crossProductFunding: false as const,
