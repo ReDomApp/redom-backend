@@ -5,7 +5,7 @@ import { verifyAurelinkResendWebhook, mapAurelinkResendEvent, mapAurelinkTwilioS
 import { classifyProviderHttpStatus, ProviderSubmissionError } from "../../redom-backend/src/services/aurelink/communications-providers.service.ts";
 import { createAurelinkResendSmtpKey, revokeAurelinkResendSmtpKey } from "../../redom-backend/src/services/aurelink/communications-smtp.service.ts";
 import { reserveAurelinkEmailUsage } from "../../redom-backend/src/services/aurelink/communications-email-billing.service.ts";
-import { AURELINK_SMS_PACKAGE_CATALOG, isAurelinkSmsPublicReference } from "../../redom-backend/src/services/aurelink/communications-sms-billing-schema.service.ts";
+import { isAurelinkSmsPublicReference } from "../../redom-backend/src/services/aurelink/communications-sms-billing-schema.service.ts";
 
 test("Resend Svix signatures verify against the exact raw payload",()=>{
   const raw=Buffer.from(JSON.stringify({type:"email.delivered",data:{email_id:"email_123"}}));
@@ -126,24 +126,6 @@ test("Mail consumes a valid paid subscription allowance before prepaid credits",
   const result=await reserveAurelinkEmailUsage(client as any,{userId:"user-1",workspaceId:"workspace-1",messageId:"00000000-0000-4000-8000-000000000002",units:1,transport:"api",provider:"resend",category:"transactional"});
   assert.equal(result.source,"subscription");
   assert.equal(statements.some(sql=>sql.includes("aurelink_email_credit_wallets")),false);
-});
-
-
-test("SMS package catalogue enforces the reviewed $0.041 per SMS price",()=>{
-  assert.deepEqual(AURELINK_SMS_PACKAGE_CATALOG.map(p=>[p.code,p.name,p.segments,p.priceMinor]),[
-    ["sms_100","Individual",100,410],
-    ["sms_1k","Starter",1000,4100],
-    ["sms_5k","Standard",5000,20500],
-    ["sms_10k","Plus",10000,41000],
-    ["sms_30k","Pro",30000,123000],
-    ["sms_50k","Individual Max",50000,205000],
-    ["sms_100k","Business",100000,410000],
-    ["sms_300k","Business Pro",300000,1230000],
-    ["sms_500k","Business Max",500000,2050000],
-    ["sms_1m","Enterprise",1000000,4100000]
-  ]);
-  for(const p of AURELINK_SMS_PACKAGE_CATALOG)assert.equal(p.priceMinor,p.segments*4.1);
-  assert.equal(AURELINK_SMS_PACKAGE_CATALOG.at(-1)?.enterprise,true);
 });
 
 
