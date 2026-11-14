@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#071a35"><meta name="aurelink-api-base" content="https://redom-backend.onrender.com/redom-backend">
+<title>Aurelink — Communications Workspace</title>
+<link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+<div id="boot" class="boot-screen" role="status" aria-live="polite"><div class="brand-mark"><span></span><span></span><span></span></div><div class="boot-ring"></div><strong>AURELINK</strong><small>Securing your workspace…</small></div>
+<div id="busy" class="busy-screen" aria-hidden="true"><div class="busy-card"><div class="busy-ring"></div><strong id="busy-title">Working securely</strong><p id="busy-copy">Aurelink is processing your request.</p><div class="busy-track"><span></span></div></div></div>
+<div id="toast-region" class="toast-region" aria-live="polite"></div>
+<div class="app-shell" id="app" hidden>
+<aside class="sidebar" id="sidebar">
+<a class="brand" href="#overview" aria-label="Aurelink overview"><span class="brand-mark"><span></span><span></span><span></span></span><span><b>AURELINK</b><small>COMMUNICATIONS</small></span></a>
+<div class="workspace-label">WORKSPACE</div>
+<nav id="navigation" aria-label="Main navigation">
+<button class="nav-item active" data-page="overview"><i data-icon="grid"></i>Overview</button>
+<div class="nav-group">COMMUNICATIONS</div>
+<button class="nav-item" data-page="sms"><i data-icon="message"></i>SMS messaging</button>
+<button class="nav-item" data-page="email"><i data-icon="mail"></i>Email sending</button>
+<button class="nav-item" data-page="messages"><i data-icon="activity"></i>Message activity</button>
+<button class="nav-item" data-page="templates"><i data-icon="layers"></i>Templates</button>
+<button class="nav-item" data-page="contacts"><i data-icon="users"></i>Contacts & consent</button>
+<button class="nav-item" data-page="campaigns"><i data-icon="send"></i>Campaigns</button>
+<div class="nav-group">EMAIL INFRASTRUCTURE</div>
+<button class="nav-item" data-page="domains"><i data-icon="globe"></i>Sending domains</button>
+<button class="nav-item" data-page="senders"><i data-icon="at-sign"></i>Email senders</button>
+<button class="nav-item" data-page="smtp"><i data-icon="key"></i>SMTP credentials</button>
+<button class="nav-item" data-page="reputation"><i data-icon="shield"></i>Tracking & reputation</button>
+<div class="nav-group">IDENTITY & DEVELOPERS</div>
+<button class="nav-item" data-page="senderids"><i data-icon="badge"></i>SMS Sender IDs</button>
+<button class="nav-item" data-page="verification"><i data-icon="lock"></i>OTP verification</button>
+<button class="nav-item" data-page="developer"><i data-icon="code"></i>Developer tools</button>
+<button class="nav-item" data-page="team"><i data-icon="users"></i>Workspace team</button>
+<div class="nav-group">ACCOUNT</div>
+<button class="nav-item" data-page="billing"><i data-icon="wallet"></i>Billing & usage</button>
+<button class="nav-item" data-page="account"><i data-icon="user"></i>Account & security</button>
+</nav>
+<div class="sidebar-bottom"><div class="secure-note"><i data-icon="shield-check"></i><span><b>Protected workspace</b><small>Provider credentials stay private</small></span></div><button id="signout" class="signout"><i data-icon="logout"></i>Sign out</button></div>
+</aside>
+<div class="main-column">
+<header class="topbar"><button id="menu-toggle" class="icon-button mobile-menu" aria-label="Open navigation"><i data-icon="menu"></i></button><div class="breadcrumbs"><span>Aurelink</span><b>/</b><strong id="page-crumb">Overview</strong></div><div class="top-actions"><span class="live-pill"><i></i>Workspace connected</span><button class="icon-button" id="refresh" title="Refresh data"><i data-icon="refresh"></i></button><div class="user-chip"><span class="avatar" id="avatar">A</span><span><b id="user-name">Account</b><small id="user-email">Signed in</small></span></div></div></header>
+<main id="content" class="content" tabindex="-1"><div class="page-loading"><div class="inline-ring"></div><span>Loading your Aurelink workspace…</span></div></main>
+<footer class="footer"><span>© <span id="year"></span> Aurelink</span><span>Secure communications infrastructure</span></footer>
+</div>
+</div>
+<script src="/dashboard.js" defer></script>
+</body></html>
