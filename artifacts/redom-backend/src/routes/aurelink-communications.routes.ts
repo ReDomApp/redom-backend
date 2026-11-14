@@ -257,7 +257,11 @@ router.post("/aurelink/communications/email/send",aurelinkAuthMiddleware,async(r
     const value=variables[key]??"";
     return escape?value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"):value;
   });
-  const parseAddressList=(value:unknown):string[] => (Array.isArray(value)?value:typeof value==="string"?value.split(","):[]).map(item=>String(item).trim().toLowerCase()).filter(Boolean).slice(0,20);\n  const cc=parseAddressList(req.body.cc),bcc=parseAddressList(req.body.bcc);\n  const emailAddressPattern=/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n  if([...cc,...bcc].some(address=>!emailAddressPattern.test(address)))return res.status(400).json({success:false,message:"CC and BCC entries must be valid email addresses (maximum 20 each)."});\n  const tags=(Array.isArray(req.body.tags)?req.body.tags:typeof req.body.tags==="string"?req.body.tags.split(","):[]).map((value:any)=>String(value).trim()).filter((value:string)=>/^[A-Za-z0-9_-]{1,50}$/.test(value)).slice(0,10);\n  const attachments:Array<{filename:string;content:string;contentType?:string}>=[];
+  const parseAddressList=(value:unknown):string[] => (Array.isArray(value)?value:typeof value==="string"?value.split(","):[]).map(item=>String(item).trim().toLowerCase()).filter(Boolean).slice(0,20);
+  const cc=parseAddressList(req.body.cc),bcc=parseAddressList(req.body.bcc);
+  const emailAddressPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if([...cc,...bcc].some(address=>!emailAddressPattern.test(address)))return res.status(400).json({success:false,message:"CC and BCC entries must be valid email addresses (maximum 20 each)."});
+  const tags=(Array.isArray(req.body.tags)?req.body.tags:typeof req.body.tags==="string"?req.body.tags.split(","):[]).map((value:any)=>String(value).trim()).filter((value:string)=>/^[A-Za-z0-9_-]{1,50}$/.test(value)).slice(0,10);\n  const attachments:Array<{filename:string;content:string;contentType?:string}>=[];
   if(Array.isArray(req.body.attachments)){
     if(req.body.attachments.length>10)return res.status(400).json({success:false,message:"A maximum of 10 email attachments is allowed."});
     let total=0;
