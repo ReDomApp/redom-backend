@@ -159,137 +159,14 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
         CHECK(credit_ledger_reference IS NULL OR credit_ledger_reference ~ '^[A-Z0-9]{18,19}$') NOT VALID;
     EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     CREATE OR REPLACE FUNCTION aurelink_validate_sms_purchase_reference_format() RETURNS trigger
-    LANGUAGE plpgsql AS $
+    LANGUAGE plpgsql AS $$
     BEGIN
-      IF NEW.reference !~ '^[A-Z0-9]{18,19}
-      ON aurelink_sms_package_payments(user_id,created_at DESC);
-    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_provider_order_uidx
-      ON aurelink_sms_package_payments(payment_provider,provider_order_id) WHERE provider_order_id IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_provider_txn_uidx
-      ON aurelink_sms_package_payments(payment_provider,provider_transaction_reference) WHERE provider_transaction_reference IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_token_hash_uidx
-      ON aurelink_sms_package_payments(checkout_token_hash) WHERE checkout_token_hash IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_ledger_reference_uidx
-      ON aurelink_sms_package_payments(credit_ledger_reference) WHERE credit_ledger_reference IS NOT NULL;
-
-    -- Legacy paid rows are reconciled from their existing immutable purchase ledger.
-    -- Rows without a purchase ledger are held for manual review, never auto-credited.
-    UPDATE aurelink_sms_package_payments p
-      SET provider_payment_status=CASE WHEN p.status IN ('failed','expired') THEN 'failed' ELSE 'verified' END,
-          payment_verified_at=CASE WHEN p.status IN ('failed','expired') THEN NULL ELSE COALESCE(p.payment_verified_at,p.paid_at,p.created_at) END,
-          credit_allocation_status=CASE
-            WHEN p.status IN ('failed','expired') THEN 'pending'
-            WHEN EXISTS(SELECT 1 FROM aurelink_sms_package_ledger l WHERE l.payment_reference=p.reference AND l.entry_type='purchase' AND l.direction='credit') THEN 'allocated'
-            ELSE 'review_required'
-          END,
-          credit_allocated_at=COALESCE(p.credit_allocated_at,(SELECT MIN(l.created_at) FROM aurelink_sms_package_ledger l WHERE l.payment_reference=p.reference AND l.entry_type='purchase' AND l.direction='credit')),
-          reference_format_version=CASE WHEN p.reference ~ '^[A-Z0-9]{18,19}$' THEN 2 ELSE 1 END
-      WHERE p.status IN ('paid','partially_refunded','refunded','disputed','reversed','failed','expired')
-        AND p.provider_payment_status='pending';
-
-    CREATE TABLE IF NOT EXISTS aurelink_sms_public_reference_reservations (
-      reference VARCHAR(19) PRIMARY KEY CHECK(reference ~ '^[A-Z0-9]{18,19}$'),
-      reference_type VARCHAR(16) NOT NULL CHECK(reference_type IN ('purchase','credit_ledger')),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_reference_reservations (
-      reference VARCHAR(40) PRIMARY KEY,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS aurelink_sms_credit_reference_reservations (
-      reference VARCHAR(19) PRIMARY KEY CHECK(reference ~ '^[A-Z0-9]{18,19}$'),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_reference_events (
-      id BIGSERIAL PRIMARY KEY,
-      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
-      event_type VARCHAR(64) NOT NULL,
-      provider VARCHAR(12),
-      provider_event_id VARCHAR(180),
-      provider_order_id VARCHAR(180),
-      provider_transaction_reference VARCHAR(180),
-      details JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_reference_provider_event_uidx
-      ON aurelink_sms_payment_reference_events(provider,provider_event_id)
-      WHERE provider IS NOT NULL AND provider_event_id IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS aurelink_sms_payment_reference_events_payment_idx
-      ON aurelink_sms_payment_reference_events(payment_reference,created_at);
-
-    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_refunds (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
-      provider VARCHAR(12) NOT NULL CHECK(provider IN ('paypal','paystack')),
-      provider_refund_id VARCHAR(180),
-      amount_minor BIGINT NOT NULL CHECK(amount_minor>0),
-      currency CHAR(3) NOT NULL,
-      status VARCHAR(20) NOT NULL CHECK(status IN ('pending','succeeded','failed','reversed')),
-      reason TEXT,
-      provider_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(provider,provider_refund_id)
-    );
-    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_disputes (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
-      provider VARCHAR(12) NOT NULL CHECK(provider IN ('paypal','paystack')),
-      provider_dispute_id VARCHAR(180) NOT NULL,
-      status VARCHAR(80) NOT NULL,
-      reason VARCHAR(180),
-      evidence_due_at TIMESTAMPTZ,
-      resolved_at TIMESTAMPTZ,
-      investigation_notes JSONB NOT NULL DEFAULT '[]'::jsonb,
-      provider_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(provider,provider_dispute_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_webhook_events (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      provider VARCHAR(12) NOT NULL CHECK(provider IN ('paypal','paystack')),
-      event_id VARCHAR(180) NOT NULL,
-      event_type VARCHAR(120) NOT NULL,
-      payload JSONB NOT NULL,
-      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      processed_at TIMESTAMPTZ,
-      processing_error TEXT,
-      UNIQUE(provider,event_id)
-    );
-    ALTER TABLE aurelink_sms_payment_webhook_events ADD COLUMN IF NOT EXISTS processing_error TEXT;
-    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_audit (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
-      action VARCHAR(48) NOT NULL,
-      details JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS aurelink_sms_purchase_receipt_outbox (
-      payment_reference VARCHAR(40) PRIMARY KEY REFERENCES aurelink_sms_package_payments(reference),
-      recipient_email VARCHAR(320) NOT NULL,
-      payload JSONB NOT NULL,
-      attempts INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      locked_at TIMESTAMPTZ,
-      sent_at TIMESTAMPTZ,
-      last_error TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS aurelink_sms_receipt_outbox_due_idx
-      ON aurelink_sms_purchase_receipt_outbox(next_attempt_at) WHERE sent_at IS NULL;
-  `);
-
-}
- THEN
+      IF NEW.reference !~ '^[A-Z0-9]{18,19}$' THEN
         RAISE EXCEPTION 'Aurelink SMS purchase references must be 18-19 uppercase alphanumeric characters';
       END IF;
       RETURN NEW;
     END;
-    $;
+    $$;
     DROP TRIGGER IF EXISTS aurelink_sms_purchase_reference_format_guard ON aurelink_sms_package_payments;
     CREATE TRIGGER aurelink_sms_purchase_reference_format_guard
       BEFORE INSERT OR UPDATE OF reference ON aurelink_sms_package_payments
@@ -416,5 +293,4 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS aurelink_sms_receipt_outbox_due_idx
       ON aurelink_sms_purchase_receipt_outbox(next_attempt_at) WHERE sent_at IS NULL;
   `);
-
 }
