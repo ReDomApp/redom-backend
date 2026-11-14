@@ -14,6 +14,8 @@ export const AURELINK_SMS_PACKAGE_CATALOG = [
   { code: "sms_1m", name: "Enterprise", segments: 1_000_000, priceMinor: 4_100_000, enterprise: true },
 ] as const;
 
+export const isAurelinkSmsPublicReference = (value: string): boolean => /^[A-Z0-9]{18,19}$/.test(value);
+
 /** Isolated SMS prepaid inventory and billing reservations. Never references Mail credits. */
 export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
   await pool.query(`
