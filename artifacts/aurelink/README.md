@@ -13,6 +13,18 @@ AURELINK is mounted into the existing ReDom backend. Short-term inventory is ser
 - Activation flow reference: https://www.smspool.net/article/smspool-api-order-view-and-cancel-numbers-9883b6969fad
 - Official SDK endpoints checked against https://github.com/smspool/smspool-js
 
+## Standalone outbound SMS API package catalog
+
+The outbound SMS API package catalog is separate from SMSPool number activations/rentals and separate from Aurelink Mail credits.
+
+- `GET /aurelink/sms-api/packages` — authenticated, read-only package catalog.
+- Fixed customer unit price: **USD $0.041 per billable SMS**.
+- Packages: Individual 100/$4.10; Starter 1,000/$41.00; Standard 5,000/$205.00; Plus 10,000/$410.00; Pro 30,000/$1,230.00; Individual Max 50,000/$2,050.00; Business 100,000/$4,100.00; Business Pro 300,000/$12,300.00; Business Max 500,000/$20,500.00; Enterprise 1,000,000+/$41,000.00+.
+- Prices are represented in integer USD cents; no floating-point price arithmetic is used.
+- This stage exposes the package catalog only. It does not create checkout sessions, credit balances, ledger entries, or send SMS.
+- SMS API packages cannot be funded by, converted from, or deducted from Aurelink Mail credits. Mail credits cannot be used to pay for SMS API traffic.
+- The legacy Aurelink number-purchase wallet and SMSPool activation/rental pricing are unchanged by this catalog.
+
 ## Implemented backend routes
 
 All routes require a valid ReDom access token unless noted otherwise. They are served by the general backend at both `/aurelink/*` and `/redom-backend/aurelink/*`.
