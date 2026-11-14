@@ -177,6 +177,112 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_ledger_reference_uidx
       ON aurelink_sms_package_payments(credit_ledger_reference) WHERE credit_ledger_reference IS NOT NULL;
 
+    CREATE TABLE IF NOT EXISTS aurelink_sms_public_reference_reservations (
+      reference VARCHAR(19) PRIMARY KEY CHECK(reference ~ '^[A-Z0-9]{18,19}
+    CREATE TABLE IF NOT EXISTS aurelink_sms_credit_reference_reservations (
+      reference VARCHAR(19) PRIMARY KEY CHECK(reference ~ '^[A-Z0-9]{18,19}$'),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_reference_events (
+      id BIGSERIAL PRIMARY KEY,
+      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
+      event_type VARCHAR(64) NOT NULL,
+      provider VARCHAR(12),
+      provider_event_id VARCHAR(180),
+      provider_order_id VARCHAR(180),
+      provider_transaction_reference VARCHAR(180),
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_reference_provider_event_uidx
+      ON aurelink_sms_payment_reference_events(provider,provider_event_id)
+      WHERE provider IS NOT NULL AND provider_event_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS aurelink_sms_payment_reference_events_payment_idx
+      ON aurelink_sms_payment_reference_events(payment_reference,created_at);
+
+    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_refunds (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
+      provider VARCHAR(12) NOT NULL CHECK(provider IN ('paypal','paystack')),
+      provider_refund_id VARCHAR(180),
+      amount_minor BIGINT NOT NULL CHECK(amount_minor>0),
+      currency CHAR(3) NOT NULL,
+      status VARCHAR(20) NOT NULL CHECK(status IN ('pending','succeeded','failed','reversed')),
+      reason TEXT,
+      provider_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(provider,provider_refund_id)
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_disputes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
+      provider VARCHAR(12) NOT NULL CHECK(provider IN ('paypal','paystack')),
+      provider_dispute_id VARCHAR(180) NOT NULL,
+      status VARCHAR(80) NOT NULL,
+      reason VARCHAR(180),
+      evidence_due_at TIMESTAMPTZ,
+      resolved_at TIMESTAMPTZ,
+      investigation_notes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      provider_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(provider,provider_dispute_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_webhook_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider VARCHAR(12) NOT NULL CHECK(provider IN ('paypal','paystack')),
+      event_id VARCHAR(180) NOT NULL,
+      event_type VARCHAR(120) NOT NULL,
+      payload JSONB NOT NULL,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at TIMESTAMPTZ,
+      processing_error TEXT,
+      UNIQUE(provider,event_id)
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_sms_payment_audit (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
+      action VARCHAR(48) NOT NULL,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS aurelink_sms_purchase_receipt_outbox (
+      payment_reference VARCHAR(40) PRIMARY KEY REFERENCES aurelink_sms_package_payments(reference),
+      recipient_email VARCHAR(320) NOT NULL,
+      payload JSONB NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      locked_at TIMESTAMPTZ,
+      sent_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sms_receipt_outbox_due_idx
+      ON aurelink_sms_purchase_receipt_outbox(next_attempt_at) WHERE sent_at IS NULL;
+  `);
+
+  // Backfill the new display fields before making them mandatory on upgraded databases.
+  await pool.query("UPDATE aurelink_sms_package_catalog SET display_name=package_code WHERE display_name IS NULL");
+  await pool.query("ALTER TABLE aurelink_sms_package_catalog ALTER COLUMN display_name SET NOT NULL");
+
+  // Enforce the reviewed catalogue on existing installations too; stale prices must not survive.
+  const values = AURELINK_SMS_PACKAGE_CATALOG.map((p) =>
+    "('" + p.code + "','" + p.name + "'," + p.enterprise + "," + p.segments + "," + p.priceMinor + ",'USD')"
+  ).join(",");
+  await pool.query(
+    "INSERT INTO aurelink_sms_package_catalog (package_code,display_name,is_enterprise,sms_segments,price_minor,currency) VALUES " +
+    values +
+    " ON CONFLICT(package_code) DO UPDATE SET display_name=EXCLUDED.display_name,is_enterprise=EXCLUDED.is_enterprise,sms_segments=EXCLUDED.sms_segments,price_minor=EXCLUDED.price_minor,currency='USD',active=TRUE,updated_at=NOW()"
+  );
+}
+),
+      reference_type VARCHAR(16) NOT NULL CHECK(reference_type IN ('purchase','credit_ledger')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS aurelink_sms_payment_reference_reservations (
       reference VARCHAR(40) PRIMARY KEY,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
