@@ -50,11 +50,13 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       amount_segments BIGINT NOT NULL CHECK(amount_segments > 0),
       balance_after BIGINT NOT NULL CHECK(balance_after >= 0),
       reference VARCHAR(180) NOT NULL UNIQUE,
+      reference_format_version SMALLINT NOT NULL DEFAULT 2,
       payment_reference VARCHAR(40),
       description TEXT NOT NULL,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_sms_package_ledger ADD COLUMN IF NOT EXISTS reference_format_version SMALLINT NOT NULL DEFAULT 1;
     CREATE INDEX IF NOT EXISTS aurelink_sms_package_ledger_workspace_idx
       ON aurelink_sms_package_ledger(workspace_id,created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_package_ledger_purchase_payment_uidx
