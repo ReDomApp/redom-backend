@@ -142,6 +142,7 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CHECK(status IN ('pending','paid','failed','expired','refund_pending','partially_refunded','refunded','reversed','disputed'))
     );
+    ALTER TABLE aurelink_sms_package_payments ALTER COLUMN status TYPE VARCHAR(20);
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS credit_ledger_reference VARCHAR(19);
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS reference_format_version SMALLINT NOT NULL DEFAULT 1;
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS refunded_amount_minor BIGINT NOT NULL DEFAULT 0;
