@@ -179,8 +179,8 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sms_payment_ledger_reference_uidx
       ON aurelink_sms_package_payments(credit_ledger_reference) WHERE credit_ledger_reference IS NOT NULL;
 
-    // Legacy paid rows are reconciled from their existing immutable purchase ledger.
-    // Rows without a purchase ledger are held for manual review, never auto-credited.
+    -- Legacy paid rows are reconciled from their existing immutable purchase ledger.
+    -- Rows without a purchase ledger are held for manual review, never auto-credited.
     UPDATE aurelink_sms_package_payments p
       SET provider_payment_status=CASE WHEN p.status IN ('failed','expired') THEN 'failed' ELSE 'verified' END,
           payment_verified_at=COALESCE(p.payment_verified_at,p.paid_at,p.created_at),
