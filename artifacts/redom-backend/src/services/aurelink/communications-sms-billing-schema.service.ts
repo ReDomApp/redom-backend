@@ -1,7 +1,5 @@
 import { pool } from "../../database/db";
 
-export const isAurelinkSmsPublicReference = (value: string): boolean => /^[A-Z0-9]{18,19}$/.test(value);
-
 /** Isolated SMS prepaid inventory and billing reservations. Never references Mail credits. */
 export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
   await pool.query(`
