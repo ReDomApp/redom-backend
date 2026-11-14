@@ -123,7 +123,7 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       credit_ledger_reference VARCHAR(19),
       reference_format_version SMALLINT NOT NULL DEFAULT 2,
       refunded_amount_minor BIGINT NOT NULL DEFAULT 0 CHECK(refunded_amount_minor>=0),
-      dispute_status VARCHAR(24),
+      dispute_status VARCHAR(80),
       last_provider_event_at TIMESTAMPTZ,
       checkout_token_hash CHAR(64),
       checkout_token_expires_at TIMESTAMPTZ,
@@ -145,7 +145,8 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS credit_ledger_reference VARCHAR(19);
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS reference_format_version SMALLINT NOT NULL DEFAULT 1;
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS refunded_amount_minor BIGINT NOT NULL DEFAULT 0;
-    ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS dispute_status VARCHAR(24);
+    ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS dispute_status VARCHAR(80);
+    ALTER TABLE aurelink_sms_package_payments ALTER COLUMN dispute_status TYPE VARCHAR(80);
     ALTER TABLE aurelink_sms_package_payments ADD COLUMN IF NOT EXISTS last_provider_event_at TIMESTAMPTZ;
     ALTER TABLE aurelink_sms_package_payments DROP CONSTRAINT IF EXISTS aurelink_sms_package_payments_status_check;
     ALTER TABLE aurelink_sms_package_payments ADD CONSTRAINT aurelink_sms_package_payments_status_check
@@ -209,7 +210,7 @@ export async function ensureAurelinkSmsBillingSchema(): Promise<void> {
       payment_reference VARCHAR(40) NOT NULL REFERENCES aurelink_sms_package_payments(reference),
       provider VARCHAR(12) NOT NULL CHECK(provider IN ('paypal','paystack')),
       provider_dispute_id VARCHAR(180) NOT NULL,
-      status VARCHAR(24) NOT NULL,
+      status VARCHAR(80) NOT NULL,
       reason VARCHAR(180),
       evidence_due_at TIMESTAMPTZ,
       resolved_at TIMESTAMPTZ,
