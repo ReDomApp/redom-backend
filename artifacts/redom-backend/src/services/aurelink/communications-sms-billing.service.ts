@@ -50,12 +50,14 @@ export async function restoreAurelinkSmsUsageForReconciliation(client:Db,message
 
 /** Credit a prepaid package only after a trusted payment webhook has verified settlement. */
 export async function creditAurelinkSmsPackage(client:Db,input:{
- userId:string;workspaceId:string;packageCode:string;paymentReference:string;ledgerReference:string;
+ userId:string;workspaceId:string;packageCode:string;paymentReference:string;ledgerReference:string;smsSegments?:string|number;amountMinor?:string|number;
 }):Promise<{credited:boolean;segments:string;balance:string;ledgerReference:string}>{
  const paymentReference=input.paymentReference.trim();
  if(paymentReference.length<8||paymentReference.length>40)throw new Error("AURELINK_SMS_INVALID_PAYMENT_REFERENCE");
- const pkg=(await client.query("SELECT package_code,sms_segments,price_minor,currency FROM aurelink_sms_package_catalog WHERE package_code=$1 AND active=TRUE FOR SHARE",[input.packageCode])).rows[0];
+ const pkg=(await client.query("SELECT package_code,currency FROM aurelink_sms_package_catalog WHERE package_code=$1 FOR SHARE",[input.packageCode])).rows[0];
  if(!pkg||String(pkg.currency)!=="USD")throw new Error("AURELINK_SMS_PACKAGE_NOT_AVAILABLE");
+ const segments=BigInt(String(input.smsSegments??"0")),priceMinor=BigInt(String(input.amountMinor??"0"));
+ if(segments<=0n||priceMinor<=0n||segments>10000000n)throw new Error("AURELINK_SMS_INVALID_PURCHASE_SNAPSHOT");
  await client.query("INSERT INTO aurelink_sms_package_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[input.workspaceId,input.userId]);
  const wallet=(await client.query("SELECT balance_segments FROM aurelink_sms_package_wallets WHERE workspace_id=$1 FOR UPDATE",[input.workspaceId])).rows[0];
  if(!wallet)throw new Error("AURELINK_SMS_PACKAGE_WALLET_UNAVAILABLE");
@@ -63,11 +65,11 @@ export async function creditAurelinkSmsPackage(client:Db,input:{
  if(!/^[A-Z0-9]{18,19}$/.test(reference))throw new Error("AURELINK_SMS_INVALID_CREDIT_LEDGER_REFERENCE");
  const prior=(await client.query("SELECT reference,balance_after,amount_segments FROM aurelink_sms_package_ledger WHERE payment_reference=$1 AND entry_type='purchase' AND direction='credit' FOR UPDATE",[paymentReference])).rows[0];
  if(prior)return {credited:false,segments:String(prior.amount_segments),balance:String(prior.balance_after),ledgerReference:String(prior.reference)};
- const next=BigInt(String(wallet.balance_segments))+BigInt(String(pkg.sms_segments));
+ const next=BigInt(String(wallet.balance_segments))+segments;
  await client.query("UPDATE aurelink_sms_package_wallets SET balance_segments=$2,updated_at=NOW() WHERE workspace_id=$1",[input.workspaceId,next.toString()]);
- await client.query("INSERT INTO aurelink_sms_package_ledger(workspace_id,user_id,entry_type,direction,amount_segments,balance_after,reference,reference_format_version,payment_reference,description,metadata) VALUES($1,$2,'purchase','credit',$3,$4,$5,2,$6,'Aurelink SMS prepaid package purchase',$7::jsonb)",[input.workspaceId,input.userId,String(pkg.sms_segments),next.toString(),reference,paymentReference,JSON.stringify({product:"sms",purchaseType:"sms_package",packageCode:pkg.package_code,priceMinor:String(pkg.price_minor),currency:pkg.currency,previousBalance:String(wallet.balance_segments),newBalance:next.toString()})]);
- await client.query("INSERT INTO aurelink_sms_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'package_credited',$3::jsonb)",[input.workspaceId,input.userId,JSON.stringify({packageCode:pkg.package_code,paymentReference,segments:String(pkg.sms_segments)})]);
- return {credited:true,segments:String(pkg.sms_segments),balance:next.toString(),ledgerReference:reference};
+ await client.query("INSERT INTO aurelink_sms_package_ledger(workspace_id,user_id,entry_type,direction,amount_segments,balance_after,reference,reference_format_version,payment_reference,description,metadata) VALUES($1,$2,'purchase','credit',$3,$4,$5,2,$6,'Aurelink SMS prepaid package purchase',$7::jsonb)",[input.workspaceId,input.userId,segments.toString(),next.toString(),reference,paymentReference,JSON.stringify({product:"sms",purchaseType:"sms_package",packageCode:pkg.package_code,priceMinor:priceMinor.toString(),currency:pkg.currency,previousBalance:String(wallet.balance_segments),newBalance:next.toString()})]);
+ await client.query("INSERT INTO aurelink_sms_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'package_credited',$3::jsonb)",[input.workspaceId,input.userId,JSON.stringify({packageCode:pkg.package_code,paymentReference,segments:segments.toString(),priceMinor:priceMinor.toString()})]);
+ return {credited:true,segments:segments.toString(),balance:next.toString(),ledgerReference:reference};
 }
 
 
