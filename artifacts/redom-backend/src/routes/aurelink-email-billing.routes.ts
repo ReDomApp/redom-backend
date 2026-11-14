@@ -406,6 +406,18 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
 });
 
 
+router.get("/aurelink/admin/communications/sms/payments/:reference",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!admins().has(req.user!.userId))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink administrator access is required."});
+ const reference=z.string().regex(/^[A-Z0-9]{18,19}$/).safeParse(req.params.reference);if(!reference.success)return res.status(400).json({success:false,message:"Invalid SMS purchase reference."});
+ const payment=(await pool.query("SELECT reference,user_id,workspace_id,package_code,sms_segments,amount_minor,currency,payment_provider,provider_currency,provider_amount_minor,status,provider_order_id,provider_transaction_reference,credit_ledger_reference,refunded_amount_minor,dispute_status,paid_at,created_at,updated_at FROM aurelink_sms_package_payments WHERE reference=$1",[reference.data])).rows[0];if(!payment)return res.status(404).json({success:false,message:"SMS purchase not found."});
+ const [history,refunds,disputes,ledger]=await Promise.all([
+  pool.query("SELECT event_type,provider,provider_event_id,provider_order_id,provider_transaction_reference,details,created_at FROM aurelink_sms_payment_reference_events WHERE payment_reference=$1 ORDER BY created_at ASC",[reference.data]),
+  pool.query("SELECT provider,provider_refund_id,amount_minor,currency,status,reason,created_at,updated_at FROM aurelink_sms_payment_refunds WHERE payment_reference=$1 ORDER BY created_at DESC",[reference.data]),
+  pool.query("SELECT provider,provider_dispute_id,status,reason,evidence_due_at,resolved_at,investigation_notes,created_at,updated_at FROM aurelink_sms_payment_disputes WHERE payment_reference=$1 ORDER BY created_at DESC",[reference.data]),
+  pool.query("SELECT reference,entry_type,direction,amount_segments,balance_after,description,metadata,created_at FROM aurelink_sms_package_ledger WHERE payment_reference=$1 OR reference=$2 ORDER BY created_at ASC",[reference.data,payment.credit_ledger_reference||""])
+ ]);
+ return res.json({success:true,payment,history:history.rows,refunds:refunds.rows,disputes:disputes.rows,ledger:ledger.rows});
+});
 router.post("/aurelink/admin/communications/sms/credits/adjust",aurelinkAuthMiddleware,async(req,res)=>{
  if(!admins().has(req.user!.userId))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink administrator access is required."});
  const parsed=z.object({workspaceId:z.string().uuid(),amountSegments:z.number().int().positive().max(10000000),direction:z.enum(["credit","debit"]),reason:z.string().min(8).max(500),reversalOfReference:z.string().regex(/^[A-Z0-9]{18,19}$/).optional()}).safeParse(req.body);
