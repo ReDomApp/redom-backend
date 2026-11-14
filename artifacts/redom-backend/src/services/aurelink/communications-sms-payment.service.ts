@@ -89,7 +89,7 @@ async function fulfillSms(ref:string,providerRef:string,provider:Provider,paidAm
   if(p.provider_payment_status!=="verified"||p.status!=="paid")throw new Error("SMS provider payment has not been durably verified.");
   if(p.provider_transaction_reference!==providerRef)throw new Error("SMS provider transaction reference changed during allocation.");
   if(p.credit_allocation_status==="allocated"&&p.credit_ledger_reference){await client.query("COMMIT");return;}
-  if(p.credit_allocation_status==="reversed")throw new Error("SMS credit allocation has already been reversed.");
+  if(["reversal_required","review_required","reversed"].includes(String(p.credit_allocation_status))){if(p.credit_ledger_reference){await client.query("COMMIT");return;}throw new Error("SMS credit allocation requires administrator reconciliation.");}
   const ledgerReference=await uniqueLedgerReference(client);
   const credited=await creditAurelinkSmsPackage(client,{userId:String(p.user_id),workspaceId:String(p.workspace_id),packageCode:String(p.package_code),paymentReference:ref,ledgerReference});
   const previousBalance=(BigInt(credited.balance)-BigInt(credited.segments)).toString();
