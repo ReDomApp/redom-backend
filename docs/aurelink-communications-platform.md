@@ -16,7 +16,7 @@ For queued REST messages, Aurelink reserves wallet credit in the same database t
 
 The Aurelink-owned SMTP gateway performs the same wallet reservation before upstream submission, then captures on provider acceptance or refunds on provider rejection. SMTP is billed per accepted recipient, not per connection.
 
-Temporary direct-Resend mode is an explicit exception: when `AURELINK_SMTP_TEMPORARY_DIRECT_RESEND=true`, customers connect directly to Resend using a domain-scoped Resend key. Those sessions bypass Aurelink's TCP gateway and therefore do not pass through the gateway's per-send wallet meter. Disable this temporary mode only after the Aurelink gateway is deployed and verified, and reissue credentials.
+**Current active transport:** temporary direct Resend SMTP. `AURELINK_SMTP_TEMPORARY_DIRECT_RESEND` defaults to `true`; customers receive `smtp.resend.com` (465 SSL/TLS or 587 STARTTLS), username `resend`, and a domain-scoped sending-only Resend key as the SMTP password. The account-level Resend API key is never exposed. These direct sessions do not traverse the not-yet-deployed Aurelink TCP gateway and therefore bypass its per-send wallet meter. Keep this mode active until Aurelink's own gateway is deployed, publicly reachable, TLS-verified, metering-verified and acceptance-tested. Only then set the flag to `false` and reissue credentials. Do not remove customer-facing Resend support.
 
 ### Customer endpoints
 
@@ -191,7 +191,7 @@ Every email send, whether REST API or SMTP, reserves usage inside a database tra
 - An administrator must reconcile an unknown outcome with provider evidence.
 - Idempotency is enforced for REST requests. SMTP requires a stable `Message-ID`; an already accepted or unknown Message-ID is not submitted again.
 - Stripe webhooks are signature-verified and idempotent. Subscription renewals, failed invoices, cancellations and credit purchases are reflected only after server-side provider verification.
-- Direct Resend SMTP credentials are disabled. Customer SMTP traffic must pass through the Aurelink-owned gateway so metering cannot be bypassed.
+- Keeps direct Resend SMTP active as the temporary customer-facing SMTP transport until the Aurelink-owned gateway is deployed and verified. The direct mode bypasses gateway metering; do not disable it before cutover readiness or remove customer-facing Resend support.
 
 The email-credit ledger is append-only. Wallet balances and subscription usage are updated transactionally, with unique references and row locks to prevent duplicate credits, double spending and concurrent overrun.
 
