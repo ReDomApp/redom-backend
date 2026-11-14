@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import { chargeAurelinkUsage, captureAurelinkUsage, refundAurelinkUsage } from "./communications-billing.service";
+import { chargeAurelinkUsage, captureAurelinkUsage, refundAurelinkUsage } from "./communications-billing.service.js";
 
 type Db = Pick<PoolClient,"query">;
 
