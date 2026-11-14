@@ -16,7 +16,7 @@ This folder adds a responsive customer-facing communications workspace to the ex
 
 - Unified communications overview with SMS/email totals, accepted/delivered/failed/queued/pending breakdowns, usage, domain/contact/campaign counts and recent message activity.
 - SMS send form using the server-configured provider, country registry, approved sender enforcement, E.164 validation, marketing consent enforcement and idempotency.
-- Email send form using verified sender identities and server-configured provider routing.
+- Email send form using verified sender identities, server-configured provider routing, Reply-To, CC/BCC, tags and up to 10 attachments / 10 MB total.
 - Searchable SMS/email message activity, detail inspection and eligible retry action.
 - SMS/email templates: list, create, edit and delete.
 - SMS/email contacts with opt-in, opt-out and unknown consent states.
@@ -24,7 +24,7 @@ This folder adds a responsive customer-facing communications workspace to the ex
 - Sending-domain onboarding, provider-issued DNS record display, DNS check/verification, optional Cloudflare connection and record application, suspend/resume and removal.
 - Email sender identity creation and provider status refresh.
 - Resend-native SMTP credential issuance, one-time password display, metadata, rotation and revocation.
-- SMS website ownership challenge and status tracking; existing sender applications and registration states.
+- SMS website ownership challenge, private evidence upload with server-computed SHA-256, full Sender ID application submission, and separate Aurelink/provider registration states.
 - OTP start and verification with Aurelink-generated codes.
 - Developer overview, request logs and webhook endpoint lifecycle.
 - Reputation scores/alerts and alert acknowledgement.
@@ -47,4 +47,4 @@ This folder adds a responsive customer-facing communications workspace to the ex
 
 This is frontend code staged on a branch based on PR #64. Before deployment, run the existing backend and communications CI checks, validate the public static-site root on Render, and perform authenticated end-to-end browser tests against a staging deployment of the PR #64 backend. In particular test sign-in redirect, session expiry, domain/provider DNS responses, Cloudflare permissions, message acceptance/webhook correlation, sender approval, OTP expiry/attempt limits, billing responses, and SMTP credential one-time display/rotation/revocation.
 
-No production DNS, Render service configuration, backend deployment, database migration, provider credential or customer account has been changed by this UI branch.
+The frontend includes a static JavaScript syntax/asset check workflow. No production DNS, Render service configuration, backend deployment, database migration, provider credential or customer account has been changed by this branch.
