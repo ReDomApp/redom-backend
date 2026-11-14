@@ -6,6 +6,7 @@ import { verifyAurelinkEmailBillingCheckout as verifyLegacyStripeMail, cancelAur
 import { createAurelinkMailCheckout, verifyAurelinkMailCheckout, cancelAurelinkMailSubscription, handleAurelinkMailWebhook, startAurelinkMailCreditPayment } from "../services/payments/aurelink-mail-payment.service";
 import { captureAurelinkEmailUsage, refundAurelinkEmailUsage, resizeAurelinkEmailUsageReservation } from "../services/aurelink/communications-email-billing.service";
 import { createAurelinkSmsPackageCheckout, startAurelinkSmsPackagePayment, verifyAurelinkSmsPackageCheckout, handleAurelinkSmsPackageWebhook } from "../services/aurelink/communications-sms-payment.service";
+import { adjustAurelinkSmsPackageBalance } from "../services/aurelink/communications-sms-billing.service";
 
 const router=Router();
 const admins=()=>new Set(String(process.env.AURELINK_ADMIN_USER_IDS||"").split(",").map(x=>x.trim()).filter(Boolean));
@@ -402,6 +403,19 @@ router.post("/aurelink/admin/communications/email/smtp/:id/reconcile",aurelinkAu
     await client.query("ROLLBACK").catch(()=>undefined);
     return res.status(500).json({success:false,message:"SMTP billing reconciliation could not be saved."});
   }finally{client.release();}
+});
+
+
+router.post("/aurelink/admin/communications/sms/credits/adjust",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!admins().has(req.user!.userId))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink administrator access is required."});
+ const parsed=z.object({workspaceId:z.string().uuid(),amountSegments:z.number().int().positive().max(10000000),direction:z.enum(["credit","debit"]),reason:z.string().min(8).max(500),reversalOfReference:z.string().regex(/^[A-Z0-9]{18,19}$/).optional()}).safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({success:false,message:"Provide a workspace, positive SMS segment quantity, direction, reason and optional original ledger reference for a reversal."});
+ const client=await pool.connect();try{await client.query("BEGIN");const result=await adjustAurelinkSmsPackageBalance(client,{workspaceId:parsed.data.workspaceId,actorUserId:req.user!.userId,amountSegments:parsed.data.amountSegments,direction:parsed.data.direction,reason:parsed.data.reason,reversalOfReference:parsed.data.reversalOfReference});await client.query("COMMIT");return res.status(201).json({success:true,adjustment:result});}catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(409).json({success:false,message:error instanceof Error?error.message:"Unable to adjust SMS package balance."});}finally{client.release();}
+});
+router.post("/aurelink/admin/communications/sms/payments/:reference/disputes/:disputeId/notes",aurelinkAuthMiddleware,async(req,res)=>{
+ if(!admins().has(req.user!.userId))return res.status(403).json({success:false,code:"ADMIN_REQUIRED",message:"Aurelink administrator access is required."});
+ const reference=z.string().regex(/^[A-Z0-9]{18,19}$/).safeParse(req.params.reference),note=z.string().trim().min(10).max(2000).safeParse(req.body?.note);if(!reference.success||!note.success)return res.status(400).json({success:false,message:"A valid purchase reference and investigation note are required."});
+ const client=await pool.connect();try{await client.query("BEGIN");const dispute=(await client.query("SELECT id FROM aurelink_sms_payment_disputes WHERE payment_reference=$1 AND provider_dispute_id=$2 FOR UPDATE",[reference.data,req.params.disputeId])).rows[0];if(!dispute){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"SMS payment dispute not found."});}await client.query("UPDATE aurelink_sms_payment_disputes SET investigation_notes=investigation_notes||jsonb_build_array(jsonb_build_object('note',$2::text,'actorUserId',$3::text,'createdAt',NOW())),updated_at=NOW() WHERE id=$1",[dispute.id,note.data,req.user!.userId]);await client.query("INSERT INTO aurelink_sms_payment_audit(payment_reference,action,details) VALUES($1,'dispute_investigation_note_added',$2::jsonb)",[reference.data,JSON.stringify({disputeId:req.params.disputeId,actorUserId:req.user!.userId,note:note.data})]);await client.query("COMMIT");return res.json({success:true});}catch(error){await client.query("ROLLBACK").catch(()=>undefined);return res.status(500).json({success:false,message:"Unable to append dispute investigation note."});}finally{client.release();}
 });
 
 export default router;
