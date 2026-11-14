@@ -23,6 +23,12 @@ import { ensureAurelinkAccountSchema } from "./services/aurelink/account-schema-
 import { startAurelinkLifecycleWorker, stopAurelinkLifecycleWorker } from "./services/aurelink/aurelink-lifecycle-worker.service";
 import { startAurelinkDedicatedRenewalWorker, stopAurelinkDedicatedRenewalWorker } from "./services/aurelink/aurelink-dedicated-renewal.service";
 import { ensureAurelinkDeveloperSchema, startAurelinkWebhookWorker, stopAurelinkWebhookWorker } from "./services/aurelink/developer-platform.service";
+import { ensureAurelinkCommunicationsSchema } from "./services/aurelink/communications-schema.service";
+import { ensureAurelinkCommunicationsExtendedSchema } from "./services/aurelink/communications-extended-schema.service";
+import { ensureAurelinkEmailBillingSchema } from "./services/aurelink/communications-email-billing-schema.service";
+import { ensureAurelinkSmsBillingSchema } from "./services/aurelink/communications-sms-billing-schema.service";
+import { startAurelinkCommunicationsWorker, stopAurelinkCommunicationsWorker } from "./services/aurelink/communications-worker.service";
+import { startAurelinkReputationWorker, stopAurelinkReputationWorker } from "./services/aurelink/communications-reputation.service";
 
 const rawPort = process.env["PORT"] ?? "10000";
 const port = Number(rawPort);
@@ -36,6 +42,10 @@ async function start(): Promise<void> {
   await ensureAurelinkAccountSchema(pool);
   await ensureAurelinkSchema(pool);
   await ensureAurelinkDeveloperSchema();
+  await ensureAurelinkCommunicationsSchema();
+  await ensureAurelinkCommunicationsExtendedSchema();
+  await ensureAurelinkEmailBillingSchema();
+  await ensureAurelinkSmsBillingSchema();
   await ensureBugReportSchema();
   await ensureStarsSchema();
   await ensureRefundSchema();
@@ -53,6 +63,8 @@ async function start(): Promise<void> {
     startAurelinkLifecycleWorker();
     startAurelinkDedicatedRenewalWorker();
     startAurelinkWebhookWorker();
+    startAurelinkCommunicationsWorker();
+    startAurelinkReputationWorker();
     logger.info({ host, port }, "Server listening");
   });
 
@@ -74,6 +86,8 @@ async function start(): Promise<void> {
     stopAurelinkLifecycleWorker();
     stopAurelinkDedicatedRenewalWorker();
     stopAurelinkWebhookWorker();
+    stopAurelinkCommunicationsWorker();
+    stopAurelinkReputationWorker();
     server.close(async (error) => {
       if (error) { logger.error({ error: serializeError(error) }, "Error closing HTTP server"); process.exitCode = 1; }
       try { await pool.end(); } catch (poolError) { logger.error({ error: serializeError(poolError) }, "Error closing database pool"); process.exitCode = 1; }

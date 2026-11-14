@@ -1,0 +1,288 @@
+import { pool } from "../../database/db";
+import { AURELINK_SMS_COUNTRIES } from "./sms-country-registry";
+
+/**
+ * Additive schema for Aurelink's developer communications platform.
+ * This bootstrap is intentionally idempotent and does not create inbound-mail
+ * infrastructure. It only extends outbound usage billing, reputation and teams.
+ */
+export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void> {
+  await pool.query(`
+    ALTER TABLE aurelink_sender_ids
+      ADD COLUMN IF NOT EXISTS registration_state VARCHAR(32) NOT NULL DEFAULT 'draft',
+      ADD COLUMN IF NOT EXISTS security_review_status VARCHAR(24) NOT NULL DEFAULT 'not_started',
+      ADD COLUMN IF NOT EXISTS security_reviewed_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS security_reviewed_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS website_domain VARCHAR(253),
+      ADD COLUMN IF NOT EXISTS website_verification_id UUID,
+      ADD COLUMN IF NOT EXISTS submitted_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS evidence_fingerprint CHAR(64),
+      ADD COLUMN IF NOT EXISTS consent_evidence_reference TEXT,
+      ADD COLUMN IF NOT EXISTS business_address TEXT,
+      ADD COLUMN IF NOT EXISTS business_contact JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS monthly_volume BIGINT,
+      ADD COLUMN IF NOT EXISTS sms_purpose VARCHAR(24),
+      ADD COLUMN IF NOT EXISTS sender_type VARCHAR(32) NOT NULL DEFAULT 'alphanumeric',
+      ADD COLUMN IF NOT EXISTS last_security_reason TEXT,
+      ADD COLUMN IF NOT EXISTS submitted_by_user_id UUID REFERENCES aurelink_users(id) ON DELETE SET NULL;
+    ALTER TABLE aurelink_sender_ids DROP CONSTRAINT IF EXISTS aurelink_sender_ids_registration_state_check;
+    ALTER TABLE aurelink_sender_ids ADD CONSTRAINT aurelink_sender_ids_registration_state_check
+      CHECK (registration_state IN ('draft','verification_required','security_review','ready_for_submission','submitted','approved','rejected','suspended'));
+    ALTER TABLE aurelink_sender_ids DROP CONSTRAINT IF EXISTS aurelink_sender_ids_security_review_status_check;
+    ALTER TABLE aurelink_sender_ids ADD CONSTRAINT aurelink_sender_ids_security_review_status_check
+      CHECK (security_review_status IN ('not_started','pending','passed','failed','manual_review'));
+    CREATE INDEX IF NOT EXISTS aurelink_sender_ids_security_gate_idx
+      ON aurelink_sender_ids(workspace_id,country_code,registration_state,security_review_status);
+    CREATE TABLE IF NOT EXISTS aurelink_sender_security_restrictions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      sender_application_id UUID REFERENCES aurelink_sender_ids(id) ON DELETE SET NULL,
+      reason TEXT NOT NULL,
+      starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ends_at TIMESTAMPTZ NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','expired','revoked')),
+      created_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK(ends_at > starts_at)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_security_restrictions_active_idx
+      ON aurelink_sender_security_restrictions(user_id,workspace_id,status,ends_at);
+    ALTER TABLE aurelink_sender_ids DROP CONSTRAINT IF EXISTS aurelink_sender_ids_registration_state_check;
+    ALTER TABLE aurelink_sender_ids ADD CONSTRAINT aurelink_sender_ids_registration_state_check
+      CHECK (registration_state IN ('draft','verification_required','security_review','ready_for_submission','scheduled_for_brevo','brevo_submission_ready','brevo_submitted','approved','rejected','suspended'));
+    ALTER TABLE aurelink_sender_ids
+      ADD COLUMN IF NOT EXISTS brevo_review_due_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS brevo_submitted_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS brevo_request_token_hash CHAR(64),
+      ADD COLUMN IF NOT EXISTS brevo_provider_reference VARCHAR(180),
+      ADD COLUMN IF NOT EXISTS brevo_terminal_status VARCHAR(24),
+      ADD COLUMN IF NOT EXISTS brevo_terminal_at TIMESTAMPTZ;
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sender_ids_brevo_token_idx
+      ON aurelink_sender_ids(brevo_request_token_hash) WHERE brevo_request_token_hash IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS aurelink_sender_provider_submissions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      sender_application_id UUID NOT NULL UNIQUE REFERENCES aurelink_sender_ids(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      provider VARCHAR(24) NOT NULL CHECK(provider='brevo'),
+      request_token_hash CHAR(64) NOT NULL UNIQUE,
+      request_token_encrypted TEXT,
+      status VARCHAR(32) NOT NULL DEFAULT 'scheduled'
+        CHECK(status IN ('scheduled','ready_for_operator_submission','submitted','processing','completed','rejected','failed','cancelled')),
+      scheduled_at TIMESTAMPTZ NOT NULL,
+      submitted_at TIMESTAMPTZ,
+      provider_reference VARCHAR(180),
+      provider_status VARCHAR(80),
+      terminal_payload JSONB,
+      terminal_event_id VARCHAR(180),
+      token_consumed_at TIMESTAMPTZ,
+      token_revealed_at TIMESTAMPTZ,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_provider_submissions_due_idx
+      ON aurelink_sender_provider_submissions(status,scheduled_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_sender_provider_submissions_provider_ref_idx
+      ON aurelink_sender_provider_submissions(provider,provider_reference) WHERE provider_reference IS NOT NULL;
+    ALTER TABLE aurelink_sender_provider_submissions ADD COLUMN IF NOT EXISTS token_revealed_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_sender_provider_submissions ALTER COLUMN request_token_encrypted DROP NOT NULL;
+    CREATE TABLE IF NOT EXISTS aurelink_sender_provider_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider VARCHAR(24) NOT NULL CHECK(provider='brevo'),
+      provider_event_id VARCHAR(180) NOT NULL,
+      submission_id UUID NOT NULL REFERENCES aurelink_sender_provider_submissions(id) ON DELETE CASCADE,
+      event_status VARCHAR(80) NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(provider,provider_event_id)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_provider_events_submission_idx
+      ON aurelink_sender_provider_events(submission_id,processed_at DESC);
+    CREATE TABLE IF NOT EXISTS aurelink_sender_evidence_documents (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      uploaded_by_user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      sender_application_id UUID REFERENCES aurelink_sender_ids(id) ON DELETE CASCADE,
+      object_key TEXT NOT NULL UNIQUE,
+      original_filename VARCHAR(180) NOT NULL,
+      mime_type VARCHAR(32) NOT NULL CHECK(mime_type IN ('application/pdf','image/jpeg','image/png')),
+      byte_size INTEGER NOT NULL CHECK(byte_size BETWEEN 1 AND 10485760),
+      sha256 CHAR(64) NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'uploaded' CHECK(status IN ('uploaded','attached','verified','rejected','deleted')),
+      verified_at TIMESTAMPTZ,
+      verified_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE aurelink_sender_evidence_documents DROP CONSTRAINT IF EXISTS aurelink_sender_evidence_documents_status_check;
+    ALTER TABLE aurelink_sender_evidence_documents ADD CONSTRAINT aurelink_sender_evidence_documents_status_check
+      CHECK(status IN ('uploaded','attached','verified','rejected','deleted'));
+    CREATE INDEX IF NOT EXISTS aurelink_sender_evidence_workspace_idx
+      ON aurelink_sender_evidence_documents(workspace_id,uploaded_by_user_id,status,created_at DESC);
+    CREATE INDEX IF NOT EXISTS aurelink_sender_evidence_application_idx
+      ON aurelink_sender_evidence_documents(sender_application_id,status);
+    CREATE TABLE IF NOT EXISTS aurelink_sender_security_audit (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      sender_application_id UUID NOT NULL REFERENCES aurelink_sender_ids(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      actor_user_id UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      action VARCHAR(48) NOT NULL,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_sender_security_audit_history_idx
+      ON aurelink_sender_security_audit(sender_application_id,created_at DESC);
+    CREATE OR REPLACE FUNCTION aurelink_block_sender_audit_mutation() RETURNS trigger
+    LANGUAGE plpgsql AS $
+    BEGIN
+      RAISE EXCEPTION 'Aurelink Sender ID security audit records are immutable';
+    END;
+    $;
+    DROP TRIGGER IF EXISTS aurelink_sender_security_audit_immutable ON aurelink_sender_security_audit;
+    CREATE TRIGGER aurelink_sender_security_audit_immutable
+      BEFORE UPDATE OR DELETE ON aurelink_sender_security_audit
+      FOR EACH ROW EXECUTE FUNCTION aurelink_block_sender_audit_mutation();
+
+
+    CREATE TABLE IF NOT EXISTS aurelink_sms_supported_countries (
+      country_code CHAR(2) PRIMARY KEY,
+      country_name VARCHAR(120) NOT NULL,
+      calling_code VARCHAR(12) NOT NULL,
+      international_prefix VARCHAR(16) NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS aurelink_verified_websites (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      domain VARCHAR(253) NOT NULL,
+      website_url TEXT NOT NULL,
+      verification_method VARCHAR(32) NOT NULL CHECK (verification_method IN ('dns_txt','https_file','admin_attestation')),
+      verification_token_hash CHAR(64),
+      verification_expires_at TIMESTAMPTZ,
+      last_dns_checked_at TIMESTAMPTZ,
+      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','verified','failed','revoked')),
+      verified_at TIMESTAMPTZ,
+      verified_by UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(workspace_id,domain)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_verified_websites_lookup_idx
+      ON aurelink_verified_websites(workspace_id,domain,status);
+    ALTER TABLE aurelink_verified_websites ADD COLUMN IF NOT EXISTS verification_expires_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_verified_websites ADD COLUMN IF NOT EXISTS last_dns_checked_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS aurelink_verified_websites_dns_recheck_idx ON aurelink_verified_websites(status,last_dns_checked_at);
+
+    ALTER TABLE aurelink_email_domains
+      ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(253),
+      ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS suspension_reason TEXT,
+      ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMPTZ;
+    ALTER TABLE aurelink_email_domains DROP CONSTRAINT IF EXISTS aurelink_email_domains_status_check;
+    ALTER TABLE aurelink_email_domains ADD CONSTRAINT aurelink_email_domains_status_check
+      CHECK (status IN ('pending','verification_pending','verified','failed','disabled','suspended','deleting','deleted'));
+
+    ALTER TABLE aurelink_communications_members
+      ADD COLUMN IF NOT EXISTS invitation_token_hash CHAR(64),
+      ADD COLUMN IF NOT EXISTS invitation_expires_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS accepted_user_id UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    CREATE UNIQUE INDEX IF NOT EXISTS aurelink_communications_member_invite_token_idx
+      ON aurelink_communications_members(invitation_token_hash) WHERE invitation_token_hash IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS aurelink_communications_price_catalog (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      service VARCHAR(32) NOT NULL CHECK (service IN ('sms_segment','email_message','smtp_message')),
+      country_code CHAR(2) NOT NULL DEFAULT '*',
+      provider VARCHAR(24) NOT NULL DEFAULT '*',
+      category VARCHAR(24) NOT NULL DEFAULT '*',
+      unit_price_minor INTEGER NOT NULL CHECK (unit_price_minor > 0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      effective_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      effective_until TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE aurelink_communications_price_catalog ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE;
+    CREATE INDEX IF NOT EXISTS aurelink_communications_price_lookup_idx
+      ON aurelink_communications_price_catalog(workspace_id,service,country_code,provider,category,active,effective_from DESC);
+
+    CREATE TABLE IF NOT EXISTS aurelink_communications_billing_ledger (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES aurelink_users(id) ON DELETE CASCADE,
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      message_id UUID NOT NULL REFERENCES aurelink_messages(id) ON DELETE CASCADE,
+      entry_type VARCHAR(12) NOT NULL CHECK(entry_type IN ('charge','refund')),
+      status VARCHAR(16) NOT NULL DEFAULT 'reserved' CHECK(status IN ('reserved','posted','refunded')),
+      price_id UUID REFERENCES aurelink_communications_price_catalog(id) ON DELETE SET NULL,
+      units INTEGER NOT NULL CHECK(units > 0),
+      unit_price_minor INTEGER NOT NULL CHECK(unit_price_minor > 0),
+      amount_minor BIGINT NOT NULL CHECK(amount_minor > 0),
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      wallet_reference VARCHAR(120) NOT NULL UNIQUE,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(message_id,entry_type)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_communications_billing_user_time_idx
+      ON aurelink_communications_billing_ledger(user_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS aurelink_communications_billing_workspace_time_idx
+      ON aurelink_communications_billing_ledger(workspace_id,created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS aurelink_communications_reputation (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      domain VARCHAR(253),
+      score SMALLINT NOT NULL CHECK(score BETWEEN 0 AND 100),
+      level VARCHAR(16) NOT NULL CHECK(level IN ('healthy','watch','poor','critical','insufficient_data')),
+      sample_size INTEGER NOT NULL DEFAULT 0,
+      delivered_count INTEGER NOT NULL DEFAULT 0,
+      bounced_count INTEGER NOT NULL DEFAULT 0,
+      complained_count INTEGER NOT NULL DEFAULT 0,
+      deferred_count INTEGER NOT NULL DEFAULT 0,
+      bounce_rate NUMERIC(8,5) NOT NULL DEFAULT 0,
+      complaint_rate NUMERIC(8,5) NOT NULL DEFAULT 0,
+      delivery_rate NUMERIC(8,5) NOT NULL DEFAULT 0,
+      metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+      calculated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_communications_reputation_latest_idx
+      ON aurelink_communications_reputation(workspace_id,domain,calculated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS aurelink_communications_reputation_alerts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
+      domain VARCHAR(253),
+      alert_key VARCHAR(80) NOT NULL,
+      severity VARCHAR(16) NOT NULL CHECK(severity IN ('warning','critical')),
+      title VARCHAR(180) NOT NULL,
+      description TEXT NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'open' CHECK(status IN ('open','acknowledged','resolved')),
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at TIMESTAMPTZ,
+      UNIQUE(workspace_id,domain,alert_key,status)
+    );
+    CREATE INDEX IF NOT EXISTS aurelink_communications_reputation_alerts_idx
+      ON aurelink_communications_reputation_alerts(workspace_id,status,last_seen_at DESC);
+  `);
+  await pool.query("UPDATE aurelink_sms_supported_countries SET enabled=false,updated_at=NOW()");
+  await pool.query(
+    `INSERT INTO aurelink_sms_supported_countries(country_code,country_name,calling_code,international_prefix,enabled)
+     SELECT x.country_code,x.country_name,x.calling_code,x.calling_code,true
+     FROM jsonb_to_recordset($1::jsonb) AS x(country_code text,country_name text,calling_code text)
+     ON CONFLICT(country_code) DO UPDATE SET country_name=EXCLUDED.country_name,calling_code=EXCLUDED.calling_code,international_prefix=EXCLUDED.international_prefix,enabled=true,updated_at=NOW()`,
+    [JSON.stringify(AURELINK_SMS_COUNTRIES.map(country=>({country_code:country.countryCode,country_name:country.countryName,calling_code:country.callingCode})))]
+  );
+  await pool.query("UPDATE aurelink_sms_supported_countries SET enabled=false,updated_at=NOW() WHERE country_code='SG'");
+}
