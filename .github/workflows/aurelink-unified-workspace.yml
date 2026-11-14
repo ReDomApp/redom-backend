@@ -5,13 +5,17 @@ on:
     branches:
       - main
       - rebuild/aurelink-typescript-react
+      - feat/aurelink-communications-platform
     paths:
       - "artifacts/aurelink-public/src/**"
       - "artifacts/aurelink-public/index.html"
+      - "artifacts/aurelink-public/package.json"
+      - "pnpm-lock.yaml"
       - ".github/workflows/aurelink-unified-workspace.yml"
   push:
     branches:
       - feat/aurelink-unified-customer-workspace
+      - feat/aurelink-unified-workspace-pr64
     paths:
       - "artifacts/aurelink-public/src/**"
       - "artifacts/aurelink-public/index.html"
