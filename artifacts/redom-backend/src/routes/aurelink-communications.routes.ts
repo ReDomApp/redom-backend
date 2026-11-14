@@ -222,11 +222,6 @@ router.get("/aurelink/communications/overview", aurelinkAuthMiddleware, async (r
   res.json({success:true,workspaceId:wid,providers:PROVIDER_READY,messages:messages.rows,domains:domains.rows,senderIds:senderIds.rows,contacts:contacts.rows[0],campaigns:campaigns.rows,usage:usage.rows});
 });
 
-router.get("/aurelink/communications/sms/countries",aurelinkAuthMiddleware,async(_req,res)=>{
-  const result=await pool.query("SELECT country_code,country_name,calling_code FROM aurelink_sms_supported_countries WHERE enabled=TRUE ORDER BY country_name");
-  return res.json({success:true,countries:result.rows});
-});
-
 router.post("/aurelink/communications/sms/send", aurelinkAuthMiddleware, async (req,res) => {
   const provider=String(process.env.AURELINK_DEFAULT_SMS_PROVIDER||"brevo");
   if(!SMS_PROVIDERS.has(provider))return res.status(400).json({success:false,message:"Unsupported SMS provider."});
