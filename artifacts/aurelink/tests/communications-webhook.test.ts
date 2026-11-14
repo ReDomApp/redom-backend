@@ -6,6 +6,7 @@ import { classifyProviderHttpStatus, ProviderSubmissionError } from "../../redom
 import { createAurelinkResendSmtpKey, revokeAurelinkResendSmtpKey } from "../../redom-backend/src/services/aurelink/communications-smtp.service.ts";
 import { reserveAurelinkEmailUsage } from "../../redom-backend/src/services/aurelink/communications-email-billing.service.ts";
 import { AURELINK_SMS_PACKAGE_CATALOG } from "../../redom-backend/src/services/aurelink/communications-sms-billing-schema.service.ts";
+import { isAurelinkSmsPublicReference } from "../../redom-backend/src/services/aurelink/communications-sms-payment.service.ts";
 
 test("Resend Svix signatures verify against the exact raw payload",()=>{
   const raw=Buffer.from(JSON.stringify({type:"email.delivered",data:{email_id:"email_123"}}));
@@ -144,4 +145,21 @@ test("SMS package catalogue enforces the reviewed $0.041 per SMS price",()=>{
   ]);
   for(const p of AURELINK_SMS_PACKAGE_CATALOG)assert.equal(p.priceMinor,p.segments*4.1);
   assert.equal(AURELINK_SMS_PACKAGE_CATALOG.at(-1)?.enterprise,true);
+});
+
+
+test("SMS purchase and credit ledger references use independent uppercase alphanumeric identities",()=>{
+  const purchaseReference="5O190127TN364715T";
+  const creditLedgerReference="50190127S7M0T1T";
+  assert.equal(isAurelinkSmsPublicReference(purchaseReference),false);
+  assert.equal(isAurelinkSmsPublicReference(creditLedgerReference),false);
+  const validPurchase="5O190127TN364715T9A";
+  const validLedger="50190127S7M0T1T9B";
+  assert.equal(validPurchase.length,19);
+  assert.equal(validLedger.length,19);
+  assert.equal(isAurelinkSmsPublicReference(validPurchase),true);
+  assert.equal(isAurelinkSmsPublicReference(validLedger),true);
+  assert.equal(isAurelinkSmsPublicReference("AURELINK-SMS-50190127S7M0T1T"),false);
+  assert.equal(isAurelinkSmsPublicReference("5o190127tn364715t9a"),false);
+  assert.equal(isAurelinkSmsPublicReference("A".repeat(17)),false);
 });
