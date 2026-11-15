@@ -26,7 +26,7 @@ function isPublicClientIp(value:string):boolean {
  return lower!=="::"&&lower!=="::1"&&!lower.startsWith("fc")&&!lower.startsWith("fd")&&!/^fe[89ab]/.test(lower)&&!lower.startsWith("ff")&&!lower.startsWith("2001:db8:");
 }
 
-const clientIp = (req: Request) => { const candidate=ip(req); return isPublicClientIp(candidate)?candidate:""; };
+const clientIp = (req: Request) => { const supplied=typeof req.body?.clientIp==="string"?req.body.clientIp.trim(): ""; return supplied && isIP(supplied)!==0 ? supplied.replace(/^::ffff:/,"").slice(0,45) : ip(req); };
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
 async function recordAurelinkLoginEvent(input:{userId:string;sessionId?:string|null;eventType:string;success:boolean;request:Request;failureReason?:string|null;sourceIp?:string;network?:Awaited<ReturnType<typeof checkIP>>}) {
  const sourceIp=input.sourceIp??clientIp(input.request); let location:any=input.network?.location??null;
@@ -62,7 +62,7 @@ async function enforceAurelinkIpAllowlist(userId:string,sourceIp:string) {
  const allowed=row.entries.some((entry:string)=>{const [base,prefix]=entry.split("/");const version=isIP(base);if(!version||version!==isIP(sourceIp))return false;const bits=version===4?32:128,n=prefix===undefined?bits:Number(prefix);if(!Number.isInteger(n)||n<0||n>bits)return false;if(version===4){const toN=(s:string)=>s.split(".").reduce((v,x)=>(v<<8n)|BigInt(Number(x)),0n),shift=BigInt(bits-n);return(toN(sourceIp)>>shift)===(toN(base)>>shift);}const toN=(s:string)=>{let v=s.toLowerCase();if(v.includes(".")){const parts=v.split(":");const last=parts.pop()!,n=last.split(".").reduce((a,x)=>(a<<8n)|BigInt(Number(x)),0n);parts.push(((n>>16n)&65535n).toString(16),(n&65535n).toString(16));v=parts.join(":");}const halves=v.split("::"),left=halves[0]?halves[0].split(":"):[],right=halves[1]?halves[1].split(":"):[],groups=halves.length===2?[...left,...Array(8-left.length-right.length).fill("0"),...right]:left;if(groups.length!==8)return -1n;return groups.reduce((a,x)=>(a<<16n)|BigInt(parseInt(x||"0",16)),0n);},shift=BigInt(bits-n);return(toN(sourceIp)>>shift)===(toN(base)>>shift);});
  if(!allowed)throw Object.assign(new Error("This IP address is not on your Aurelink allowlist. Use verified-email recovery."),{status:403,code:"AURELINK_IP_NOT_ALLOWED"});
 }
-async function startSession(req:Request,user:{id:string;email:string;first_name?:string;account_id?:string},network:Awaited<ReturnType<typeof checkIP>>) {
+async function startSession(req:Request,user:{id:string;email:string;first_name?:string;account_id?:string}) {
   const sessionId = randomUUID();
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
@@ -73,7 +73,7 @@ async function startSession(req:Request,user:{id:string;email:string;first_name?
   const browser=/Edg\//i.test(ua)?"Microsoft Edge":/SamsungBrowser\//i.test(ua)?"Samsung Internet":/Firefox\//i.test(ua)?"Firefox":/CriOS\//i.test(ua)?"Chrome (iOS)":/Chrome\//i.test(ua)?"Chrome":/Safari\//i.test(ua)&&!/Chrome/i.test(ua)?"Safari":"Browser not identifiable";
   const deviceType=/iPad|Tablet/i.test(ua)?"Tablet":/Mobile|Android|iPhone|iPod/i.test(ua)?"Mobile":"Desktop";
   await pool.query("INSERT INTO aurelink_sessions(id,user_id,refresh_token_hash,device_id,device_name,platform,browser,user_agent,ip_address,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '30 days')",[sessionId,user.id,hash(refreshToken),String(req.body?.deviceId??"").slice(0,255)||null,device,platform,browser,ua,sourceIp]);
-  await recordAurelinkLoginEvent({userId:user.id,sessionId,eventType:"login",success:true,request:req,sourceIp,network});
+  await recordAurelinkLoginEvent({userId:user.id,sessionId,eventType:"login",success:true,request:req,sourceIp});
   await pool.query("UPDATE aurelink_users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1",[user.id]);
   const securityToken=randomBytes(32).toString("base64url");
   const securityExpires=new Date(Date.now()+5*60*1000);
@@ -104,12 +104,6 @@ router.post("/aurelink/auth/login",async(req,res)=>{
     }
     if(user.account_status!=="active"){await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,failureReason:"account_inactive"});return res.status(403).json({success:false,message:"This Aurelink account is not active."});}
     const sourceIp=clientIp(req);
-    if(!sourceIp){await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,failureReason:"client_ip_unavailable"}).catch(()=>undefined);return res.status(403).json({success:false,code:"AURELINK_CLIENT_IP_UNAVAILABLE",message:"Aurelink could not verify your public network address. Refresh the page and try again."});}
-    let network:Awaited<ReturnType<typeof checkIP>>;
-    try{network=await checkIP(sourceIp);}catch{await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,sourceIp,failureReason:"network_check_unavailable"}).catch(()=>undefined);return res.status(503).json({success:false,code:"AURELINK_NETWORK_CHECK_UNAVAILABLE",message:"We couldn't securely verify this network. Please try again shortly."});}
-    const crawler=network.is_crawler===true||(typeof network.is_crawler==="string"&&/^(true|1|yes)$/i.test(network.is_crawler.trim()));
-    const networkBlocked=network.success!==true||network.is_bogon===true||crawler||network.is_datacenter===true||network.is_tor===true||network.is_proxy===true||network.is_vpn===true||network.is_abuser===true||network.hosting===true||network.proxy===true||network.vpn===true||network.tor===true||network.bot_status===true||Boolean(network.egress_service)||(typeof network.fraud_score==="number"&&network.fraud_score>=70);
-    if(networkBlocked){await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,sourceIp,network,failureReason:"network_risk_blocked"}).catch(()=>undefined);return res.status(403).json({success:false,code:"AURELINK_NETWORK_BLOCKED",message:"This connection could not be accepted because it matched a high-risk network signal. Turn off VPN, proxy or Tor services and try again using a trusted connection."});}
     try{await enforceAurelinkIpAllowlist(user.id,sourceIp);}catch(e){await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,failureReason:"ip_allowlist"}).catch(()=>undefined);throw e;}
     const sec=await pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[user.id]);
     if(sec.rows[0]?.two_factor_enabled && !sec.rows[0]?.totp_enabled) return res.status(423).json({success:false,code:"AURELINK_2FA_METHOD_UNAVAILABLE",message:"This account has a legacy two-factor method that cannot be verified in this sign-in flow. Contact Aurelink Support; password-only sign-in remains blocked."});
@@ -118,7 +112,7 @@ router.post("/aurelink/auth/login",async(req,res)=>{
       await recordAurelinkLoginEvent({userId:user.id,eventType:"login_2fa_required",success:false,request:req,failureReason:"two_factor_required"});
       return res.status(202).json({success:false,requiresTwoFactor:true,challengeId:challenge.rows[0].id,expiresAt:challenge.rows[0].expires_at,message:"Enter the current code from your authenticator app."});
     }
-    const session=await startSession(req,{id:user.id,email:user.email,first_name:user.first_name,account_id:user.account_id},network);
+    const session=await startSession(req,{id:user.id,email:user.email,first_name:user.first_name,account_id:user.account_id});
     await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.login',$2,$3)",[user.id,clientIp(req),agent(req)]);
     delete user.password_hash;
     return res.json({success:true,user,session});
