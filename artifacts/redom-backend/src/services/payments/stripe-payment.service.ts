@@ -6,6 +6,7 @@ import { sendPaymentEmailForReference } from "./payment.service";
 import { finalizeStarsTrialSetup, markStarsTrialSetupAbandoned } from "./stripe-stars-trial.service";
 import { getStripeCardMethodForUser, finalizeStripeCardSetup, finalizeStripeCardSetupCheckout } from "./stripe-saved-payment.service";
 import { walletCredit } from "../aurelink/aurelink-wallet.service";
+import { ensureAurelinkMailSecuritySchema, processAurelinkMailCreditConfirmationOutbox } from "./aurelink-mail-security.service";
 
 const API = "https://api.stripe.com/v1";
 const APP_CALLBACK = "redom://payment/callback";
@@ -22,6 +23,9 @@ type StripeSession = {
   metadata?: Record<string,string>;
   customer_details?: { email?: string | null };
   payment_status?: string | null;
+  subscription?: string | { id?: string } | null;
+  customer?: string | { id?: string } | null;
+  expires_at?: number | null;
 };
 
 function authHeaders() {
@@ -612,6 +616,213 @@ export async function createAurelinkWalletTopupCheckout(input:{userId:string;amo
   }
 }
 
+
+type StripeSubscription = { id:string; status?:string; customer?:string|{id?:string}; current_period_start?:number; current_period_end?:number };
+
+function stripeObjectId(value:unknown):string|null {
+  if(typeof value==="string")return value;
+  if(value&&typeof value==="object"&&"id" in value)return String((value as {id?:unknown}).id||"")||null;
+  return null;
+}
+
+export async function createAurelinkEmailBillingCheckout(input:{
+  userId:string;workspaceId:string;purchaseType:"subscription"|"email_credits";planOptionId?:string;creditPackId?:string;
+}):Promise<{reference:string;checkoutUrl:string;amountMinor:number;currency:"USD";purchaseType:"subscription"|"email_credits"}>{
+  const user=(await pool.query("SELECT email,account_status,email_verified FROM aurelink_users WHERE id=$1 LIMIT 1",[input.userId])).rows[0];
+  if(!user||user.account_status!=="active"||user.email_verified!==true||!String(user.email||"").trim())throw new Error("An active Aurelink account with a verified email is required.");
+  const membership=await pool.query(
+    "SELECT w.id FROM aurelink_communications_workspaces w LEFT JOIN aurelink_communications_members m ON m.workspace_id=w.id AND m.accepted_user_id=$1 AND m.status='active' WHERE w.id=$2 AND w.status='active' AND (w.user_id=$1 OR m.accepted_user_id=$1) LIMIT 1",
+    [input.userId,input.workspaceId]
+  );
+  if(!membership.rows[0])throw new Error("Aurelink workspace not found or access denied.");
+  let amountMinor:number,planOptionId:string|null=null,creditPackId:string|null=null,emailCredits:string|null=null,productName:string,mode:"payment"|"subscription";
+  if(input.purchaseType==="subscription"){
+    if(!input.planOptionId)throw new Error("Select an exact monthly email plan configuration.");
+    const option=(await pool.query(
+      "SELECT o.id,o.monthly_email_allowance,o.monthly_price_minor,p.display_name,p.plan_code FROM aurelink_email_plan_options o JOIN aurelink_email_plan_catalog p ON p.id=o.plan_id WHERE o.id=$1 AND o.active=TRUE AND p.active=TRUE AND o.effective_from<=NOW() AND (o.effective_until IS NULL OR o.effective_until>NOW())",
+      [input.planOptionId]
+    )).rows[0];
+    if(!option)throw new Error("The selected monthly email configuration is unavailable.");
+    amountMinor=Number(option.monthly_price_minor);planOptionId=String(option.id);productName="Aurelink Mail "+String(option.display_name)+" — "+Number(option.monthly_email_allowance).toLocaleString("en-US")+" emails/month";mode="subscription";
+    const active=await pool.query("SELECT id FROM aurelink_email_subscriptions WHERE workspace_id=$1 AND status IN ('active','past_due','pending_payment') LIMIT 1",[input.workspaceId]);
+    if(active.rows[0])throw new Error("This workspace already has an active or pending monthly email subscription. Change or cancel it before starting another checkout.");
+    await pool.query("UPDATE aurelink_email_billing_payments SET status='cancelled',updated_at=NOW() WHERE workspace_id=$1 AND purchase_type='subscription' AND status='pending' AND expires_at<=NOW()",[input.workspaceId]);
+    const pending=await pool.query("SELECT reference FROM aurelink_email_billing_payments WHERE workspace_id=$1 AND purchase_type='subscription' AND status='pending' AND (expires_at IS NULL OR expires_at>NOW()) LIMIT 1",[input.workspaceId]);
+    if(pending.rows[0])throw new Error("A monthly email checkout is already pending for this workspace. Complete or cancel it before starting another.");
+  }else{
+    if(!input.creditPackId)throw new Error("Select a prepaid email credit pack.");
+    const pack=(await pool.query("SELECT id,email_credits,price_minor FROM aurelink_email_credit_packs WHERE id=$1 AND active=TRUE",[input.creditPackId])).rows[0];
+    if(!pack)throw new Error("The selected prepaid email credit pack is unavailable.");
+    amountMinor=Number(pack.price_minor);creditPackId=String(pack.id);emailCredits=String(pack.email_credits);productName="Aurelink Mail prepaid email credits — "+BigInt(emailCredits).toLocaleString("en-US")+" emails";mode="payment";
+  }
+  if(!Number.isSafeInteger(amountMinor)||amountMinor<50)throw new Error("The configured Aurelink Mail price is invalid.");
+  const successBase=String(process.env.AURELINK_EMAIL_BILLING_SUCCESS_URL||"").trim();
+  const cancelBase=String(process.env.AURELINK_EMAIL_BILLING_CANCEL_URL||"").trim();
+  if(!successBase||!cancelBase)throw new Error("Configure AURELINK_EMAIL_BILLING_SUCCESS_URL and AURELINK_EMAIL_BILLING_CANCEL_URL before enabling email checkout.");
+  const successUrl=new URL(successBase),cancelUrl=new URL(cancelBase);
+  const allowedReturn=(url:URL)=>url.protocol==="https:"||(url.protocol==="http:"&&["localhost","127.0.0.1"].includes(url.hostname));
+  if(!allowedReturn(successUrl)||!allowedReturn(cancelUrl))throw new Error("Aurelink Mail payment return URLs must use HTTPS (HTTP is permitted only for localhost development).");
+  const reference="AURELINK-MAIL-"+crypto.randomUUID().replace(/-/g,"").slice(0,24);
+  successUrl.searchParams.set("reference",reference);successUrl.searchParams.set("session_id","{CHECKOUT_SESSION_ID}");successUrl.searchParams.set("status","success");
+  cancelUrl.searchParams.set("reference",reference);cancelUrl.searchParams.set("status","cancelled");
+  await pool.query(
+    "INSERT INTO aurelink_email_billing_payments(reference,user_id,workspace_id,purchase_type,plan_option_id,credit_pack_id,email_credits,amount_minor,currency,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'USD','pending')",
+    [reference,input.userId,input.workspaceId,input.purchaseType,planOptionId,creditPackId,emailCredits,amountMinor]
+  );
+  const metadata={provider:"stripe",purpose:"aurelink_email_"+(input.purchaseType==="subscription"?"subscription":"credits"),reference,userId:input.userId,workspaceId:input.workspaceId,planOptionId:planOptionId||"",creditPackId:creditPackId||"",emailCredits:emailCredits||""};
+  try{
+    const fields:Record<string,string|number|undefined|null>={
+      mode,client_reference_id:reference,customer_email:String(user.email),
+      "line_items[0][price_data][currency]":"usd",
+      "line_items[0][price_data][product_data][name]":productName,
+      "line_items[0][price_data][unit_amount]":amountMinor,
+      "line_items[0][quantity]":1,
+      success_url:successUrl.toString().replace(/%7BCHECKOUT_SESSION_ID%7D/gi,"{CHECKOUT_SESSION_ID}"),cancel_url:cancelUrl.toString(),
+      "metadata[provider]":metadata.provider,"metadata[purpose]":metadata.purpose,"metadata[reference]":reference,
+      "metadata[userId]":input.userId,"metadata[workspaceId]":input.workspaceId,
+      "metadata[planOptionId]":metadata.planOptionId,"metadata[creditPackId]":metadata.creditPackId,"metadata[emailCredits]":metadata.emailCredits,
+    };
+    if(mode==="subscription"){
+      fields["line_items[0][price_data][recurring][interval]"]="month";
+      fields["subscription_data[metadata][provider]"]=metadata.provider;
+      fields["subscription_data[metadata][purpose]"]=metadata.purpose;
+      fields["subscription_data[metadata][reference]"]=reference;
+      fields["subscription_data[metadata][userId]"]=input.userId;
+      fields["subscription_data[metadata][workspaceId]"]=input.workspaceId;
+      fields["subscription_data[metadata][planOptionId]"]=String(planOptionId);
+    }else{
+      fields["payment_intent_data[metadata][provider]"]=metadata.provider;
+      fields["payment_intent_data[metadata][purpose]"]=metadata.purpose;
+      fields["payment_intent_data[metadata][reference]"]=reference;
+      fields["payment_intent_data[metadata][userId]"]=input.userId;
+      fields["payment_intent_data[metadata][workspaceId]"]=input.workspaceId;
+      fields["payment_intent_data[metadata][emailCredits]"]=String(emailCredits);
+    }
+    const session=await stripeRequest<StripeSession>("post","/checkout/sessions",form(fields));
+    if(!session.id||!session.url)throw new Error("Stripe did not return a hosted email checkout URL.");
+    await pool.query("UPDATE aurelink_email_billing_payments SET stripe_checkout_session_id=$1,expires_at=CASE WHEN $3::bigint IS NULL THEN NULL ELSE to_timestamp($3::bigint) END,updated_at=NOW() WHERE reference=$2",[session.id,reference,session.expires_at??null]);
+    return {reference,checkoutUrl:session.url,amountMinor,currency:"USD",purchaseType:input.purchaseType};
+  }catch(error){
+    await pool.query("UPDATE aurelink_email_billing_payments SET status='failed',updated_at=NOW() WHERE reference=$1",[reference]).catch(()=>undefined);
+    throw error;
+  }
+}
+
+export async function fulfillAurelinkEmailBillingCheckout(session:StripeSession):Promise<void>{
+  await ensureAurelinkMailSecuritySchema();
+  const reference=String(session.metadata?.reference||"");
+  if(!reference||!String(session.metadata?.purpose||"").startsWith("aurelink_email_"))return;
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const payment=(await client.query("SELECT * FROM aurelink_email_billing_payments WHERE reference=$1 FOR UPDATE",[reference])).rows[0];
+    if(!payment)throw new Error("Aurelink Mail payment reference not found.");
+    if(payment.status==="paid"){await client.query("COMMIT");return;}
+    if(String(session.payment_status||"")!=="paid"){await client.query("COMMIT");return;}
+    if(BigInt(String(session.amount_total??-1))!==BigInt(String(payment.amount_minor))||String(session.currency||"").toUpperCase()!==String(payment.currency).toUpperCase())throw new Error("Stripe amount or currency did not match the Aurelink Mail checkout.");
+    const paymentIntent=stripeObjectId(session.payment_intent);
+    if(payment.purchase_type==="email_credits"){
+      const workspace=(await client.query("SELECT user_id FROM aurelink_communications_workspaces WHERE id=$1 FOR UPDATE",[payment.workspace_id])).rows[0];
+      if(!workspace)throw new Error("Aurelink Mail workspace no longer exists.");
+      await client.query("INSERT INTO aurelink_email_credit_wallets(workspace_id,user_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING",[payment.workspace_id,workspace.user_id]);
+      const wallet=(await client.query("SELECT balance_emails FROM aurelink_email_credit_wallets WHERE workspace_id=$1 FOR UPDATE",[payment.workspace_id])).rows[0];
+      const credits=BigInt(String(payment.email_credits));
+      if(credits<1000n||credits>250000n)throw new Error("Aurelink Mail prepaid pack is outside the permitted 1,000–250,000 credit range.");
+      const currentBalance=BigInt(String(wallet.balance_emails));
+      const next=currentBalance+credits;
+      if(next>250000n)throw new Error("Aurelink Mail prepaid balance cannot exceed 250,000 credits. Use existing credits before purchasing another pack.");
+      await client.query("UPDATE aurelink_email_credit_wallets SET balance_emails=$2,updated_at=NOW() WHERE workspace_id=$1",[payment.workspace_id,next.toString()]);
+      await client.query(
+        "INSERT INTO aurelink_email_credit_ledger(workspace_id,user_id,entry_type,direction,amount_emails,balance_after,reference,payment_reference,description,metadata) VALUES($1,$2,'purchase','credit',$3,$4,$5,$6,'Stripe purchase of Aurelink Mail prepaid email credits',$7::jsonb) ON CONFLICT(reference) DO NOTHING",
+        [payment.workspace_id,payment.user_id,credits.toString(),next.toString(),"AL-EMAIL-CREDIT-PURCHASE-"+reference,reference,JSON.stringify({stripePaymentIntent:paymentIntent,checkoutSessionId:session.id})]
+      );
+      const account=(await client.query("SELECT email,account_id,country_code FROM aurelink_users WHERE id=$1 LIMIT 1",[payment.user_id])).rows[0];
+      if(!account?.email)throw new Error("Aurelink Mail receipt recipient email is unavailable.");
+      const packSize=credits===1000n?"1K":credits===5000n?"5K":credits===10000n?"10K":credits===50000n?"50K":credits===100000n?"100K":"250K";
+      const providerCurrency=String(payment.provider_currency||payment.currency||"USD").trim().toUpperCase();
+      let minorUnit=2;
+      try{minorUnit=new Intl.NumberFormat("en",{style:"currency",currency:providerCurrency}).resolvedOptions().maximumFractionDigits??2;}catch{minorUnit=2;}
+      const providerAmount=String(payment.provider_amount_minor??payment.amount_minor);
+      const accountCountry=String(payment.account_country||account.country_code||"");
+      const fxPayload={
+        accountId:String(payment.account_id||account.account_id||payment.user_id),
+        accountCountry,
+        country:String(payment.pricing_country||accountCountry),
+        currency:providerCurrency,
+        fxRate:String(payment.fx_rate||"1"),
+        fxSource:String(payment.fx_source||"USD catalogue"),
+        fxAsOf:payment.fx_as_of?new Date(payment.fx_as_of).toISOString():"",
+        provider:"stripe",
+        providerTransactionReference:String(paymentIntent||session.id),
+        paymentMethod:Array.isArray(session.payment_method_types)&&session.payment_method_types.length?session.payment_method_types.join(", "):"Stripe checkout",
+        cardNumber:"Not provided by payment provider",
+        cardType:"Not provided by payment provider",
+        paymentCountry:accountCountry,
+        packageName:"Aurelink Credit Package · "+packSize,
+        packageSize:packSize,
+        credits:credits.toString(),
+        usdAmount:(Number(payment.amount_minor)/100).toFixed(2),
+        amount:(Number(providerAmount)/Math.pow(10,minorUnit)).toFixed(minorUnit)+" "+providerCurrency,
+        previousBalance:currentBalance.toString(),
+        newBalance:next.toString(),
+        ledgerReference:"AL-EMAIL-CREDIT-PURCHASE-"+reference,
+        paymentStatus:"SUCCESSFUL",
+        creditAllocationStatus:"SUCCESSFUL",
+        transactionIntegrity:"VERIFIED",
+        completedAt:new Date().toISOString()
+      };
+      await client.query(
+        "INSERT INTO aurelink_email_credit_confirmation_outbox(payment_reference,recipient_email,payload) VALUES($1,$2,$3::jsonb) ON CONFLICT(payment_reference) DO NOTHING",
+        [reference,String(account.email),JSON.stringify(fxPayload)]
+      );
+    }else{
+      const subscriptionId=stripeObjectId(session.subscription);
+      if(!subscriptionId)throw new Error("Stripe did not return the subscription ID for Aurelink Mail.");
+      const remote=await stripeRequest<StripeSubscription>("get","/subscriptions/"+encodeURIComponent(subscriptionId));
+      const start=Number(remote.current_period_start),end=Number(remote.current_period_end);
+      if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw new Error("Stripe subscription billing period is unavailable.");
+      const option=(await client.query("SELECT monthly_email_allowance FROM aurelink_email_plan_options WHERE id=$1 FOR SHARE",[payment.plan_option_id])).rows[0];
+      if(!option)throw new Error("The purchased Aurelink Mail plan option no longer exists.");
+      await client.query("UPDATE aurelink_email_subscriptions SET status='expired',cancelled_at=COALESCE(cancelled_at,NOW()),updated_at=NOW() WHERE workspace_id=$1 AND status IN ('active','past_due','pending_payment')",[payment.workspace_id]);
+      await client.query(
+        "INSERT INTO aurelink_email_subscriptions(user_id,workspace_id,plan_option_id,status,monthly_email_allowance,used_emails,reserved_emails,billing_period_start,billing_period_end,stripe_customer_id,stripe_subscription_id,payment_reference,activated_at) VALUES($1,$2,$3,'active',$4,0,0,to_timestamp($5),to_timestamp($6),$7,$8,$9,NOW())",
+        [payment.user_id,payment.workspace_id,payment.plan_option_id,option.monthly_email_allowance,start,end,stripeObjectId(remote.customer)||stripeObjectId(session.customer),subscriptionId,reference]
+      );
+      await client.query("INSERT INTO aurelink_email_billing_accounts(workspace_id,user_id,billing_mode) VALUES($1,$2,'subscription') ON CONFLICT(workspace_id) DO UPDATE SET billing_mode='subscription',updated_at=NOW()",[payment.workspace_id,payment.user_id]);
+      await client.query("UPDATE aurelink_email_billing_payments SET stripe_subscription_id=$2 WHERE reference=$1",[reference,subscriptionId]);
+    }
+    await client.query("UPDATE aurelink_email_billing_payments SET status='paid',stripe_payment_intent_id=$2,paid_at=NOW(),updated_at=NOW() WHERE reference=$1",[reference,paymentIntent]);
+    await client.query("INSERT INTO aurelink_email_billing_audit(workspace_id,actor_user_id,action,details) VALUES($1,$2,'email_billing_payment_fulfilled',$3::jsonb)",[payment.workspace_id,payment.user_id,JSON.stringify({reference,purchaseType:payment.purchase_type,amountMinor:payment.amount_minor})]);
+    await client.query("COMMIT");
+    if(payment.purchase_type==="email_credits")void processAurelinkMailCreditConfirmationOutbox(10).catch(()=>undefined);
+  }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
+}
+
+export async function cancelAurelinkEmailSubscription(workspaceId:string):Promise<{subscriptionId:string;cancelAtPeriodEnd:boolean;periodEnd:Date}>{
+  const row=(await pool.query(
+    "SELECT s.id,s.stripe_subscription_id,s.billing_period_end FROM aurelink_email_subscriptions s WHERE s.workspace_id=$1 AND s.status IN ('active','past_due') AND s.cancel_at_period_end=FALSE ORDER BY s.created_at DESC LIMIT 1",
+    [workspaceId]
+  )).rows[0];
+  if(!row?.stripe_subscription_id)throw new Error("An active cancellable Aurelink Mail subscription was not found.");
+  const remote=await stripeRequest<StripeSubscription>("post","/subscriptions/"+encodeURIComponent(String(row.stripe_subscription_id)),form({cancel_at_period_end:"true"}));
+  if(!["active","trialing","past_due","unpaid"].includes(String(remote.status)))throw new Error("Stripe did not confirm the subscription cancellation schedule.");
+  await pool.query("UPDATE aurelink_email_subscriptions SET cancel_at_period_end=TRUE,cancelled_at=NOW(),updated_at=NOW() WHERE id=$1 AND status IN ('active','past_due')",[row.id]);
+  return {subscriptionId:String(row.stripe_subscription_id),cancelAtPeriodEnd:true,periodEnd:new Date(row.billing_period_end)};
+}
+
+export async function verifyAurelinkEmailBillingCheckout(userId:string,reference:string):Promise<{status:string;purchaseType:string;creditsAdded?:string}>{
+  const payment=(await pool.query("SELECT * FROM aurelink_email_billing_payments WHERE reference=$1 AND user_id=$2 LIMIT 1",[reference,userId])).rows[0];
+  if(!payment)throw new Error("Aurelink Mail payment reference not found.");
+  if(payment.status==="paid")return {status:"paid",purchaseType:String(payment.purchase_type),creditsAdded:payment.purchase_type==="email_credits"?String(payment.email_credits):undefined};
+  if(!payment.stripe_checkout_session_id)return {status:String(payment.status),purchaseType:String(payment.purchase_type)};
+  const session=await stripeRequest<StripeSession>("get","/checkout/sessions/"+encodeURIComponent(String(payment.stripe_checkout_session_id)));
+  if(String(session.metadata?.reference||"")!==reference)throw new Error("Stripe checkout session does not match the Aurelink payment reference.");
+  if(String(session.payment_status||"")==="paid")await fulfillAurelinkEmailBillingCheckout(session);
+  else if(String(session.status||"")==="expired")await pool.query("UPDATE aurelink_email_billing_payments SET status='cancelled',updated_at=NOW() WHERE reference=$1 AND status='pending'",[reference]);
+  const refreshed=(await pool.query("SELECT status FROM aurelink_email_billing_payments WHERE reference=$1 AND user_id=$2",[reference,userId])).rows[0];
+  return {status:String(refreshed?.status||"pending"),purchaseType:String(payment.purchase_type),creditsAdded:payment.purchase_type==="email_credits"&&refreshed?.status==="paid"?String(payment.email_credits):undefined};
+}
+
 async function markLegacyStripePaid(session: StripeSession): Promise<void> {
   const reference=String(session.metadata?.reference??"").trim();
   if(!reference)throw new Error("Stripe Checkout session is missing ReDom payment reference.");
@@ -746,6 +957,49 @@ async function markStripeFailed(reference:string,message:string,gatewayStatus="f
   return {finalFailure:false,transactionId:null,redomTransactionId:null};
 }
 
+async function reconcileAurelinkEmailStripeEvent(type:string,object:any,eventCreated:number):Promise<void>{
+  const eventAt=Number.isFinite(eventCreated)&&eventCreated>0?eventCreated:Math.floor(Date.now()/1000);
+  if(type==="invoice.paid"||type==="invoice.payment_failed"){
+    const subscriptionId=stripeObjectId(object?.subscription??object?.parent?.subscription_details?.subscription);
+    if(!subscriptionId)return;
+    if(type==="invoice.payment_failed"){
+      await pool.query(
+        "UPDATE aurelink_email_subscriptions SET status='past_due',stripe_event_created_at=to_timestamp($2),updated_at=NOW() WHERE stripe_subscription_id=$1 AND status='active' AND (stripe_event_created_at IS NULL OR stripe_event_created_at<=to_timestamp($2))",
+        [subscriptionId,eventAt]
+      );
+      return;
+    }
+    const period=object?.lines?.data?.[0]?.period||{};
+    const start=Number(period.start??object?.period_start),end=Number(period.end??object?.period_end);
+    if(Number.isFinite(start)&&Number.isFinite(end)&&end>start){
+      await pool.query(
+        "UPDATE aurelink_email_subscriptions SET status='active',used_emails=CASE WHEN billing_period_start<to_timestamp($2) THEN 0 ELSE used_emails END,billing_period_start=to_timestamp($2),billing_period_end=to_timestamp($3),stripe_event_created_at=to_timestamp($4),updated_at=NOW() WHERE stripe_subscription_id=$1 AND status<>'expired' AND (stripe_event_created_at IS NULL OR stripe_event_created_at<=to_timestamp($4))",
+        [subscriptionId,start,end,eventAt]
+      );
+    }else{
+      await pool.query(
+        "UPDATE aurelink_email_subscriptions SET status='active',stripe_event_created_at=to_timestamp($2),updated_at=NOW() WHERE stripe_subscription_id=$1 AND status<>'expired' AND (stripe_event_created_at IS NULL OR stripe_event_created_at<=to_timestamp($2))",
+        [subscriptionId,eventAt]
+      );
+    }
+    return;
+  }
+  if(type==="customer.subscription.deleted"||type==="customer.subscription.updated"){
+    const subscriptionId=String(object?.id||"");
+    if(!subscriptionId)return;
+    const status=type==="customer.subscription.deleted"?"expired":
+      ["active","trialing"].includes(String(object?.status))?"active":
+      ["past_due","unpaid","paused"].includes(String(object?.status))?"past_due":
+      ["canceled","incomplete_expired"].includes(String(object?.status))?"expired":null;
+    if(!status)return;
+    await pool.query(
+      "UPDATE aurelink_email_subscriptions SET status=$2,cancel_at_period_end=$3,stripe_event_created_at=to_timestamp($4),updated_at=NOW() WHERE stripe_subscription_id=$1 AND (status<>'expired' OR $2='expired') AND (stripe_event_created_at IS NULL OR stripe_event_created_at<=to_timestamp($4))",
+      [subscriptionId,status,Boolean(object?.cancel_at_period_end)||type==="customer.subscription.deleted",eventAt]
+    );
+  }
+}
+
+
 export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefined):Promise<void>{
   const supplied=String(signature??"");
   const match=supplied.match(/(?:^|,)\s*t=(\d+)(?:,|$).*?(?:^|,)\s*v1=([a-f0-9]+)(?:,|$)/i);
@@ -774,7 +1028,9 @@ export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefi
   try{
     if(["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(type)){
       const purpose=String(object?.metadata?.purpose??"");
-      if(purpose==="stars_trial_setup"){
+      if(purpose==="aurelink_email_subscription"||purpose==="aurelink_email_credits"){
+        await fulfillAurelinkEmailBillingCheckout(object as StripeSession);
+      }else if(purpose==="stars_trial_setup"){
         const reference=String(object?.metadata?.reference??"");
         if(reference) await finalizeStarsTrialSetup(reference);
       }else if(purpose==="redom_saved_card_expo_fallback"){
@@ -795,13 +1051,17 @@ export async function handleStripeWebhook(rawBody:Buffer,signature:string|undefi
       if(userId && setupIntentId) await finalizeStripeCardSetup(userId,setupIntentId);
     }else if(type==="checkout.session.async_payment_failed"){
       const reference=String(object?.metadata?.reference??"");
-      if(reference)await markStripeFailed(reference,"Stripe reported that the payment could not be completed.","failed",paymentIntentId(object as StripeSession),object as StripeSession);
+      if(String(object?.metadata?.purpose||"").startsWith("aurelink_email_")&&reference)await pool.query("UPDATE aurelink_email_billing_payments SET status='failed',updated_at=NOW() WHERE reference=$1 AND status='pending'",[reference]);
+      else if(reference)await markStripeFailed(reference,"Stripe reported that the payment could not be completed.","failed",paymentIntentId(object as StripeSession),object as StripeSession);
     }else if(type==="checkout.session.expired"){
       const reference=String(object?.metadata?.reference??"");
       if(reference){
         if(String(object?.metadata?.purpose??"")==="stars_trial_setup") await markStarsTrialSetupAbandoned(reference);
+        else if(String(object?.metadata?.purpose||"").startsWith("aurelink_email_")) await pool.query("UPDATE aurelink_email_billing_payments SET status='cancelled',updated_at=NOW() WHERE reference=$1 AND status='pending'",[reference]);
         else await markStripeAbandoned(reference);
       }
+    }else if(["invoice.paid","invoice.payment_failed","customer.subscription.deleted","customer.subscription.updated"].includes(type)){
+      await reconcileAurelinkEmailStripeEvent(type,object,Number(payload?.created||0));
     }else if(type==="payment_intent.payment_failed"){
       const reference=String(object?.metadata?.reference??"");
       const message=String(object?.last_payment_error?.message??"Stripe payment failed.");
@@ -847,6 +1107,10 @@ export async function stripeCallbackRedirect(reference:string,sessionId:string|u
           // Do not finalize here. The app must return immediately and enter
           // Processing payment while the authenticated verification endpoint
           // completes the authoritative trial setup.
+        }else if(String(session.metadata?.purpose||"").startsWith("aurelink_email_")&&String(session.payment_status)==="paid"){
+          await fulfillAurelinkEmailBillingCheckout(session);
+        }else if(String(session.metadata?.purpose||"").startsWith("aurelink_email_")&&status==="cancelled"){
+          await pool.query("UPDATE aurelink_email_billing_payments SET status='cancelled',updated_at=NOW() WHERE reference=$1 AND status='pending'",[reference]);
         }else if(String(session.payment_status)==="paid"){
           const attempt=await pool.query("SELECT 1 FROM stripe_stars_checkout_attempts WHERE reference=$1 LIMIT 1",[reference]);
           if(!attempt.rows[0])await markLegacyStripePaid(session);

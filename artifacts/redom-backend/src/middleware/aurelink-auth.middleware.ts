@@ -8,6 +8,8 @@ function secrets(){const access=process.env.JWT_ACCESS_SECRET;if(!access)throw n
 function apiKeyAllowed(req:Request):boolean{
  const p=req.path.split("/").filter(Boolean);if(p[0]!=="aurelink")return false;
  if(req.method==="GET"){
+  if(p[1]==="communications"&&(["domains","senders","email-senders","smtp","templates"].includes(p[2]||"")&&(p.length===3||p[2]==="smtp"&&p[3]==="credentials"&&p.length===4)||p[2]==="dns"&&p[3]==="cloudflare"&&p[4]==="connections"&&p.length===5))return true;
+  if(p[1]==="communications"&&(["billing","reputation","team"].includes(p[2]||"")||p[2]==="domains"&&p[3]==="")||req.path==="/aurelink/communications/overview"||req.path==="/aurelink/communications/analytics"||req.path==="/aurelink/communications/campaigns"||req.path==="/aurelink/communications/messages"||req.path==="/aurelink/communications/contacts"||p[1]==="communications"&&(p[2]==="messages"||p[2]==="contacts")&&p.length===4)return true;
   if(["/aurelink/status","/aurelink/orders","/aurelink/wallet","/aurelink/wallet/ledger","/aurelink/catalog/services","/aurelink/catalog/countries","/aurelink/catalog/suggested-countries","/aurelink/catalog/rentals","/aurelink/catalog/success-rate","/aurelink/nonvoip/countries","/aurelink/nonvoip/products","/aurelink/dedicated/countries"].includes(req.path))return true;
   if(req.path==="/aurelink/catalog/pricing"&&!req.query.pool)return true;
   if(p[1]==="catalog"&&p[2]==="rentals"&&p.length===5&&(p[4]==="services"||p[4]==="pricing"))return true;
@@ -18,6 +20,17 @@ function apiKeyAllowed(req:Request):boolean{
  }
  if(req.method==="PATCH"&&p[1]==="dedicated"&&p[2]==="orders"&&p.length===5&&p[4]==="auto-renew")return true;
  if(req.method==="POST"){
+  if(p[1]==="communications"&&p[2]==="team"&&p[3]==="invitations"&&(p.length===4||p.length===5&&p[4]==="accept"))return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["suspend","resume"].includes(p[3]))return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p.length===6&&p[4]==="tracking-domain"&&p[5]==="verify")return true;
+  if(p[1]==="communications"&&p[2]==="reputation"&&p[3]==="alerts"&&p.length===6&&p[5]==="acknowledge")return true;
+  if(req.path==="/aurelink/communications/domains"||req.path==="/aurelink/communications/senders"||req.path==="/aurelink/communications/email-senders"||req.path==="/aurelink/communications/templates"||req.path==="/aurelink/communications/dns/cloudflare/connect"||req.path==="/aurelink/communications/smtp/credentials")return true;
+  if(p[1]==="communications"&&p[2]==="domains"&&p.length===4&&["check","verify","apply-dns","tracking"].includes(p[3]))return true;
+  if(p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials"&&p.length===6&&p[5]==="rotate")return true;
+  if(["/aurelink/communications/sms/send","/aurelink/communications/email/send","/aurelink/communications/campaigns","/aurelink/communications/contacts","/aurelink/verify/start"].includes(req.path))return true;
+  if(p[1]==="communications"&&p[2]==="campaigns"&&p.length===5&&p[4]==="send")return true;
+  if(p[1]==="communications"&&p[2]==="messages"&&p.length===5&&p[4]==="retry")return true;
+  if(p[1]==="verify"&&p.length===4&&p[3]==="check")return true;
   if(["/aurelink/quotes","/aurelink/rental-quotes","/aurelink/checkout","/aurelink/activations","/aurelink/rentals","/aurelink/dedicated/quote","/aurelink/dedicated/orders","/aurelink/nonvoip/orders"].includes(req.path))return true;
   if(p[1]==="activations"&&p.length===4&&(p[3]==="cancel"||p[3]==="resend"))return true;
   if(p[1]==="rentals"&&p.length===4&&p[3]==="cancel")return true;
@@ -25,10 +38,21 @@ function apiKeyAllowed(req:Request):boolean{
   if(p[1]==="rentals"&&p.length===4&&p[3]==="renew")return true;
   if((p[1]==="nonvoip"||p[1]==="dedicated")&&p[2]==="orders"&&p.length===5&&p[4]==="cancel")return true;
  }
+ if(req.method==="PUT"&&p[1]==="communications"&&p[2]==="domains"&&p.length===5&&p[4]==="tracking-domain")return true;
+ if(req.method==="PATCH"&&p[1]==="communications"&&p[2]==="team"&&p[3]==="members"&&p.length===6&&p[5]==="role")return true;
+ if((req.method==="PATCH"||req.method==="DELETE")&&p[1]==="communications"&&p[2]==="templates"&&p.length===4)return true;
+ if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="domains"&&p.length===4)return true;
+ if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="team"&&p[3]==="members"&&p.length===5)return true;
+ if(req.method==="DELETE"&&p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials"&&p.length===5)return true;
  return false;
 }
 function scopeFor(req:Request):string{
  const p=req.path.split("/").filter(Boolean);
+ if(req.path==="/aurelink/communications/overview"||req.method==="GET"&&p[1]==="communications")return "communications:read";
+ if(p[1]==="verify")return "verify:write";
+ if(p[1]==="communications"&&(["domains","senders","email-senders","dns","smtp","templates","team","reputation"].includes(p[2]||""))&&!(req.method==="GET"))return "communications:manage";
+ if(p[1]==="communications"&&(["domains","senders","email-senders","smtp"].includes(p[2]||""))&&req.method==="GET")return "communications:read";
+ if(p[1]==="communications")return "communications:send";
  if(req.method==="GET"&&req.path.includes("/wallet"))return "wallet:read";
  if(req.method==="GET"&&req.path.endsWith("/messages"))return "messages:read";
  if(req.method==="GET"&&(req.path.endsWith("/orders")||p[1]==="activations"&&p.length===4&&p[3]==="status"||p[1]==="rentals"&&p.length===4&&p[3]==="status"))return "orders:read";
@@ -56,6 +80,22 @@ function testResponse(req:Request,res:Response):boolean{
  res.setHeader("X-Aurelink-Test-Mode","true");res.setHeader("Cache-Control","no-store");
  const ok=(data:unknown,status=200)=>{res.status(status).json({success:true,environment:"test",data,...(data&&typeof data==="object"&&!Array.isArray(data)?data as object:{})});return true;};
  if(req.method==="GET"&&path==="/aurelink/status")return ok({status:"operational",testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/domains")return ok({domains:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/senders")return ok({senders:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/email-senders")return ok({senders:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/smtp/credentials")return ok({credentials:[],smtp:{testMode:true,liveHostNotProvisioned:true},testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/analytics")return ok({periodDays:30,summary:[],suppressions:[],testMode:true});
+ if(req.method==="GET"&&path==="/aurelink/communications/overview")return ok({providers:{sms:{brevo:false,twilio:false},email:{resend:false,brevo:false}},messages:[],domains:[],senderIds:[],contacts:{sms:0,email:0},campaigns:[],testMode:true});
+ if(req.method==="POST"&&path==="/aurelink/verify/start")return ok({verificationId:id,expiresAt:new Date(Date.now()+300000).toISOString(),testCode:"123456",testMode:true},202);
+ if(req.method==="POST"&&p[1]==="verify"&&p[3]==="check")return ok({verified:String(req.body.code||"")==="123456",verificationId:p[2],testMode:true},String(req.body.code||"")==="123456"?200:400);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="domains")return ok({domain:{id,testMode:true,status:"verification_pending",dnsRecords:[]},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="senders")return ok({sender:{id,testMode:true,status:"pending_customer_submission"},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="email-senders")return ok({sender:{id,testMode:true,status:"pending_verification"},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="smtp"&&p[3]==="credentials")return ok({credential:{id,testMode:true},smtp:{testMode:true,liveCredentialNotCreated:true},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="dns")return ok({connection:{id,testMode:true},testMode:true},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="domains"&&p[3])return ok({domain:{id:p[3],testMode:true},dns:{complete:false,testMode:true},testMode:true});
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="sms"&&p[3]==="send")return ok({message:{id,channel:"sms",provider:"sandbox",status:"accepted",testMode:true}},202);
+ if(req.method==="POST"&&p[1]==="communications"&&p[2]==="email"&&p[3]==="send")return ok({message:{id,channel:"email",provider:"sandbox",status:"accepted",testMode:true}},202);
  if(req.method==="GET"&&(path==="/aurelink/catalog/services"||path==="/aurelink/catalog/countries"||path==="/aurelink/catalog/suggested-countries"))return ok({services:[{id:"telegram",name:"Telegram"},{id:"google",name:"Google"},{id:"facebook",name:"Facebook"}],countries:[{code:"US",name:"United States",dialCode:"+1"},{code:"GB",name:"United Kingdom",dialCode:"+44"}]});
  if(req.method==="GET"&&path==="/aurelink/catalog/rentals")return ok({rentals:[],countries:[{code:"US",name:"United States"}],testMode:true});
  if(req.method==="GET"&&p[1]==="catalog"&&p[2]==="rentals"&&p[4]==="services")return ok({services:[{id:"test-service",name:"Test verification",available:true}],testMode:true});
@@ -85,14 +125,36 @@ function testResponse(req:Request,res:Response):boolean{
  if(req.method==="POST")return ok({id,testMode:true,accepted:true},202);
  return ok({testMode:true,received:true});
 }
+async function enforceCommunicationsWorkspaceAccess(req:Request,res:Response,userId:string):Promise<boolean>{
+ const p=req.path.split("/").filter(Boolean);
+ if(p[0]!=="aurelink"||p[1]!=="communications")return true;
+ if(p[2]==="team"&&p[3]==="invitations"&&p[4]==="accept")return true;
+ const workspaceId=String(req.headers["x-aurelink-workspace-id"]||"").trim();
+ if(!workspaceId)return true;
+ const row=(await pool.query("SELECT w.user_id,m.role FROM aurelink_communications_workspaces w LEFT JOIN aurelink_communications_members m ON m.workspace_id=w.id AND m.accepted_user_id=$1 AND m.status='active' WHERE w.id=$2 AND w.status='active' AND (w.user_id=$1 OR m.accepted_user_id=$1)",[userId,workspaceId])).rows[0];
+ if(!row){res.status(403).json({success:false,code:"WORKSPACE_ACCESS_DENIED",message:"You are not an active member of this Aurelink workspace."});return false;}
+ const role=String(row.user_id)===userId?"owner":String(row.role||"");
+ const ownerAdmin=["owner","admin"].includes(role);
+ const teamAdmin=p[2]==="team"&&req.method!=="GET";
+ const domainAdmin=["domains","senders","email-senders","dns","smtp"].includes(p[2]||"")&&req.method!=="GET";
+ const billingAdmin=p[2]==="billing"&&req.method!=="GET";
+ const billingRead=p[2]==="billing";
+ const sendAction=(p[2]==="sms"||p[2]==="email"||p[2]==="campaigns"||p[2]==="contacts")&&req.method!=="GET";
+ if((teamAdmin||domainAdmin||billingAdmin)&&!ownerAdmin){res.status(403).json({success:false,code:"WORKSPACE_ROLE_REQUIRED",message:"Workspace owner or admin role is required for this operation."});return false;}
+ if(billingRead&&!["owner","admin","billing"].includes(role)){res.status(403).json({success:false,code:"WORKSPACE_BILLING_ROLE_REQUIRED",message:"Billing role or workspace administrator permission is required."});return false;}
+ if(sendAction&&!["owner","admin","developer"].includes(role)){res.status(403).json({success:false,code:"WORKSPACE_DEVELOPER_ROLE_REQUIRED",message:"Developer role is required to send communications or manage contacts."});return false;}
+ if(req.method!=="GET"&&["analyst","billing"].includes(role)){res.status(403).json({success:false,code:"WORKSPACE_READ_ONLY_ROLE",message:"This workspace role is read-only for the requested resource."});return false;}
+ return true;
+}
 async function authenticateApiKey(secret:string,req:Request,res:Response,next:NextFunction):Promise<void>{
  const p=req.path.split("/").filter(Boolean);
  if(!apiKeyAllowed(req)){res.status(403).json({success:false,message:"This API key cannot access this route."});return;}
  const digest=createHash("sha256").update(secret).digest();
- const found=await pool.query("SELECT k.id,k.user_id,k.key_hash,k.environment,k.scopes,k.rate_limit_per_minute,k.expires_at,u.account_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id WHERE k.key_prefix IN ($1,$2,$3) AND k.revoked_at IS NULL LIMIT 1",[secret.slice(0,20),secret.slice(0,16),secret.slice(0,12)]);
- const row=found.rows[0] as {id:string;user_id:string;key_hash:string;environment:string;scopes:unknown;rate_limit_per_minute:number;expires_at:Date|null;account_status:string}|undefined;
+ const found=await pool.query("SELECT k.id,k.user_id,k.key_hash,k.environment,k.scopes,k.rate_limit_per_minute,k.expires_at,k.project_id,u.account_status,p.status AS project_status FROM aurelink_api_keys k JOIN aurelink_users u ON u.id=k.user_id LEFT JOIN aurelink_developer_projects p ON p.id=k.project_id WHERE k.key_prefix IN ($1,$2,$3) AND k.revoked_at IS NULL LIMIT 1",[secret.slice(0,20),secret.slice(0,16),secret.slice(0,12)]);
+ const row=found.rows[0] as {id:string;user_id:string;key_hash:string;environment:string;scopes:unknown;rate_limit_per_minute:number;expires_at:Date|null;project_id:string|null;project_status:string|null;account_status:string}|undefined;
  const stored=row?.key_hash||"";if(!row||stored.length!==64||! /^[a-f0-9]{64}$/i.test(stored)||!timingSafeEqual(Buffer.from(stored,"hex"),digest)){res.status(401).json({success:false,message:"Invalid or revoked Aurelink API key."});return;}
  if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}
+ if(row.project_id&&(row.project_status!=="active"||p[1]!=="communications")){res.status(403).json({success:false,code:"PROJECT_KEY_SCOPE",message:row.project_status!=="active"?"This developer project is suspended or archived.":"Project-scoped API keys currently have access only to their isolated communications workspace."});return;}
  if(row.expires_at&&new Date(row.expires_at).getTime()<=Date.now()){res.status(401).json({success:false,message:"This Aurelink API key has expired."});return;}
  const scope=scopeFor(req),scopes=Array.isArray(row.scopes)?row.scopes.map(String):[];
  if(!scopes.includes(scope)){res.status(403).json({success:false,code:"INSUFFICIENT_SCOPE",message:"This API key does not have the required "+scope+" permission."});return;}
@@ -119,13 +181,14 @@ async function authenticateApiKey(secret:string,req:Request,res:Response,next:Ne
   idempotency={key:supplied,hash:requestHash};
  }
  await pool.query("UPDATE aurelink_api_keys SET last_used_at=NOW() WHERE id=$1",[row.id]);
- (req as any).aurelinkApiKey=key;
+ (req as any).aurelinkApiKey=key;(req as any).aurelinkProjectId=row.project_id?String(row.project_id):undefined;
  req.user={userId:row.user_id,profileId:row.user_id,sessionId:"api-key:"+row.id};
+ if(!await enforceCommunicationsWorkspaceAccess(req,res,row.user_id))return;
  const originalJson=res.json.bind(res);
  res.json=(body:any)=>{if(key.environment==="test"){const event=eventFor(req,body);if(event)void emitAurelinkWebhookEvent(row.user_id,event.type,event.data,key.environment);}if(idempotency){const saved=idempotency;void pool.query("UPDATE aurelink_api_idempotency SET state='completed',response_status=$3,response_body=$4::jsonb WHERE api_key_id=$1 AND idempotency_key=$2",[row.id,saved.key,res.statusCode,JSON.stringify(body)]).then(()=>originalJson(body)).catch(()=>originalJson(body));return res;}return originalJson(body);};
  if(key.environment==="test"){testResponse(req,res);return;}
  next();
 }
 export async function aurelinkAuthMiddleware(req:Request,res:Response,next:NextFunction):Promise<void>{
- try{const raw=req.headers.authorization;if(!raw?.startsWith("Bearer ")){res.status(401).json({success:false,message:"Aurelink authentication required."});return;}const credential=raw.slice(7).trim();if(credential.startsWith("aul_")){await authenticateApiKey(credential,req,res,next);return;}const payload=jwt.verify(credential,secrets()) as {userId?:string;sessionId?:string;audience?:string};if(payload.audience!=="aurelink"||!payload.userId||!payload.sessionId){res.status(401).json({success:false,message:"Invalid Aurelink session."});return;}const result=await pool.query("SELECT u.id,u.account_status,s.id AS session_id FROM aurelink_users u JOIN aurelink_sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW()",[payload.userId,payload.sessionId]);const row=result.rows[0];if(!row){res.status(401).json({success:false,message:"Aurelink session expired, was revoked, or was inactive for more than 10 minutes."});return;}if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}await pool.query("UPDATE aurelink_sessions SET last_activity_at=NOW(),updated_at=NOW() WHERE id=$1",[row.session_id]);req.user={userId:row.id,profileId:row.id,sessionId:row.session_id};next();}catch{res.status(401).json({success:false,message:"Invalid Aurelink access token."});}
+ try{const raw=req.headers.authorization;if(!raw?.startsWith("Bearer ")){res.status(401).json({success:false,message:"Aurelink authentication required."});return;}const credential=raw.slice(7).trim();if(credential.startsWith("aul_")){await authenticateApiKey(credential,req,res,next);return;}const payload=jwt.verify(credential,secrets()) as {userId?:string;sessionId?:string;audience?:string};if(payload.audience!=="aurelink"||!payload.userId||!payload.sessionId){res.status(401).json({success:false,message:"Invalid Aurelink session."});return;}const result=await pool.query("SELECT u.id,u.account_status,s.id AS session_id FROM aurelink_users u JOIN aurelink_sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2 AND s.revoked_at IS NULL AND s.expires_at>NOW()",[payload.userId,payload.sessionId]);const row=result.rows[0];if(!row){res.status(401).json({success:false,message:"Aurelink session expired, was revoked, or was inactive for more than 10 minutes."});return;}if(row.account_status!=="active"){res.status(403).json({success:false,message:"Aurelink account is not active."});return;}await pool.query("UPDATE aurelink_sessions SET last_activity_at=NOW(),updated_at=NOW() WHERE id=$1",[row.session_id]);req.user={userId:row.id,profileId:row.id,sessionId:row.session_id};if(!await enforceCommunicationsWorkspaceAccess(req,res,String(row.id)))return;next();}catch{res.status(401).json({success:false,message:"Invalid Aurelink access token."});}
 }

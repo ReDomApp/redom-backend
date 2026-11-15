@@ -1,0 +1,54 @@
+name: Aurelink communications checks
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/redom-backend/**"
+      - "infra/aurelink-smtp-gateway/**"
+      - "artifacts/aurelink/tests/communications-webhook.test.ts"
+      - "artifacts/aurelink/tests/sms-country-registry.test.ts"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/aurelink-communications.yml"
+  push:
+    branches:
+      - feat/aurelink-communications-platform
+    paths:
+      - "artifacts/redom-backend/**"
+      - "infra/aurelink-smtp-gateway/**"
+      - "artifacts/aurelink/tests/communications-webhook.test.ts"
+      - "artifacts/aurelink/tests/sms-country-registry.test.ts"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/aurelink-communications.yml"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/redom-backend run typecheck
+      - run: pnpm --filter @workspace/redom-backend run test:aurelink-communications
+      - run: pnpm --filter @workspace/redom-backend run test:aurelink-countries
+
+  smtp-gateway:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/aurelink-smtp-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --omit=dev --no-audit --no-fund
+      - run: node --check src/server.mjs
+      - run: docker build --tag aurelink-smtp-gateway:test .

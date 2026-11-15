@@ -23,7 +23,7 @@ Authorization: Bearer aul_live_...
 Accept: application/json
 \`\`\`
 
-Create separate test and live keys in the Aurelink Developer workspace. Test keys begin with \`aul_test_\`; live keys begin with \`aul_live_\`.
+Create separate test and live keys in the Aurelink Developer workspace. The account also supports isolated projects, project-bound communications workspaces, request logs, usage summaries, and webhook endpoint management. Test keys begin with \`aul_test_\`; live keys begin with \`aul_live_\`.
 
 - Test keys use a sandbox. They do not contact number providers, create real numbers, or debit a wallet.
 - Live keys call real Aurelink services and can create billable orders.
@@ -103,6 +103,293 @@ A repeated key with the same request returns the stored response. Reusing a key 
 | GET | \`/aurelink/wallet/ledger\` | wallet:read |
 
 Pool selection and provider credentials are internal Aurelink implementation details and are not exposed as public API controls.
+
+## Developer projects and credentials
+
+Create developer projects in the authenticated Aurelink account:
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/aurelink/account/projects` | List projects and their active API-key counts |
+| POST | `/aurelink/account/projects` | Create an isolated communications project |
+| PATCH | `/aurelink/account/projects/:id` | Rename, suspend, reactivate or archive a project |
+| GET | `/aurelink/account/api-keys` | List key metadata and associated project |
+| POST | `/aurelink/account/api-keys` | Issue a test/live API key, optionally with `projectId` |
+| PATCH | `/aurelink/account/api-keys/:id` | Change label, scopes, rate limit or project assignment |
+| POST | `/aurelink/account/api-keys/:id/rotate` | Rotate the key secret |
+| DELETE | `/aurelink/account/api-keys/:id` | Revoke the key |
+
+Project API keys are restricted to the project's isolated communications workspace (contacts, sender identities, domains, messages, campaigns and SMTP credentials). They cannot access number purchasing, the account wallet, profile/security routes or another project's workspace. A suspended or archived project immediately blocks its keys. Create one project per application/environment boundary and issue separate keys with only the required scopes.
+
+Example project creation:
+
+```json
+{
+  "name": "Production checkout",
+  "description": "Order confirmations and OTP delivery"
+}
+```
+
+Then issue a project key by including the returned `projectId` in the API-key creation request. The secret is returned once; store it in a server-side secret manager. SMTP credentials remain separate and are managed independently.
+
+### Request logs and usage
+
+- `GET /aurelink/account/api-logs` — paginated request logs with request IDs, method, path, status, latency, environment and key label. Filter with `limit`, `offset`, `environment`, and `status`.
+- `GET /aurelink/account/api-usage` — 30-day request/error/latency summary and active key counts.
+
+### Developer webhooks
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/aurelink/account/webhooks` | List webhook endpoints |
+| POST | `/aurelink/account/webhooks` | Create endpoint; signing secret shown once |
+| PATCH | `/aurelink/account/webhooks/:id` | Enable/disable or update description |
+| GET | `/aurelink/account/webhooks/:id/deliveries` | Inspect delivery attempts and responses |
+| POST | `/aurelink/account/webhooks/:id/rotate-secret` | Rotate the signing secret |
+
+Webhook deliveries are retried with backoff. Requests include `aurelink-event`, `aurelink-delivery`, `aurelink-timestamp`, and `aurelink-signature` headers. The signature is HMAC-SHA256 over `timestamp + "." + raw JSON body`, prefixed with `v1=`. Receivers should verify the timestamp and signature against the raw request body and deduplicate on event ID.
+
+## Aurelink Communications
+
+Communications endpoints are authenticated with a user session or a developer API key carrying the listed scope. Provider credentials are never returned to clients.
+
+| Method | Route | Required API scope |
+| --- | --- | --- |
+| GET | `/aurelink/communications/overview` | `communications:read` |
+| GET | `/aurelink/communications/analytics?days=30&channel=email` | `communications:read` |
+| GET | `/aurelink/communications/messages` | `communications:read` |
+| GET | `/aurelink/communications/messages/:id` | `communications:read` |
+| POST | `/aurelink/communications/messages/:id/retry` | `communications:send` |
+| GET | `/aurelink/communications/contacts?channel=sms\|email` | `communications:read` |
+| GET | `/aurelink/communications/templates` | `communications:read` |
+| POST | `/aurelink/communications/templates` | `communications:manage` |
+| PATCH | `/aurelink/communications/templates/:id` | `communications:manage` |
+| DELETE | `/aurelink/communications/templates/:id` | `communications:manage` |
+| POST | `/aurelink/communications/contacts` | `communications:send` |
+| POST | `/aurelink/communications/sms/send` | `communications:send` |
+| POST | `/aurelink/communications/email/send` | `communications:send` |
+| POST | `/aurelink/verify/start` | `verify:write` |
+| POST | `/aurelink/verify/:verificationId/check` | `verify:write` |
+
+### Asynchronous delivery, retries and idempotency
+
+SMS and email send requests are accepted into an encrypted PostgreSQL outbox and return HTTP 202 with a message record in `queued` state. A backend worker sends the message through the selected provider. Provider acceptance changes the state to `accepted`; authenticated provider callbacks update delivery states such as `delivered`, `bounced` or `failed`. Provider failures are retried with exponential backoff (up to eight attempts). A message that exhausts retries is marked failed.
+
+Email sends support optional `templateId` plus `variables`, base64 `attachments` (maximum 10 files and 10 MB combined), and `scheduledAt` (30 seconds to 30 days in the future). Templates must be marked `active` before use. Template variables use `{{variableName}}`; values inserted into HTML are HTML-escaped. Scheduled jobs remain in the encrypted outbox until their scheduled timestamp.
+
+Every send request must include a unique `Idempotency-Key` header (maximum 128 characters). Reuse the same key only for retries of the same payload. Reusing a key with a different recipient, sender, template, schedule, attachment or content returns HTTP 409. Omitting the key returns HTTP 400. Message content is stored as an encrypted queue payload; configure a stable `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` of at least 32 characters. The backend can fall back to `JWT_ACCESS_SECRET`, but a dedicated key is recommended and must remain stable across deployments.
+
+The communications overview includes usage counts and units by channel/status. Usage is recorded per message. Configure `AURELINK_SMS_UNIT_PRICE_MINOR` and `AURELINK_EMAIL_UNIT_PRICE_MINOR` in USD cents to charge a fixed Aurelink retail rate per message; both default to `0` (no charge). When a non-zero rate is configured, the API reserves/debits the user's Aurelink wallet inside the same database transaction that enqueues the message. If the provider permanently rejects the message after all retries, the worker issues an idempotent wallet refund. `metered_amount_minor` reports configured Aurelink retail charges, not upstream provider cost or a tax-inclusive invoice.
+
+### Contact and consent management
+
+List contacts with `GET /aurelink/communications/contacts?channel=sms` or `channel=email`. Upsert a contact with `POST /aurelink/communications/contacts`:
+
+```json
+{
+  "channel": "email",
+  "address": "customer@example.com",
+  "displayName": "Customer",
+  "consentStatus": "opted_in",
+  "consentSource": "signup_form_2026_11"
+}
+```
+
+For an opt-in record, `consentSource` is required. Set `consentStatus` to `opted_out` to suppress the contact from campaigns; set it to `unknown` when there is no recorded permission. Campaign sends include only opted-in contacts, and hard bounces, spam complaints and unsubscribe events received through Resend are automatically added to the email suppression list.
+
+### Message history
+
+Use `GET /aurelink/communications/messages` to list the authenticated workspace's recent outbound messages. Optional query parameters: `limit` (1–100, default 50), `offset` (default 0), `channel` (`sms` or `email`), and `status`. Retrieve one message with `GET /aurelink/communications/messages/:id`. Message records include provider acceptance/delivery status and timestamps, not the original message body. Retry a terminally failed direct message with `POST /aurelink/communications/messages/:id/retry` and a new `Idempotency-Key`; campaign and verification messages must be retried through their respective workflows.
+
+### Provider configuration
+
+Set these values only on the backend service (never in browser/mobile builds):
+
+| Variable | Purpose |
+| --- | --- |
+| `AURELINK_BREVO_API_KEY` | Required when Brevo is selected for SMS or Email |
+| `AURELINK_RESEND_API_KEY` or `RESEND_API_KEY` | Required when Resend is selected for Email |
+| `AURELINK_TWILIO_ACCOUNT_SID`, `AURELINK_TWILIO_AUTH_TOKEN` | Twilio credentials; existing `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are accepted as fallbacks |
+| `AURELINK_TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_PHONE_NUMBER` | Twilio sender configuration |
+| `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY` | Stable 32+ character key for encrypting queued message payloads; falls back to `JWT_ACCESS_SECRET` |
+| `AURELINK_VERIFICATION_PEPPER` | Optional dedicated 32+ character OTP HMAC secret; falls back to `JWT_ACCESS_SECRET` |
+| `AURELINK_RESEND_WEBHOOK_SECRET` | Resend/Svix signing secret for delivery callbacks |
+| `AURELINK_TWILIO_STATUS_CALLBACK_URL` | Public HTTPS URL ending in `/aurelink/webhooks/twilio/status` |
+| `AURELINK_DEFAULT_SMS_PROVIDER`, `AURELINK_DEFAULT_EMAIL_PROVIDER` | Primary provider selection |
+| `AURELINK_SMS_FALLBACK_PROVIDER`, `AURELINK_EMAIL_FALLBACK_PROVIDER` | Optional failover provider |
+| `AURELINK_SMS_UNIT_PRICE_MINOR`, `AURELINK_EMAIL_UNIT_PRICE_MINOR` | Fixed retail charge per message in USD cents; default `0` |
+
+The worker falls back to `JWT_ACCESS_SECRET` if dedicated encryption/verification secrets are unset. For production, set dedicated stable values and retain them across deploys and restarts. Configure the Resend webhook to point to `/aurelink/webhooks/resend`; configure Twilio's status callback URL to the full deployed API URL.
+
+### Domain authentication, DNS and sender registration
+
+**Aurelink provider identities:** the platform's Resend sending identity is `mail.wnncompany.com`; Brevo remains a separate provider identity on `market.wnncompany.com`. Keep each provider's DNS records attached to its own domain. Do not create a second SPF record at the same hostname, and do not add Resend records to the Brevo domain or vice versa. Customer SMTP credentials are issued by creating Resend sending-only API keys restricted to each customer's verified Resend domain. SMTP connections go directly to Resend; Aurelink does not operate a separate SMTP relay.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/aurelink/communications/domains` | List workspace email domains |
+| POST | `/aurelink/communications/domains` | Create a domain in Resend or Brevo and retrieve that provider's actual DNS records |
+| POST | `/aurelink/communications/domains/:id/check` | Re-check provider state and public DNS |
+| POST | `/aurelink/communications/domains/:id/verify` | Ask the provider to verify/authenticate the domain, then refresh status |
+| POST | `/aurelink/communications/dns/cloudflare/connect` | Connect a zone-scoped Cloudflare API token |
+| GET | `/aurelink/communications/dns/cloudflare/connections` | List connected Cloudflare zones |
+| POST | `/aurelink/communications/domains/:id/apply-dns` | Add provider records to the connected Cloudflare zone without overwriting conflicts |
+| POST | `/aurelink/webhooks/brevo` | Receive authenticated Brevo transactional delivery events |
+| GET | `/aurelink/communications/email-senders` | List email sender identities |
+| POST | `/aurelink/communications/email-senders` | Create an email sender identity in Resend/Brevo |
+| POST | `/aurelink/communications/email-senders/:id/check` | Refresh sender verification state |
+| GET | `/aurelink/communications/senders` | List SMS sender registration requests |
+| POST | `/aurelink/communications/senders` | Create a sender registration request for a country/provider |
+| POST | `/aurelink/communications/senders/:id/review` | Admin-only evidence-backed provider status update |
+
+Create a domain with:
+
+```json
+{
+  "domain": "example.com",
+  "provider": "resend"
+}
+```
+
+Aurelink creates the domain with the selected provider and stores the provider's real DNS instructions. Resend and Brevo do not necessarily require identical record sets. Depending on provider and enabled capabilities, the returned records may include TXT ownership verification, SPF, DKIM (TXT or CNAME), DMARC, and MX records. Aurelink does not invent a generic MX record: it displays and checks only records returned by the selected provider. MX is required only when the selected service/capability needs it; it is not a universal requirement for outbound email authentication. SPF must remain a single TXT policy at a hostname; if one already exists, merge authorized includes into it rather than publishing a second SPF record.
+
+Check records with `POST /aurelink/communications/domains/:id/check`. The response includes each expected record, observed DNS values, missing/conflicting status, and provider verification state. A domain becomes send-enabled only when the provider reports it verified/authenticated. DNS propagation alone does not mean the provider has approved it. Brevo additionally requires a sender email identity: create it after domain authentication, click the verification email Brevo sends, and call the sender check endpoint. Email delivery through Brevo is blocked until that sender is active.
+
+For automatic DNS changes, first connect a Cloudflare API token scoped to the customer's zone with **Zone:Read** and **DNS:Edit** permissions:
+
+```json
+{
+  "domain": "example.com",
+  "zoneId": "CLOUDFLARE_ZONE_ID",
+  "apiToken": "CLOUDFLARE_SCOPED_API_TOKEN"
+}
+```
+
+The token is encrypted at rest using `AURELINK_COMMUNICATIONS_ENCRYPTION_KEY`. It is never returned. Apply with `POST /aurelink/communications/domains/:id/apply-dns`. Exact existing records are left untouched. Conflicting records are reported rather than overwritten. Existing SPF records are never replaced automatically. If a customer does not connect Cloudflare, copy the exact records into their DNS host manually.
+
+**MX distinction:** Resend/Brevo sending-domain MX records (often on a bounce/return-path subdomain) are not the same as MX records for receiving mailboxes at the root domain. SMTP submission through Resend is outbound-only; it does not host inboxes or receive inbound email. Do not point a customer's root MX at an SMTP submission hostname.
+
+#### SMS sender IDs
+
+A sender request requires `sender`, `provider` (`twilio` or `brevo`), `countryCode` (ISO 3166-1 alpha-2), `businessName`, `businessWebsite`, `messageUseCase`, and `sampleMessage`. Optional fields include `estimatedMonthlyVolume` and HTTPS registration document references. This endpoint handles alphanumeric sender IDs only (1–11 ASCII letters/digits, with at least one letter); phone-number, toll-free and short-code registration are separate country-specific workflows. Alphanumeric sender IDs are not supported in the United States or Canada.
+
+The initial state is `pending_customer_submission`; it is **not** submitted to a carrier and is not approved. Provider/carrier registration is country-specific and may require business documents, brand authorization, sample content, use-case review and a provider reference. When the provider has accepted a submission, an authorized Aurelink administrator records its real provider reference as `submitted`. An `approved` decision additionally requires an HTTPS link to the provider/carrier approval evidence. Aurelink never turns a request into an approved sender merely because the user entered a brand name.
+
+SMS send, OTP and campaign requests require `countryCode` and an approved sender for that country and provider. If SMS failover is configured, the sender must be approved with both the primary and fallback providers for that country. Sender IDs are not universally supported; check destination-country restrictions before submitting.
+
+#### Provider webhook setup
+
+The shared Brevo transactional webhook is provisioned by an Aurelink communications administrator using `POST /aurelink/communications/providers/brevo/webhook/configure`. Configure `AURELINK_BREVO_WEBHOOK_SECRET` and `AURELINK_BREVO_WEBHOOK_URL` first. Aurelink creates or updates the Brevo webhook subscription for sent, delivered, opened, clicked, bounce, spam and unsubscribe events. This is an account-level provider operation, not a customer-supplied webhook endpoint.
+
+#### Aurelink SMTP credentials
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/aurelink/communications/smtp/credentials` | List Aurelink-managed SMTP credential metadata (secrets are never returned) |
+| POST | `/aurelink/communications/smtp/credentials` | Issue a domain-scoped Resend SMTP credential; the SMTP password is displayed once |
+| POST | `/aurelink/communications/smtp/credentials/:id/rotate` | Issue a replacement Resend SMTP key and revoke the previous key |
+| DELETE | `/aurelink/communications/smtp/credentials/:id` | Revoke the customer credential's associated Resend key |
+
+**Active customer SMTP transport — temporary direct Resend**
+
+Until Aurelink's own SMTP gateway is deployed and verified, customers connect directly to Resend using credentials issued and managed by Aurelink:
+
+| Setting | Value |
+| --- | --- |
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| Encryption | SSL/TLS |
+| Alternate port | `587` with STARTTLS |
+| Username | `resend` |
+| Password | Domain-scoped Resend sending-only key (shown once) |
+| Provider | Resend (temporary direct SMTP) |
+
+Create credentials by sending the Aurelink domain record ID (the ID returned by `POST /aurelink/communications/domains`) as `domainId`:
+
+```json
+{
+  "domainId": "AURELINK_VERIFIED_DOMAIN_RECORD_ID",
+  "label": "Production SMTP"
+}
+```
+
+Aurelink verifies that the domain belongs to the authenticated workspace/project and is verified with Resend. It creates a Resend API key with `permission: sending_access` and the provider's `domain_id`. The scoped token is returned once as the customer's SMTP password; the account-level Resend API key is never exposed. Aurelink stores the provider key ID and encrypted key material for rotation and revocation. The customer connects to Resend directly; this temporary path does not pass through the not-yet-deployed Aurelink TCP gateway and therefore does not receive that gateway's per-message wallet metering.
+
+The standalone Aurelink SMTP gateway package is prepared for the later cutover. Do not switch customers to `smtp.aurelink.org` until that gateway is deployed, publicly reachable, TLS-verified, billing-metering-verified and acceptance-tested. The cutover is controlled by `AURELINK_SMTP_TEMPORARY_DIRECT_RESEND=false`; the default is active direct Resend mode. Reissue credentials for the Aurelink-owned gateway at cutover. Preserve customer-facing Resend support and its provider integration; preparing Aurelink's own gateway is not authorization to remove Resend from the product.
+
+### Campaigns
+
+| Method | Route | Required API scope |
+| --- | --- | --- |
+| GET | `/aurelink/communications/campaigns` | `communications:read` |
+| POST | `/aurelink/communications/campaigns` | `communications:send` |
+| POST | `/aurelink/communications/campaigns/:id/send` | `communications:send` |
+
+Create a draft with `channel` (`sms` or `email`), `name`, and text content. Email campaigns also require `subject`; optional HTML is supported. Starting a campaign requires an approved `sender`. Only contacts with recorded `opted_in` consent are included; suppressed email addresses are skipped. SMS campaigns require an HTTPS opt-out/event `webUrl`. Campaign sends are queued per contact and campaign status moves to completed or paused when the queue reaches a terminal state. Start with a small opted-in test audience before sending to a full list.
+
+Example campaign creation:
+
+```http
+POST /redom-backend/v1/aurelink/communications/campaigns
+Authorization: Bearer aul_live_...
+Content-Type: application/json
+
+{
+  "channel": "email",
+  "name": "Product update",
+  "subject": "Aurelink product update",
+  "text": "We have shipped new developer API capabilities."
+}
+```
+
+Start it with `POST /aurelink/communications/campaigns/:id/send` and a JSON body containing `sender`, optional `senderName`, and optional `provider`. SMS campaigns must also provide `webUrl`.
+
+### SMS sending
+
+```http
+POST /redom-backend/v1/aurelink/communications/sms/send
+Authorization: Bearer aul_live_...
+Idempotency-Key: 6f0e2e18-8c8b-4f66-8a5f-2b8e1c9b81ad
+Content-Type: application/json
+
+{
+  "recipient": "+14155550123",
+  "countryCode": "US",
+  "sender": "AURELINK",
+  "content": "Your order has shipped.",
+  "category": "transactional",
+  "provider": "brevo"
+}
+```
+
+Supported adapters: Brevo transactional SMS and Twilio Programmable Messaging. The sender ID must be approved for the destination country and both Brevo and Twilio when the standard fallback route is enabled. Brevo sender registration is country-specific; Twilio alphanumeric IDs are not supported in the US or Canada. Aurelink records a pending request and gives the provider-specific registration instructions; it does not claim to submit or approve a carrier registration when the provider requires its own console workflow. Include the ISO `countryCode` field. If fallback is enabled, the sender must be approved on both providers. Marketing requests require a contact with recorded opt-in consent; campaign sending is not enabled by this endpoint.
+
+### Email sending
+
+```json
+{
+  "recipient": "customer@example.com",
+  "sender": "notifications@example.com",
+  "senderName": "Aurelink",
+  "subject": "Order update",
+  "text": "Your order has shipped.",
+  "provider": "resend"
+}
+```
+
+Supported adapters: Resend Email API and Brevo transactional Email API. The sender domain must be verified with the selected provider. If a fallback provider is configured, the domain must also be verified with that fallback provider. Suppressed recipients are rejected.
+
+### Verification
+
+Aurelink generates and validates the OTP itself. SMS verification requests must include the ISO destination `countryCode` and an approved sender for that country/provider; email verification requires an authenticated sender domain. A session expires after five minutes and permits at most five verification attempts. Only a per-session HMAC hash and separate random salt are stored; the OTP is never returned by the live API. Configure a stable `AURELINK_VERIFICATION_PEPPER` (32+ characters); if unset, the backend uses `JWT_ACCESS_SECRET`. Provider services deliver the message but do not decide whether the verification succeeds.
+
+### Provider setup and SMTP distinction
+
+The communications overview reports which adapters have credentials configured. This does not mean that a sender ID/domain has been approved or that the provider account has available credits.
+
+Brevo Email API and Brevo SMTP are different transports. SMTP requires a Brevo SMTP login and SMTP key, distinct from the REST API key. The REST API delivery path is active in code. The Aurelink SMTP gateway package is implemented in this branch. It accepts public TCP connections on ports 465 and 587, requires TLS, authenticates Aurelink-issued credentials, resolves account-specific encrypted Resend keys, and forwards messages to Resend. It is not live until deployed on a public TCP-capable host with smtp.aurelink.org DNS, a valid TLS certificate, shared database access and the backend's stable encryption secret.
+
+Resend and Brevo both require domain/sender authentication at the provider. SMS sender IDs may need country-specific registration and approval. Provider acceptance is not handset/inbox delivery confirmation; update delivered/bounced states only from authenticated provider webhooks.
 
 ## Webhooks
 

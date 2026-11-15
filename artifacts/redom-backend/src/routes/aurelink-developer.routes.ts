@@ -5,7 +5,7 @@ import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { createWebhook } from "../services/aurelink/developer-platform.service";
 
 const router=Router();
-const EVENTS=["activation.created","activation.updated","sms.received","activation.cancelled","rental.created","rental.updated","rental.expiring","dedicated.created","dedicated.updated","wallet.credited","wallet.debited"];
+const EVENTS=["activation.created","activation.updated","sms.received","activation.cancelled","rental.created","rental.updated","rental.expiring","dedicated.created","dedicated.updated","wallet.credited","wallet.debited","sms.accepted","sms.delivered","sms.failed","email.accepted","email.delivered","email.failed","email.bounced","email.complained","email.unsubscribed","email.opened","email.clicked","email.reputation.alert","verification.created","verification.approved","verification.expired"];
 const clamp=(v:unknown,min:number,max:number,fallback:number)=>Math.max(min,Math.min(max,Number.isFinite(Number(v))?Math.floor(Number(v)):fallback));
 
 router.get("/aurelink/developer/overview",aurelinkAuthMiddleware,async(req,res)=>{
