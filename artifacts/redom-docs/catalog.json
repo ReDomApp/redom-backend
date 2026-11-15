@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-11-14T22:12:39.481Z",
-  "commit": "d989bde1ff4765187d907ce7cbe10d8d109283f7",
+  "generatedAt": "2026-11-15T03:29:36.535Z",
+  "commit": "70b1da7e62d56f5f3ff7ac86e70f5787acad0326",
   "branch": "main",
   "totals": {
-    "files": 1106,
-    "sourceFiles": 782,
+    "files": 1139,
+    "sourceFiles": 815,
     "products": 15,
-    "routes": 447,
+    "routes": 559,
     "screens": 130,
     "schemas": 95,
     "packages": 13
@@ -34,15 +34,17 @@
     {
       "id": "aurelink",
       "name": "Aurelink",
-      "files": 3,
-      "sourceFiles": 2,
+      "files": 5,
+      "sourceFiles": 4,
       "routes": 0,
       "screens": 0,
       "schemas": 0,
       "paths": [
         "artifacts/aurelink/README.md",
+        "artifacts/aurelink/tests/communications-webhook.test.ts",
         "artifacts/aurelink/tests/dedicated-renewal-contract.test.mjs",
-        "artifacts/aurelink/tests/pricing.test.mjs"
+        "artifacts/aurelink/tests/pricing.test.mjs",
+        "artifacts/aurelink/tests/sms-country-registry.test.ts"
       ]
     },
     {
@@ -113,9 +115,9 @@
     {
       "id": "redom-backend",
       "name": "Redom Backend",
-      "files": 436,
-      "sourceFiles": 341,
-      "routes": 446,
+      "files": 467,
+      "sourceFiles": 372,
+      "routes": 558,
       "screens": 1,
       "schemas": 94,
       "paths": [
@@ -602,6 +604,384 @@
       "line": 796
     },
     {
+      "method": "POST",
+      "path": "/aurelink/communications/providers/brevo/webhook/configure",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 61
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/domains",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 71
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/domains",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 77
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/domains/:id/check",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 126
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/domains/:id/verify",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 127
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/domains/:id/tracking",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 129
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/senders/evidence",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 180
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/senders/evidence",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 196
+    },
+    {
+      "method": "DELETE",
+      "path": "/aurelink/communications/senders/evidence/:documentId",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 201
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/admin/communications/senders/:id/evidence/:documentId",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 214
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/sms/countries",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 231
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/websites",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 235
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/websites",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 240
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/websites/:id/verify",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 250
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/senders",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 263
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/senders",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 268
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/senders/:id/review",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 348
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/admin/communications/senders/:id/audit",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 422
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/admin/communications/sender-submissions",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 427
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/sender-submissions/:id/reveal-token",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 432
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/sender-submissions/:id/rotate-token",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 450
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/sender-submissions/:id/mark-submitted",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 466
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/brevo/sender-registration",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 518
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/sender-submissions/:id/reconcile",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 536
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/dns/cloudflare/connect",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 550
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/dns/cloudflare/connections",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 559
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/domains/:id/apply-dns",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 564
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/email-senders",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 578
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/email-senders",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 583
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/email-senders/:id/check",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
+      "line": 601
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/smtp/credentials",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts",
+      "line": 70
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/smtp/credentials",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts",
+      "line": 79
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/smtp/credentials/:id/rotate",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts",
+      "line": 115
+    },
+    {
+      "method": "DELETE",
+      "path": "/aurelink/communications/smtp/credentials/:id",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts",
+      "line": 156
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/resend",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 19
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/brevo",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 88
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/twilio/status",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 136
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/overview",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 213
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/sms/send",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 226
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/email/send",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 249
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/templates",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 314
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/templates",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 319
+    },
+    {
+      "method": "PATCH",
+      "path": "/aurelink/communications/templates/:id",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 329
+    },
+    {
+      "method": "DELETE",
+      "path": "/aurelink/communications/templates/:id",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 335
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/contacts",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 342
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/contacts",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 350
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/analytics",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 386
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/messages",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 393
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/messages/:id",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 400
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/messages/:id/retry",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 407
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/campaigns",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 422
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/campaigns",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 428
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/campaigns/:id/send",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 441
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/verify/start",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 499
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/verify/:id/check",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 527
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/admin/communications/manual-review",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 557
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/messages/:id/reconcile",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 566
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/sms/billing",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 627
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/sms/billing/purchase",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 643
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/sms/packages/pay/:token",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 653
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/sms/billing/verify",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 658
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/paystack-sms",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 667
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/paypal-sms",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts",
+      "line": 675
+    },
+    {
       "method": "GET",
       "path": "/aurelink/developer/overview",
       "source": "artifacts/redom-backend/src/routes/aurelink-developer.routes.ts",
@@ -675,6 +1055,186 @@
     },
     {
       "method": "GET",
+      "path": "/aurelink/mail/credits/pay/:token",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 41
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/mail/credits/pay/:token",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 47
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/sms/packages/pay/:token",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 52
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/sms/packages/pay/:token",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 57
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/paystack-sms",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 61
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/paypal-sms",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 65
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/sms/billing/checkout",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 69
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/sms/billing/verify/:reference",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 75
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/paystack-mail",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 81
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/webhooks/paypal-mail",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 88
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/accounts/:userId/verify-country",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 94
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/email/billing/plans",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 103
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/email/billing/credit-packs",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 116
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/email/billing/checkout",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 121
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/email/billing/verify/:reference",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 146
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/email/billing/overview",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 156
+    },
+    {
+      "method": "PATCH",
+      "path": "/aurelink/communications/email/billing/mode",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 197
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/email/billing/cancel",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 212
+    },
+    {
+      "method": "PATCH",
+      "path": "/aurelink/communications/email/billing/prepaid-fallback",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 223
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/email/pricing/options",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 243
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/email/pricing/options/:id/disable",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 274
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/email/pricing/credit-packs",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 281
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/email/pricing/credit-packs/:id/disable",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 289
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/email/credits/adjust",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 296
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/admin/communications/email/smtp/manual-review",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 322
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/email/smtp/:id/reconcile",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 352
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/admin/communications/sms/payments/:reference",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 409
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/sms/payments/:reference/reconcile-credit",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 421
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/sms/credits/adjust",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 428
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/sms/payments/:reference/disputes/:disputeId/notes",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts",
+      "line": 434
+    },
+    {
+      "method": "GET",
       "path": "/aurelink/nonvoip/countries",
       "source": "artifacts/redom-backend/src/routes/aurelink-nonvoip.routes.ts",
       "line": 34
@@ -738,6 +1298,114 @@
       "path": "/aurelink/dedicated/orders/:id/cancel",
       "source": "artifacts/redom-backend/src/routes/aurelink-nonvoip.routes.ts",
       "line": 188
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/billing/overview",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 42
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/billing/usage",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 54
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/billing/statement",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 65
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/admin/communications/prices",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 77
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/prices",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 82
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/admin/communications/prices/:id/disable",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 90
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/reputation",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 98
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/reputation/alerts/:id/acknowledge",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 108
+    },
+    {
+      "method": "GET",
+      "path": "/aurelink/communications/team/members",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 118
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/team/invitations",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 125
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/team/invitations/accept",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 140
+    },
+    {
+      "method": "PATCH",
+      "path": "/aurelink/communications/team/members/:id/role",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 154
+    },
+    {
+      "method": "DELETE",
+      "path": "/aurelink/communications/team/members/:id",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 165
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/domains/:id/suspend",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 177
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/domains/:id/resume",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 196
+    },
+    {
+      "method": "DELETE",
+      "path": "/aurelink/communications/domains/:id",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 207
+    },
+    {
+      "method": "PUT",
+      "path": "/aurelink/communications/domains/:id/tracking-domain",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 226
+    },
+    {
+      "method": "POST",
+      "path": "/aurelink/communications/domains/:id/tracking-domain/verify",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts",
+      "line": 248
     },
     {
       "method": "GET",
@@ -2426,6 +3094,12 @@
       "line": 85
     },
     {
+      "method": "POST",
+      "path": "/stripe/webhook",
+      "source": "artifacts/redom-backend/src/routes/payments.routes.ts",
+      "line": 98
+    },
+    {
       "method": "GET",
       "path": "/policies/:slug",
       "source": "artifacts/redom-backend/src/routes/product.routes.ts",
@@ -3993,12 +4667,20 @@
       "source": "artifacts/aurelink-admin/vite.config.ts"
     },
     {
+      "name": "communications-webhook.test.ts",
+      "source": "artifacts/aurelink/tests/communications-webhook.test.ts"
+    },
+    {
       "name": "dedicated-renewal-contract.test.mjs",
       "source": "artifacts/aurelink/tests/dedicated-renewal-contract.test.mjs"
     },
     {
       "name": "pricing.test.mjs",
       "source": "artifacts/aurelink/tests/pricing.test.mjs"
+    },
+    {
+      "name": "sms-country-registry.test.ts",
+      "source": "artifacts/aurelink/tests/sms-country-registry.test.ts"
     },
     {
       "name": "fbi-wanted-profile.test.ts",
@@ -4577,12 +5259,32 @@
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts"
     },
     {
+      "name": "aurelink-communications-setup.routes.ts",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts"
+    },
+    {
+      "name": "aurelink-communications-smtp.routes.ts",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts"
+    },
+    {
+      "name": "aurelink-communications.routes.ts",
+      "source": "artifacts/redom-backend/src/routes/aurelink-communications.routes.ts"
+    },
+    {
       "name": "aurelink-developer.routes.ts",
       "source": "artifacts/redom-backend/src/routes/aurelink-developer.routes.ts"
     },
     {
+      "name": "aurelink-email-billing.routes.ts",
+      "source": "artifacts/redom-backend/src/routes/aurelink-email-billing.routes.ts"
+    },
+    {
       "name": "aurelink-nonvoip.routes.ts",
       "source": "artifacts/redom-backend/src/routes/aurelink-nonvoip.routes.ts"
+    },
+    {
+      "name": "aurelink-platform.routes.ts",
+      "source": "artifacts/redom-backend/src/routes/aurelink-platform.routes.ts"
     },
     {
       "name": "aurelink-security.routes.ts",
@@ -4877,8 +5579,84 @@
       "source": "artifacts/redom-backend/src/services/aurelink/aurelink-sms-api-packages.service.ts"
     },
     {
+      "name": "aurelink-wallet.service.js",
+      "source": "artifacts/redom-backend/src/services/aurelink/aurelink-wallet.service.js"
+    },
+    {
       "name": "aurelink-wallet.service.ts",
       "source": "artifacts/redom-backend/src/services/aurelink/aurelink-wallet.service.ts"
+    },
+    {
+      "name": "communications-billing.service.js",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-billing.service.js"
+    },
+    {
+      "name": "communications-billing.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-billing.service.ts"
+    },
+    {
+      "name": "communications-callbacks.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-callbacks.service.ts"
+    },
+    {
+      "name": "communications-dns.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-dns.service.ts"
+    },
+    {
+      "name": "communications-domains.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-domains.service.ts"
+    },
+    {
+      "name": "communications-email-billing-schema.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-email-billing-schema.service.ts"
+    },
+    {
+      "name": "communications-email-billing.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-email-billing.service.ts"
+    },
+    {
+      "name": "communications-extended-schema.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-extended-schema.service.ts"
+    },
+    {
+      "name": "communications-providers.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-providers.service.ts"
+    },
+    {
+      "name": "communications-reputation.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-reputation.service.ts"
+    },
+    {
+      "name": "communications-schema.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-schema.service.ts"
+    },
+    {
+      "name": "communications-sms-billing-schema.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-sms-billing-schema.service.ts"
+    },
+    {
+      "name": "communications-sms-billing.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-sms-billing.service.ts"
+    },
+    {
+      "name": "communications-sms-payment.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-sms-payment.service.ts"
+    },
+    {
+      "name": "communications-smtp-temporary-resend.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-smtp-temporary-resend.ts"
+    },
+    {
+      "name": "communications-smtp.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-smtp.service.ts"
+    },
+    {
+      "name": "communications-webhooks.utils.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-webhooks.utils.ts"
+    },
+    {
+      "name": "communications-worker.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/communications-worker.service.ts"
     },
     {
       "name": "developer-platform.service.ts",
@@ -4891,6 +5669,26 @@
     {
       "name": "schema-bootstrap.service.ts",
       "source": "artifacts/redom-backend/src/services/aurelink/schema-bootstrap.service.ts"
+    },
+    {
+      "name": "sms-country-registry.js",
+      "source": "artifacts/redom-backend/src/services/aurelink/sms-country-registry.js"
+    },
+    {
+      "name": "sms-country-registry.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/sms-country-registry.ts"
+    },
+    {
+      "name": "sms-reference.util.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/sms-reference.util.ts"
+    },
+    {
+      "name": "sms-segmentation.service.js",
+      "source": "artifacts/redom-backend/src/services/aurelink/sms-segmentation.service.js"
+    },
+    {
+      "name": "sms-segmentation.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/sms-segmentation.service.ts"
     },
     {
       "name": "smspool.client.ts",
@@ -5115,6 +5913,14 @@
     {
       "name": "daily-ops-intelligence.service.ts",
       "source": "artifacts/redom-backend/src/services/operations/daily-ops-intelligence.service.ts"
+    },
+    {
+      "name": "aurelink-mail-payment.service.ts",
+      "source": "artifacts/redom-backend/src/services/payments/aurelink-mail-payment.service.ts"
+    },
+    {
+      "name": "aurelink-mail-security.service.ts",
+      "source": "artifacts/redom-backend/src/services/payments/aurelink-mail-security.service.ts"
     },
     {
       "name": "payment-schema-bootstrap.ts",
@@ -6529,7 +7335,9 @@
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test:fbi-security": "node --experimental-strip-types --test ../fbi-security/tests/fbi-wanted-profile.test.ts",
         "test:aurelink-renewal": "node --test ../aurelink/tests/dedicated-renewal-contract.test.mjs",
-        "test:aurelink-pricing": "node --experimental-strip-types --test ../aurelink/tests/pricing.test.mjs"
+        "test:aurelink-pricing": "node --experimental-strip-types --test ../aurelink/tests/pricing.test.mjs",
+        "test:aurelink-communications": "node --experimental-strip-types --test ../aurelink/tests/communications-webhook.test.ts",
+        "test:aurelink-countries": "node --experimental-strip-types --test ../aurelink/tests/sms-country-registry.test.ts"
       },
       "dependencies": [
         "@aws-sdk/client-s3",
