@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-15T13:56:37.120Z",
-  "commit": "49d0269dd7ef3e82554cb208c1e33fcbff92946a",
+  "generatedAt": "2026-11-15T14:19:40.429Z",
+  "commit": "ade6900aa429db4804751fc1af08e55f179f4d19",
   "branch": "main",
   "totals": {
     "files": 1142,
@@ -500,121 +500,121 @@
       "method": "POST",
       "path": "/aurelink/auth/register",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 85
+      "line": 93
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/login",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 86
+      "line": 94
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/session-security/action",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 112
+      "line": 127
     },
     {
       "method": "GET",
       "path": "/aurelink/auth/login-history",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 121
+      "line": 136
     },
     {
       "method": "GET",
       "path": "/aurelink/auth/me",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 122
+      "line": 137
     },
     {
       "method": "POST",
       "path": "/aurelink/account/email-change/request",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 150
+      "line": 165
     },
     {
       "method": "POST",
       "path": "/aurelink/account/email-change/verify-current",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 179
+      "line": 194
     },
     {
       "method": "POST",
       "path": "/aurelink/account/email-change/verify-new",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 200
+      "line": 215
     },
     {
       "method": "POST",
       "path": "/aurelink/account/name-change/request",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 226
+      "line": 241
     },
     {
       "method": "POST",
       "path": "/aurelink/account/name-change/confirm",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 252
+      "line": 267
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/logout",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 291
+      "line": 306
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/refresh",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 297
+      "line": 312
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/account-auth-key/bind",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 364
+      "line": 379
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/admin/asak24/migrate",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 460
+      "line": 475
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/account-auth-key/verify",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 511
+      "line": 526
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/password-reset/request",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 536
+      "line": 551
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/password-reset/complete",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 596
+      "line": 611
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/signup/email/request",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 715
+      "line": 730
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/signup/email/verify",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 783
+      "line": 798
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/signup/complete",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 796
+      "line": 811
     },
     {
       "method": "POST",
