@@ -31,6 +31,12 @@ The portal reuses the existing Aurelink access token in same-origin session stor
 - Mail credits, SMS package credits and the existing number wallet remain separate.
 - Features without customer-facing backend routes are not represented as working controls. Current backend gaps include campaign editing/pause controls, webhook URL/event editing, customer payment-history/receipt listing, and a direct Phone Numbers workspace link.
 
+## Private operations console
+
+- `public/operations.html`, `public/operations.js`, and `public/operations.css` provide a separate communications operations workspace for manual message review, SMTP reconciliation, Sender ID provider submissions, payment investigation, pricing, credit adjustments, country verification and private evidence retrieval.
+- The operations page reuses the authenticated Aurelink session but every administrative action is independently authorized by the backend administrator allowlists. It is not linked from the customer navigation and does not replace or modify `artifacts/aurelink-admin`.
+- The current backend does not expose an administrator list endpoint for all pending Aurelink Sender ID security-review applications. The console reports this limitation rather than presenting an incomplete queue as complete.
+
 ## Deployment
 
 Serve the contents of this directory's \`public/\` folder as the static site root, preserving the existing public login route. Configure the \`aurelink-api-base\` meta tag in \`portal.html\` if the backend API origin or mount path changes.
