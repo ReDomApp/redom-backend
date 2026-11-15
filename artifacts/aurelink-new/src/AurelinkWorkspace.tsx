@@ -13,7 +13,42 @@ const groups:{title:string;items:{id:Page;label:string}[]}[]=[
  {title:"ACCOUNT",items:[{id:"billing",label:"Billing & usage"},{id:"account",label:"Account & security"}]}
 ];
 function token(){return localStorage.getItem("aurelink.accessToken")||"";}
-async function api(path:string,method="GET",body?:unknown,headers:Record<string,string>={}){let r:Response;try{r=await fetch(API+path,{method,headers:{Accept:"application/json",Authorization:"Bearer "+token(),...(body!==undefined?{"Content-Type":"application/json"}:{}),...headers},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"});}catch{throw new Error("Aurelink could not reach the service. Check your connection and retry.");}const d=await r.json().catch(()=>({}));if(r.status===401)throw new Error("Your Aurelink session expired. Sign in again.");if(!r.ok||d.success===false)throw new Error(d.message||"Aurelink could not complete this request.");return d;}
+let refreshInFlight:Promise<string>|null=null;
+async function refreshAccessToken():Promise<string>{
+ if(!refreshInFlight){
+  refreshInFlight=(async()=>{
+   const refreshToken=localStorage.getItem("aurelink.refreshToken");
+   if(!refreshToken)throw new Error("Your Aurelink session has expired.");
+   const response=await fetch(API+"/aurelink/auth/refresh",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({refreshToken}),cache:"no-store"});
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok||!data.success||!data.session?.accessToken||!data.session?.refreshToken)throw new Error(data.message||"Your Aurelink session has expired.");
+   localStorage.setItem("aurelink.accessToken",data.session.accessToken);
+   localStorage.setItem("aurelink.refreshToken",data.session.refreshToken);
+   if(data.user)localStorage.setItem("aurelink.user",JSON.stringify(data.user));
+   return data.session.accessToken as string;
+  })().finally(()=>{refreshInFlight=null;});
+ }
+ return refreshInFlight;
+}
+function expireWorkspaceSession(){
+ localStorage.removeItem("aurelink.accessToken");
+ localStorage.removeItem("aurelink.refreshToken");
+ localStorage.removeItem("aurelink.user");
+ const next=window.location.pathname+window.location.search+window.location.hash;
+ if(!window.location.pathname.startsWith("/login"))window.location.replace("/login?next="+encodeURIComponent(next));
+}
+async function api(path:string,method="GET",body?:unknown,headers:Record<string,string>={},retried=false){
+ const send=async(access:string)=>fetch(API+path,{method,headers:{Accept:"application/json",...(access?{Authorization:"Bearer "+access}:{}),...(body!==undefined?{"Content-Type":"application/json"}:{}),...headers},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"});
+ let r:Response;try{r=await send(token());}catch{throw new Error("Aurelink could not reach the service. Check your connection and retry.");}
+ if(r.status===401&&!retried){
+  try{const fresh=await refreshAccessToken();r=await send(fresh);}
+  catch{expireWorkspaceSession();throw new Error("Your Aurelink session expired. Sign in again.");}
+ }
+ const d=await r.json().catch(()=>({}));
+ if(r.status===401){expireWorkspaceSession();throw new Error("Your Aurelink session expired. Sign in again.");}
+ if(!r.ok||d.success===false)throw new Error(d.message||"Aurelink could not complete this request.");
+ return d;
+}
 const get=(p:string)=>api(p),post=(p:string,b:unknown,h:Record<string,string>={})=>api(p,"POST",b,h),patch=(p:string,b:unknown)=>api(p,"PATCH",b),del=(p:string)=>api(p,"DELETE");
 const count=(v:unknown)=>Number(v||0).toLocaleString("en-US");
 const dollars=(v:unknown)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(v||0));
