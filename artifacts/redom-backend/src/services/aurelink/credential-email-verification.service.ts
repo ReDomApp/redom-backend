@@ -73,6 +73,7 @@ export async function verifyCredentialEmailCode(userId: string, purpose: Credent
     if (!row) throw new Error("This verification code expired or is no longer valid. Request a new code.");
     if (!/^\d{6}$/.test(code) || hash(code) !== row.code_hash) {
       await client.query("UPDATE aurelink_credential_email_challenges SET attempts=attempts+1 WHERE id=$1", [row.id]);
+      await client.query("COMMIT");
       throw new Error("The six-digit verification code is incorrect.");
     }
     await client.query("UPDATE aurelink_credential_email_challenges SET consumed_at=NOW(),grant_hash=$2,grant_expires_at=NOW()+INTERVAL '5 minutes' WHERE id=$1", [row.id, hash(grant)]);
