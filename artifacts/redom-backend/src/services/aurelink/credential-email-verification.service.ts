@@ -1,6 +1,6 @@
 import { randomBytes, randomInt, createHash } from "node:crypto";
-import { pool } from "../database/db";
-import { resend } from "../lib/resend";
+import { pool } from "../../database/db";
+import { resend } from "../../lib/resend";
 
 export type CredentialVerificationPurpose = "api_key_create" | "api_key_rotate" | "smtp_credential_create" | "smtp_credential_rotate";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
