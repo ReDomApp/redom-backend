@@ -114,7 +114,7 @@ async function refreshDomain(req:any, res:any, verify:boolean) {
     const isVerified = remote.verified && remote.authenticated;
     const status = isVerified ? "verified" : "verification_pending";
     const updated = await pool.query(
-      "UPDATE aurelink_email_domains SET status=$3,dns_records=$4::jsonb,last_checked_at=NOW(),verified_at=CASE WHEN $3='verified' THEN COALESCE(verified_at,NOW()) ELSE NULL END,updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,domain,provider,provider_domain_id,status,dns_records,last_checked_at,verified_at",
+      "UPDATE aurelink_email_domains SET status=$3::varchar,dns_records=$4::jsonb,last_checked_at=NOW(),verified_at=CASE WHEN $3::varchar='verified' THEN COALESCE(verified_at,NOW()) ELSE NULL END,updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,domain,provider,provider_domain_id,status,dns_records,last_checked_at,verified_at",
       [row.id,wid,status,JSON.stringify(dns.records)]
     );
     return res.json({success:true,domain:updated.rows[0],provider:{verified:remote.verified,authenticated:remote.authenticated},dns});
