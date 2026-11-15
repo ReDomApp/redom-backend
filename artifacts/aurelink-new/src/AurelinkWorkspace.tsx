@@ -137,7 +137,7 @@ export default function AurelinkWorkspace({onLogout,pathname="/dashboard",onNavi
    case "billing":return <BillingPage/>;
    case "reputation":return <ReputationPage/>;
    case "team":return <TeamPage/>;
-   case "account":return <AurelinkDashboard pathname="/settings" onNavigate={goPath} onLogout={onLogout}/>;
+   case "account":return <AurelinkDashboard pathname={pathname} onNavigate={goPath} onLogout={onLogout}/>;
    default:return <Overview go={go}/>;
   }
  };
