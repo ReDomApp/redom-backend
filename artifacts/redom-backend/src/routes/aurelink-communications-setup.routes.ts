@@ -234,31 +234,56 @@ router.get("/aurelink/communications/sms/countries",aurelinkAuthMiddleware,async
 });
 router.get("/aurelink/communications/websites",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
- const rows=await pool.query("SELECT id,domain,website_url,verification_method,status,verified_at,evidence,created_at,updated_at FROM aurelink_verified_websites WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
- return res.json({success:true,websites:rows.rows});
+ const rows=await pool.query("SELECT id,domain,website_url,verification_method,status,verified_at,verification_expires_at,last_dns_checked_at,evidence,created_at,updated_at FROM aurelink_verified_websites WHERE workspace_id=$1 ORDER BY created_at DESC",[wid]);
+ const websites=rows.rows.map((row:any)=>{
+  const encrypted=String(row.evidence?.challengeCiphertext||"");
+  let value:string|null=null;
+  if(encrypted){try{value=decryptSenderToken(encrypted);}catch{value=null;}}
+  return {...row,dns_record:value?{type:"TXT",host:"_aurelink-verification."+String(row.domain),value}:null};
+ });
+ return res.json({success:true,websites});
 });
 router.post("/aurelink/communications/websites",aurelinkAuthMiddleware,async(req,res)=>{
  try{
   const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
   const websiteUrl=String(req.body.websiteUrl||"").trim(),parsed=new URL(websiteUrl);
-  if(parsed.protocol!=="https:"||parsed.username||parsed.password) return res.status(400).json({success:false,code:"HTTPS_WEBSITE_REQUIRED",message:"Use a public HTTPS company website without embedded credentials."});
-  const domain=normalizeSenderDomain(parsed.hostname),token="aurelink-site-verification="+randomBytes(32).toString("hex"),tokenHash=hash(token),expiresAt=new Date(Date.now()+24*60*60*1000);
-  const saved=await pool.query("INSERT INTO aurelink_verified_websites(workspace_id,domain,website_url,verification_method,verification_token_hash,verification_expires_at,status,evidence) VALUES($1,$2,$3,'dns_txt',$4,$5,'pending',$6::jsonb) ON CONFLICT(workspace_id,domain) DO UPDATE SET website_url=EXCLUDED.website_url,verification_method='dns_txt',verification_token_hash=EXCLUDED.verification_token_hash,verification_expires_at=EXCLUDED.verification_expires_at,status='pending',verified_at=NULL,verified_by=NULL,evidence='{}'::jsonb,updated_at=NOW() RETURNING id,domain,website_url,status,verification_method,verification_expires_at,created_at",[wid,domain,websiteUrl,tokenHash,expiresAt,JSON.stringify({challengeIssuedAt:new Date().toISOString()})]);
-  return res.status(201).json({success:true,website:saved.rows[0],dnsRecord:{type:"TXT",host:"_aurelink-verification."+domain,value:token},instructions:"Publish the exact TXT record, then call the verify endpoint. Website ownership is not considered verified until Aurelink resolves and matches this challenge."});
+  if(parsed.protocol!=="https:"||parsed.username||parsed.password)return res.status(400).json({success:false,code:"HTTPS_WEBSITE_REQUIRED",message:"Use a public HTTPS company website without embedded credentials."});
+  const domain=normalizeSenderDomain(parsed.hostname);
+  const existing=(await pool.query("SELECT id,domain,website_url,status,verification_token_hash,evidence,verification_expires_at,verified_at,created_at FROM aurelink_verified_websites WHERE workspace_id=$1 AND domain=$2",[wid,domain])).rows[0];
+  if(existing){
+   if(existing.status==="verified")return res.status(200).json({success:true,website:existing,alreadyVerified:true,message:"Website ownership is already verified. No new DNS challenge is required."});
+   const encrypted=String(existing.evidence?.challengeCiphertext||"");
+   if(encrypted){
+    try{
+     const value=decryptSenderToken(encrypted);
+     await pool.query("UPDATE aurelink_verified_websites SET website_url=$3,updated_at=NOW() WHERE id=$1 AND workspace_id=$2",[existing.id,wid,websiteUrl]);
+     return res.status(200).json({success:true,website:{...existing,website_url:websiteUrl},dnsRecord:{type:"TXT",host:"_aurelink-verification."+domain,value},reused:true,instructions:"This is your existing persistent DNS challenge. Keep the same TXT record; Aurelink does not rotate it when you revisit this page."});
+    }catch(error){return res.status(503).json({success:false,code:"DNS_CHALLENGE_DECRYPTION_FAILED",message:"The saved DNS challenge could not be decrypted. The existing record was not overwritten."});}
+   }
+  }
+  const token="aurelink-site-verification="+randomBytes(32).toString("hex"),tokenHash=hash(token),ciphertext=encryptSenderToken(token);
+  const evidence={challengeCiphertext:ciphertext,challengeIssuedAt:new Date().toISOString(),challengeVersion:1};
+  const saved=await pool.query("INSERT INTO aurelink_verified_websites(workspace_id,domain,website_url,verification_method,verification_token_hash,verification_expires_at,status,evidence) VALUES($1,$2,$3,'dns_txt',$4,NULL,'pending',$5::jsonb) ON CONFLICT(workspace_id,domain) DO UPDATE SET website_url=EXCLUDED.website_url,verification_method='dns_txt',verification_token_hash=EXCLUDED.verification_token_hash,verification_expires_at=NULL,status=CASE WHEN aurelink_verified_websites.status='verified' THEN 'verified' ELSE 'pending' END,verified_at=aurelink_verified_websites.verified_at,verified_by=aurelink_verified_websites.verified_by,evidence=EXCLUDED.evidence,updated_at=NOW() RETURNING id,domain,website_url,status,verification_method,verification_expires_at,verified_at,created_at",[wid,domain,websiteUrl,tokenHash,JSON.stringify(evidence)]);
+  return res.status(201).json({success:true,website:saved.rows[0],dnsRecord:{type:"TXT",host:"_aurelink-verification."+domain,value:token},reused:false,instructions:"Publish this TXT record once. The challenge is stored encrypted and remains unchanged until you explicitly regenerate it."});
  }catch(error){return res.status(400).json({success:false,message:error instanceof Error?error.message:"Unable to register website."});}
 });
 router.post("/aurelink/communications/websites/:id/verify",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
  const row=(await pool.query("SELECT * FROM aurelink_verified_websites WHERE id=$1 AND workspace_id=$2",[req.params.id,wid])).rows[0];
  if(!row)return res.status(404).json({success:false,message:"Website verification request not found."});
- if(!row.verification_expires_at||new Date(row.verification_expires_at).getTime()<=Date.now())return res.status(410).json({success:false,code:"WEBSITE_CHALLENGE_EXPIRED",message:"The DNS verification challenge has expired. Create a new challenge before applying for a Sender ID."});
+ if(row.status==="verified")return res.json({success:true,website:{id:row.id,domain:row.domain,website_url:row.website_url,status:"verified",verified_at:row.verified_at},alreadyVerified:true,message:"Website ownership is already verified. No new DNS challenge or verification cycle is required."});
  try{
   const records=await resolveTxt("_aurelink-verification."+String(row.domain));
   const challenge=records.flat().find((v:string)=>v.startsWith("aurelink-site-verification="));
-  if(!challenge||hash(challenge)!==String(row.verification_token_hash))return res.status(409).json({success:false,code:"WEBSITE_OWNERSHIP_NOT_PROVEN",message:"The required DNS TXT challenge was not found or did not match. The website remains unverified."});
-  const updated=await pool.query("UPDATE aurelink_verified_websites SET status='verified',verified_at=NOW(),last_dns_checked_at=NOW(),evidence=jsonb_build_object('dnsTxtVerified',true,'verifiedAt',NOW()),updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,domain,website_url,status,verified_at",[row.id,wid]);
+  if(!challenge)return res.status(409).json({success:false,code:"DNS_TXT_RECORD_NOT_FOUND",message:"The Aurelink TXT record was not found yet. Keep the existing challenge and retry after DNS propagation."});
+  if(hash(challenge)!==String(row.verification_token_hash))return res.status(409).json({success:false,code:"DNS_TXT_VALUE_MISMATCH",message:"A TXT record exists, but its value does not match this website's saved Aurelink challenge. The saved challenge has not changed."});
+  const updated=await pool.query("UPDATE aurelink_verified_websites SET status='verified',verified_at=COALESCE(verified_at,NOW()),last_dns_checked_at=NOW(),evidence=jsonb_set(COALESCE(evidence,'{}'::jsonb),'{dnsTxtVerified}','true'::jsonb,true),updated_at=NOW() WHERE id=$1 AND workspace_id=$2 RETURNING id,domain,website_url,status,verified_at,last_dns_checked_at",[row.id,wid]);
   return res.json({success:true,website:updated.rows[0]});
- }catch{return res.status(409).json({success:false,code:"WEBSITE_DNS_CHECK_FAILED",message:"Aurelink could not verify the DNS challenge. No sender registration can proceed until ownership is verified."});}
+ }catch(error){
+  const code=String((error as any)?.code||"");
+  if(code==="ENODATA"||code==="ENOTFOUND"||code==="NXDOMAIN")return res.status(409).json({success:false,code:"DNS_TXT_RECORD_NOT_FOUND",message:"The TXT record is not visible in DNS yet. The saved challenge remains unchanged; wait for propagation and retry."});
+  return res.status(502).json({success:false,code:"DNS_RESOLVER_ERROR",message:"The DNS resolver could not complete this check ("+(code||"temporary resolver failure")+"). Your saved challenge remains intact; retry without creating another record."});
+ }
 });
 router.get("/aurelink/communications/senders",aurelinkAuthMiddleware,async(req,res)=>{
  const wid=await workspaceId(req.user!.userId,(req as any).aurelinkProjectId,String(req.headers["x-aurelink-workspace-id"]||"")||undefined);
