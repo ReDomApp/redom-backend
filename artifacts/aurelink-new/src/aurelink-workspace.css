@@ -30,3 +30,66 @@
  .aw-heading{flex-direction:column}
 }
 @media(prefers-reduced-motion:reduce){.aw-sidebar{transition:none}}
+
+
+/* Domain center — responsive, Resend-inspired workspace */
+.aw-domain-toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(170px,240px) auto;gap:9px;align-items:center}
+.aw-domain-toolbar input,.aw-domain-toolbar select{width:100%;min-width:0;border:1px solid #d9e1eb;border-radius:9px;background:#fff;color:#253b57;padding:11px 13px;font:inherit;font-size:11px}
+.aw-domain-toolbar input:focus,.aw-domain-toolbar select:focus{outline:0;border-color:#82b8ef;box-shadow:0 0 0 3px #eaf3ff}
+.aw-domain-link{border:0;background:none;padding:0;color:#1c304b;font:inherit;font-size:11px;font-weight:750;text-decoration:underline;text-decoration-color:#cbd6e2;text-underline-offset:4px;cursor:pointer}
+.aw-provider-name{text-transform:capitalize}
+.aw-domain-count{padding:12px 2px;color:#8a98aa;font-size:9px}
+.aw-domain-cards{display:none}
+.aw-domain-card{width:100%;display:flex;align-items:center;gap:11px;text-align:left;background:#fff;border:1px solid #e5ebf2;border-radius:10px;padding:13px;color:#2c405b}
+.aw-domain-globe{width:36px;height:36px;flex:none;display:grid;place-items:center;border:1px solid #dfe8f1;border-radius:10px;color:#477ba9;font-size:22px}
+.aw-domain-card-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.aw-domain-card-main b{font-size:11px;overflow-wrap:anywhere}
+.aw-domain-card-main small{font-size:8px;color:#8795a6}
+.aw-domain-chevron{font-size:22px;color:#91a0b1}
+.aw-domain-back{display:flex;align-items:center;gap:7px;color:#8997a8;font-size:10px}
+.aw-domain-back b{color:#263d5a;overflow-wrap:anywhere}
+.aw-domain-hero{display:grid;grid-template-columns:76px minmax(0,1fr);gap:18px;align-items:center;padding:20px 0 10px}
+.aw-domain-hero-icon{width:76px;height:76px;border:4px solid #e5e9ef;border-radius:22px;display:grid;place-items:center;color:#8c99a9;font-size:43px;background:linear-gradient(135deg,#fff,#f2f5f8)}
+.aw-domain-hero-title{min-width:0}
+.aw-domain-hero-title>span{font-size:9px;color:#8593a5;letter-spacing:1.3px;font-weight:800}
+.aw-domain-hero-title h1{font-size:clamp(19px,3vw,28px);line-height:1.2;letter-spacing:-.6px;overflow-wrap:anywhere;margin:6px 0 9px;color:#172b46}
+.aw-domain-hero-meta{display:flex;align-items:center;gap:10px;color:#8593a5;font-size:9px;text-transform:capitalize}
+.aw-domain-hero-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+.aw-domain-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;padding:15px 0 20px}
+.aw-domain-facts>div{display:flex;flex-direction:column;gap:7px;min-width:0}
+.aw-domain-facts small,.aw-dns-record-card small{font-size:8px;color:#8291a4;letter-spacing:.6px;font-weight:750}
+.aw-domain-facts b{font-size:11px;color:#2a405e;overflow-wrap:anywhere}
+.aw-dns-record-table .aw-table-wrap table{min-width:880px}
+.aw-dns-record-table code,.aw-domain-table code{font-size:9px;overflow-wrap:anywhere;white-space:normal}
+.aw-dns-record-cards{display:none}
+.aw-domain-actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.aw-domain-help{display:block;margin-top:12px;color:#8997a8;font-size:9px;line-height:1.6}
+.aw-cloudflare-status{display:flex;flex-direction:column;gap:8px;margin-bottom:15px}
+.aw-cloudflare-status>div{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #e9eef4;border-radius:8px;color:#4b607b;font-size:10px}
+.aw-domain-hero-actions .aw-btn{min-height:39px}
+@media(max-width:760px){
+ .aw-domain-toolbar{grid-template-columns:1fr 1fr}
+ .aw-domain-toolbar input{grid-column:1/-1}
+ .aw-domain-toolbar>.aw-btn{grid-column:1/-1}
+ .aw-domain-table{display:none}
+ .aw-domain-cards{display:flex;flex-direction:column;gap:8px}
+ .aw-domain-hero{grid-template-columns:58px minmax(0,1fr);gap:12px;padding-top:12px}
+ .aw-domain-hero-icon{width:58px;height:58px;border-radius:17px;font-size:32px}
+ .aw-domain-hero-actions{display:grid;grid-template-columns:1fr 1fr}
+ .aw-domain-hero-actions .aw-btn:first-child{grid-column:1/-1}
+ .aw-dns-record-table{display:none}
+ .aw-dns-record-cards{display:flex;flex-direction:column;gap:10px}
+ .aw-dns-record-card{border:1px solid #e6ebf1;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
+ .aw-dns-record-card header{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+ .aw-dns-record-card header b{font-size:10px;color:#2b405c;flex:1}
+ .aw-dns-record-card>div:not(.aw-dns-record-meta){display:flex;flex-direction:column;gap:5px;min-width:0}
+ .aw-dns-record-card code{font:10px/1.55 ui-monospace,monospace;color:#243a58;overflow-wrap:anywhere;white-space:pre-wrap}
+ .aw-dns-record-card>div:nth-child(3){position:relative;padding-right:54px}
+ .aw-dns-record-card>div:nth-child(3) .aw-btn{position:absolute;right:0;top:12px;padding:6px}
+ .aw-dns-record-meta{display:flex;gap:18px;color:#8492a4;font-size:8px}
+}
+@media(max-width:430px){
+ .aw-domain-facts{gap:14px}
+ .aw-domain-actions{display:grid;grid-template-columns:1fr}
+ .aw-domain-actions .aw-btn{width:100%}
+}
