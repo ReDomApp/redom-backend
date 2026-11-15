@@ -22,7 +22,7 @@ The portal reuses the existing Aurelink access token in same-origin session stor
 
 ## Preserved product boundaries
 
-- The existing Phone Numbers purchase/activation dashboard, SMSPool and NonVoip integrations, number renewals, incoming-message flow and internal settings are not rebuilt or modified here. The portal keeps Phone Numbers separate; a direct navigation URL is not present in this branch, so it does not invent one.
+- The existing Phone Numbers purchase/activation dashboard, SMSPool and NonVoip integrations, number renewals, incoming-message flow and internal settings are not rebuilt or modified here. The portal keeps Phone Numbers separate and links to the existing `aurelink-new` service at `https://aurelink-new.onrender.com` without modifying its number-purchase screens.
 - The private Aurelink Admin remains a separate operations tool and is not exposed in the customer portal.
 - SMS and Email provider routing remains server-controlled where the public send API does not accept customer provider selection.
 - Customer SMTP uses Resend-native settings: \`smtp.resend.com\`, port 465 SSL/TLS or port 587 STARTTLS, username \`resend\`, and a domain-scoped sending-only key. The standalone Aurelink SMTP gateway is prepared infrastructure, not a live customer endpoint.
