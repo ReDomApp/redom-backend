@@ -129,10 +129,11 @@ export async function ensureAurelinkCommunicationsExtendedSchema(): Promise<void
       sender_application_id UUID NOT NULL REFERENCES aurelink_sender_ids(id) ON DELETE CASCADE,
       workspace_id UUID NOT NULL REFERENCES aurelink_communications_workspaces(id) ON DELETE CASCADE,
       actor_user_id UUID REFERENCES aurelink_users(id) ON DELETE SET NULL,
-      action VARCHAR(48) NOT NULL,
+      action VARCHAR(80) NOT NULL,
       details JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE aurelink_sender_security_audit ALTER COLUMN action TYPE VARCHAR(80);
     CREATE INDEX IF NOT EXISTS aurelink_sender_security_audit_history_idx
       ON aurelink_sender_security_audit(sender_application_id,created_at DESC);
     CREATE OR REPLACE FUNCTION aurelink_block_sender_audit_mutation() RETURNS trigger
