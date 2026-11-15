@@ -93,3 +93,12 @@
  .aw-domain-actions{display:grid;grid-template-columns:1fr}
  .aw-domain-actions .aw-btn{width:100%}
 }
+
+.aw-access-mode{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:5px 0 10px}
+.aw-access-mode button{display:flex;flex-direction:column;gap:6px;text-align:left;padding:12px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;color:#415773;cursor:pointer}
+.aw-access-mode button.active{border-color:#8c9bd0;box-shadow:0 0 0 1px #8c9bd0;background:#f9f9ff}
+.aw-access-mode button b{font-size:10px}
+.aw-access-mode button small{font-size:8px;color:#8290a3;line-height:1.4}
+.aw-permission-list.disabled{opacity:.55}
+.aw-permission-options button:disabled{cursor:not-allowed}
+@media(max-width:520px){.aw-access-mode{grid-template-columns:1fr}}
