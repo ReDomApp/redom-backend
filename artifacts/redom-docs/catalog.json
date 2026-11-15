@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-11-15T12:40:48.754Z",
-  "commit": "d037e59333f6a9c19048bf3938f7e3e142270c0e",
+  "generatedAt": "2026-11-15T12:41:52.034Z",
+  "commit": "020cba5a8c4d00db2bde3f4068e4d9bec1797c07",
   "branch": "main",
   "totals": {
-    "files": 1140,
-    "sourceFiles": 816,
+    "files": 1141,
+    "sourceFiles": 817,
     "products": 16,
     "routes": 559,
     "screens": 130,
@@ -68,12 +68,13 @@
     {
       "id": "aurelink-new",
       "name": "Aurelink New",
-      "files": 1,
-      "sourceFiles": 0,
+      "files": 2,
+      "sourceFiles": 1,
       "routes": 0,
       "screens": 0,
       "schemas": 0,
       "paths": [
+        "artifacts/aurelink-new/src/AurelinkWorkspace.tsx",
         "artifacts/aurelink-new/src/aurelink-workspace.css"
       ]
     },
@@ -4677,6 +4678,10 @@
     {
       "name": "vite.config.ts",
       "source": "artifacts/aurelink-admin/vite.config.ts"
+    },
+    {
+      "name": "AurelinkWorkspace.tsx",
+      "source": "artifacts/aurelink-new/src/AurelinkWorkspace.tsx"
     },
     {
       "name": "communications-webhook.test.ts",
