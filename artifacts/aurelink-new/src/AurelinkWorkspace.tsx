@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import AurelinkDashboard from "./AurelinkDashboard";
 import "./aurelink-workspace.css";
+import "./brevo-settings.css";
 
 const API=(import.meta.env.VITE_API_BASE_URL as string|undefined)?.replace(/\/$/,"")||"https://redom-backend.onrender.com/redom-backend";
 type Row=Record<string,any>;
