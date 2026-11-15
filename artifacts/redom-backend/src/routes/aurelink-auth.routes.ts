@@ -62,7 +62,28 @@ async function enforceAurelinkIpAllowlist(userId:string,sourceIp:string) {
  const allowed=row.entries.some((entry:string)=>{const [base,prefix]=entry.split("/");const version=isIP(base);if(!version||version!==isIP(sourceIp))return false;const bits=version===4?32:128,n=prefix===undefined?bits:Number(prefix);if(!Number.isInteger(n)||n<0||n>bits)return false;if(version===4){const toN=(s:string)=>s.split(".").reduce((v,x)=>(v<<8n)|BigInt(Number(x)),0n),shift=BigInt(bits-n);return(toN(sourceIp)>>shift)===(toN(base)>>shift);}const toN=(s:string)=>{let v=s.toLowerCase();if(v.includes(".")){const parts=v.split(":");const last=parts.pop()!,n=last.split(".").reduce((a,x)=>(a<<8n)|BigInt(Number(x)),0n);parts.push(((n>>16n)&65535n).toString(16),(n&65535n).toString(16));v=parts.join(":");}const halves=v.split("::"),left=halves[0]?halves[0].split(":"):[],right=halves[1]?halves[1].split(":"):[],groups=halves.length===2?[...left,...Array(8-left.length-right.length).fill("0"),...right]:left;if(groups.length!==8)return -1n;return groups.reduce((a,x)=>(a<<16n)|BigInt(parseInt(x||"0",16)),0n);},shift=BigInt(bits-n);return(toN(sourceIp)>>shift)===(toN(base)>>shift);});
  if(!allowed)throw Object.assign(new Error("This IP address is not on your Aurelink allowlist. Use verified-email recovery."),{status:403,code:"AURELINK_IP_NOT_ALLOWED"});
 }
-async function startSession(req:Request,user:{id:string;email:string;first_name?:string;account_id?:string}) {
+function isConfirmedMobileCarrierNetwork(network:Awaited<ReturnType<typeof checkIP>>):boolean {
+  // Carrier-grade NAT and shared mobile gateways can look proxy-like to IP reputation feeds.
+  // Only relax proxy/VPN/fraud-score heuristics when IPAPI independently identifies a mobile IP.
+  const companyType=String(network.company?.type??"").toLowerCase();
+  const asnType=String(network.asn?.type??"").toLowerCase();
+  return network.is_mobile===true && (companyType==="isp" || companyType==="mobile" || asnType==="isp" || asnType==="mobile");
+}
+function networkBlockReason(network:Awaited<ReturnType<typeof checkIP>>):string|null {
+  if(network.success!==true) return "network_check_failed";
+  if(network.is_bogon===true) return "bogon";
+  if(network.is_crawler===true || network.bot_status===true) return "automated_bot";
+  if(network.is_tor===true || network.tor===true || network.active_tor===true) return "tor";
+  if(network.is_datacenter===true || network.hosting===true) return "datacenter_hosting";
+  if(network.is_abuser===true || network.recent_abuse===true) return "known_abuse";
+  const confirmedMobileCarrier=isConfirmedMobileCarrierNetwork(network);
+  const confirmedVpn=Boolean(network.vpn_details?.service || network.vpn_details?.type || network.egress_service);
+  if(confirmedVpn || (!confirmedMobileCarrier && (network.is_vpn===true || network.vpn===true || network.active_vpn===true))) return "vpn";
+  if(!confirmedMobileCarrier && (network.is_proxy===true || network.proxy===true)) return "proxy";
+  if(!confirmedMobileCarrier && typeof network.fraud_score==="number" && network.fraud_score>=70) return "high_fraud_score";
+  return null;
+}
+async function startSession(req:Request,user:{id:string;email:string;first_name?:string;account_id?:string},network:Awaited<ReturnType<typeof checkIP>>) {
   const sessionId = randomUUID();
   const accessToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},jwtSecret(),{expiresIn:"15m"});
   const refreshToken=jwt.sign({userId:user.id,sessionId,audience:"aurelink"},refreshSecret(),{expiresIn:"30d"});
@@ -105,6 +126,17 @@ router.post("/aurelink/auth/login",async(req,res)=>{
     if(user.account_status!=="active"){await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,failureReason:"account_inactive"});return res.status(403).json({success:false,message:"This Aurelink account is not active."});}
     const sourceIp=clientIp(req);
     try{await enforceAurelinkIpAllowlist(user.id,sourceIp);}catch(e){await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,failureReason:"ip_allowlist"}).catch(()=>undefined);throw e;}
+    let network:Awaited<ReturnType<typeof checkIP>>;
+    try { network=await checkIP(sourceIp); }
+    catch { 
+      await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,sourceIp,failureReason:"network_check_unavailable"}).catch(()=>undefined);
+      return res.status(503).json({success:false,code:"AURELINK_NETWORK_CHECK_UNAVAILABLE",message:"We couldn't securely verify this connection right now. Please try again shortly."});
+    }
+    const blockReason=networkBlockReason(network);
+    if(blockReason) {
+      await recordAurelinkLoginEvent({userId:user.id,eventType:"login_blocked",success:false,request:req,sourceIp,failureReason:blockReason}).catch(()=>undefined);
+      return res.status(403).json({success:false,code:"AURELINK_NETWORK_BLOCKED",message:"For your security, Aurelink cannot sign in from this connection. Disable confirmed VPN, proxy, or Tor services and try again using a trusted network."});
+    }
     const sec=await pool.query("SELECT two_factor_enabled,two_factor_method,totp_enabled FROM aurelink_account_security WHERE user_id=$1",[user.id]);
     if(sec.rows[0]?.two_factor_enabled && !sec.rows[0]?.totp_enabled) return res.status(423).json({success:false,code:"AURELINK_2FA_METHOD_UNAVAILABLE",message:"This account has a legacy two-factor method that cannot be verified in this sign-in flow. Contact Aurelink Support; password-only sign-in remains blocked."});
     if(sec.rows[0]?.two_factor_enabled && sec.rows[0]?.totp_enabled) {
@@ -112,7 +144,7 @@ router.post("/aurelink/auth/login",async(req,res)=>{
       await recordAurelinkLoginEvent({userId:user.id,eventType:"login_2fa_required",success:false,request:req,failureReason:"two_factor_required"});
       return res.status(202).json({success:false,requiresTwoFactor:true,challengeId:challenge.rows[0].id,expiresAt:challenge.rows[0].expires_at,message:"Enter the current code from your authenticator app."});
     }
-    const session=await startSession(req,{id:user.id,email:user.email,first_name:user.first_name,account_id:user.account_id});
+    const session=await startSession(req,{id:user.id,email:user.email,first_name:user.first_name,account_id:user.account_id},network);
     await pool.query("INSERT INTO aurelink_audit_logs(user_id,event_type,ip_address,user_agent) VALUES($1,'auth.login',$2,$3)",[user.id,clientIp(req),agent(req)]);
     delete user.password_hash;
     return res.json({success:true,user,session});
