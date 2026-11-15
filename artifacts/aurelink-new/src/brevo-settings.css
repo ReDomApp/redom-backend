@@ -112,3 +112,4 @@
  .aw-content:has(.aw-credential-tabs) .aw-access-mode{grid-template-columns:1fr}
  .aw-content:has(.aw-credential-tabs) .aw-credential-modal{padding:20px 16px}
 }
+.aw-content:has(.aw-credential-tabs) .aw-credential-back{border:0;background:transparent;color:#1877f2;font-size:11px;padding:0;margin:0 0 14px;cursor:pointer}
