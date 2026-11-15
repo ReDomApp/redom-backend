@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Opening Aurelink…</title>
+  <script>
+    (function () {
+      var path = window.location.pathname + window.location.search + window.location.hash;
+      if (path === "/" || path.indexOf("//") === 0) return;
+      window.location.replace("/?__aurelink_path=" + encodeURIComponent(path));
+    })();
+  </script>
+</head>
+<body>
+  <p>Opening your Aurelink workspace…</p>
+  <noscript>Enable JavaScript to open your Aurelink workspace.</noscript>
+</body>
+</html>
