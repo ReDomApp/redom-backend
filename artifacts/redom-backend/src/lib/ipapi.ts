@@ -110,7 +110,7 @@ export async function checkIP(ip: string): Promise<IPAPIResult> {
         const companyScore = parseAbuserScore(data.company?.abuser_score);
         const asnScore = parseAbuserScore(data.asn?.abuser_score);
         const fraudScore = Math.max(companyScore, asnScore);
-        const crawler = Boolean(data.is_crawler);
+        const crawler = data.is_crawler === true || (typeof data.is_crawler === "string" && /^(true|1|yes)$/i.test(data.is_crawler.trim()));
 
         return {
           ...data,
