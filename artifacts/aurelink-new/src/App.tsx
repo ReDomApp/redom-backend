@@ -21,7 +21,7 @@ function screenFromPath(path:string):Screen {
  if(p==="/auth/reset-success")return "reset-success";
  if(p==="/auth/session-security")return "session-security";
  if(p==="/auth/two-factor")return "two-factor";
- if(p.startsWith("/dashboard")||p.startsWith("/numbers")||p.startsWith("/settings")||p==="/orders"||p==="/wallet"||p.startsWith("/developers")||p.startsWith("/sms")||p.startsWith("/email")||p.startsWith("/mail")||p.startsWith("/activity")||p.startsWith("/templates")||p.startsWith("/contacts")||p.startsWith("/campaigns")||p.startsWith("/domains")||p.startsWith("/senders")||p.startsWith("/smtp")||p.startsWith("/sender-ids")||p.startsWith("/verification")||p.startsWith("/billing")||p.startsWith("/team")||p.startsWith("/reputation"))return "dashboard";
+ if(p.startsWith("/dashboard")||p.startsWith("/numbers")||p.startsWith("/settings")||p==="/orders"||p==="/wallet"||p.startsWith("/developers")||p.startsWith("/sms")||p.startsWith("/email")||p.startsWith("/mail")||p.startsWith("/activity")||p.startsWith("/templates")||p.startsWith("/contacts")||p.startsWith("/campaigns")||p.startsWith("/domains")||p.startsWith("/senders")||p.startsWith("/smtp")||p.startsWith("/api-keys")||p.startsWith("/sender-ids")||p.startsWith("/verification")||p.startsWith("/billing")||p.startsWith("/team")||p.startsWith("/reputation"))return "dashboard";
  return "login";
 }
 function pathForScreen(screen:Screen):string {
