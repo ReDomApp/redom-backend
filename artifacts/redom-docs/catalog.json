@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-15T12:54:25.507Z",
-  "commit": "9ae33dc55e1e3256b44fe346e57ea39cb8253cbd",
+  "generatedAt": "2026-11-15T12:59:17.086Z",
+  "commit": "059876dc5911589c36c820a78455381b31e63aa8",
   "branch": "main",
   "totals": {
     "files": 1142,
@@ -692,109 +692,109 @@
       "method": "POST",
       "path": "/aurelink/communications/websites",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 240
+      "line": 246
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/websites/:id/verify",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 250
+      "line": 270
     },
     {
       "method": "GET",
       "path": "/aurelink/communications/senders",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 263
+      "line": 288
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/senders",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 268
+      "line": 293
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/senders/:id/review",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 348
+      "line": 373
     },
     {
       "method": "GET",
       "path": "/aurelink/admin/communications/senders/:id/audit",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 422
+      "line": 447
     },
     {
       "method": "GET",
       "path": "/aurelink/admin/communications/sender-submissions",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 427
+      "line": 452
     },
     {
       "method": "POST",
       "path": "/aurelink/admin/communications/sender-submissions/:id/reveal-token",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 432
+      "line": 457
     },
     {
       "method": "POST",
       "path": "/aurelink/admin/communications/sender-submissions/:id/rotate-token",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 450
+      "line": 475
     },
     {
       "method": "POST",
       "path": "/aurelink/admin/communications/sender-submissions/:id/mark-submitted",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 466
+      "line": 491
     },
     {
       "method": "POST",
       "path": "/aurelink/webhooks/brevo/sender-registration",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 518
+      "line": 543
     },
     {
       "method": "POST",
       "path": "/aurelink/admin/communications/sender-submissions/:id/reconcile",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 536
+      "line": 561
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/dns/cloudflare/connect",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 550
+      "line": 575
     },
     {
       "method": "GET",
       "path": "/aurelink/communications/dns/cloudflare/connections",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 559
+      "line": 584
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/domains/:id/apply-dns",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 564
+      "line": 589
     },
     {
       "method": "GET",
       "path": "/aurelink/communications/email-senders",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 578
+      "line": 603
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/email-senders",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 583
+      "line": 608
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/email-senders/:id/check",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-setup.routes.ts",
-      "line": 601
+      "line": 626
     },
     {
       "method": "GET",
