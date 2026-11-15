@@ -1,0 +1,115 @@
+/* Brevo-faithful credential settings experience. Aurelink brand color is the only visual identity substitution. */
+.aw-content:has(.aw-credential-tabs){background:#fff;color:#252b35;max-width:none;padding:22px 28px 40px;gap:14px}
+.aw-content:has(.aw-credential-tabs) .aw-heading{align-items:center;margin:20px 0 8px}
+.aw-content:has(.aw-credential-tabs) .aw-heading>div>span{color:#1877f2;font-size:11px;letter-spacing:.4px}
+.aw-content:has(.aw-credential-tabs) .aw-heading h1{font-size:25px;font-weight:650;letter-spacing:-.4px;color:#252b35;margin:7px 0}
+.aw-content:has(.aw-credential-tabs) .aw-heading p{font-size:12px;color:#68717d}
+.aw-content:has(.aw-credential-tabs) .aw-heading .aw-btn{border-radius:22px;background:#1877f2;color:#fff;padding:10px 17px;font-size:11px;box-shadow:none}
+.aw-content:has(.aw-credential-tabs) .aw-credential-tabs{display:flex;gap:0;border-bottom:1px solid #e7e9ed;margin:0 0 10px}
+.aw-content:has(.aw-credential-tabs) .aw-credential-tabs button{position:relative;border:0;background:transparent;padding:13px 15px;color:#626b78;font-size:12px;cursor:pointer}
+.aw-content:has(.aw-credential-tabs) .aw-credential-tabs button.active{color:#1877f2;font-weight:650}
+.aw-content:has(.aw-credential-tabs) .aw-credential-tabs button.active:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:#1877f2}
+.aw-content:has(.aw-credential-tabs) .aw-notice{border-radius:7px;padding:13px 16px;font-size:11px;line-height:1.55}
+.aw-content:has(.aw-credential-tabs) .aw-notice.warn{background:#f1efff;border-color:#e8e5ff;color:#3d3b55}
+.aw-content:has(.aw-credential-tabs) .aw-panel{border:0;border-radius:0;box-shadow:none;padding:12px 0;background:#fff}
+.aw-content:has(.aw-credential-tabs) .aw-panel>header{margin:0 0 13px}
+.aw-content:has(.aw-credential-tabs) .aw-panel h2{font-size:13px;font-weight:650;color:#303741}
+.aw-content:has(.aw-credential-tabs) .aw-panel header p{font-size:10px;color:#68717d}
+.aw-content:has(.aw-credential-tabs) .aw-panel select,
+.aw-content:has(.aw-credential-tabs) .aw-panel input,
+.aw-content:has(.aw-credential-tabs) .aw-field input,
+.aw-content:has(.aw-credential-tabs) .aw-field select,
+.aw-content:has(.aw-credential-tabs) .aw-field textarea{border:1px solid #d7dbe2;border-radius:6px;padding:10px 12px;font-size:12px;color:#303741;min-height:39px;box-shadow:none}
+.aw-content:has(.aw-credential-tabs) .aw-panel input:focus,
+.aw-content:has(.aw-credential-tabs) .aw-panel select:focus,
+.aw-content:has(.aw-credential-tabs) .aw-field input:focus,
+.aw-content:has(.aw-credential-tabs) .aw-field select:focus{border-color:#1877f2;box-shadow:0 0 0 2px #1877f21a}
+.aw-content:has(.aw-credential-tabs) .aw-btn{font-size:11px;border-radius:18px;padding:9px 15px}
+.aw-content:has(.aw-credential-tabs) .aw-btn.secondary{background:#f7f8fa;color:#4b5563;border:1px solid #dfe2e7}
+.aw-content:has(.aw-credential-tabs) .aw-btn.danger{background:#fff1f2;color:#b42335}
+.aw-content:has(.aw-credential-tabs) .aw-key-toolbar{display:flex;align-items:center;gap:12px;margin:8px 0 0}
+.aw-content:has(.aw-credential-tabs) .aw-key-toolbar input{max-width:330px;border:1px solid #d9dde3;border-radius:20px;padding:9px 13px;font-size:11px}
+.aw-content:has(.aw-credential-tabs) .aw-key-toolbar span{font-size:10px;color:#707985}
+.aw-content:has(.aw-credential-tabs) .aw-table-wrap{border:1px solid #e5e7eb;border-radius:9px}
+.aw-content:has(.aw-credential-tabs) .aw-table-wrap table{min-width:760px;border-collapse:separate;border-spacing:0}
+.aw-content:has(.aw-credential-tabs) .aw-table-wrap th{background:#fff;color:#707985;font-size:10px;letter-spacing:0;text-transform:none;font-weight:600;padding:13px 12px;border-bottom:1px solid #e7e9ed}
+.aw-content:has(.aw-credential-tabs) .aw-table-wrap td{font-size:11px;color:#394150;padding:13px 12px;border-top:0;border-bottom:1px solid #eceef1}
+.aw-content:has(.aw-credential-tabs) .aw-table-wrap tbody tr:last-child td{border-bottom:0}
+.aw-content:has(.aw-credential-tabs) .aw-table-wrap td b{color:#303741;font-weight:600}
+.aw-content:has(.aw-credential-tabs) .aw-table-wrap code{font-size:10px;color:#555e6b}
+.aw-content:has(.aw-credential-tabs) .aw-badge{font-size:9px;font-weight:600;padding:3px 8px}
+.aw-content:has(.aw-credential-tabs) .aw-badge.good{background:#e2f5eb;color:#25845b}
+.aw-content:has(.aw-credential-tabs) .aw-key-menu{position:relative;display:flex;justify-content:flex-end}
+.aw-content:has(.aw-credential-tabs) .aw-key-menu>button{width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:#6c7480;font-size:19px}
+.aw-content:has(.aw-credential-tabs) .aw-key-menu>button:hover{background:#f2f3f5}
+.aw-content:has(.aw-credential-tabs) .aw-key-menu>div{position:absolute;right:0;top:32px;z-index:30;min-width:170px;padding:5px;background:#fff;border:1px solid #e5e7eb;border-radius:9px;box-shadow:0 8px 25px #1720331f}
+.aw-content:has(.aw-credential-tabs) .aw-key-menu>div button{display:block;width:100%;padding:9px 10px;text-align:left;border:0;border-radius:5px;background:#fff;color:#374151;font-size:11px}
+.aw-content:has(.aw-credential-tabs) .aw-key-menu>div button:hover{background:#f5f6f8}
+.aw-content:has(.aw-credential-tabs) .aw-key-menu>div button.danger{color:#c03445}
+.aw-content:has(.aw-credential-tabs) .aw-api-layout{display:grid;grid-template-columns:minmax(0,1fr) 245px;gap:20px;align-items:start;margin-top:15px}
+.aw-content:has(.aw-credential-tabs) .aw-api-layout .aw-panel{border:1px solid #e4e6eb;border-radius:9px;padding:17px}
+.aw-content:has(.aw-credential-tabs) .aw-api-layout .aw-panel>header{margin-bottom:15px}
+.aw-content:has(.aw-credential-tabs) .aw-api-layout .aw-panel h2{font-size:15px}
+.aw-content:has(.aw-credential-tabs) .aw-api-layout .aw-panel header p{font-size:11px}
+.aw-content:has(.aw-credential-tabs) .aw-api-layout .aw-form{gap:14px}
+.aw-content:has(.aw-credential-tabs) .aw-api-layout .aw-field{font-size:11px;gap:7px}
+.aw-content:has(.aw-credential-tabs) .aw-api-layout .aw-field input,
+.aw-content:has(.aw-credential-tabs) .aw-api-layout .aw-field select{min-height:43px;font-size:12px;border-radius:7px}
+.aw-content:has(.aw-credential-tabs) .aw-api-preview{position:sticky;top:88px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;padding:13px;display:flex;flex-direction:column;gap:12px}
+.aw-content:has(.aw-credential-tabs) .aw-api-preview>b{font-size:12px;color:#303741}
+.aw-content:has(.aw-credential-tabs) .aw-api-preview>span{font-size:9px;color:#68717d}
+.aw-content:has(.aw-credential-tabs) .aw-api-preview>div{display:flex;flex-direction:column;gap:4px;padding-bottom:9px;border-bottom:1px solid #e8eaed}
+.aw-content:has(.aw-credential-tabs) .aw-api-preview>div b{font-size:10px;color:#424a56}
+.aw-content:has(.aw-credential-tabs) .aw-api-preview>div small,.aw-content:has(.aw-credential-tabs) .aw-api-preview>small{font-size:9px;color:#747d89;line-height:1.4}
+.aw-content:has(.aw-credential-tabs) .aw-access-mode button{border-radius:7px;padding:13px}
+.aw-content:has(.aw-credential-tabs) .aw-access-mode button.active{border:2px solid #1877f2;background:#f7faff;box-shadow:none}
+.aw-content:has(.aw-credential-tabs) .aw-access-mode button b{font-size:11px}
+.aw-content:has(.aw-credential-tabs) .aw-access-mode button small{font-size:10px}
+.aw-content:has(.aw-credential-tabs) .aw-permission-heading{display:flex;align-items:baseline;gap:8px;margin:5px 0 10px}
+.aw-content:has(.aw-credential-tabs) .aw-permission-heading b{font-size:14px;color:#303741}
+.aw-content:has(.aw-credential-tabs) .aw-permission-heading span{font-size:11px;color:#737b87}
+.aw-content:has(.aw-credential-tabs) .aw-permission-list{display:flex;flex-direction:column;gap:7px}
+.aw-content:has(.aw-credential-tabs) .aw-permission-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 11px;border:1px solid #e7e9ed;border-radius:7px}
+.aw-content:has(.aw-credential-tabs) .aw-permission-row>b{font-size:11px;color:#424a56}
+.aw-content:has(.aw-credential-tabs) .aw-permission-options{display:flex;gap:0;background:#f1f2f4;border-radius:7px;padding:2px}
+.aw-content:has(.aw-credential-tabs) .aw-permission-options button{border:0;background:transparent;border-radius:5px;padding:6px 9px;font-size:10px;color:#4e5662}
+.aw-content:has(.aw-credential-tabs) .aw-permission-options button.active{background:#fff;color:#1877f2;box-shadow:0 1px 3px #1f29331c}
+.aw-content:has(.aw-credential-tabs) .aw-form-actions{justify-content:flex-start;gap:10px}
+.aw-content:has(.aw-credential-tabs) .aw-credential-modal-backdrop{position:fixed;inset:0;z-index:200;background:#11182755;display:grid;place-items:center;padding:18px}
+.aw-content:has(.aw-credential-tabs) .aw-credential-modal{position:relative;width:min(100%,430px);background:#fff;border-radius:12px;padding:24px;box-shadow:0 18px 55px #11182733}
+.aw-content:has(.aw-credential-tabs) .aw-credential-modal h2{font-size:18px;color:#303741;margin:0 0 10px}
+.aw-content:has(.aw-credential-tabs) .aw-credential-modal p{font-size:11px;line-height:1.6;color:#5e6672}
+.aw-content:has(.aw-credential-tabs) .aw-credential-modal-close{position:absolute;right:13px;top:10px;border:0;background:transparent;font-size:22px;color:#777}
+.aw-content:has(.aw-credential-tabs) .aw-credential-modal-icon{display:none}
+.aw-content:has(.aw-credential-tabs) .aw-credential-destination{font-size:11px;color:#555f6d;margin:10px 0}
+.aw-content:has(.aw-credential-tabs) .aw-credential-modal-actions{display:flex;justify-content:flex-end;gap:9px}
+.aw-content:has(.aw-credential-tabs) .aw-credential-resend{margin-top:12px;border:0;background:transparent;color:#1877f2;font-size:10px}
+.aw-content:has(.aw-credential-tabs) .aw-smtp-settings{display:grid;grid-template-columns:105px minmax(0,1fr);gap:7px 12px;margin:8px 0 14px;font-size:11px}
+.aw-content:has(.aw-credential-tabs) .aw-smtp-settings>div{display:contents}
+.aw-content:has(.aw-credential-tabs) .aw-smtp-settings span{color:#69727e}
+.aw-content:has(.aw-credential-tabs) .aw-smtp-settings b{font-weight:500;color:#303741;overflow-wrap:anywhere}
+.aw-content:has(.aw-credential-tabs) .aw-key-row-actions{display:flex;gap:5px;flex-wrap:nowrap}
+.aw-content:has(.aw-credential-tabs) .aw-key-row-actions .aw-btn{padding:6px 9px;font-size:9px}
+.aw-content:has(.aw-credential-tabs) .aw-key-bulkbar{position:sticky;bottom:8px;z-index:25;display:flex;align-items:center;gap:10px;padding:10px 13px;border:1px solid #dfe3e9;border-radius:8px;background:#fff;box-shadow:0 5px 20px #17203314;font-size:11px}
+.aw-content:has(.aw-credential-tabs) .aw-key-bulkbar>span{margin-right:auto;color:#4d5662}
+@media(max-width:760px){
+ .aw-content:has(.aw-credential-tabs){padding:14px 13px 28px;gap:11px}
+ .aw-content:has(.aw-credential-tabs) .aw-heading{margin:13px 0 4px;flex-direction:row;align-items:center}
+ .aw-content:has(.aw-credential-tabs) .aw-heading h1{font-size:21px}
+ .aw-content:has(.aw-credential-tabs) .aw-heading p{font-size:10px}
+ .aw-content:has(.aw-credential-tabs) .aw-heading .aw-btn{font-size:10px;padding:8px 11px}
+ .aw-content:has(.aw-credential-tabs) .aw-api-layout{grid-template-columns:1fr}
+ .aw-content:has(.aw-credential-tabs) .aw-api-preview{position:static;order:2}
+ .aw-content:has(.aw-credential-tabs) .aw-permission-row{align-items:flex-start;flex-direction:column}
+ .aw-content:has(.aw-credential-tabs) .aw-permission-options{width:100%}
+ .aw-content:has(.aw-credential-tabs) .aw-permission-options button{flex:1}
+ .aw-content:has(.aw-credential-tabs) .aw-key-toolbar input{max-width:none;flex:1}
+ .aw-content:has(.aw-credential-tabs) .aw-smtp-settings{grid-template-columns:95px minmax(0,1fr)}
+}
+@media(max-width:420px){
+ .aw-content:has(.aw-credential-tabs) .aw-heading{align-items:flex-start;flex-direction:column}
+ .aw-content:has(.aw-credential-tabs) .aw-heading .aw-btn{width:100%}
+ .aw-content:has(.aw-credential-tabs) .aw-access-mode{grid-template-columns:1fr}
+ .aw-content:has(.aw-credential-tabs) .aw-credential-modal{padding:20px 16px}
+}
+.aw-content:has(.aw-credential-tabs) .aw-credential-back{border:0;background:transparent;color:#1877f2;font-size:11px;padding:0;margin:0 0 14px;cursor:pointer}
