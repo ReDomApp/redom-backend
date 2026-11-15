@@ -12,7 +12,7 @@ const app: Express = express();
 // Render can place more than one private ingress hop in front of the service.
 // Trust only loopback/link-local/private proxy ranges so Express resolves the
 // original public client address instead of stopping at an internal hop.
-app.set("trust proxy", "loopback, linklocal, uniquelocal, 100.64.0.0/10");
+app.set("trust proxy", 1);
 app.use(pinoHttp({ logger, serializers: { req(req) { return { id: req.id, method: req.method, url: req.url?.split("?")[0]?.replace(/(\/aurelink\/(?:mail\/credits\/pay|sms\/packages\/pay)\/)[A-Za-z0-9_-]{40,60}/, "$1[redacted]") }; }, res(res) { return { statusCode: res.statusCode }; } } }));
 app.use(cors({ origin: true, credentials: true }));
 app.use("/redom-backend/whatsapp/webhook", express.raw({ type: "application/json", limit: "2mb" }));
