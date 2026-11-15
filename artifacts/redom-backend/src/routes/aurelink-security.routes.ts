@@ -131,7 +131,7 @@ r.patch("/aurelink/account/api-keys/:id",aurelinkAuthMiddleware,async(q,s)=>{
 r.post("/aurelink/account/api-keys/:id/rotate",aurelinkAuthMiddleware,async(q,s)=>{
  const current=(await pool.query("SELECT environment FROM aurelink_api_keys WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL",[q.params.id,q.user!.userId])).rows[0];
  if(!current){s.status(404).json({success:false,message:"Active API key not found."});return;}
- await consumeCredentialVerification(q.user!.userId,"api_key_rotate",String(q.body.verificationToken||""));
+ try{await consumeCredentialVerification(q.user!.userId,"api_key_rotate",String(q.body.verificationToken||""));}catch(e){return s.status(403).json({success:false,code:"EMAIL_VERIFICATION_REQUIRED",message:e instanceof Error?e.message:"Verify your email before rotating this API key."});}
  const issued=issueApiKey(current.environment==="test"?"test":"live"),x=await pool.query("UPDATE aurelink_api_keys SET key_hash=$3,key_prefix=$4,last_rotated_at=NOW(),last_used_at=NULL WHERE id=$1 AND user_id=$2 RETURNING id,label,key_prefix,environment,project_id,scopes,rate_limit_per_minute,expires_at,created_at,last_rotated_at",[q.params.id,q.user!.userId,H(issued.secret),issued.keyPrefix]);
  s.json({success:true,key:x.rows[0],secret:issued.secret});
 });
