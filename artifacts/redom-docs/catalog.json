@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-15T14:40:05.013Z",
-  "commit": "d5d5dd719937c84af624aa69c90e54eab01e4382",
+  "generatedAt": "2026-11-15T14:44:01.202Z",
+  "commit": "23624988cc65662cc00279e90552ed00264aba03",
   "branch": "main",
   "totals": {
     "files": 1142,
@@ -512,109 +512,109 @@
       "method": "POST",
       "path": "/aurelink/auth/session-security/action",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 127
+      "line": 121
     },
     {
       "method": "GET",
       "path": "/aurelink/auth/login-history",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 136
+      "line": 130
     },
     {
       "method": "GET",
       "path": "/aurelink/auth/me",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 137
+      "line": 131
     },
     {
       "method": "POST",
       "path": "/aurelink/account/email-change/request",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 165
+      "line": 159
     },
     {
       "method": "POST",
       "path": "/aurelink/account/email-change/verify-current",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 194
+      "line": 188
     },
     {
       "method": "POST",
       "path": "/aurelink/account/email-change/verify-new",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 215
+      "line": 209
     },
     {
       "method": "POST",
       "path": "/aurelink/account/name-change/request",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 241
+      "line": 235
     },
     {
       "method": "POST",
       "path": "/aurelink/account/name-change/confirm",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 267
+      "line": 261
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/logout",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 306
+      "line": 300
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/refresh",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 312
+      "line": 306
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/account-auth-key/bind",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 379
+      "line": 373
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/admin/asak24/migrate",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 475
+      "line": 469
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/account-auth-key/verify",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 526
+      "line": 520
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/password-reset/request",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 551
+      "line": 545
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/password-reset/complete",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 611
+      "line": 605
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/signup/email/request",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 730
+      "line": 724
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/signup/email/verify",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 798
+      "line": 792
     },
     {
       "method": "POST",
       "path": "/aurelink/auth/signup/complete",
       "source": "artifacts/redom-backend/src/routes/aurelink-auth.routes.ts",
-      "line": 811
+      "line": 805
     },
     {
       "method": "POST",
