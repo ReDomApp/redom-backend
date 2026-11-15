@@ -30,3 +30,5 @@
  .aw-heading{flex-direction:column}
 }
 @media(prefers-reduced-motion:reduce){.aw-sidebar{transition:none}}
+
+.aw-managed-routing{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:38px;padding:9px 11px;border:1px solid #e2eaf4;border-radius:7px;background:#f7faff;color:#687c95;font-size:10px}.aw-managed-routing b{color:#216bb6;font-size:10px;font-weight:750}
