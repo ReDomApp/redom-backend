@@ -82,7 +82,6 @@ function DomainsPage(){
  useEffect(()=>{void load();},[]);
  const filtered=rows.filter(x=>(String(x.domain||"").toLowerCase().includes(search.toLowerCase())||String(x.provider||"").toLowerCase().includes(search.toLowerCase()))&&(filter==="all"||String(x.status)===filter));
  const records=(selected?.dns_records||[]) as Row[];
- const statusLabel=(x:Row)=>String(x.status||"unknown").replace(/_/g," ");
  const recordStatus=(r:Row)=>r.status===true||r.status==="verified"||r.status==="success"?"Verified":r.status===false||r.status==="not_started"?"Pending":String(r.status||"Pending");
  async function add(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=e.currentTarget;const body=Object.fromEntries(new FormData(form).entries());setBusy(true);try{const r=await post("/aurelink/communications/domains",body);const domain=r.domain||null;setSelected(domain);setNotice("Domain connected. Publish the provider-issued DNS records below, then verify.");form.reset();await load();setMode(domain?"detail":"list");}catch(x){setNotice(x instanceof Error?x.message:"Unable to add domain.");}finally{setBusy(false);}}
  async function connect(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=e.currentTarget;setBusy(true);try{await post("/aurelink/communications/dns/cloudflare/connect",Object.fromEntries(new FormData(form).entries()));setNotice("Cloudflare zone connected securely.");form.reset();await load();}catch(x){setNotice(x instanceof Error?x.message:"Unable to connect Cloudflare.");}finally{setBusy(false);}}
