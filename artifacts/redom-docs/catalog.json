@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-11-15T03:46:27.946Z",
-  "commit": "9da9d7559db175f50a25c58d288bb1d6e4d70928",
+  "generatedAt": "2026-11-15T12:40:48.754Z",
+  "commit": "d037e59333f6a9c19048bf3938f7e3e142270c0e",
   "branch": "main",
   "totals": {
-    "files": 1139,
-    "sourceFiles": 815,
-    "products": 15,
+    "files": 1140,
+    "sourceFiles": 816,
+    "products": 16,
     "routes": 559,
     "screens": 130,
     "schemas": 95,
@@ -63,6 +63,18 @@
         "artifacts/aurelink-admin/src/style.css",
         "artifacts/aurelink-admin/tsconfig.json",
         "artifacts/aurelink-admin/vite.config.ts"
+      ]
+    },
+    {
+      "id": "aurelink-new",
+      "name": "Aurelink New",
+      "files": 1,
+      "sourceFiles": 0,
+      "routes": 0,
+      "screens": 0,
+      "schemas": 0,
+      "paths": [
+        "artifacts/aurelink-new/src/aurelink-workspace.css"
       ]
     },
     {
