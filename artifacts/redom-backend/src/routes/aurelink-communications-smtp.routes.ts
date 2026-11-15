@@ -6,6 +6,7 @@ import { aurelinkAuthMiddleware } from "../middleware/aurelink-auth.middleware";
 import { createAurelinkResendSmtpKey, revokeAurelinkResendSmtpKey } from "../services/aurelink/communications-smtp.service";
 
 import { TEMPORARY_RESEND_SMTP, temporaryResendSmtpCredential } from "../services/aurelink/communications-smtp-temporary-resend";
+import { consumeCredentialVerification } from "../services/aurelink/credential-email-verification.service";
 
 const router = Router();
 // Resend is the active customer SMTP transport until Aurelink's own gateway is deployed and verified. Keep direct mode enabled by default; set the flag to exactly "false" only for the verified cutover.
@@ -88,6 +89,9 @@ router.post("/aurelink/communications/smtp/credentials", aurelinkAuthMiddleware,
   if (!domain) return res.status(404).json({ success: false, message: "Sending domain not found in this Aurelink workspace." });
   if (domain.status !== "verified" || !domain.provider_domain_id) return res.status(409).json({ success: false, code: "EMAIL_DOMAIN_NOT_VERIFIED", message: "The selected sending domain must be verified before SMTP credentials can be issued." });
 
+  try { await consumeCredentialVerification(req.user!.userId,"smtp_credential_create",String(req.body.verificationToken||"")); }
+  catch(error) { return res.status(403).json({success:false,code:"EMAIL_VERIFICATION_REQUIRED",message:error instanceof Error?error.message:"Verify your email before issuing an SMTP credential."}); }
+
   let remote: { providerKeyId: string; token: string } | undefined;
   try {
     remote = await createAurelinkResendSmtpKey({ workspaceId: wid, domainId: String(domain.provider_domain_id), label });
@@ -120,6 +124,9 @@ router.post("/aurelink/communications/smtp/credentials/:id/rotate", aurelinkAuth
   )).rows[0];
   if (!old) return res.status(404).json({ success: false, message: "Active Aurelink SMTP credential not found." });
   if (old.domain_status !== "verified") return res.status(409).json({ success: false, code: "EMAIL_DOMAIN_NOT_VERIFIED", message: "Restore sending-domain verification before rotating this credential." });
+
+  try { await consumeCredentialVerification(req.user!.userId,"smtp_credential_rotate",String(req.body.verificationToken||"")); }
+  catch(error) { return res.status(403).json({success:false,code:"EMAIL_VERIFICATION_REQUIRED",message:error instanceof Error?error.message:"Verify your email before rotating an SMTP credential."}); }
 
   let replacement: { providerKeyId: string; token: string } | undefined;
   let insertedId: string | undefined;
