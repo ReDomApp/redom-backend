@@ -251,6 +251,7 @@ router.post("/aurelink/communications/websites",aurelinkAuthMiddleware,async(req
   const domain=normalizeSenderDomain(parsed.hostname);
   const existing=(await pool.query("SELECT id,domain,website_url,status,verification_token_hash,evidence,verification_expires_at,verified_at,created_at FROM aurelink_verified_websites WHERE workspace_id=$1 AND domain=$2",[wid,domain])).rows[0];
   if(existing){
+   if(existing.status==="verified")return res.status(200).json({success:true,website:existing,alreadyVerified:true,message:"Website ownership is already verified. No new DNS challenge is required."});
    const encrypted=String(existing.evidence?.challengeCiphertext||"");
    if(encrypted){
     try{
