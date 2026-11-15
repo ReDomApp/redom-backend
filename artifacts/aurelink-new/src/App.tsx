@@ -29,6 +29,11 @@ function pathForScreen(screen:Screen):string {
  return paths[screen];
 }
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "https://redom-backend.onrender.com/redom-backend";
+// Recover a deep link when the static host serves its custom 404 page instead of applying the SPA rewrite.
+const fallbackPath = new URLSearchParams(window.location.search).get("__aurelink_path");
+if (fallbackPath && fallbackPath.startsWith("/") && !fallbackPath.startsWith("//")) {
+ window.history.replaceState({}, "", fallbackPath);
+}
 async function api<T extends Result = Result>(path: string, body: unknown): Promise<T> {
  const response = await fetch(API_BASE + path, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
  let data: T; try { data = await response.json() as T; } catch { throw new Error("Aurelink received an invalid server response. Please try again."); }
