@@ -26,7 +26,7 @@ function isPublicClientIp(value:string):boolean {
  return lower!=="::"&&lower!=="::1"&&!lower.startsWith("fc")&&!lower.startsWith("fd")&&!/^fe[89ab]/.test(lower)&&!lower.startsWith("ff")&&!lower.startsWith("2001:db8:");
 }
 
-const clientIp = (req: Request) => { const candidates=[...(req.ips||[]),ip(req)]; return candidates.map(x=>String(x||"").trim()).find(isPublicClientIp)||""; };
+const clientIp = (req: Request) => { const candidate=ip(req); return isPublicClientIp(candidate)?candidate:""; };
 const agent = (req: Request) => String(req.get("user-agent") ?? "").slice(0,1000);
 async function recordAurelinkLoginEvent(input:{userId:string;sessionId?:string|null;eventType:string;success:boolean;request:Request;failureReason?:string|null;sourceIp?:string;network?:Awaited<ReturnType<typeof checkIP>>}) {
  const sourceIp=input.sourceIp??clientIp(input.request); let location:any=input.network?.location??null;
