@@ -9,3 +9,5 @@
 #tracking-form button,#tracking-domain-form button{margin:0}
 .toolbar label{display:flex;align-items:center;gap:7px;color:#52637a;font-size:10px}
 button:disabled,select:disabled{opacity:.48;cursor:not-allowed}
+
+.quick{text-decoration:none;color:inherit}
