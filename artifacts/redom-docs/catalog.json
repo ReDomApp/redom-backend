@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-11-15T12:41:52.034Z",
-  "commit": "020cba5a8c4d00db2bde3f4068e4d9bec1797c07",
+  "generatedAt": "2026-11-15T12:54:25.507Z",
+  "commit": "9ae33dc55e1e3256b44fe346e57ea39cb8253cbd",
   "branch": "main",
   "totals": {
-    "files": 1141,
-    "sourceFiles": 817,
+    "files": 1142,
+    "sourceFiles": 818,
     "products": 16,
     "routes": 559,
     "screens": 130,
@@ -128,8 +128,8 @@
     {
       "id": "redom-backend",
       "name": "Redom Backend",
-      "files": 467,
-      "sourceFiles": 372,
+      "files": 468,
+      "sourceFiles": 373,
       "routes": 558,
       "screens": 1,
       "schemas": 94,
@@ -800,25 +800,25 @@
       "method": "GET",
       "path": "/aurelink/communications/smtp/credentials",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts",
-      "line": 70
+      "line": 71
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/smtp/credentials",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts",
-      "line": 79
+      "line": 80
     },
     {
       "method": "POST",
       "path": "/aurelink/communications/smtp/credentials/:id/rotate",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts",
-      "line": 115
+      "line": 119
     },
     {
       "method": "DELETE",
       "path": "/aurelink/communications/smtp/credentials/:id",
       "source": "artifacts/redom-backend/src/routes/aurelink-communications-smtp.routes.ts",
-      "line": 156
+      "line": 163
     },
     {
       "method": "POST",
@@ -5674,6 +5674,10 @@
     {
       "name": "communications-worker.service.ts",
       "source": "artifacts/redom-backend/src/services/aurelink/communications-worker.service.ts"
+    },
+    {
+      "name": "credential-email-verification.service.ts",
+      "source": "artifacts/redom-backend/src/services/aurelink/credential-email-verification.service.ts"
     },
     {
       "name": "developer-platform.service.ts",
