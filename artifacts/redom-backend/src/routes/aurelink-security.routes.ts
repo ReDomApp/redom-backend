@@ -8,6 +8,7 @@ import {createWebhook} from "../services/aurelink/developer-platform.service";
 import {resend} from "../lib/resend";
 import {checkIP} from "../lib/ipapi";
 import {hashPassword,verifyPassword} from "../utils/password";
+import { requestCredentialEmailCode, verifyCredentialEmailCode, consumeCredentialVerification, type CredentialVerificationPurpose } from "../services/aurelink/credential-email-verification.service";
 const r=Router(),H=(s:string)=>createHash("sha256").update(s).digest("hex"),ua=(q:Request)=>String(q.get("user-agent")||"");
 
 function isPublicClientIp(value:string):boolean {
