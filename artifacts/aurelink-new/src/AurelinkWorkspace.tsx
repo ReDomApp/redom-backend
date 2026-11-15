@@ -4,11 +4,11 @@ import "./aurelink-workspace.css";
 
 const API=(import.meta.env.VITE_API_BASE_URL as string|undefined)?.replace(/\/$/,"")||"https://redom-backend.onrender.com/redom-backend";
 type Row=Record<string,any>;
-type Page="overview"|"numbers"|"sms"|"email"|"activity"|"templates"|"contacts"|"campaigns"|"domains"|"senders"|"smtp"|"senderids"|"verification"|"developer"|"reputation"|"billing"|"team"|"account";
+type Page="overview"|"numbers"|"sms"|"email"|"activity"|"templates"|"contacts"|"campaigns"|"domains"|"senders"|"smtp"|"apikeys"|"senderids"|"verification"|"developer"|"reputation"|"billing"|"team"|"account";
 const groups:{title:string;items:{id:Page;label:string}[]}[]=[
  {title:"WORKSPACE",items:[{id:"overview",label:"Overview"},{id:"numbers",label:"Phone numbers"}]},
  {title:"COMMUNICATIONS",items:[{id:"sms",label:"Send SMS"},{id:"email",label:"Send email"},{id:"activity",label:"Message activity"},{id:"templates",label:"Templates"},{id:"contacts",label:"Contacts & consent"},{id:"campaigns",label:"Campaigns"}]},
- {title:"EMAIL INFRASTRUCTURE",items:[{id:"domains",label:"Sending domains"},{id:"senders",label:"Email senders"},{id:"smtp",label:"SMTP credentials"},{id:"reputation",label:"Tracking & reputation"}]},
+ {title:"EMAIL INFRASTRUCTURE",items:[{id:"domains",label:"Sending domains"},{id:"senders",label:"Email senders"},{id:"smtp",label:"SMTP keys"},{id:"apikeys",label:"API keys & MCP"},{id:"reputation",label:"Tracking & reputation"}]},
  {title:"IDENTITY & DEVELOPERS",items:[{id:"senderids",label:"SMS Sender IDs"},{id:"verification",label:"OTP verification"},{id:"developer",label:"Developer tools"},{id:"team",label:"Workspace team"}]},
  {title:"ACCOUNT",items:[{id:"billing",label:"Billing & usage"},{id:"account",label:"Account & security"}]}
 ];
@@ -235,6 +235,7 @@ function pageFromPath(path:string):Page {
  if(p.startsWith("/domains"))return "domains";
  if(p.startsWith("/senders"))return "senders";
  if(p.startsWith("/smtp"))return "smtp";
+ if(p.startsWith("/api-keys"))return "apikeys";
  if(p.startsWith("/sender-ids"))return "senderids";
  if(p.startsWith("/verification"))return "verification";
  if(p.startsWith("/developers"))return "developer";
@@ -245,7 +246,7 @@ function pageFromPath(path:string):Page {
  return "overview";
 }
 function pathFromPage(page:Page):string {
- const paths:Record<Page,string>={overview:"/dashboard",numbers:"/numbers",sms:"/sms",email:"/email",activity:"/activity",templates:"/templates",contacts:"/contacts",campaigns:"/campaigns",domains:"/domains",senders:"/senders",smtp:"/smtp",senderids:"/sender-ids",verification:"/verification",developer:"/developers",reputation:"/reputation",billing:"/billing",team:"/team",account:"/settings"};
+ const paths:Record<Page,string>={overview:"/dashboard",numbers:"/numbers",sms:"/sms",email:"/email",activity:"/activity",templates:"/templates",contacts:"/contacts",campaigns:"/campaigns",domains:"/domains",senders:"/senders",smtp:"/smtp",apikeys:"/api-keys",senderids:"/sender-ids",verification:"/verification",developer:"/developers",reputation:"/reputation",billing:"/billing",team:"/team",account:"/settings"};
  return paths[page];
 }
 export default function AurelinkWorkspace({onLogout,pathname="/dashboard",onNavigate}:{onLogout:()=>void;pathname?:string;onNavigate?:(path:string)=>void}) {
@@ -270,6 +271,7 @@ export default function AurelinkWorkspace({onLogout,pathname="/dashboard",onNavi
    case "domains":return <DomainsPage/>;
    case "senders":return <SendersPage/>;
    case "smtp":return <SmtpPage/>;
+   case "apikeys":return <ApiKeysPage/>;
    case "senderids":return <SenderIdsPage/>;
    case "verification":return <VerificationPage/>;
    case "developer":return <DeveloperPage/>;
@@ -289,7 +291,7 @@ export default function AurelinkWorkspace({onLogout,pathname="/dashboard",onNavi
    <nav aria-label="Aurelink workspace navigation">
     {groups.map(group=><div className="aw-nav-group" key={group.title}><small>{group.title}</small>
      {group.items.map(item=><button key={item.id} type="button" className={page===item.id?"active":""} onClick={()=>go(item.id)}>
-      <Icon name={item.id==="numbers"?"phone":item.id==="sms"?"message":item.id==="email"?"mail":item.id==="activity"?"activity":item.id==="templates"?"layers":item.id==="contacts"||item.id==="team"?"users":item.id==="domains"?"globe":item.id==="smtp"?"key":item.id==="senderids"||item.id==="verification"?"shield":item.id==="developer"?"code":item.id==="billing"?"wallet":item.id==="account"?"user":"grid"}/>
+      <Icon name={item.id==="numbers"?"phone":item.id==="sms"?"message":item.id==="email"?"mail":item.id==="activity"?"activity":item.id==="templates"?"layers":item.id==="contacts"||item.id==="team"?"users":item.id==="domains"?"globe":item.id==="smtp"||item.id==="apikeys"?"key":item.id==="senderids"||item.id==="verification"?"shield":item.id==="developer"?"code":item.id==="billing"?"wallet":item.id==="account"?"user":"grid"}/>
       <span>{item.label}</span>
      </button>)}
     </div>)}
