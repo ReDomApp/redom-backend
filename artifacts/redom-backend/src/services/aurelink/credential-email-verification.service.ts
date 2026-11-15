@@ -32,6 +32,7 @@ export async function requestCredentialEmailCode(userId: string, purpose: Creden
   const client = await pool.connect();
   let email = "";
   let code = "";
+  let challengeId = "";
   try {
     await client.query("BEGIN");
     const user = (await client.query("SELECT email,email_verified FROM aurelink_users WHERE id=$1 FOR UPDATE", [userId])).rows[0];
@@ -41,7 +42,8 @@ export async function requestCredentialEmailCode(userId: string, purpose: Creden
     if (recent?.latest && Date.now() - new Date(recent.latest).getTime() < 60_000) throw new Error("A verification code was sent recently. Wait one minute before requesting another.");
     await client.query("UPDATE aurelink_credential_email_challenges SET consumed_at=COALESCE(consumed_at,NOW()),grant_consumed_at=COALESCE(grant_consumed_at,NOW()) WHERE user_id=$1 AND purpose=$2 AND consumed_at IS NULL", [userId, purpose]);
     code = String(randomInt(0, 1_000_000)).padStart(6, "0");
-    await client.query("INSERT INTO aurelink_credential_email_challenges(user_id,purpose,code_hash,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '5 minutes')", [userId, purpose, hash(code)]);
+    const inserted = await client.query("INSERT INTO aurelink_credential_email_challenges(user_id,purpose,code_hash,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '5 minutes') RETURNING id", [userId, purpose, hash(code)]);
+    challengeId = String(inserted.rows[0].id);
     email = String(user.email);
     await client.query("COMMIT");
   } catch (error) {
@@ -55,7 +57,7 @@ export async function requestCredentialEmailCode(userId: string, purpose: Creden
     html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;color:#172a43"><h2>Verify this credential action</h2><p>Use this one-time code to continue generating or rotating an Aurelink credential.</p><div style="font-size:32px;letter-spacing:8px;font-weight:700;padding:18px 0">${code}</div><p>This code expires in five minutes. You have up to five attempts. If you did not request this, secure your account.</p><p style="color:#718096;font-size:12px">Aurelink Account Security</p></div>`,
   });
   if (result.error) throw new Error("Aurelink could not send the verification email. Please try again.");
-  return { success: true, expiresIn: 300, destination: email.replace(/^(.).+(@.*)$/, "$1••••$2") };
+  return { success: true, challengeId, expiresIn: 300, destination: email.replace(/^(.).+(@.*)$/, "$1••••$2") };
 }
 
 export async function verifyCredentialEmailCode(userId: string, purpose: CredentialVerificationPurpose, challengeId: string, code: string) {
