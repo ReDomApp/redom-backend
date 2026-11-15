@@ -1,0 +1,28 @@
+name: Aurelink React customer app
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/aurelink-new/**"
+      - ".github/workflows/aurelink-react-portal.yml"
+  workflow_dispatch:
+
+jobs:
+  react-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: artifacts/aurelink-new
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: artifacts/aurelink-new/package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
